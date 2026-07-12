@@ -1,0 +1,58 @@
+{
+  "name": "voxel",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "sideEffects": false,
+  "files": [
+    "dist"
+  ],
+  "exports": {
+    "./core": {
+      "types": "./dist/core/index.d.ts",
+      "import": "./dist/core/index.js"
+    },
+    "./meshing": {
+      "types": "./dist/meshing/index.d.ts",
+      "import": "./dist/meshing/index.js"
+    },
+    "./three": {
+      "types": "./dist/three/index.d.ts",
+      "import": "./dist/three/index.js"
+    },
+    "./testing": {
+      "types": "./dist/testing/index.d.ts",
+      "import": "./dist/testing/index.js"
+    }
+  },
+  "scripts": {
+    "prepare": "npm run build",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint src tests --max-warnings 0",
+    "build": "tsc -p tsconfig.build.json",
+    "verify": "npm run test && npm run typecheck && npm run lint && npm run build"
+  },
+  "peerDependencies": {
+    "@types/three": ">=0.185.0 <0.186.0",
+    "three": ">=0.185.1 <0.186.0"
+  },
+  "peerDependenciesMeta": {
+    "@types/three": {
+      "optional": true
+    },
+    "three": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@eslint/js": "10.0.1",
+    "@types/three": "0.185.0",
+    "eslint": "10.7.0",
+    "globals": "17.7.0",
+    "three": "0.185.1",
+    "typescript": "5.9.3",
+    "typescript-eslint": "8.63.0",
+    "vitest": "4.1.10"
+  }
+}
