@@ -54,7 +54,7 @@ Exit gate: the named seed is playable under `?renderer=voxel`; selection, comman
 
 - [x] Compare controlled tick-one 800x600 before/after screenshots and structural metrics; the reviewed slice is nonblank and aligned on the flat input plane.
 - [x] Run adversarial code review and resolve every substantive finding; the animation review closed affine composition, Float32 headroom, workload caps, conservative bounds, full-versus-partial uploads, and sparse-range command bounds.
-- [ ] Make voxel the AoE default only after the remaining raised-object hit-proxy and elevation-aware host gates pass; Phaser intentionally remains the safe default.
+- [x] Promote AoE to one standalone voxel-only Three host after raised-object picking, selection/commands, capture, context-loss, lifecycle, and browser gates pass; remove the renderer selector, Phaser source/dependency, and fallback canvas.
 - [ ] Integrate one City instance batch through embedded mode without replacing City's terrain or composition root.
 - [ ] Upgrade Townscaper to the tested Three line, then prove one geometry-resource/full-rebuild slice while its topology stays local.
 - [ ] Run the Voxelize versus `block-mesh-rs` mesher bake-off before implementing greedy meshing.
@@ -93,6 +93,17 @@ Exit gate: rigid procedural parts animate continuously under the injected frame 
 - [x] Decline a new externally sampled pose or gait state-machine contract until City or Townscaper proves the same neutral data requirement.
 
 Exit gate: the shared package remains unchanged and history-free while the AoE consumer demonstrates speed-matched rigid locomotion through existing snapshots. This is evidence for the current boundary, not a claim that skeletal or clip animation is complete.
+
+## Active 60 Hz motion-quality increment
+
+- [x] Define the 60 Hz target as a named reference-scene contract with a 16.67 ms full host-frame budget rather than an arbitrary-hardware guarantee.
+- [x] Add a pure `voxel/testing` reporter for warmup-bounded frame samples, p50/p95/p99/max timing, over-budget ratios and streaks, and missed-refresh estimates without adding a runtime scheduler or wall-clock dependency.
+- [x] Prove AoE exact-tick root interpolation when one browser frame advances multiple simulation ticks, interpolate moving fine-grid wildlife, and rotate the complete voxel actor through its eased travel heading.
+- [x] Raise Townscaper's deliberate live-loop cap from 20 Hz to 60 Hz and prove its existing distance-sampled pedestrian positions and blended corner headings remain continuous.
+- [x] Preserve City's 60 Hz renderer policy while easing vehicle yaw through the shortest arc from the actually presented pose.
+- [ ] Record fixed-scene browser evidence for all three games with named environment metadata, host-frame percentiles, draw/resource stability, and no positional or angular discontinuity. AoE and Townscaper have passing named evidence. City has two recorded production runs with 59.2-60.0 FPS, 16.8-17.5 ms p95 cadence, and 0.9-1.1 ms p95 callback work, but its stricter p99/consecutive-miss gate is not repeatably green and the final browser discontinuity probe remains open.
+
+Exit gate: the named reference profiles meet their measured 60 Hz budget, every moving actor updates continuously between simulation messages and faces travel through bounded turns, and no game movement semantics enter the shared package.
 
 ## Explicitly deferred
 
