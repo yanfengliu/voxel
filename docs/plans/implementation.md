@@ -83,6 +83,17 @@ Exit gate: unit tests prove rig validation, target tracking, borrowed-scene beha
 
 Exit gate: rigid procedural parts animate continuously under the injected frame clock without per-frame world snapshots, static objects remain bit-for-bit stable, and no AoE, City, or Townscaper semantic enters the package. Skeletal meshes, clip graphs, root motion, attacks, gathering, and simulation timing remain separate measured work.
 
+## Consumer proof: AoE speed-matched gait without a new engine schema
+
+- [x] Trace AoE's live presentation path and confirm the adapter receives already-interpolated displayed positions at render cadence.
+- [x] Keep stride length, displayed-speed estimation, gait history, foot planting, limb pairing, wheel rotation, and transition smoothing in the AoE-owned adapter and recipes.
+- [x] Advance locomotion pose by displayed distance and bake it into ordinary instance base matrices; retain the harmonic payload only for independent ambient motion.
+- [x] Preserve generational identity, disappearance/memory reset, bridge-epoch reset, clock-rewind reset, deterministic replay inputs, and non-penetrating planted feet in AoE tests.
+- [x] Prove simulation-display-time pause invariance, eased travel headings, X/Z/diagonal pitch alignment, transformed-corner foot clearance, static/animated lane separation, and a targeted browser gait diagnostic in the consumer.
+- [x] Decline a new externally sampled pose or gait state-machine contract until City or Townscaper proves the same neutral data requirement.
+
+Exit gate: the shared package remains unchanged and history-free while the AoE consumer demonstrates speed-matched rigid locomotion through existing snapshots. This is evidence for the current boundary, not a claim that skeletal or clip animation is complete.
+
 ## Explicitly deferred
 
 - Full Phaser removal and a standalone AoE Three input/overlay host.
