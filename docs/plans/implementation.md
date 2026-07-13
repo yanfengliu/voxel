@@ -61,10 +61,21 @@ Exit gate: the named seed is playable under `?renderer=voxel`; selection, comman
 
 Exit gate: at least two games exercise the public package without game-specific types leaking into it.
 
+## Active visual-quality increment: reusable daylight plus AoE vocabulary
+
+- [x] Add a typed engine-owned daylight rig with validated sky, ground, sun, intensity, and offset inputs.
+- [x] Track the directional target with `setView`, preserve the no-implicit-mutation rule for borrowed scenes, prove idempotent teardown, and roll back both owned and borrowed constructor failures transactionally.
+- [x] Keep renderer creation flags such as antialiasing consumer-controlled; do not add speculative post-processing or shadow parity.
+- [x] Let AoE use the shared rig while keeping faction palettes, building/unit/resource recipes, terrain decoration, fog, selection, and animation meaning in AoE.
+- [x] Record fixed-camera before/after/diff evidence plus draw-call, instance, and resource budgets before calling the increment complete. AoE's controlled tick-zero frame uses 1,000 instances, four batches, eight draw calls, 16,632 triangles, five materials, and one geometry resource.
+
+Exit gate: unit tests prove rig validation, target tracking, borrowed-scene behavior, and cleanup; AoE's controlled voxel scene is visibly richer without game semantics entering this package.
+
 ## Explicitly deferred
 
 - Full Phaser removal and a standalone AoE Three input/overlay host.
 - General skeletal crowd animation.
 - Greedy/WASM/worker meshing, AO, propagated light, transparent voxel merging, liquids, and block-model registries.
 - Smooth-terrain Surface Nets or Transvoxel, WebGPU/TSL, LOD, streaming, indirect draws, and GPU-driven particles.
+- Shadow maps until caster/receiver, frustum, metrics, borrowed-renderer restoration, context-loss, and teardown policies are executable.
 - City road policy, Townscaper massing/facade rules, or AoE selection/fog/command policy in the shared package.

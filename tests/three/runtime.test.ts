@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
+import { DirectionalLight, HemisphereLight, Scene } from 'three';
 import {
   ThreeRenderRuntime,
   type RendererLike,
@@ -214,6 +215,82 @@ describe('ThreeRenderRuntime', () => {
     expect(renderer.dispose).not.toHaveBeenCalled();
   });
 
+  it('installs an explicit owned daylight rig in a borrowed scene and tracks the view centre', () => {
+    const renderer = new FakeRenderer();
+    const scene = new Scene();
+    const runtime = new ThreeRenderRuntime({
+      renderer,
+      rendererOwnership: 'borrowed',
+      scene,
+      width: 320,
+      height: 200,
+      daylight: {
+        skyColor: 0xabcdee,
+        groundColor: 0x36291d,
+        fillIntensity: 1.25,
+        sunColor: 0xffd59a,
+        sunIntensity: 2.75,
+        sunOffset: { x: -8, y: 14, z: -6 },
+      },
+    });
+
+    const rig = scene.getObjectByName('voxel-daylight');
+    const fill = rig?.children.find((child) => child instanceof HemisphereLight);
+    const sun = rig?.children.find((child) => child instanceof DirectionalLight);
+    const target = rig?.getObjectByName('voxel-daylight-target');
+    expect(fill).toMatchObject({ intensity: 1.25 });
+    expect(sun).toMatchObject({ intensity: 2.75 });
+    expect(fill?.color.getHex()).toBe(0xabcdee);
+    expect(fill?.groundColor.getHex()).toBe(0x36291d);
+    expect(sun?.color.getHex()).toBe(0xffd59a);
+
+    runtime.setView({ x: 7, y: 2, z: -3 }, 1.5);
+    expect(sun?.position.toArray()).toEqual([-1, 16, -9]);
+    expect(target?.position.toArray()).toEqual([7, 2, -3]);
+
+    runtime.dispose();
+    expect(scene.getObjectByName('voxel-daylight')).toBeUndefined();
+    expect(renderer.dispose).not.toHaveBeenCalled();
+  });
+
+  it('does not add implicit lighting to a supplied scene', () => {
+    const scene = new Scene();
+    const runtime = new ThreeRenderRuntime({
+      renderer: new FakeRenderer(),
+      rendererOwnership: 'borrowed',
+      scene,
+      width: 100,
+      height: 100,
+    });
+
+    expect(scene.getObjectByName('voxel-daylight')).toBeUndefined();
+    runtime.dispose();
+  });
+
+  it.each(['owned', 'borrowed'] as const)(
+    'rolls back scene roots when %s renderer initialization throws',
+    (ownership) => {
+      const renderer = new FakeRenderer();
+      renderer.setSize.mockImplementationOnce(() => {
+        throw new Error('synthetic renderer initialization failure');
+      });
+      const scene = new Scene();
+
+      expect(() => new ThreeRenderRuntime({
+        renderer,
+        rendererOwnership: ownership,
+        scene,
+        daylight: {},
+        width: 100,
+        height: 100,
+      })).toThrow(/synthetic renderer initialization failure/);
+
+      expect(scene.getObjectByName('voxel-runtime')).toBeUndefined();
+      expect(scene.getObjectByName('voxel-daylight')).toBeUndefined();
+      expect(renderer.dispose).toHaveBeenCalledTimes(ownership === 'owned' ? 1 : 0);
+    },
+  );
+
   it('passes a browser-owned canvas through an injected renderer factory', () => {
     const renderer = new FakeRenderer();
     const canvas = { width: 10, height: 10 } as HTMLCanvasElement;
@@ -322,6 +399,17 @@ describe('ThreeRenderRuntime', () => {
       height: 100,
       zoom: 0,
     })).toThrow(/zoom/);
+    expect(factory).not.toHaveBeenCalled();
+  });
+
+  it('validates daylight options before allocating an owned renderer', () => {
+    const factory = vi.fn(() => new FakeRenderer());
+    expect(() => new ThreeRenderRuntime({
+      rendererFactory: factory,
+      width: 100,
+      height: 100,
+      daylight: { fillIntensity: -1 },
+    })).toThrow(/fillIntensity/);
     expect(factory).not.toHaveBeenCalled();
   });
 

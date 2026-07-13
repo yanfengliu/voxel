@@ -30,3 +30,10 @@ This log records decisions that must survive individual implementation sessions.
 - Reason: AoE2's simulation/render seam is sound, but its current `GameScene` also owns input, camera conversion, bridge replacement, and test hooks. A two-canvas composition produces real 3D voxel graphics without a one-shot rewrite of those contracts.
 - Promotion gate: voxel becomes the default only after selection, commands, pan/zoom, fog, save/load, replay, capture, teardown, and fixed-scene visual evidence pass. `?renderer=phaser` remains a bounded fallback until the standalone host migration is complete.
 - Reuse constraint: the AoE adapter may translate game entities into neutral chunks, geometry, and batches, but no AoE types or art-role rules move into this repository.
+
+## ADR-0005: Share a bounded daylight rig, not game art direction
+
+- Status: accepted on 2026-07-12.
+- Decision: `voxel/three` may own a configurable sky/ground hemisphere fill plus one directional key light whose target follows the current view centre. AoE, City, and Townscaper continue to own palettes, model recipes, fog meaning, time of day, animation, and effects.
+- Ownership: an engine-created scene receives the default rig unless disabled. A supplied scene receives no implicit lights, but may explicitly request a rig; that rig is the runtime's owned subtree and is removed during disposal without mutating unrelated scene state.
+- Deferred boundary: shadow maps are not part of this slice. They require explicit caster/receiver policy, frustum and map-size budgets, render-target metrics, context restoration, borrowed-renderer setting restoration, and teardown proof before enablement.

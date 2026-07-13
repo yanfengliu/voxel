@@ -4,6 +4,7 @@ export {
   type ThreeFrameContext,
   type ThreeRenderMetrics,
   type ThreeRenderRuntimeOptions,
+  type ThreeDaylightOptions,
   type RendererFactory,
   type RendererLike,
 } from './ThreeRenderRuntime.js';

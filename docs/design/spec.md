@@ -237,6 +237,10 @@ The Three.js adapter owns:
 
 The runtime supports two mutually exclusive frame modes. Autonomous mode owns `start()`/`stop()` and schedules rendering but never advances game simulation. Externally driven mode exposes `frame(frameContext)` so a host such as AoE's game scene controls ordering. Both use an injected clock whose frame context contains monotonic `nowMs`, clamped `deltaMs`, and `frameIndex`; manual-clock tests advance time explicitly. Deterministic rendering, animation, and capture code never reads wall-clock APIs behind that contract.
 
+The first reusable visual-style policy is deliberately smaller than a post-processing stack. An engine-owned scene may install a configurable daylight rig containing a sky/ground hemisphere fill and one directional key light. The consumer supplies finite sRGB colors, intensities, and a world-space sun offset; the runtime tracks the light target with the current view centre and removes the entire rig during idempotent disposal. A borrowed scene receives no implicit light mutation, but may explicitly request an engine-owned rig. Renderer-constructor choices such as antialiasing remain host options because they cannot be changed after context creation. AoE, City, and Townscaper keep their art palettes, fog, time-of-day meaning, and bespoke effects.
+
+This daylight slice does not claim shadow support. Directional shadow maps require an explicit quality budget, caster/receiver policy, frustum tracking, render-target metrics, context-restoration proof, and borrowed-renderer setting restoration. Those gates precede enabling shadows; ambient occlusion and propagated voxel lighting remain mesher features with their own cross-chunk dependency rules.
+
 Standalone mode creates and owns the renderer and canvas integration. Embedded mode borrows a compatible renderer and scene from an existing Three.js host, attaches one engine-owned root, and uses externally driven frames; it never disposes the borrowed renderer, scene, camera, or canvas. Ownership is declared per handle so a narrow City batch can adopt the package without replacing City's whole composition root.
 
 ### 6. Instance batches

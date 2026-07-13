@@ -1,6 +1,4 @@
 import {
-  AmbientLight,
-  DirectionalLight,
   Group,
   Scene,
   WebGLRenderer,
@@ -15,6 +13,11 @@ import {
   validateAndCopySnapshotV1,
 } from '../core/index.js';
 import { ChunkPresenter } from './chunkPresenter.js';
+import {
+  DaylightRig,
+  resolveDaylightOptions,
+  type ThreeDaylightOptions,
+} from './daylightRig.js';
 import { GeometryPresenter } from './geometryPresenter.js';
 import { InstanceBatchPresenter } from './instanceBatchPresenter.js';
 import { MaterialPresenter } from './materialPresenter.js';
@@ -58,6 +61,8 @@ export interface ThreeRenderRuntimeOptions {
   /** Optional browser-owned canvas used by the default or injected renderer factory. */
   readonly canvas?: HTMLCanvasElement;
   readonly scene?: Scene;
+  /** Engine-owned daylight. Omitted borrowed scenes receive no implicit lights. */
+  readonly daylight?: ThreeDaylightOptions | false;
   readonly camera?: OrthographicCamera;
   readonly width: number;
   readonly height: number;
@@ -184,6 +189,7 @@ export class ThreeRenderRuntime {
   private readonly root = new Group();
   private readonly renderer: RendererLike;
   private readonly rendererOwnership: 'owned' | 'borrowed';
+  private readonly daylightRig: DaylightRig | null;
   private readonly materialPresenter = new MaterialPresenter();
   private readonly geometryPresenter = new GeometryPresenter();
   private readonly chunkRoot = new Group();
@@ -227,6 +233,11 @@ export class ThreeRenderRuntime {
     requireDimension('height', options.height);
     const pixelRatio = options.pixelRatio ?? 1;
     requireDimension('pixelRatio', pixelRatio);
+    const daylightOptions = options.daylight === false
+      ? null
+      : options.daylight === undefined && options.scene
+        ? null
+        : resolveDaylightOptions(options.daylight ?? {});
     this.width = options.width;
     this.height = options.height;
     this.pixelRatio = pixelRatio;
@@ -263,18 +274,44 @@ export class ThreeRenderRuntime {
     this.instanceRoot.name = 'instance-batches';
     this.root.add(this.chunkRoot, this.instanceRoot);
     this.scene.add(this.root);
-    if (!options.scene) {
-      this.scene.add(new AmbientLight(0xffffff, 1.8));
-      const sun = new DirectionalLight(0xffffff, 2.2);
-      sun.position.set(20, 40, 20);
-      this.scene.add(sun);
-    }
+    this.daylightRig = daylightOptions ? new DaylightRig(daylightOptions, this.center) : null;
+    if (this.daylightRig) this.scene.add(this.daylightRig.root);
     this.chunkPresenter = new ChunkPresenter(this.chunkRoot);
     this.instancePresenter = new InstanceBatchPresenter(this.instanceRoot);
-    this.renderer.setPixelRatio(this.pixelRatio);
-    this.renderer.setSize(this.width, this.height, false);
-    this.contextCanvas?.addEventListener('webglcontextlost', this.handleContextLost);
-    this.contextCanvas?.addEventListener('webglcontextrestored', this.handleContextRestored);
+    try {
+      this.renderer.setPixelRatio(this.pixelRatio);
+      this.renderer.setSize(this.width, this.height, false);
+      this.contextCanvas?.addEventListener('webglcontextlost', this.handleContextLost);
+      this.contextCanvas?.addEventListener('webglcontextrestored', this.handleContextRestored);
+    } catch (error) {
+      // Constructor failure must be transactional even for a borrowed scene:
+      // remove every subtree/listener we attached and dispose only an owned
+      // renderer. Cleanup failures must not hide the initialization failure.
+      try {
+        this.contextCanvas?.removeEventListener('webglcontextlost', this.handleContextLost);
+        this.contextCanvas?.removeEventListener('webglcontextrestored', this.handleContextRestored);
+      } catch {
+        // Best-effort rollback for host-provided event targets.
+      }
+      try {
+        this.daylightRig?.dispose(this.scene);
+      } catch {
+        // Best-effort rollback for host-provided scenes.
+      }
+      try {
+        this.scene.remove(this.root);
+      } catch {
+        // Best-effort rollback for host-provided scenes.
+      }
+      if (this.rendererOwnership === 'owned') {
+        try {
+          this.renderer.dispose();
+        } catch {
+          // Preserve the original initialization error.
+        }
+      }
+      throw error;
+    }
   }
 
   acceptSnapshot(snapshot: RenderSnapshotV1): ApplyResultV1 {
@@ -336,6 +373,7 @@ export class ThreeRenderRuntime {
     });
     this.center = { ...center };
     this.zoom = zoom;
+    this.daylightRig?.setCenter(this.center);
   }
 
   resize(width: number, height: number, pixelRatio = this.pixelRatio): void {
@@ -404,6 +442,7 @@ export class ThreeRenderRuntime {
     this.chunkPresenter.dispose();
     this.geometryPresenter.dispose();
     this.materialPresenter.dispose();
+    this.daylightRig?.dispose(this.scene);
     this.scene.remove(this.root);
     if (this.rendererOwnership === 'owned') this.renderer.dispose();
     this.renderInfo = EMPTY_RENDER_INFO;
@@ -444,3 +483,4 @@ export type {
   RendererFactory,
   RendererLike,
 } from './rendererTypes.js';
+export type { ThreeDaylightOptions } from './daylightRig.js';

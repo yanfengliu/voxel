@@ -32,6 +32,14 @@ const runtime = new ThreeRenderRuntime({
   height: 600,
   center: { x: 0, y: 0, z: 0 },
   zoom: 1,
+  daylight: {
+    skyColor: 0xdcecff,
+    groundColor: 0x4b3928,
+    fillIntensity: 1.25,
+    sunColor: 0xffedc2,
+    sunIntensity: 2.35,
+    sunOffset: { x: -24, y: 38, z: -18 },
+  },
 });
 
 const result = runtime.acceptSnapshot(snapshot);
@@ -52,6 +60,8 @@ runtime.dispose();
 `acceptSnapshot` validates the whole transaction and copies every retained typed array. It advances accepted state only. Resources become visible on `frame`, which advances presented state. A newer accepted snapshot coalesces an older unpresented one. A new epoch replaces the prior world and may restart revision numbering. Within one world/epoch pair, revisions must increase monotonically.
 
 Treat the caller's arrays as borrowed and the runtime's state as private. Do not mutate through Three objects: the public runtime intentionally exposes no scene root, mesh, material, or instance slot.
+
+An engine-created scene installs the default daylight rig. Pass `daylight: false` for an intentionally unlit or host-lit scene. A supplied `scene` receives no implicit lights; pass a `daylight` object when the runtime should add and own the rig inside that borrowed scene. The directional light and target follow `setView`, and the runtime removes only its rig during disposal. Constructor-only renderer flags such as antialiasing remain in `rendererParameters`.
 
 ## Three independent data lanes
 
