@@ -86,6 +86,9 @@ export interface ThreeRenderMetrics {
   readonly visibleChunks: number;
   readonly instanceBatches: number;
   readonly instances: number;
+  readonly animatedBatches: number;
+  readonly animatedInstances: number;
+  readonly animationMatrixUpdates: number;
   readonly drawCalls: number;
   readonly triangles: number;
   readonly points: number;
@@ -179,6 +182,18 @@ function preflight(snapshot: ThreePresentationSnapshot): void {
     }
     if (batch.colors && batch.colors.length !== batch.instanceKeys.length * 4) {
       throw new Error(`Batch ${batch.key} color count does not match its instance keys.`);
+    }
+    if (batch.animation) {
+      const count = batch.instanceKeys.length;
+      if (
+        batch.animation.periodsMs.length !== count
+        || batch.animation.phasesRadians.length !== count
+        || batch.animation.translationAmplitudes.length !== count * 3
+        || batch.animation.rotationAmplitudesRadians.length !== count * 3
+        || batch.animation.scaleAmplitudes.length !== count * 3
+      ) {
+        throw new Error(`Batch ${batch.key} animation count does not match its instance keys.`);
+      }
     }
   }
 }
@@ -350,6 +365,7 @@ export class ThreeRenderRuntime {
         material: (key) => this.materialPresenter.get(key),
       });
     }
+    this.instancePresenter.animate(context.nowMs);
     this.renderCurrent();
     if (pending) {
       this.world.markPresented(
@@ -421,6 +437,9 @@ export class ThreeRenderRuntime {
       visibleChunks: this.chunkPresenter.visibleCount,
       instanceBatches: this.instancePresenter.count,
       instances: this.instancePresenter.instanceCount,
+      animatedBatches: this.instancePresenter.animatedBatchCount,
+      animatedInstances: this.instancePresenter.animatedInstanceCount,
+      animationMatrixUpdates: this.instancePresenter.animationMatrixUpdates,
       drawCalls: this.renderInfo.drawCalls,
       triangles: this.renderInfo.triangles,
       points: this.renderInfo.points,

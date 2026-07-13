@@ -1,5 +1,14 @@
 import {
   HARD_RENDER_LIMITS_V1,
+  INSTANCE_TRANSFORM_ANIMATION_SCHEMA_V1,
+  MAX_INSTANCE_ANIMATION_PERIOD_MS_V1,
+  MAX_INSTANCE_ANIMATION_ROTATION_RADIANS_V1,
+  MAX_INSTANCE_ANIMATION_SCALE_AMPLITUDE_V1,
+  MAX_INSTANCE_ANIMATION_TRANSLATION_V1,
+  MAX_ACTIVE_INSTANCE_ANIMATIONS_V1,
+  MAX_INSTANCE_ANIMATION_BASE_LINEAR_COMPONENT_V1,
+  MAX_INSTANCES_PER_ANIMATED_BATCH_V1,
+  MIN_INSTANCE_ANIMATION_PERIOD_MS_V1,
   MAX_EXACT_FLOAT32_VOXEL_COORDINATE_V1,
   MAX_GEOMETRY_GROUPS_PER_RESOURCE_V1,
   RENDER_SNAPSHOT_SCHEMA_V1,
@@ -7,6 +16,7 @@ import {
   type Aabb3V1,
   type GeometryResourceV1,
   type InstanceBatchV1,
+  type InstanceTransformAnimationV1,
   type Int3V1,
   type MaterialResourceV1,
   type OwnedRenderSnapshotV1,
@@ -490,6 +500,22 @@ function parseBatch(
     colors = uint8(input.colors, `${path}.colors`, budget);
     if (colors.length !== instanceKeys.length * 4) fail('batch.color-count', `${path}.colors`, 'Expected one RGBA color per instance.');
   }
+  const animation = input.animation === undefined
+    ? undefined
+    : parseInstanceAnimation(input.animation, `${path}.animation`, instanceKeys.length, budget);
+  if (animation !== undefined) {
+    if (
+      animation.periodsMs.some((period) => period > 0)
+      && instanceKeys.length > MAX_INSTANCES_PER_ANIMATED_BATCH_V1
+    ) {
+      fail(
+        'limit.animated-batch-instances',
+        `${path}.instanceKeys`,
+        `Animated batches may contain at most ${String(MAX_INSTANCES_PER_ANIMATED_BATCH_V1)} instances; shard larger crowds.`,
+      );
+    }
+    validateAnimatedBaseMatrices(matrices, animation, path);
+  }
   return {
     ...identity(input, path),
     geometryKey: key(input.geometryKey, `${path}.geometryKey`),
@@ -497,6 +523,168 @@ function parseBatch(
     instanceKeys,
     matrices,
     ...(colors === undefined ? {} : { colors }),
+    ...(animation === undefined ? {} : { animation }),
+  };
+}
+
+const ANIMATED_AFFINE_ZERO_INDICES = [3, 7, 11] as const;
+const ANIMATED_AFFINE_LINEAR_INDICES = [0, 1, 2, 4, 5, 6, 8, 9, 10] as const;
+
+function validateAnimatedBaseMatrices(
+  matrices: Float32Array,
+  animation: InstanceTransformAnimationV1,
+  batchPath: string,
+): void {
+  for (let instanceIndex = 0; instanceIndex < animation.periodsMs.length; instanceIndex += 1) {
+    if (animation.periodsMs[instanceIndex] === 0) continue;
+    const matrixOffset = instanceIndex * 16;
+    for (const elementIndex of ANIMATED_AFFINE_ZERO_INDICES) {
+      if (matrices[matrixOffset + elementIndex] !== 0) {
+        fail(
+          'batch.animation.matrix-affine',
+          `${batchPath}.matrices[${String(matrixOffset + elementIndex)}]`,
+          'Animated base matrices must be affine transforms.',
+        );
+      }
+    }
+    if (matrices[matrixOffset + 15] !== 1) {
+      fail(
+        'batch.animation.matrix-affine',
+        `${batchPath}.matrices[${String(matrixOffset + 15)}]`,
+        'Animated base matrices must be affine transforms.',
+      );
+    }
+    for (const elementIndex of ANIMATED_AFFINE_LINEAR_INDICES) {
+      if (
+        Math.abs(matrices[matrixOffset + elementIndex]!)
+        > MAX_INSTANCE_ANIMATION_BASE_LINEAR_COMPONENT_V1
+      ) {
+        fail(
+          'batch.animation.matrix-range',
+          `${batchPath}.matrices[${String(matrixOffset + elementIndex)}]`,
+          'Animated base matrix exceeds the safe affine multiplication range.',
+        );
+      }
+    }
+  }
+}
+
+function requireAnimationCount(
+  value: Float32Array,
+  expected: number,
+  code: string,
+  path: string,
+): void {
+  if (value.length !== expected) {
+    fail(code, path, `Expected ${String(expected)} animation values.`);
+  }
+}
+
+function requireAnimationRange(
+  values: Float32Array,
+  maximumAbsolute: number,
+  code: string,
+  path: string,
+): void {
+  for (let index = 0; index < values.length; index += 1) {
+    if (Math.abs(values[index]!) > maximumAbsolute) {
+      fail(code, `${path}[${String(index)}]`, `Animation value exceeds ${String(maximumAbsolute)}.`);
+    }
+  }
+}
+
+function parseInstanceAnimation(
+  value: unknown,
+  path: string,
+  instanceCount: number,
+  budget: ByteBudget,
+): InstanceTransformAnimationV1 {
+  const input = record(value, path);
+  const periodsMs = float32(input.periodsMs, `${path}.periodsMs`, budget);
+  const phasesRadians = float32(input.phasesRadians, `${path}.phasesRadians`, budget);
+  const translationAmplitudes = float32(
+    input.translationAmplitudes,
+    `${path}.translationAmplitudes`,
+    budget,
+  );
+  const rotationAmplitudesRadians = float32(
+    input.rotationAmplitudesRadians,
+    `${path}.rotationAmplitudesRadians`,
+    budget,
+  );
+  const scaleAmplitudes = float32(input.scaleAmplitudes, `${path}.scaleAmplitudes`, budget);
+  for (const [name, array] of Object.entries({
+    periodsMs,
+    phasesRadians,
+    translationAmplitudes,
+    rotationAmplitudesRadians,
+    scaleAmplitudes,
+  })) {
+    finiteArray(array, `${path}.${name}`);
+  }
+  requireAnimationCount(periodsMs, instanceCount, 'batch.animation.period-count', `${path}.periodsMs`);
+  requireAnimationCount(phasesRadians, instanceCount, 'batch.animation.phase-count', `${path}.phasesRadians`);
+  requireAnimationCount(
+    translationAmplitudes,
+    instanceCount * 3,
+    'batch.animation.translation-count',
+    `${path}.translationAmplitudes`,
+  );
+  requireAnimationCount(
+    rotationAmplitudesRadians,
+    instanceCount * 3,
+    'batch.animation.rotation-count',
+    `${path}.rotationAmplitudesRadians`,
+  );
+  requireAnimationCount(
+    scaleAmplitudes,
+    instanceCount * 3,
+    'batch.animation.scale-count',
+    `${path}.scaleAmplitudes`,
+  );
+  for (let index = 0; index < periodsMs.length; index += 1) {
+    const period = periodsMs[index]!;
+    if (
+      period !== 0
+      && (period < MIN_INSTANCE_ANIMATION_PERIOD_MS_V1
+        || period > MAX_INSTANCE_ANIMATION_PERIOD_MS_V1)
+    ) {
+      fail(
+        'batch.animation.period-range',
+        `${path}.periodsMs[${String(index)}]`,
+        `Animation period must be zero or from ${String(MIN_INSTANCE_ANIMATION_PERIOD_MS_V1)} to ${String(MAX_INSTANCE_ANIMATION_PERIOD_MS_V1)} milliseconds.`,
+      );
+    }
+  }
+  requireAnimationRange(
+    translationAmplitudes,
+    MAX_INSTANCE_ANIMATION_TRANSLATION_V1,
+    'batch.animation.translation-range',
+    `${path}.translationAmplitudes`,
+  );
+  requireAnimationRange(
+    rotationAmplitudesRadians,
+    MAX_INSTANCE_ANIMATION_ROTATION_RADIANS_V1,
+    'batch.animation.rotation-range',
+    `${path}.rotationAmplitudesRadians`,
+  );
+  requireAnimationRange(
+    scaleAmplitudes,
+    MAX_INSTANCE_ANIMATION_SCALE_AMPLITUDE_V1,
+    'batch.animation.scale-range',
+    `${path}.scaleAmplitudes`,
+  );
+  return {
+    schemaVersion: literal(
+      input.schemaVersion,
+      INSTANCE_TRANSFORM_ANIMATION_SCHEMA_V1,
+      `${path}.schemaVersion`,
+    ),
+    periodsMs,
+    phasesRadians,
+    translationAmplitudes,
+    rotationAmplitudesRadians,
+    scaleAmplitudes,
   };
 }
 
@@ -590,6 +778,20 @@ function parseSnapshot(value: unknown): OwnedRenderSnapshotV1 {
   const rawBatches = list(input.batches, 'batches');
   if (rawBatches.length > descriptor.limits.maxBatches) fail('limit.batches', 'batches', 'Batch count exceeds its declared limit.');
   const batches = rawBatches.map((batch, index) => parseBatch(batch, `batches[${String(index)}]`, descriptor.limits, budget));
+  let activeAnimations = 0;
+  batches.forEach((batch, batchIndex) => {
+    batch.animation?.periodsMs.forEach((period, instanceIndex) => {
+      if (period === 0) return;
+      activeAnimations += 1;
+      if (activeAnimations > MAX_ACTIVE_INSTANCE_ANIMATIONS_V1) {
+        fail(
+          'limit.animated-instances',
+          `batches[${String(batchIndex)}].animation.periodsMs[${String(instanceIndex)}]`,
+          `Active instance animation count exceeds the hard per-frame limit of ${String(MAX_ACTIVE_INSTANCE_ANIMATIONS_V1)}.`,
+        );
+      }
+    });
+  });
   assertUniqueKeys(batches, 'batches');
 
   const snapshot: OwnedRenderSnapshotV1 = {

@@ -53,6 +53,16 @@ function copyBatch(batch: InstanceBatchV1): InstanceBatchV1 {
     instanceKeys: [...batch.instanceKeys],
     matrices: batch.matrices.slice(),
     ...(batch.colors ? { colors: batch.colors.slice() } : {}),
+    ...(batch.animation ? {
+      animation: {
+        ...batch.animation,
+        periodsMs: batch.animation.periodsMs.slice(),
+        phasesRadians: batch.animation.phasesRadians.slice(),
+        translationAmplitudes: batch.animation.translationAmplitudes.slice(),
+        rotationAmplitudesRadians: batch.animation.rotationAmplitudesRadians.slice(),
+        scaleAmplitudes: batch.animation.scaleAmplitudes.slice(),
+      },
+    } : {}),
   };
 }
 

@@ -1,11 +1,27 @@
 export const WORLD_SCHEMA_V1 = 'voxel.world/1' as const;
 export const RENDER_SNAPSHOT_SCHEMA_V1 = 'voxel.render-snapshot/1' as const;
+export const INSTANCE_TRANSFORM_ANIMATION_SCHEMA_V1 = 'voxel.instance-transform-animation/1' as const;
 
 /** Largest integer for which Float32 preserves every adjacent voxel boundary. */
 export const MAX_EXACT_FLOAT32_VOXEL_COORDINATE_V1 = 16_777_216;
 
 /** Prevents material-group metadata from becoming its own unbounded workload. */
 export const MAX_GEOMETRY_GROUPS_PER_RESOURCE_V1 = 4_096;
+
+/** Hard safety bounds for procedural rigid-instance animation. */
+export const MIN_INSTANCE_ANIMATION_PERIOD_MS_V1 = 16;
+export const MAX_INSTANCE_ANIMATION_PERIOD_MS_V1 = 3_600_000;
+export const MAX_INSTANCE_ANIMATION_TRANSLATION_V1 = 1_024;
+export const MAX_INSTANCE_ANIMATION_ROTATION_RADIANS_V1 = Math.PI * 2;
+export const MAX_INSTANCE_ANIMATION_SCALE_AMPLITUDE_V1 = 0.95;
+/** Caps deterministic matrix sampling and partial GPU uploads per frame. */
+export const MAX_ACTIVE_INSTANCE_ANIMATIONS_V1 = 8_192;
+/** Bounds culling and worst-case full-buffer uploads for a dynamic batch. */
+export const MAX_INSTANCES_PER_ANIMATED_BATCH_V1 = 16_384;
+/** Bounds WebGL bufferSubData command count for sparse animation updates. */
+export const MAX_INSTANCE_ANIMATION_UPDATE_RANGES_V1 = 64;
+/** Leaves headroom for a three-term affine multiply and the maximum animated scale. */
+export const MAX_INSTANCE_ANIMATION_BASE_LINEAR_COMPONENT_V1 = 5e37;
 
 export interface Int3V1 {
   readonly x: number;
@@ -141,6 +157,19 @@ export interface VoxelChunkV1 extends ResourceIdentityV1 {
   readonly materialKey: string;
 }
 
+export interface InstanceTransformAnimationV1 {
+  readonly schemaVersion: typeof INSTANCE_TRANSFORM_ANIMATION_SCHEMA_V1;
+  /** Zero disables animation for the corresponding instance. */
+  readonly periodsMs: Float32Array;
+  readonly phasesRadians: Float32Array;
+  /** XYZ world-space translation amplitude, three floats per instance. */
+  readonly translationAmplitudes: Float32Array;
+  /** XYZ local Euler-angle amplitude in radians, three floats per instance. */
+  readonly rotationAmplitudesRadians: Float32Array;
+  /** XYZ fractional scale amplitude, three floats per instance. */
+  readonly scaleAmplitudes: Float32Array;
+}
+
 export interface InstanceBatchV1 extends ResourceIdentityV1 {
   readonly geometryKey: string;
   readonly materialKey: string;
@@ -150,6 +179,8 @@ export interface InstanceBatchV1 extends ResourceIdentityV1 {
   readonly matrices: Float32Array;
   /** Optional straight-alpha sRGB8, four bytes per instance. */
   readonly colors?: Uint8Array;
+  /** Optional deterministic rigid motion sampled by the renderer frame clock. */
+  readonly animation?: InstanceTransformAnimationV1;
 }
 
 export interface RenderSnapshotV1 {

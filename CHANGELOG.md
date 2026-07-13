@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.1.2 - 2026-07-12
+
+- Added optional copied and validated `InstanceTransformAnimationV1` arrays for deterministic harmonic translation, local rotation, and scale offsets over rigid instance batches.
+- Sampled motion only from injected frame time, with static-slot stability, base-matrix restoration, context-loss fencing, and cumulative animation metrics.
+- Preserved affine shear and zero-scale inputs through direct offset composition; rejected animated perspective matrices and unsafe Float32 headroom.
+- Bounded each snapshot to 8,192 active slots, each animated batch to 16,384 total slots, and sparse GPU uploads to 64 coalesced ranges per frame.
+- Computed conservative motion bounds at reconciliation so frustum culling and Three raycast broad-phase remain correct without full-batch scans every frame.
+
 ## 0.1.1 - 2026-07-12
 
 - Added a typed, validated `ThreeDaylightOptions` surface for sky/ground hemisphere fill and a directional sun.

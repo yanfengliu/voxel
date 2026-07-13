@@ -7,6 +7,8 @@ import {
   Matrix4,
   MeshBasicMaterial,
   MeshStandardMaterial,
+  Quaternion,
+  Vector3,
 } from 'three';
 
 import { GeometryPresenter } from '../../src/three/geometryPresenter.js';
@@ -14,6 +16,7 @@ import { InstanceBatchPresenter } from '../../src/three/instanceBatchPresenter.j
 import { ChunkPresenter } from '../../src/three/chunkPresenter.js';
 import { MaterialPresenter } from '../../src/three/materialPresenter.js';
 import { DensePaletteChunk } from '../../src/meshing/index.js';
+import { MAX_INSTANCE_ANIMATION_UPDATE_RANGES_V1 } from '../../src/core/index.js';
 
 function triangleResource(revision = 1) {
   return {
@@ -137,6 +140,203 @@ describe('MaterialPresenter', () => {
 });
 
 describe('InstanceBatchPresenter', () => {
+  it('samples bounded harmonic motion from injected time while leaving static slots unchanged', () => {
+    const root = new Group();
+    const geometry = new BoxGeometry(1, 1, 1);
+    const material = new MeshBasicMaterial();
+    const matrices = new Float32Array(32);
+    new Matrix4().makeTranslation(1, 2, 3).toArray(matrices, 0);
+    new Matrix4().makeTranslation(8, 9, 10).toArray(matrices, 16);
+    const presenter = new InstanceBatchPresenter(root);
+
+    presenter.reconcile([{
+      key: 'batch:animated',
+      version: '1:1',
+      geometryKey: 'geometry:cube',
+      materialKey: 'material:cube',
+      instanceKeys: ['animated', 'static'],
+      matrices,
+      animation: {
+        schemaVersion: 'voxel.instance-transform-animation/1',
+        periodsMs: new Float32Array([1_000, 0]),
+        phasesRadians: new Float32Array([0, 0]),
+        translationAmplitudes: new Float32Array([0, 1, 0, 99, 99, 99]),
+        rotationAmplitudesRadians: new Float32Array([0, 0, Math.PI / 2, 1, 1, 1]),
+        scaleAmplitudes: new Float32Array([0.5, 0, 0, 0.5, 0.5, 0.5]),
+      },
+    }], { geometry: () => geometry, material: () => material });
+
+    expect(presenter.animatedBatchCount).toBe(1);
+    expect(presenter.animatedInstanceCount).toBe(1);
+    expect(presenter.animationMatrixUpdates).toBe(0);
+    presenter.animate(250);
+
+    const mesh = presenter.get('batch:animated')!;
+    const actual = new Matrix4();
+    const position = new Vector3();
+    const rotation = new Quaternion();
+    const scale = new Vector3();
+    mesh.getMatrixAt(0, actual);
+    actual.decompose(position, rotation, scale);
+    expect(position.toArray()).toEqual([1, 3, 3]);
+    expect(scale.x).toBeCloseTo(1.5, 8);
+    expect(scale.y).toBeCloseTo(1, 8);
+    expect(scale.z).toBeCloseTo(1, 8);
+    expect(Math.abs(rotation.z)).toBeCloseTo(Math.SQRT1_2, 5);
+    mesh.getMatrixAt(1, actual);
+    expect(actual.elements).toEqual(Array.from(matrices.slice(16, 32)));
+    expect(presenter.animationMatrixUpdates).toBe(1);
+
+    presenter.animate(250);
+    mesh.getMatrixAt(0, actual);
+    actual.decompose(position, rotation, scale);
+    expect(position.toArray()).toEqual([1, 3, 3]);
+    expect(presenter.animationMatrixUpdates).toBe(2);
+    presenter.dispose();
+    geometry.dispose();
+    material.dispose();
+  });
+
+  it('restores accepted base matrices when animation disappears on a newer version', () => {
+    const root = new Group();
+    const geometry = new BoxGeometry(1, 1, 1);
+    const material = new MeshBasicMaterial();
+    const matrices = new Float32Array(new Matrix4().makeTranslation(2, 3, 4).elements);
+    const presenter = new InstanceBatchPresenter(root);
+    const base = {
+      key: 'batch:animated',
+      geometryKey: 'geometry:cube',
+      materialKey: 'material:cube',
+      instanceKeys: ['one'],
+      matrices,
+    };
+    presenter.reconcile([{
+      ...base,
+      version: '1:1',
+      animation: {
+        schemaVersion: 'voxel.instance-transform-animation/1',
+        periodsMs: new Float32Array([1_000]),
+        phasesRadians: new Float32Array([0]),
+        translationAmplitudes: new Float32Array([0, 1, 0]),
+        rotationAmplitudesRadians: new Float32Array(3),
+        scaleAmplitudes: new Float32Array(3),
+      },
+    }], { geometry: () => geometry, material: () => material });
+    presenter.animate(250);
+
+    presenter.reconcile([{ ...base, version: '1:2' }], {
+      geometry: () => geometry,
+      material: () => material,
+    });
+    const actual = new Matrix4();
+    presenter.get('batch:animated')!.getMatrixAt(0, actual);
+    expect(actual.elements).toEqual(Array.from(matrices));
+    expect(presenter.animatedBatchCount).toBe(0);
+    expect(presenter.animatedInstanceCount).toBe(0);
+    presenter.dispose();
+    geometry.dispose();
+    material.dispose();
+  });
+
+  it('preserves affine shear and zero scale with conservative animation bounds', () => {
+    const root = new Group();
+    const geometry = new BoxGeometry(1, 1, 1);
+    const material = new MeshBasicMaterial();
+    const matrices = new Float32Array([
+      0, 0, 0, 0,
+      0.25, 2, 0, 0,
+      0, 0, 3, 0,
+      4, 5, 6, 1,
+    ]);
+    const presenter = new InstanceBatchPresenter(root);
+    presenter.reconcile([{
+      key: 'batch:affine',
+      version: '1:1',
+      geometryKey: 'geometry:cube',
+      materialKey: 'material:cube',
+      instanceKeys: ['affine'],
+      matrices,
+      animation: {
+        schemaVersion: 'voxel.instance-transform-animation/1',
+        periodsMs: new Float32Array([1_000]),
+        phasesRadians: new Float32Array([0]),
+        translationAmplitudes: new Float32Array([0, 100, 0]),
+        rotationAmplitudesRadians: new Float32Array(3),
+        scaleAmplitudes: new Float32Array(3),
+      },
+    }], { geometry: () => geometry, material: () => material });
+
+    const mesh = presenter.get('batch:affine')!;
+    const boxSpy = vi.spyOn(mesh, 'computeBoundingBox');
+    const sphereSpy = vi.spyOn(mesh, 'computeBoundingSphere');
+    presenter.animate(0);
+
+    const actual = new Matrix4();
+    mesh.getMatrixAt(0, actual);
+    expect(actual.elements).toEqual(Array.from(matrices));
+    expect(mesh.frustumCulled).toBe(true);
+    expect(mesh.boundingSphere!.containsPoint(new Vector3(4, 105, 6))).toBe(true);
+    expect(boxSpy).not.toHaveBeenCalled();
+    expect(sphereSpy).not.toHaveBeenCalled();
+    presenter.dispose();
+    geometry.dispose();
+    material.dispose();
+  });
+
+  it('preserves full snapshot uploads and bounds partial upload command count', () => {
+    const root = new Group();
+    const geometry = new BoxGeometry(1, 1, 1);
+    const material = new MeshBasicMaterial();
+    const count = MAX_INSTANCE_ANIMATION_UPDATE_RANGES_V1 * 2 + 2;
+    const matrices = new Float32Array(count * 16);
+    for (let index = 0; index < count; index += 1) {
+      new Matrix4().makeTranslation(index, 0, 0).toArray(matrices, index * 16);
+    }
+    const periodsMs = new Float32Array(count);
+    for (let index = 0; index < count; index += 2) periodsMs[index] = 1_000;
+    const batch = {
+      key: 'batch:uploads',
+      version: '1:1',
+      geometryKey: 'geometry:cube',
+      materialKey: 'material:cube',
+      instanceKeys: Array.from({ length: count }, (_, index) => `slot:${String(index)}`),
+      matrices,
+      animation: {
+        schemaVersion: 'voxel.instance-transform-animation/1' as const,
+        periodsMs,
+        phasesRadians: new Float32Array(count),
+        translationAmplitudes: new Float32Array(count * 3),
+        rotationAmplitudesRadians: new Float32Array(count * 3),
+        scaleAmplitudes: new Float32Array(count * 3),
+      },
+    };
+    const presenter = new InstanceBatchPresenter(root);
+    presenter.reconcile([batch], { geometry: () => geometry, material: () => material });
+    const mesh = presenter.get(batch.key)!;
+
+    presenter.animate(0);
+    expect(mesh.instanceMatrix.updateRanges).toEqual([]);
+    presenter.animate(250);
+    expect(mesh.instanceMatrix.updateRanges.length)
+      .toBeLessThanOrEqual(MAX_INSTANCE_ANIMATION_UPDATE_RANGES_V1);
+
+    const changedMatrices = matrices.slice();
+    new Matrix4().makeTranslation(999, 0, 0).toArray(changedMatrices, 16);
+    presenter.reconcile([{ ...batch, version: '1:2', matrices: changedMatrices }], {
+      geometry: () => geometry,
+      material: () => material,
+    });
+    presenter.animate(500);
+    expect(mesh.instanceMatrix.updateRanges).toEqual([]);
+    const staticMatrix = new Matrix4();
+    mesh.getMatrixAt(1, staticMatrix);
+    expect(staticMatrix.elements[12]).toBe(999);
+
+    presenter.dispose();
+    geometry.dispose();
+    material.dispose();
+  });
+
   it('presents packed transforms and stable keys without taking geometry or material ownership', () => {
     const root = new Group();
     const geometry = new BoxGeometry(1, 1, 1);

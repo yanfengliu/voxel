@@ -63,11 +63,19 @@ Treat the caller's arrays as borrowed and the runtime's state as private. Do not
 
 An engine-created scene installs the default daylight rig. Pass `daylight: false` for an intentionally unlit or host-lit scene. A supplied `scene` receives no implicit lights; pass a `daylight` object when the runtime should add and own the rig inside that borrowed scene. The directional light and target follow `setView`, and the runtime removes only its rig during disposal. Constructor-only renderer flags such as antialiasing remain in `rendererParameters`.
 
+## Rigid instance animation
+
+An `InstanceBatchV1` may include `InstanceTransformAnimationV1`: one period, phase, XYZ world-translation amplitude, XYZ local Euler-rotation amplitude, and XYZ fractional-scale amplitude per slot. Period zero keeps a slot static. The runtime samples the lane from `ThreeFrameContext.nowMs`, so a game can render idle motion without accepting a new world snapshot and a manual clock can reproduce an exact pose.
+
+The lane is deliberately semantic-free. A consumer decides whether a part is a foot, wheel, tree branch, ornament, idle pose, or locomotion pose and submits a new batch revision when that meaning changes. The engine copies and bounds the arrays, composes offsets over affine base matrices, computes conservative motion bounds, and reports `animatedBatches`, `animatedInstances`, and cumulative `animationMatrixUpdates`.
+
+V1 admits at most 8,192 active animated slots per snapshot and 16,384 total slots in any batch containing active motion. Sparse matrix uploads are coalesced to at most 64 ranges per animated batch and frame. Shard larger crowds by spatial or archetype policy. General skeletal clips, root motion, state graphs, and gameplay-event timing are outside this contract.
+
 ## Three independent data lanes
 
 - `VoxelChunkV1` is for opaque palette-indexed volumes. Index zero is empty. Chunk origins are world voxel coordinates, dimensions are positive, and storage is x-major: `x + size.x * (z + size.z * y)`. V1 permits at most 16,777,216 cells per dense chunk and requires absolute chunk boundaries inside `[-16,777,216, 16,777,216]` so adjacent integer coordinates remain representable in the oracle's Float32 output.
 - `GeometryResourceV1` is for deterministic arbitrary topology, including irregular Townscaper shells and consumer-authored block recipes. Positions, normals, indices, pivot, and declared bounds are explicit. Leave material groups empty to use the instance batch's one material; otherwise groups must be topology-aligned, ordered, non-overlapping, and cover the index range exactly once.
-- `InstanceBatchV1` is for repeated rigid geometry. Every instance key must be opaque and never reused in an epoch, or encode a consumer generation such as `entityId:generation`.
+- `InstanceBatchV1` is for repeated rigid geometry and optional bounded harmonic transform playback. Every instance key must be opaque and never reused in an epoch, or encode a consumer generation such as `entityId:generation`.
 
 Use a new resource incarnation when a logical key is destroyed and later recreated. Use a higher resource revision when the same incarnation changes. Keep consumer semantics out of resource keys and shared payload fields when identity alone suffices.
 

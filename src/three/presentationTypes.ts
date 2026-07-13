@@ -3,6 +3,7 @@ import type {
   DensePaletteChunk,
   NeighborSampler,
 } from '../meshing/index.js';
+import type { InstanceTransformAnimationV1 } from '../core/index.js';
 
 export interface PresentationBounds {
   readonly min: { readonly x: number; readonly y: number; readonly z: number };
@@ -36,6 +37,7 @@ export interface InstanceBatchPresentation {
   readonly matrices: Float32Array;
   /** Straight-alpha sRGB8, four bytes per instance. V1 presentation is opaque. */
   readonly colors?: Uint8Array;
+  readonly animation?: InstanceTransformAnimationV1;
 }
 
 export interface InstanceBatchResolvers {

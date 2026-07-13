@@ -6,7 +6,7 @@ The intended engine is voxel-first, not voxel-only: it should render chunked vox
 
 ## Status
 
-Version 0.1.1 is an executable strict-TypeScript package with built ESM and declarations. It provides bounded V1 render snapshots, owned ingest, explicit accepted/presented frame boundaries, a deterministic visible-face voxel mesher, a Three.js WebGL runtime, a configurable target-tracked daylight rig, 2:1 orthographic camera helpers, capture, metrics, context-loss handling, and idempotent teardown. AoE2 is the first live proving consumer.
+Version 0.1.2 is an executable strict-TypeScript package with built ESM and declarations. It provides bounded V1 render snapshots, owned ingest, explicit accepted/presented frame boundaries, a deterministic visible-face voxel mesher, a Three.js WebGL runtime, configurable target-tracked daylight, bounded injected-time rigid-instance animation, 2:1 orthographic camera helpers, capture, metrics, context-loss handling, and idempotent teardown. AoE2 is the first live proving consumer.
 
 This is a production-shaped vertical slice, not a finished universal engine. Opaque voxel chunks, consumer-authored geometry, and repeated rigid instances are implemented. Greedy/worker meshing, transparency, skeletal animation, LOD, streaming, WebGPU, and native fog/selection/effects remain deliberately deferred.
 
@@ -25,7 +25,7 @@ Each game should continue to own simulation, gameplay rules, UI, save data, art 
 
 - `voxel/core` — V1 contracts, bounded validation/copying, coordinates, and the accepted/presented `RenderWorld` lifecycle.
 - `voxel/meshing` — dense palette chunks and a deterministic boundary-aware visible-face oracle.
-- `voxel/three` — snapshot-only Three.js runtime, instance/chunk/geometry presentation, configurable engine-owned daylight, orthographic camera helpers, capture, metrics, and disposal.
+- `voxel/three` — snapshot-only Three.js runtime, instance/chunk/geometry presentation, configurable engine-owned daylight, deterministic rigid-instance playback, orthographic camera helpers, capture, metrics, and disposal.
 - `voxel/testing` — small consumer-independent test helpers; this surface will grow only with proven shared fixtures.
 
 The runtime is tested with `three@0.185.1` and `@types/three@0.185.0`. `three` is a narrow optional peer so core and meshing remain renderer-independent; applications importing `voxel/three` must install the tested Three runtime and deduplicate linked copies.

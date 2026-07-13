@@ -82,6 +82,7 @@ function instancePresentations(snapshot: OwnedRenderSnapshotV1): InstanceBatchPr
       instanceKeys: batch.instanceKeys,
       matrices: batch.matrices,
       ...(batch.colors ? { colors: batch.colors } : {}),
+      ...(batch.animation ? { animation: batch.animation } : {}),
     };
   });
 }

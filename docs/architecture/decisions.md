@@ -37,3 +37,11 @@ This log records decisions that must survive individual implementation sessions.
 - Decision: `voxel/three` may own a configurable sky/ground hemisphere fill plus one directional key light whose target follows the current view centre. AoE, City, and Townscaper continue to own palettes, model recipes, fog meaning, time of day, animation, and effects.
 - Ownership: an engine-created scene receives the default rig unless disabled. A supplied scene receives no implicit lights, but may explicitly request a rig; that rig is the runtime's owned subtree and is removed during disposal without mutating unrelated scene state.
 - Deferred boundary: shadow maps are not part of this slice. They require explicit caster/receiver policy, frustum and map-size budgets, render-target metrics, context restoration, borrowed-renderer setting restoration, and teardown proof before enablement.
+
+## ADR-0006: Animate rigid instances with bounded harmonic offsets
+
+- Status: accepted on 2026-07-12 for the first animated AoE consumer slice.
+- Decision: an instance batch may carry game-neutral per-instance harmonic translation, Euler-rotation, and fractional-scale amplitudes, with a finite period and phase. `voxel/three` samples those offsets from the injected frame context and composes them over the accepted base matrix without asking the consumer for a new snapshot every frame.
+- Reason: AoE's procedural voxel people, mounts, tools, and siege parts are already rigid instances. City pedestrians/props and Townscaper wildlife or ornaments can use the same deterministic mechanism, while a skeletal system or consumer-specific clip enum would be premature.
+- Boundary: consumers own which parts move, their amplitudes, periods, phase relationships, state transitions, sharding, and gameplay meaning. The engine owns validation, copied storage, deterministic sampling, affine-safe matrix updates, conservative motion bounds, bounded partial uploads, metrics, context-loss fencing, and disposal. V1 caps active slots per snapshot and total slots per animated batch rather than presenting the million-slot static ceiling as a real-time animation budget.
+- Deferred boundary: this is not skeletal animation, vertex animation, root motion, an animation graph, or an attack/gather event protocol. Those require imported-asset and simulation-event contracts proven by a later consumer.

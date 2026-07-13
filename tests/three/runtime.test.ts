@@ -40,6 +40,50 @@ class FakeRenderer implements RendererLike {
 }
 
 describe('ThreeRenderRuntime', () => {
+  it('animates accepted rigid instances from frame time and reports bounded update metrics', () => {
+    const renderer = new FakeRenderer();
+    const runtime = new ThreeRenderRuntime({
+      renderer,
+      rendererOwnership: 'borrowed',
+      width: 320,
+      height: 200,
+    });
+    const snapshot = validSnapshot(1, 'epoch:animated');
+    snapshot.batches[0] = {
+      ...snapshot.batches[0]!,
+      animation: {
+        schemaVersion: 'voxel.instance-transform-animation/1',
+        periodsMs: new Float32Array([1_000]),
+        phasesRadians: new Float32Array([0]),
+        translationAmplitudes: new Float32Array([0, 0.25, 0]),
+        rotationAmplitudesRadians: new Float32Array([0.1, 0, 0]),
+        scaleAmplitudes: new Float32Array(3),
+      },
+    };
+
+    expect(runtime.acceptSnapshot(snapshot).status).toBe('accepted');
+    runtime.frame({ nowMs: 250, deltaMs: 16, frameIndex: 1 });
+    expect(runtime.metrics()).toMatchObject({
+      animatedBatches: 1,
+      animatedInstances: 1,
+      animationMatrixUpdates: 1,
+    });
+
+    renderer.emit('webglcontextlost');
+    runtime.frame({ nowMs: 500, deltaMs: 16, frameIndex: 2 });
+    expect(runtime.metrics().animationMatrixUpdates).toBe(1);
+    renderer.emit('webglcontextrestored');
+    runtime.frame({ nowMs: 750, deltaMs: 16, frameIndex: 3 });
+    expect(runtime.metrics()).toMatchObject({
+      animatedBatches: 1,
+      animatedInstances: 1,
+      animationMatrixUpdates: 2,
+      contextLosses: 1,
+      contextRestorations: 1,
+    });
+    runtime.dispose();
+  });
+
   it('accepts presentation state but only swaps it on an explicit frame', () => {
     const renderer = new FakeRenderer();
     const runtime = new ThreeRenderRuntime({

@@ -53,7 +53,7 @@ Exit gate: the named seed is playable under `?renderer=voxel`; selection, comman
 ## Phase D: promotion and cross-game proof
 
 - [x] Compare controlled tick-one 800x600 before/after screenshots and structural metrics; the reviewed slice is nonblank and aligned on the flat input plane.
-- [ ] Run adversarial code review and resolve every substantive finding; the first review completed and fixes are in verification/re-review.
+- [x] Run adversarial code review and resolve every substantive finding; the animation review closed affine composition, Float32 headroom, workload caps, conservative bounds, full-versus-partial uploads, and sparse-range command bounds.
 - [ ] Make voxel the AoE default only after the remaining raised-object hit-proxy and elevation-aware host gates pass; Phaser intentionally remains the safe default.
 - [ ] Integrate one City instance batch through embedded mode without replacing City's terrain or composition root.
 - [ ] Upgrade Townscaper to the tested Three line, then prove one geometry-resource/full-rebuild slice while its topology stays local.
@@ -71,10 +71,22 @@ Exit gate: at least two games exercise the public package without game-specific 
 
 Exit gate: unit tests prove rig validation, target tracking, borrowed-scene behavior, and cleanup; AoE's controlled voxel scene is visibly richer without game semantics entering this package.
 
+## Active rigid-animation increment: harmonic instance motion plus AoE block rigs
+
+- [x] Add an optional bounded `InstanceTransformAnimationV1` payload to rigid instance batches without breaking static V1 snapshots.
+- [x] Copy and validate every animation typed array, include it in the snapshot byte budget, reject non-finite or unsafe amplitudes/periods/matrices, and preserve atomic ingest.
+- [x] Sample translation, Euler-rotation, and fractional-scale harmonics only from `ThreeFrameContext.nowMs`; never read wall-clock APIs or integrate hidden mutable time.
+- [x] Update only animated instance matrices at frame boundaries, preserve full uploads after reconciliation, bound/coalesce partial uploads, compute conservative picking/culling bounds, expose animated-batch/instance/update metrics, and restore base matrices when motion disappears.
+- [x] Prove deterministic phase sampling, affine shear/zero-scale preservation, context-loss fencing, revision replacement, idempotent disposal, and unchanged static-batch behavior.
+- [x] Let AoE map the neutral motion lane onto original block-rig idle and locomotion poses while keeping unit roles, part names, gait amplitudes, memory policy, and gameplay animation meaning in AoE.
+- [x] Record a same-camera, paused-simulation two-phase browser comparison showing pixels change while accepted/presented revisions stay fixed, plus bounded draw/resource/animation metrics.
+
+Exit gate: rigid procedural parts animate continuously under the injected frame clock without per-frame world snapshots, static objects remain bit-for-bit stable, and no AoE, City, or Townscaper semantic enters the package. Skeletal meshes, clip graphs, root motion, attacks, gathering, and simulation timing remain separate measured work.
+
 ## Explicitly deferred
 
 - Full Phaser removal and a standalone AoE Three input/overlay host.
-- General skeletal crowd animation.
+- General skeletal crowd animation, animation textures, clip graphs, root motion, and gameplay-event synchronization.
 - Greedy/WASM/worker meshing, AO, propagated light, transparent voxel merging, liquids, and block-model registries.
 - Smooth-terrain Surface Nets or Transvoxel, WebGPU/TSL, LOD, streaming, indirect draws, and GPU-driven particles.
 - Shadow maps until caster/receiver, frustum, metrics, borrowed-renderer restoration, context-loss, and teardown policies are executable.
