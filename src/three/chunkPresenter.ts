@@ -1,9 +1,11 @@
 import {
+  Box3,
   BufferAttribute,
   BufferGeometry,
   Color,
   Mesh,
   SRGBColorSpace,
+  Vector3,
   type Group,
   type Material,
 } from 'three';
@@ -20,20 +22,32 @@ interface ChunkEntry {
 const color = new Color();
 
 function buildMesh(resource: ChunkPresentation, material: Material): Mesh | null {
-  const meshed = meshVisibleFaces(resource.chunk, {
+  if (Boolean(resource.precomputedMesh) !== Boolean(resource.voxelOrigin)) {
+    throw new Error(`Chunk ${resource.key} must pair precomputedMesh with voxelOrigin.`);
+  }
+  const generated = resource.precomputedMesh ? undefined : meshVisibleFaces(resource.chunk, {
     ...(resource.sampleNeighbor ? { sampleNeighbor: resource.sampleNeighbor } : {}),
   });
-  if (meshed.faceCount === 0) return null;
+  const positionsSource = resource.precomputedMesh?.positions ?? generated!.positions;
+  const normals = resource.precomputedMesh?.normals ?? generated!.normals;
+  const paletteIndices = resource.precomputedMesh?.paletteIndices
+    ?? generated!.paletteIndices;
+  const indices = resource.precomputedMesh?.indices ?? generated!.indices;
+  const faceCount = resource.precomputedMesh?.counts.exposedUnitFaceCount
+    ?? generated!.faceCount;
+  const voxelCount = resource.precomputedMesh?.counts.sourceVoxelCount
+    ?? generated!.voxelCount;
+  if (faceCount === 0) return null;
 
-  const colors = new Float32Array(meshed.paletteIndices.length * 3);
-  const positions = meshed.positions.slice();
+  const colors = new Float32Array(paletteIndices.length * 3);
+  const positions = positionsSource.slice();
   for (let offset = 0; offset < positions.length; offset += 3) {
     positions[offset] = positions[offset]! * resource.worldUnitsPerVoxel.x;
     positions[offset + 1] = positions[offset + 1]! * resource.worldUnitsPerVoxel.y;
     positions[offset + 2] = positions[offset + 2]! * resource.worldUnitsPerVoxel.z;
   }
-  for (let index = 0; index < meshed.paletteIndices.length; index += 1) {
-    const paletteIndex = meshed.paletteIndices[index]!;
+  for (let index = 0; index < paletteIndices.length; index += 1) {
+    const paletteIndex = paletteIndices[index]!;
     const entry = resource.palette[paletteIndex];
     if (!entry) {
       throw new RangeError(
@@ -49,15 +63,38 @@ function buildMesh(resource: ChunkPresentation, material: Material): Mesh | null
 
   const geometry = new BufferGeometry();
   geometry.setAttribute('position', new BufferAttribute(positions, 3));
-  geometry.setAttribute('normal', new BufferAttribute(meshed.normals, 3));
+  geometry.setAttribute('normal', new BufferAttribute(normals, 3));
   geometry.setAttribute('color', new BufferAttribute(colors, 3));
-  geometry.setIndex(new BufferAttribute(meshed.indices, 1));
-  geometry.computeBoundingBox();
+  geometry.setIndex(new BufferAttribute(indices, 1));
+  const localBounds = resource.precomputedMesh?.bounds;
+  if (localBounds) {
+    geometry.boundingBox = new Box3(
+      new Vector3(
+        localBounds.min[0] * resource.worldUnitsPerVoxel.x,
+        localBounds.min[1] * resource.worldUnitsPerVoxel.y,
+        localBounds.min[2] * resource.worldUnitsPerVoxel.z,
+      ),
+      new Vector3(
+        localBounds.max[0] * resource.worldUnitsPerVoxel.x,
+        localBounds.max[1] * resource.worldUnitsPerVoxel.y,
+        localBounds.max[2] * resource.worldUnitsPerVoxel.z,
+      ),
+    );
+  } else {
+    geometry.computeBoundingBox();
+  }
   geometry.computeBoundingSphere();
   const mesh = new Mesh(geometry, material);
+  if (resource.voxelOrigin) {
+    mesh.position.set(
+      resource.voxelOrigin.x * resource.worldUnitsPerVoxel.x,
+      resource.voxelOrigin.y * resource.worldUnitsPerVoxel.y,
+      resource.voxelOrigin.z * resource.worldUnitsPerVoxel.z,
+    );
+  }
   mesh.name = resource.key;
-  mesh.userData.faceCount = meshed.faceCount;
-  mesh.userData.voxelCount = meshed.voxelCount;
+  mesh.userData.faceCount = faceCount;
+  mesh.userData.voxelCount = voxelCount;
   return mesh;
 }
 
@@ -113,7 +150,13 @@ export class ChunkPresenter {
 
   dispose(): void {
     if (this.disposed) return;
+    this.resetInternal();
     this.disposed = true;
+  }
+
+  /** Package-internal rollback hook; the presenter remains reusable. */
+  resetInternal(): void {
+    this.assertActive();
     for (const entry of this.entries.values()) this.removeEntry(entry);
     this.entries.clear();
   }

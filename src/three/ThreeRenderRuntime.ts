@@ -1,505 +1,844 @@
-import {
-  Group,
-  Scene,
-  WebGLRenderer,
-  type OrthographicCamera,
-  type WebGLRendererParameters,
-} from 'three';
-
+import type { Camera, Group, Scene } from 'three';
 import {
   RenderWorld,
   type ApplyResultV1,
+  type DeltaApplyResultV1,
+  type PresentationAbortSignalV1,
+  type PresentationReadinessV1,
+  type RenderDeltaV1,
+  type RenderRevisionRefV1,
   type RenderSnapshotV1,
-  validateAndCopySnapshotV1,
 } from '../core/index.js';
-import { ChunkPresenter } from './chunkPresenter.js';
 import {
-  DaylightRig,
-  resolveDaylightOptions,
-  type ThreeDaylightOptions,
-} from './daylightRig.js';
-import { GeometryPresenter } from './geometryPresenter.js';
-import { InstanceBatchPresenter } from './instanceBatchPresenter.js';
-import { MaterialPresenter } from './materialPresenter.js';
+  acceptOwnedSnapshotIntoRenderWorld,
+  commitPreparedDeltaIntoRenderWorld,
+  markPreparedCanonicalStatePresentedInternal,
+  pendingCanonicalStateForPresentationInternal,
+  presentedCanonicalStateForPresentationInternal,
+  prepareDeltaForRenderWorldInternal,
+  setRenderWorldPresentationAvailabilityInternal,
+} from '../core/render-world.js';
+import { validateAndCopySnapshotV1WithMetrics } from '../core/snapshot-validation.js';
+import type { ChunkPresenter } from './chunkPresenter.js';
 import {
-  configureIsometricOrthographicView,
-  createIsometricOrthographicCamera,
-  type IsometricViewCenter,
-} from './orthographicView.js';
+  getThreeRuntimeCapabilitiesV1,
+  type ThreeRuntimeCapabilitiesV1,
+} from './capabilities.js';
+import type { DaylightRig } from './daylightRig.js';
+import type { GeometryPresenter } from './geometryPresenter.js';
+import type { InstanceBatchPresenter } from './instanceBatchPresenter.js';
+import type { MaterialPresenter } from './materialPresenter.js';
+import type { IsometricViewCenter } from './orthographicView.js';
+import {
+  type ThreeCameraStrategyInternal,
+} from './cameraStrategy.js';
+import {
+  createPresentedManifestInternal,
+  ThreeRuntimeProtocolError,
+  type ThreeFrameContext,
+  type ThreePreparedFrameTicket,
+  type ThreePrepareFrameResult,
+  type ThreePresentedManifestV1,
+} from './hostFrameProtocol.js';
+import {
+  HostFrameTicketLedgerInternal,
+  type HostFrameTicketRecordInternal,
+} from './runtimeHostFrameTicket.js';
+import {
+  freezeFrameContextInternal,
+  requireDimensionInternal,
+} from './runtimeInputValidation.js';
+import { validateThreePresentationInternal } from './presentationValidation.js';
+import type { RendererLike } from './rendererTypes.js';
+import {
+  EMPTY_RENDER_INFO_INTERNAL,
+  snapshotRenderInfoInternal,
+  type RenderInfoSnapshotInternal,
+} from './runtimeRenderInfo.js';
+import { collectRuntimeMetricsInternal } from './runtimeMetrics.js';
+import type { ContextEventCanvasInternal } from './runtimeRendererSetup.js';
+import { runRuntimeDisposalInternal } from './runtimeDisposal.js';
+import { captureRuntimeCanvasInternal } from './runtimeCapture.js';
+import { initializeRuntimeInternal } from './runtimeInitialization.js';
+import { resizeRuntimeInternal } from './runtimeResize.js';
+import {
+  initializeRuntimeSnapshotMetricsInternal,
+  mutableSnapshotIngestMetricsInternal,
+  recordSnapshotCopyAttemptInternal,
+} from './runtimeSnapshotMetrics.js';
+import {
+  canonicalStateToThreePresentationInternal,
+  preparedDeltaToThreePresentationInternal,
+} from './snapshotAdapter.js';
 import type {
-  ChunkPresentation,
-  GeometryPresentation,
-  InstanceBatchPresentation,
-  MaterialPresentation,
-} from './presentationTypes.js';
-import type {
-  RendererFactory,
-  RendererLike,
-} from './rendererTypes.js';
-import { snapshotToThreePresentation } from './snapshotAdapter.js';
-
-export interface ThreePresentationSnapshot {
-  readonly epoch: string;
-  readonly revision: number;
-  readonly materials: readonly MaterialPresentation[];
-  readonly geometries: readonly GeometryPresentation[];
-  readonly chunks: readonly ChunkPresentation[];
-  readonly batches: readonly InstanceBatchPresentation[];
+  ThreeCaptureResult,
+  ThreePresentationSnapshot,
+  ThreeRenderMetrics,
+  ThreeRenderRuntimeOptions,
+  ThreeRuntimeFailurePhaseV1,
+  ThreeRuntimeFailureV1,
+  ThreeRuntimeLifecycleV1,
+  ThreeRuntimeStatusV1,
+} from './runtimeTypes.js';
+export {
+  acceptedSnapshotForTesting,
+  snapshotIngestMetricsForTesting,
+  type SnapshotIngestMetricsInternal,
+} from './runtimeSnapshotMetrics.js';
+type CanonicalPresentationStateInternal = NonNullable<
+  ReturnType<typeof pendingCanonicalStateForPresentationInternal>
+>;
+interface PreparedHostFrameInternal {
+  readonly context: Readonly<ThreeFrameContext>;
+  readonly pending: CanonicalPresentationStateInternal | null;
+  readonly target: CanonicalPresentationStateInternal | null;
+  readonly presentation: ThreePresentationSnapshot | null;
+  readonly previousPresentation: ThreePresentationSnapshot | null;
+  readonly previousContext: ThreeFrameContext | null;
+  readonly restoration: boolean;
 }
-
-export interface ThreeFrameContext {
-  readonly nowMs: number;
-  readonly deltaMs: number;
-  readonly frameIndex: number;
-}
-
-export interface ThreeRenderRuntimeOptions {
-  readonly renderer?: RendererLike;
-  readonly rendererFactory?: RendererFactory;
-  readonly rendererOwnership?: 'owned' | 'borrowed';
-  readonly rendererParameters?: WebGLRendererParameters;
-  /** Optional browser-owned canvas used by the default or injected renderer factory. */
-  readonly canvas?: HTMLCanvasElement;
-  readonly scene?: Scene;
-  /** Engine-owned daylight. Omitted borrowed scenes receive no implicit lights. */
-  readonly daylight?: ThreeDaylightOptions | false;
-  readonly camera?: OrthographicCamera;
-  readonly width: number;
-  readonly height: number;
-  readonly pixelRatio?: number;
-  readonly center?: IsometricViewCenter;
-  readonly zoom?: number;
-  readonly tileWidthPixels?: number;
-  readonly tileHeightPixels?: number;
-}
-
-export interface ThreeRenderMetrics {
-  readonly state: 'running' | 'lost' | 'disposed';
-  readonly acceptedEpoch: string | null;
-  readonly acceptedRevision: number | null;
-  readonly presentedEpoch: string | null;
-  readonly presentedRevision: number | null;
-  readonly frames: number;
-  readonly materialResources: number;
-  readonly geometryResources: number;
-  readonly chunks: number;
-  readonly visibleChunks: number;
-  readonly instanceBatches: number;
-  readonly instances: number;
-  readonly animatedBatches: number;
-  readonly animatedInstances: number;
-  readonly animationMatrixUpdates: number;
-  readonly drawCalls: number;
-  readonly triangles: number;
-  readonly points: number;
-  readonly lines: number;
-  readonly rendererGeometries: number;
-  readonly rendererTextures: number;
-  readonly contextLosses: number;
-  readonly contextRestorations: number;
-}
-
-export interface ThreeCaptureResult {
-  readonly dataUrl: string;
-  readonly width: number;
-  readonly height: number;
-  readonly epoch: string | null;
-  readonly presentedRevision: number | null;
-  readonly metrics: ThreeRenderMetrics;
-}
-
-interface RenderInfoSnapshot {
-  readonly drawCalls: number;
-  readonly triangles: number;
-  readonly points: number;
-  readonly lines: number;
-  readonly geometries: number;
-  readonly textures: number;
-}
-
-interface ContextEventCanvas {
-  addEventListener(type: 'webglcontextlost' | 'webglcontextrestored', listener: (event: Event) => void): void;
-  removeEventListener(type: 'webglcontextlost' | 'webglcontextrestored', listener: (event: Event) => void): void;
-}
-
-const EMPTY_RENDER_INFO: RenderInfoSnapshot = {
-  drawCalls: 0,
-  triangles: 0,
-  points: 0,
-  lines: 0,
-  geometries: 0,
-  textures: 0,
-};
-
-function defaultRendererFactory(parameters: WebGLRendererParameters): RendererLike {
-  return new WebGLRenderer(parameters);
-}
-
-function contextEventCanvas(renderer: RendererLike): ContextEventCanvas | null {
-  const canvas = renderer.domElement as typeof renderer.domElement & Partial<ContextEventCanvas>;
-  return typeof canvas.addEventListener === 'function' && typeof canvas.removeEventListener === 'function'
-    ? canvas as ContextEventCanvas
-    : null;
-}
-
-function requireDimension(name: string, value: number): void {
-  if (!Number.isFinite(value) || value <= 0) {
-    throw new RangeError(`${name} must be a positive finite number.`);
-  }
-}
-
-function requireFrameContext(context: ThreeFrameContext): void {
-  if (!Number.isFinite(context.nowMs)) throw new RangeError('frame nowMs must be finite.');
-  if (!Number.isFinite(context.deltaMs) || context.deltaMs < 0) {
-    throw new RangeError('frame deltaMs must be a non-negative finite number.');
-  }
-  if (!Number.isSafeInteger(context.frameIndex) || context.frameIndex < 0) {
-    throw new RangeError('frame frameIndex must be a non-negative safe integer.');
-  }
-}
-
-function preflight(snapshot: ThreePresentationSnapshot): void {
-  if (snapshot.epoch.length === 0) throw new Error('Presentation epoch must not be empty.');
-  if (!Number.isSafeInteger(snapshot.revision) || snapshot.revision < 0) {
-    throw new RangeError('Presentation revision must be a non-negative safe integer.');
-  }
-  const materialKeys = new Set(snapshot.materials.map((resource) => resource.key));
-  const geometryKeys = new Set(snapshot.geometries.map((resource) => resource.key));
-  for (const chunk of snapshot.chunks) {
-    if (!materialKeys.has(chunk.materialKey)) {
-      throw new Error(`Chunk ${chunk.key} references missing material ${chunk.materialKey}.`);
-    }
-  }
-  for (const batch of snapshot.batches) {
-    if (!geometryKeys.has(batch.geometryKey)) {
-      throw new Error(`Batch ${batch.key} references missing geometry ${batch.geometryKey}.`);
-    }
-    if (!materialKeys.has(batch.materialKey)) {
-      throw new Error(`Batch ${batch.key} references missing material ${batch.materialKey}.`);
-    }
-    if (batch.matrices.length !== batch.instanceKeys.length * 16) {
-      throw new Error(`Batch ${batch.key} matrix count does not match its instance keys.`);
-    }
-    if (batch.colors && batch.colors.length !== batch.instanceKeys.length * 4) {
-      throw new Error(`Batch ${batch.key} color count does not match its instance keys.`);
-    }
-    if (batch.animation) {
-      const count = batch.instanceKeys.length;
-      if (
-        batch.animation.periodsMs.length !== count
-        || batch.animation.phasesRadians.length !== count
-        || batch.animation.translationAmplitudes.length !== count * 3
-        || batch.animation.rotationAmplitudesRadians.length !== count * 3
-        || batch.animation.scaleAmplitudes.length !== count * 3
-      ) {
-        throw new Error(`Batch ${batch.key} animation count does not match its instance keys.`);
-      }
-    }
-  }
-}
-
 export class ThreeRenderRuntime {
-  private readonly scene: Scene;
-  private readonly camera: OrthographicCamera;
-  private readonly root = new Group();
-  private readonly renderer: RendererLike;
-  private readonly rendererOwnership: 'owned' | 'borrowed';
-  private readonly daylightRig: DaylightRig | null;
-  private readonly materialPresenter = new MaterialPresenter();
-  private readonly geometryPresenter = new GeometryPresenter();
-  private readonly chunkRoot = new Group();
-  private readonly instanceRoot = new Group();
-  private readonly chunkPresenter: ChunkPresenter;
-  private readonly instancePresenter: InstanceBatchPresenter;
+  private readonly scene!: Scene;
+  private readonly camera!: Camera;
+  private readonly cameraStrategy!: ThreeCameraStrategyInternal;
+  private readonly root!: Group;
+  private readonly renderer!: RendererLike;
+  private readonly rendererOwnership!: 'owned' | 'borrowed';
+  private readonly viewportOwnership!: 'runtime' | 'host';
+  private readonly hostKind!: 'runtime-rendered' | 'embedded';
+  private readonly daylightRig!: DaylightRig | null;
+  private readonly materialPresenter!: MaterialPresenter;
+  private readonly geometryPresenter!: GeometryPresenter;
+  private readonly chunkPresenter!: ChunkPresenter;
+  private readonly instancePresenter!: InstanceBatchPresenter;
   private readonly world = new RenderWorld();
-  private readonly contextCanvas: ContextEventCanvas | null;
-  private state: 'running' | 'lost' | 'disposed' = 'running';
+  private readonly contextCanvas!: ContextEventCanvasInternal | null;
+  private pendingPresentation: ThreePresentationSnapshot | null = null;
+  private presentedPresentation: ThreePresentationSnapshot | null = null;
+  private lifecycleState: ThreeRuntimeLifecycleV1 = 'initializing';
+  private failure: ThreeRuntimeFailureV1 | null = null;
+  private deviceGeneration = 1;
   private frames = 0;
-  private renderInfo: RenderInfoSnapshot = EMPTY_RENDER_INFO;
+  private renderInfo: RenderInfoSnapshotInternal = EMPTY_RENDER_INFO_INTERNAL;
   private width: number;
   private height: number;
   private pixelRatio: number;
   private center: IsometricViewCenter;
   private zoom: number;
-  private readonly tileWidthPixels: number;
-  private readonly tileHeightPixels: number;
   private contextLosses = 0;
   private contextRestorations = 0;
+  private disposalActions: readonly (() => void)[] | null = null;
+  private disposalInProgress = false;
+  private readonly hostFrames = new HostFrameTicketLedgerInternal<PreparedHostFrameInternal>();
+  private lastPresentedFrameContext: ThreeFrameContext | null = null;
+  private cameraGeneration = 0;
   private readonly handleContextLost = (event: Event): void => {
     event.preventDefault();
-    if (this.state !== 'running') return;
-    this.state = 'lost';
+    if (
+      this.lifecycleState === 'disposed'
+      || this.lifecycleState === 'failed'
+      || this.lifecycleState === 'lost'
+    ) return;
+    this.hostFrames.invalidateForDeviceTransition();
+    this.lifecycleState = 'lost';
+    setRenderWorldPresentationAvailabilityInternal(this.world, 'context-lost');
     this.contextLosses++;
   };
   private readonly handleContextRestored = (): void => {
-    if (this.state !== 'lost') return;
-    this.state = 'running';
+    if (this.lifecycleState !== 'lost') return;
+    this.lifecycleState = 'restoring';
+    this.deviceGeneration++;
+    setRenderWorldPresentationAvailabilityInternal(this.world, 'restoring');
     this.contextRestorations++;
-    this.renderer.setPixelRatio(this.pixelRatio);
-    this.renderer.setSize(this.width, this.height, false);
-    this.updateCamera();
   };
-
   constructor(options: ThreeRenderRuntimeOptions) {
-    if (options.renderer && options.rendererFactory) {
-      throw new Error('Provide either renderer or rendererFactory, not both.');
-    }
-    requireDimension('width', options.width);
-    requireDimension('height', options.height);
-    const pixelRatio = options.pixelRatio ?? 1;
-    requireDimension('pixelRatio', pixelRatio);
-    const daylightOptions = options.daylight === false
-      ? null
-      : options.daylight === undefined && options.scene
-        ? null
-        : resolveDaylightOptions(options.daylight ?? {});
-    this.width = options.width;
-    this.height = options.height;
-    this.pixelRatio = pixelRatio;
-    this.center = options.center ?? { x: 0, y: 0, z: 0 };
-    this.zoom = options.zoom ?? 1;
-    this.tileWidthPixels = options.tileWidthPixels ?? 64;
-    this.tileHeightPixels = options.tileHeightPixels ?? 32;
-
-    // Resolve and validate the complete view before allocating an owned WebGL
-    // renderer. Constructor failure must not strand a GPU context.
-    this.camera = options.camera ?? createIsometricOrthographicCamera({
-      viewportWidth: this.width,
-      viewportHeight: this.height,
-      center: this.center,
-      zoom: this.zoom,
-      tileWidthPixels: this.tileWidthPixels,
-      tileHeightPixels: this.tileHeightPixels,
-    });
-    if (options.camera) this.updateCamera();
-
-    const factory = options.rendererFactory ?? defaultRendererFactory;
-    const rendererParameters: WebGLRendererParameters = {
-      alpha: true,
-      antialias: false,
-      ...options.rendererParameters,
-      ...(options.canvas ? { canvas: options.canvas } : {}),
-    };
-    this.renderer = options.renderer ?? factory(rendererParameters);
-    this.contextCanvas = contextEventCanvas(this.renderer);
-    this.rendererOwnership = options.rendererOwnership ?? (options.renderer ? 'borrowed' : 'owned');
-    this.scene = options.scene ?? new Scene();
-    this.root.name = 'voxel-runtime';
-    this.chunkRoot.name = 'voxel-chunks';
-    this.instanceRoot.name = 'instance-batches';
-    this.root.add(this.chunkRoot, this.instanceRoot);
-    this.scene.add(this.root);
-    this.daylightRig = daylightOptions ? new DaylightRig(daylightOptions, this.center) : null;
-    if (this.daylightRig) this.scene.add(this.daylightRig.root);
-    this.chunkPresenter = new ChunkPresenter(this.chunkRoot);
-    this.instancePresenter = new InstanceBatchPresenter(this.instanceRoot);
+    let initialized: ReturnType<typeof initializeRuntimeInternal>;
     try {
-      this.renderer.setPixelRatio(this.pixelRatio);
-      this.renderer.setSize(this.width, this.height, false);
-      this.contextCanvas?.addEventListener('webglcontextlost', this.handleContextLost);
-      this.contextCanvas?.addEventListener('webglcontextrestored', this.handleContextRestored);
+      initialized = initializeRuntimeInternal(options, {
+        handleContextLost: this.handleContextLost,
+        handleContextRestored: this.handleContextRestored,
+        isInitializing: () => this.isInitializing(),
+      });
     } catch (error) {
-      // Constructor failure must be transactional even for a borrowed scene:
-      // remove every subtree/listener we attached and dispose only an owned
-      // renderer. Cleanup failures must not hide the initialization failure.
-      try {
-        this.contextCanvas?.removeEventListener('webglcontextlost', this.handleContextLost);
-        this.contextCanvas?.removeEventListener('webglcontextrestored', this.handleContextRestored);
-      } catch {
-        // Best-effort rollback for host-provided event targets.
+      try { this.world.dispose(); } catch { /* Preserve the initialization failure. */ }
+      throw error;
+    }
+    this.renderer = initialized.renderer;
+    this.rendererOwnership = initialized.rendererOwnership;
+    this.viewportOwnership = initialized.viewportOwnership;
+    this.hostKind = initialized.hostKind;
+    this.scene = initialized.scene;
+    this.camera = initialized.camera;
+    this.cameraStrategy = initialized.cameraStrategy;
+    this.root = initialized.root;
+    this.daylightRig = initialized.daylightRig;
+    this.materialPresenter = initialized.materialPresenter;
+    this.geometryPresenter = initialized.geometryPresenter;
+    this.chunkPresenter = initialized.chunkPresenter;
+    this.instancePresenter = initialized.instancePresenter;
+    this.contextCanvas = initialized.contextCanvas;
+    this.width = initialized.width;
+    this.height = initialized.height;
+    this.pixelRatio = initialized.pixelRatio;
+    this.center = initialized.center;
+    this.zoom = initialized.zoom;
+    try {
+      if (this.lifecycleState === 'initializing') {
+        this.lifecycleState = 'running';
+        setRenderWorldPresentationAvailabilityInternal(this.world, 'available');
       }
+      initializeRuntimeSnapshotMetricsInternal(this, this.world);
+    } catch (error) {
+      initialized.rollbackInitializationInternal();
       try {
-        this.daylightRig?.dispose(this.scene);
+        this.world.dispose();
       } catch {
-        // Best-effort rollback for host-provided scenes.
-      }
-      try {
-        this.scene.remove(this.root);
-      } catch {
-        // Best-effort rollback for host-provided scenes.
-      }
-      if (this.rendererOwnership === 'owned') {
-        try {
-          this.renderer.dispose();
-        } catch {
-          // Preserve the original initialization error.
-        }
+        // Preserve the original initialization error.
       }
       throw error;
     }
   }
 
   acceptSnapshot(snapshot: RenderSnapshotV1): ApplyResultV1 {
-    this.assertActive();
-    const validated = validateAndCopySnapshotV1(snapshot);
-    if (!validated.ok) return { status: 'rejected', ...validated.issue };
+    this.assertAccepting();
+    const validated = validateAndCopySnapshotV1WithMetrics(snapshot);
+    const ingestMetrics = recordSnapshotCopyAttemptInternal(this, validated.metrics);
+    if (!validated.result.ok) {
+      return { status: 'rejected', ...validated.result.issue };
+    }
+    let presentation: ThreePresentationSnapshot | null = null;
+    const applied = acceptOwnedSnapshotIntoRenderWorld(
+      this.world,
+      validated.result.value,
+      validated.metrics,
+      (candidate) => {
+        try {
+          const next = canonicalStateToThreePresentationInternal(candidate);
+          validateThreePresentationInternal(next);
+          presentation = next;
+          return null;
+        } catch (error) {
+          return {
+            code: 'three.unsupported-snapshot',
+            path: '$',
+            message: error instanceof Error ? error.message : String(error),
+          };
+        }
+      },
+    );
+    if (applied.status === 'accepted') {
+      ingestMetrics.accepted += 1;
+      if (
+        this.world.epoch === applied.epoch
+        && this.world.acceptedRevision === applied.revision
+      ) {
+        const pending = pendingCanonicalStateForPresentationInternal(this.world);
+        if (pending?.epoch === applied.epoch && pending.revision === applied.revision) {
+          this.pendingPresentation = presentation;
+        }
+      }
+    }
+    return applied;
+  }
+
+  acceptDelta(delta: RenderDeltaV1): DeltaApplyResultV1 {
+    this.assertAccepting();
+    const result = prepareDeltaForRenderWorldInternal(this.world, delta);
+    if (result.status === 'resync-required') return result;
+    if (result.status === 'rejected') return { status: 'rejected', ...result.issue };
+    let presentation: ThreePresentationSnapshot;
     try {
-      preflight(snapshotToThreePresentation(validated.value));
+      presentation = preparedDeltaToThreePresentationInternal(result.prepared);
+      validateThreePresentationInternal(presentation);
     } catch (error) {
       return {
         status: 'rejected',
-        code: 'three.unsupported-snapshot',
+        code: 'three.unsupported-delta',
         path: '$',
         message: error instanceof Error ? error.message : String(error),
       };
     }
-    return this.world.acceptSnapshot(validated.value);
+    const applied = commitPreparedDeltaIntoRenderWorld(this.world, result.prepared, {
+      deferAutomaticPresentation: this.hostKind === 'embedded',
+    });
+    if (
+      applied.status === 'accepted'
+      && this.world.epoch === applied.epoch
+      && this.world.acceptedRevision === applied.revision
+    ) {
+      if (pendingCanonicalStateForPresentationInternal(this.world)) {
+        this.pendingPresentation = presentation;
+      } else {
+        // An empty atomic delta may advance the presented watermark without a
+        // draw. Its scene is byte-for-byte the currently displayed scene.
+        this.presentedPresentation = presentation;
+        this.pendingPresentation = null;
+      }
+    }
+    return applied;
   }
 
-  frame(context: ThreeFrameContext): void {
-    this.assertActive();
-    requireFrameContext(context);
-    if (this.state === 'lost') return;
-    const pending = this.world.pendingSnapshot();
-    if (pending) {
-      const presentation = snapshotToThreePresentation(pending);
-      preflight(presentation);
-      this.materialPresenter.reconcile(presentation.materials);
-      this.geometryPresenter.reconcile(presentation.geometries);
-      this.chunkPresenter.reconcile(
-        presentation.chunks,
-        (key) => this.materialPresenter.get(key),
-      );
-      this.instancePresenter.reconcile(presentation.batches, {
-        geometry: (key) => this.geometryPresenter.get(key),
-        material: (key) => this.materialPresenter.get(key),
+  presentationReadiness(target: RenderRevisionRefV1): PresentationReadinessV1 {
+    return this.world.presentationReadiness(target);
+  }
+  awaitPresented(
+    target: RenderRevisionRefV1,
+    options?: { readonly signal?: PresentationAbortSignalV1 },
+  ): Promise<PresentationReadinessV1> {
+    return this.world.awaitPresented(target, options);
+  }
+  runtimeStatus(): ThreeRuntimeStatusV1 {
+    if (this.lifecycleState === 'failed') {
+      return Object.freeze({
+        state: 'failed',
+        deviceGeneration: this.deviceGeneration,
+        failure: this.failure!,
       });
     }
-    this.instancePresenter.animate(context.nowMs);
-    this.renderCurrent();
-    if (pending) {
-      this.world.markPresented(
-        pending.revision,
-        pending.descriptor.epoch,
-        pending.descriptor.worldId,
+    return Object.freeze({
+      state: this.lifecycleState,
+      deviceGeneration: this.deviceGeneration,
+      failure: null,
+    });
+  }
+  getCapabilities(): ThreeRuntimeCapabilitiesV1 {
+    return getThreeRuntimeCapabilitiesV1();
+  }
+  frame(context: ThreeFrameContext): ThreePresentedManifestV1 | undefined {
+    if (this.hostKind === 'embedded') {
+      throw new ThreeRuntimeProtocolError(
+        'three.host.draw-owned',
+        'Embedded hosts own the final renderer draw and must use frame tickets.',
       );
     }
-    this.frames++;
+    this.assertAccepting();
+    const frozenContext = freezeFrameContextInternal(context);
+    if (this.lifecycleState === 'lost') return;
+    if (this.lifecycleState === 'restoring') {
+      const restoreGeneration = this.deviceGeneration;
+      try {
+        if (this.viewportOwnership === 'runtime') {
+          this.renderer.setPixelRatio(this.pixelRatio);
+          if (!this.isRestoreAttempt(restoreGeneration)) return;
+          this.renderer.setSize(this.width, this.height, false);
+          if (!this.isRestoreAttempt(restoreGeneration)) return;
+        }
+        this.updateCamera();
+        if (!this.isRestoreAttempt(restoreGeneration)) return;
+        if (!this.reconcilePresentation(
+          this.presentedPresentation,
+          () => this.isRestoreAttempt(restoreGeneration),
+        )) return;
+        this.renderCurrent();
+        if (!this.isRestoreAttempt(restoreGeneration)) return;
+        this.lifecycleState = 'running';
+        setRenderWorldPresentationAvailabilityInternal(this.world, 'available');
+        if (!this.isRunningAttempt(restoreGeneration)) return;
+        const manifest = this.createManifestForCurrentState(frozenContext);
+        this.cameraGeneration = manifest.cameraGeneration;
+        this.lastPresentedFrameContext = frozenContext;
+        this.frames++;
+        return manifest;
+      } catch (error) {
+        if (!this.isRestoreAttempt(restoreGeneration)) return;
+        this.transitionToFailed('restore', error);
+        throw error;
+      }
+      return undefined;
+    }
+    const prepared = this.prepareFrameInternal(frozenContext);
+    if (prepared.status === 'unavailable') return undefined;
+    const renderGeneration = this.deviceGeneration;
+    try {
+      this.renderCurrent();
+    } catch (error) {
+      this.abortStandaloneFrameAfterDrawFailure(prepared.ticket, error);
+      if (this.lifecycleState !== 'failed' && !this.isRunningAttempt(renderGeneration)) {
+        return undefined;
+      }
+      throw error;
+    }
+    if (this.lifecycleState !== 'running') return undefined;
+    return this.commitFrameTicketInternal(prepared.ticket);
   }
 
+  prepareFrame(context: ThreeFrameContext): ThreePrepareFrameResult {
+    this.assertEmbeddedHostProtocol();
+    return this.prepareFrameInternal(freezeFrameContextInternal(context));
+  }
+  commitFrame(ticket: ThreePreparedFrameTicket): ThreePresentedManifestV1 {
+    this.assertEmbeddedHostProtocol();
+    const manifest = this.commitFrameTicketInternal(ticket);
+    if (!manifest) {
+      throw new ThreeRuntimeProtocolError(
+        'three.frame-ticket.stale-device',
+        'The prepared host frame was interrupted by a device transition.',
+      );
+    }
+    return manifest;
+  }
+  abortFrame(ticket: ThreePreparedFrameTicket): void {
+    this.assertEmbeddedHostProtocol();
+    const record = this.hostFrames.consume(
+      ticket,
+      this.lifecycleState,
+      this.deviceGeneration,
+    );
+    this.restoreAbortedHostFrame(record);
+  }
   setView(center: IsometricViewCenter, zoom = this.zoom): void {
-    this.assertActive();
-    configureIsometricOrthographicView(this.camera, {
-      viewportWidth: this.width,
-      viewportHeight: this.height,
-      center,
-      zoom,
-      tileWidthPixels: this.tileWidthPixels,
-      tileHeightPixels: this.tileHeightPixels,
-    });
+    this.assertAccepting();
+    this.cameraStrategy.setLegacyIsometricView(center, zoom);
     this.center = { ...center };
     this.zoom = zoom;
     this.daylightRig?.setCenter(this.center);
   }
-
   resize(width: number, height: number, pixelRatio = this.pixelRatio): void {
-    this.assertActive();
-    requireDimension('width', width);
-    requireDimension('height', height);
-    requireDimension('pixelRatio', pixelRatio);
-    this.width = width;
-    this.height = height;
-    this.pixelRatio = pixelRatio;
-    if (this.state === 'running') {
-      this.renderer.setPixelRatio(pixelRatio);
-      this.renderer.setSize(width, height, false);
-    }
-    this.updateCamera();
+    this.assertAccepting();
+    requireDimensionInternal('width', width);
+    requireDimensionInternal('height', height);
+    requireDimensionInternal('pixelRatio', pixelRatio);
+    const previous = {
+      width: this.width,
+      height: this.height,
+      pixelRatio: this.pixelRatio,
+    };
+    const generation = this.deviceGeneration;
+    resizeRuntimeInternal({
+      width,
+      height,
+      pixelRatio,
+      previous,
+      camera: this.camera,
+      cameraStrategy: this.cameraStrategy,
+      renderer: this.renderer,
+      viewportOwnership: this.viewportOwnership,
+      isCurrent: () => this.isRunningAttempt(generation),
+      commit: (nextWidth, nextHeight, nextPixelRatio) => {
+        this.commitViewportState(nextWidth, nextHeight, nextPixelRatio);
+      },
+      failRollback: (error) => this.transitionToFailed('resize', error),
+    });
   }
-
   capture(mimeType = 'image/png', quality?: number): ThreeCaptureResult {
-    this.assertActive();
-    if (this.state === 'lost') throw new Error('ThreeRenderRuntime capture is unavailable while context is lost.');
-    this.renderCurrent();
-    const toDataURL = this.renderer.domElement.toDataURL;
-    if (!toDataURL) throw new Error('The renderer canvas does not support capture.');
-    return {
-      dataUrl: toDataURL.call(this.renderer.domElement, mimeType, quality),
+    if (this.hostKind === 'embedded') {
+      throw new ThreeRuntimeProtocolError(
+        'three.host.capture-owned',
+        'Embedded hosts own capture and Voxel will not issue an extra shared-renderer draw.',
+      );
+    }
+    this.assertAccepting();
+    if (this.lifecycleState !== 'running') {
+      throw new Error(`ThreeRenderRuntime capture is unavailable while ${this.lifecycleState}.`);
+    }
+    const generation = this.deviceGeneration;
+    return captureRuntimeCanvasInternal({
+      renderer: this.renderer,
+      render: () => this.renderCurrent(),
+      isCurrent: () => this.isRunningAttempt(generation),
+      failRender: (error) => this.transitionToFailed('capture', error),
       width: this.width,
       height: this.height,
       epoch: this.world.presentedEpoch,
       presentedRevision: this.world.presentedRevision,
-      metrics: this.metrics(),
-    };
-  }
-
-  metrics(): ThreeRenderMetrics {
-    return {
-      state: this.state,
-      acceptedEpoch: this.world.epoch,
-      acceptedRevision: this.world.acceptedRevision,
-      presentedEpoch: this.world.presentedEpoch,
-      presentedRevision: this.world.presentedRevision,
-      frames: this.frames,
-      materialResources: this.materialPresenter.count,
-      geometryResources: this.geometryPresenter.count,
-      chunks: this.chunkPresenter.count,
-      visibleChunks: this.chunkPresenter.visibleCount,
-      instanceBatches: this.instancePresenter.count,
-      instances: this.instancePresenter.instanceCount,
-      animatedBatches: this.instancePresenter.animatedBatchCount,
-      animatedInstances: this.instancePresenter.animatedInstanceCount,
-      animationMatrixUpdates: this.instancePresenter.animationMatrixUpdates,
-      drawCalls: this.renderInfo.drawCalls,
-      triangles: this.renderInfo.triangles,
-      points: this.renderInfo.points,
-      lines: this.renderInfo.lines,
-      rendererGeometries: this.renderInfo.geometries,
-      rendererTextures: this.renderInfo.textures,
-      contextLosses: this.contextLosses,
-      contextRestorations: this.contextRestorations,
-    };
-  }
-
-  dispose(): void {
-    if (this.state === 'disposed') return;
-    this.state = 'disposed';
-    this.contextCanvas?.removeEventListener('webglcontextlost', this.handleContextLost);
-    this.contextCanvas?.removeEventListener('webglcontextrestored', this.handleContextRestored);
-    this.world.dispose();
-    this.instancePresenter.dispose();
-    this.chunkPresenter.dispose();
-    this.geometryPresenter.dispose();
-    this.materialPresenter.dispose();
-    this.daylightRig?.dispose(this.scene);
-    this.scene.remove(this.root);
-    if (this.rendererOwnership === 'owned') this.renderer.dispose();
-    this.renderInfo = EMPTY_RENDER_INFO;
-  }
-
-  private renderCurrent(): void {
-    this.renderer.render(this.scene, this.camera);
-    const info = this.renderer.info;
-    this.renderInfo = info
-      ? {
-          drawCalls: info.render.calls,
-          triangles: info.render.triangles,
-          points: info.render.points,
-          lines: info.render.lines,
-          geometries: info.memory.geometries,
-          textures: info.memory.textures,
-        }
-      : EMPTY_RENDER_INFO;
-  }
-
-  private updateCamera(): void {
-    configureIsometricOrthographicView(this.camera, {
-      viewportWidth: this.width,
-      viewportHeight: this.height,
-      center: this.center,
-      zoom: this.zoom,
-      tileWidthPixels: this.tileWidthPixels,
-      tileHeightPixels: this.tileHeightPixels,
+      mimeType,
+      quality,
+      metrics: () => this.metrics(),
     });
   }
 
-  private assertActive(): void {
-    if (this.state === 'disposed') throw new Error('ThreeRenderRuntime is disposed.');
+  metrics(): ThreeRenderMetrics {
+    return collectRuntimeMetricsInternal({
+      state: this.legacyState(),
+      world: this.world,
+      frames: this.frames,
+      materialPresenter: this.materialPresenter,
+      geometryPresenter: this.geometryPresenter,
+      chunkPresenter: this.chunkPresenter,
+      instancePresenter: this.instancePresenter,
+      renderInfo: this.renderInfo,
+      contextLosses: this.contextLosses,
+      contextRestorations: this.contextRestorations,
+      ingest: mutableSnapshotIngestMetricsInternal(this),
+    });
+  }
+  dispose(): void {
+    if (this.lifecycleState !== 'disposed') {
+      this.hostFrames.dispose();
+      this.lifecycleState = 'disposed';
+      this.disposalActions = [
+        () => this.contextCanvas?.removeEventListener('webglcontextlost', this.handleContextLost),
+        () => this.contextCanvas?.removeEventListener('webglcontextrestored', this.handleContextRestored),
+        () => this.world.dispose(),
+        () => this.instancePresenter.dispose(),
+        () => this.chunkPresenter.dispose(),
+        () => this.geometryPresenter.dispose(),
+        () => this.materialPresenter.dispose(),
+        () => this.daylightRig?.dispose(this.scene),
+        () => this.scene.remove(this.root),
+        () => { if (this.rendererOwnership === 'owned') this.renderer.dispose(); },
+      ];
+      this.pendingPresentation = null;
+      this.presentedPresentation = null;
+      this.lastPresentedFrameContext = null;
+      this.renderInfo = EMPTY_RENDER_INFO_INTERNAL;
+    }
+    if (!this.disposalActions || this.disposalInProgress) return;
+    this.disposalInProgress = true;
+    const { remaining, firstError } = runRuntimeDisposalInternal(this.disposalActions);
+    this.disposalActions = remaining.length > 0 ? remaining : null;
+    this.disposalInProgress = false;
+    if (firstError instanceof Error) throw firstError;
+    if (firstError !== undefined) throw new Error('Runtime disposal failed.', { cause: firstError });
+  }
+
+  private prepareFrameInternal(
+    context: Readonly<ThreeFrameContext>,
+  ): ThreePrepareFrameResult {
+    this.assertAccepting();
+    if (this.lifecycleState === 'lost' || this.lifecycleState === 'restoring') {
+      return this.unavailableFrameResult();
+    }
+    this.hostFrames.beginPreparation();
+    const generation = this.deviceGeneration;
+    const pending = pendingCanonicalStateForPresentationInternal(this.world);
+    const target = pending ?? presentedCanonicalStateForPresentationInternal(this.world);
+    const presentation = pending ? this.pendingPresentation : this.presentedPresentation;
+    const previousPresentation = this.presentedPresentation;
+    const previousContext = this.lastPresentedFrameContext;
+    let phase: ThreeRuntimeFailurePhaseV1 = 'prepare';
+    let mayNeedRollback = false;
+    try {
+      if (target && (
+        presentation?.epoch !== target.epoch
+        || presentation.revision !== target.revision
+      )) {
+        throw new Error('Frame presentation does not match canonical render state.');
+      }
+      if (pending) {
+        if (!presentation) {
+          throw new Error('Pending canonical state has no Three presentation.');
+        }
+        validateThreePresentationInternal(presentation);
+        mayNeedRollback = true;
+        if (!this.reconcilePresentation(
+          presentation,
+          () => this.isRunningAttempt(generation),
+        )) return this.unavailableFrameResult();
+      }
+      if (!this.isRunningAttempt(generation)) return this.unavailableFrameResult();
+      phase = 'animate';
+      mayNeedRollback = true;
+      this.instancePresenter.animate(context.nowMs);
+      if (!this.isRunningAttempt(generation)) return this.unavailableFrameResult();
+      const record = this.hostFrames.issue({
+        context,
+        pending,
+        target,
+        presentation,
+        previousPresentation,
+        previousContext,
+        restoration: false,
+      }, generation);
+      return Object.freeze({
+        status: 'prepared',
+        ticket: record.ticket,
+        target: target ? Object.freeze({
+          worldId: target.worldId,
+          epoch: target.epoch,
+          revision: target.revision,
+        }) : null,
+        restoration: false,
+      });
+    } catch (error) {
+      if (mayNeedRollback && this.isRunningAttempt(generation)) {
+        try {
+          this.restoreHostScene(previousPresentation, previousContext, generation);
+        } catch (rollbackError) {
+          this.transitionToFailed(phase, new Error('Host frame rollback failed.', {
+            cause: rollbackError,
+          }));
+          throw error;
+        }
+      }
+      if (this.isRunningAttempt(generation)) this.transitionToFailed(phase, error);
+      if (this.isFrameUnavailableAfterCallbacks()) {
+        return this.unavailableFrameResult();
+      }
+      throw error;
+    } finally {
+      this.hostFrames.finishPreparation();
+    }
+  }
+  private commitFrameTicketInternal(
+    ticket: ThreePreparedFrameTicket,
+  ): ThreePresentedManifestV1 | undefined {
+    const record = this.hostFrames.consume(ticket, this.lifecycleState, this.deviceGeneration);
+    const prepared = record.payload;
+    const previousFrames = this.frames;
+    const previousCameraGeneration = this.cameraGeneration;
+    this.frames = previousFrames + 1;
+    this.cameraGeneration = previousCameraGeneration + 1;
+    let manifest: ThreePresentedManifestV1;
+    let committedRenderInfo: RenderInfoSnapshotInternal;
+    try {
+      manifest = createPresentedManifestInternal({
+        target: prepared.target,
+        context: prepared.context,
+        width: this.width,
+        height: this.height,
+        pixelRatio: this.pixelRatio,
+        deviceGeneration: record.deviceGeneration,
+        cameraGeneration: this.cameraGeneration,
+        camera: this.camera,
+      });
+      committedRenderInfo = snapshotRenderInfoInternal(this.renderer);
+    } catch (error) {
+      const ownsReservedFrame = this.frames === previousFrames + 1
+        && this.cameraGeneration === previousCameraGeneration + 1;
+      this.rollbackReservedFrame(previousFrames, previousCameraGeneration);
+      if (ownsReservedFrame) this.restoreLateHostFrame(record);
+      if (this.isRunningAttempt(record.deviceGeneration)) {
+        this.transitionToFailed('commit', error);
+      }
+      throw error;
+    }
+    if (this.lifecycleState === 'disposed' || this.lifecycleState === 'failed') {
+      this.rollbackReservedFrame(previousFrames, previousCameraGeneration);
+      throw new ThreeRuntimeProtocolError(
+        'three.frame-ticket.late',
+        'The runtime ended while the prepared frame manifest was being captured.',
+      );
+    }
+    if (!this.isRunningAttempt(record.deviceGeneration)) {
+      this.rollbackReservedFrame(previousFrames, previousCameraGeneration);
+      return undefined;
+    }
+    if (prepared.pending) {
+      const marked = markPreparedCanonicalStatePresentedInternal(this.world, prepared.pending);
+      if (!marked
+        && this.frames === previousFrames + 1
+        && this.cameraGeneration === previousCameraGeneration + 1) {
+        this.rollbackReservedFrame(previousFrames, previousCameraGeneration);
+        this.restoreLateHostFrame(record);
+        throw new ThreeRuntimeProtocolError(
+          'three.frame-ticket.late',
+          'The prepared canonical revision is no longer eligible for presentation.',
+        );
+      }
+    }
+    const exactPresented = presentedCanonicalStateForPresentationInternal(this.world)
+      === prepared.target;
+    if (
+      exactPresented
+      && !this.hasRuntimeEndedAfterCallbacks()
+    ) {
+      this.presentedPresentation = prepared.presentation;
+      if (this.pendingPresentation === prepared.presentation) {
+        this.pendingPresentation = null;
+      }
+      this.lastPresentedFrameContext = prepared.context;
+      this.renderInfo = committedRenderInfo;
+    }
+    if (this.hasRuntimeEndedAfterCallbacks()) {
+      this.rollbackReservedFrame(previousFrames, previousCameraGeneration);
+      throw new ThreeRuntimeProtocolError(
+        'three.frame-ticket.late',
+        'The runtime ended while the prepared frame was being committed.',
+      );
+    }
+    if (
+      this.deviceGeneration !== record.deviceGeneration
+      || this.lifecycleState === 'restoring'
+      || this.lifecycleState === 'lost'
+    ) return undefined;
+    return manifest;
+  }
+  private restoreAbortedHostFrame(
+    record: HostFrameTicketRecordInternal<PreparedHostFrameInternal>,
+  ): void {
+    try {
+      this.restoreHostScene(
+        record.payload.previousPresentation,
+        record.payload.previousContext,
+        record.deviceGeneration,
+      );
+    } catch (error) {
+      if (this.isRunningAttempt(record.deviceGeneration)) {
+        this.transitionToFailed('commit', error);
+      }
+      throw error;
+    }
+  }
+  private restoreLateHostFrame(
+    record: HostFrameTicketRecordInternal<PreparedHostFrameInternal>,
+  ): void {
+    if (!this.isRunningAttempt(record.deviceGeneration)) return;
+    try {
+      this.restoreHostScene(
+        record.payload.previousPresentation,
+        record.payload.previousContext,
+        record.deviceGeneration,
+      );
+    } catch (error) {
+      this.transitionToFailed('commit', error);
+      throw error;
+    }
+  }
+  private restoreHostScene(
+    presentation: ThreePresentationSnapshot | null,
+    context: ThreeFrameContext | null,
+    generation: number,
+  ): void {
+    this.instancePresenter.resetInternal();
+    this.chunkPresenter.resetInternal();
+    this.geometryPresenter.resetInternal();
+    this.materialPresenter.resetInternal();
+    if (!this.reconcilePresentation(
+      presentation,
+      () => this.isRunningAttempt(generation),
+    )) return;
+    this.instancePresenter.animate(context?.nowMs ?? 0);
+  }
+  private abortStandaloneFrameAfterDrawFailure(
+    ticket: ThreePreparedFrameTicket,
+    renderError: unknown,
+  ): void {
+    const generation = this.deviceGeneration;
+    if (this.lifecycleState === 'running') {
+      try {
+        const record = this.hostFrames.consume(ticket, this.lifecycleState, generation);
+        this.restoreHostScene(
+          record.payload.previousPresentation,
+          record.payload.previousContext,
+          generation,
+        );
+      } catch (rollbackError) {
+        if (this.isRunningAttempt(generation)) {
+          this.transitionToFailed('render', new Error('Render failure rollback failed.', {
+            cause: rollbackError,
+          }));
+        }
+        return;
+      }
+      if (this.isRunningAttempt(generation)) this.transitionToFailed('render', renderError);
+    }
+  }
+  private createManifestForCurrentState(
+    context: Readonly<ThreeFrameContext>,
+  ): ThreePresentedManifestV1 {
+    const target = presentedCanonicalStateForPresentationInternal(this.world);
+    return createPresentedManifestInternal({
+      target,
+      context,
+      width: this.width,
+      height: this.height,
+      pixelRatio: this.pixelRatio,
+      deviceGeneration: this.deviceGeneration,
+      cameraGeneration: this.cameraGeneration + 1,
+      camera: this.camera,
+    });
+  }
+  private unavailableFrameResult(): ThreePrepareFrameResult {
+    if (this.lifecycleState !== 'lost' && this.lifecycleState !== 'restoring') {
+      throw new Error(`A frame became unavailable while ${this.lifecycleState}.`);
+    }
+    return Object.freeze({
+      status: 'unavailable',
+      reason: this.lifecycleState === 'lost' ? 'context-lost' : 'restoring',
+      deviceGeneration: this.deviceGeneration,
+    });
+  }
+  private rollbackReservedFrame(frames: number, cameraGeneration: number): void {
+    if (this.frames === frames + 1) this.frames = frames;
+    if (this.cameraGeneration === cameraGeneration + 1) {
+      this.cameraGeneration = cameraGeneration;
+    }
+  }
+  private assertEmbeddedHostProtocol(): void {
+    if (this.hostKind !== 'embedded') {
+      throw new ThreeRuntimeProtocolError(
+        'three.host.embedded-only',
+        'Host-managed frame tickets are available only in embedded host mode.',
+      );
+    }
+  }
+  private renderCurrent(): void {
+    this.renderer.render(this.scene, this.camera);
+    this.renderInfo = snapshotRenderInfoInternal(this.renderer);
+  }
+  private updateCamera(): void {
+    this.cameraStrategy.resize(this.width, this.height);
+  }
+  private reconcilePresentation(
+    presentation: ThreePresentationSnapshot | null,
+    isCurrentAttempt: () => boolean,
+  ): boolean {
+    this.materialPresenter.reconcile(presentation?.materials ?? []);
+    if (!isCurrentAttempt()) return false;
+    this.geometryPresenter.reconcile(presentation?.geometries ?? []);
+    if (!isCurrentAttempt()) return false;
+    this.chunkPresenter.reconcile(
+      presentation?.chunks ?? [],
+      (key) => this.materialPresenter.get(key),
+    );
+    if (!isCurrentAttempt()) return false;
+    this.instancePresenter.reconcile(presentation?.batches ?? [], {
+      geometry: (key) => this.geometryPresenter.get(key),
+      material: (key) => this.materialPresenter.get(key),
+    });
+    return isCurrentAttempt();
+  }
+
+  private commitViewportState(width: number, height: number, pixelRatio: number): void {
+    this.width = width;
+    this.height = height;
+    this.pixelRatio = pixelRatio;
+  }
+  private transitionToFailed(phase: ThreeRuntimeFailurePhaseV1, reason: unknown): void {
+    if (
+      this.lifecycleState === 'failed'
+      || this.lifecycleState === 'disposed'
+      || this.lifecycleState === 'lost'
+    ) return;
+    const error = reason instanceof Error ? reason : new Error(String(reason));
+    this.failure = Object.freeze({
+      code: `three.runtime.${phase}-failed`,
+      phase,
+      name: error.name,
+      message: error.message,
+    });
+    this.hostFrames.dispose();
+    this.lifecycleState = 'failed';
+    setRenderWorldPresentationAvailabilityInternal(this.world, 'failed');
+  }
+  private isRestoreAttempt(deviceGeneration: number): boolean {
+    return this.lifecycleState === 'restoring' && this.deviceGeneration === deviceGeneration;
+  }
+
+  private isInitializing(): boolean {
+    return this.lifecycleState === 'initializing';
+  }
+  private isRunningAttempt(deviceGeneration: number): boolean {
+    return this.lifecycleState === 'running' && this.deviceGeneration === deviceGeneration;
+  }
+  private hasRuntimeEndedAfterCallbacks(): boolean {
+    return this.lifecycleState === 'disposed' || this.lifecycleState === 'failed';
+  }
+  private isFrameUnavailableAfterCallbacks(): boolean {
+    return this.lifecycleState === 'lost' || this.lifecycleState === 'restoring';
+  }
+  private legacyState(): ThreeRenderMetrics['state'] {
+    if (this.lifecycleState === 'running') return 'running';
+    return this.lifecycleState === 'disposed' ? 'disposed' : 'lost';
+  }
+
+  private assertAccepting(): void {
+    if (this.lifecycleState === 'disposed') throw new Error('ThreeRenderRuntime is disposed.');
+    if (this.lifecycleState === 'failed') throw new Error('ThreeRenderRuntime has failed.');
+    if (this.lifecycleState === 'initializing') throw new Error('ThreeRenderRuntime is initializing.');
   }
 }
 
-export type {
-  RendererFactory,
-  RendererLike,
-} from './rendererTypes.js';
+export type { RendererFactory, RendererLike } from './rendererTypes.js';
 export type { ThreeDaylightOptions } from './daylightRig.js';

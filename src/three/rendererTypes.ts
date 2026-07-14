@@ -1,4 +1,4 @@
-import type { Camera, Scene, WebGLRendererParameters } from 'three';
+import type { Camera, Scene, Vector2, WebGLRendererParameters } from 'three';
 
 export interface CaptureCanvasLike {
   width: number;
@@ -25,6 +25,10 @@ export interface RendererLike {
   render(scene: Scene, camera: Camera): void;
   setSize(width: number, height: number, updateStyle?: boolean): void;
   setPixelRatio(value: number): void;
+  /** Required when a borrowed renderer grants runtime viewport ownership. */
+  getSize(target: Vector2): Vector2;
+  /** Required when a borrowed renderer grants runtime viewport ownership. */
+  getPixelRatio(): number;
   dispose(): void;
 }
 

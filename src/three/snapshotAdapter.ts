@@ -1,9 +1,16 @@
 import {
   DEFAULT_MAX_VISIBLE_FACES,
-  DensePaletteChunk,
+  type DensePaletteChunkReader,
 } from '../meshing/index.js';
-import type { OwnedRenderSnapshotV1 } from '../core/index.js';
-import type { ThreePresentationSnapshot } from './ThreeRenderRuntime.js';
+import type {
+  OwnedRenderSnapshotV1,
+  VoxelChunkV1,
+} from '../core/index.js';
+import type { CanonicalRenderStateV1 } from '../core/canonical-store.js';
+import type { PreparedRenderDeltaInternal } from '../core/delta-reducer.js';
+import type { ThreePresentationSnapshot } from './runtimeTypes.js';
+import { PagedInstanceBatchPresentationSourceInternal } from './pagedInstanceBatchSource.js';
+import { meshProfiledSnapshotChunksInternal } from './profiledChunkOracle.js';
 import type {
   ChunkPresentation,
   GeometryPresentation,
@@ -11,7 +18,42 @@ import type {
   MaterialPresentation,
 } from './presentationTypes.js';
 
-const MAX_ORACLE_CHUNKS = 512;
+const MAX_UNPROFILED_ORACLE_CHUNKS = 512;
+const EMPTY_INSTANCE_KEYS: readonly [] = Object.freeze([]);
+const EMPTY_INSTANCE_MATRICES = new Float32Array();
+
+class OwnedVoxelChunkView implements DensePaletteChunkReader {
+  readonly origin: VoxelChunkV1['origin'];
+  readonly size: VoxelChunkV1['size'];
+  readonly volume: number;
+
+  constructor(private readonly resource: VoxelChunkV1) {
+    this.origin = resource.origin;
+    this.size = resource.size;
+    this.volume = resource.voxels.length;
+  }
+
+  containsLocal(x: number, y: number, z: number): boolean {
+    return (
+      Number.isInteger(x)
+      && Number.isInteger(y)
+      && Number.isInteger(z)
+      && x >= 0
+      && y >= 0
+      && z >= 0
+      && x < this.size.x
+      && y < this.size.y
+      && z < this.size.z
+    );
+  }
+
+  getLocal(x: number, y: number, z: number): number {
+    if (!this.containsLocal(x, y, z)) {
+      throw new RangeError(`Local voxel (${String(x)}, ${String(y)}, ${String(z)}) is outside chunk ${this.resource.key}.`);
+    }
+    return this.resource.voxels[x + this.size.x * (z + this.size.z * y)]!;
+  }
+}
 
 function versionOf(
   snapshot: OwnedRenderSnapshotV1,
@@ -83,11 +125,63 @@ function instancePresentations(snapshot: OwnedRenderSnapshotV1): InstanceBatchPr
       matrices: batch.matrices,
       ...(batch.colors ? { colors: batch.colors } : {}),
       ...(batch.animation ? { animation: batch.animation } : {}),
+      castShadow: batch.presentation?.castShadow ?? false,
+      receiveShadow: batch.presentation?.receiveShadow ?? false,
     };
   });
 }
 
-function chunkPresentations(snapshot: OwnedRenderSnapshotV1): ChunkPresentation[] {
+function pagedInstancePresentations(
+  state: CanonicalRenderStateV1,
+  prepared?: PreparedRenderDeltaInternal,
+): InstanceBatchPresentation[] {
+  const snapshot = canonicalSnapshotShell(state);
+  const updates = new Map(
+    prepared?.pagedBatchPatches.map((update) => [update.key, update]) ?? [],
+  );
+  return state.batchStatesViewInternal().map((batch) => {
+    const update = updates.get(batch.key);
+    const previous = prepared?.base.batchStateInternal(batch.key);
+    const pagedSourceInternal = new PagedInstanceBatchPresentationSourceInternal(
+      batch,
+      previous,
+      update?.effect.dirtySlotRanges,
+      update?.effect.dirtyPageIndices,
+    );
+    if (!pagedSourceInternal.hasOnlyOpaqueColorsInternal()) {
+      throw new Error(`Batch ${batch.key} requires unsupported per-instance alpha.`);
+    }
+    return {
+      key: batch.key,
+      version: versionOf(snapshot, batch),
+      geometryKey: batch.geometryKey,
+      materialKey: batch.materialKey,
+      instanceKeys: EMPTY_INSTANCE_KEYS,
+      matrices: EMPTY_INSTANCE_MATRICES,
+      pagedSourceInternal,
+      castShadow: batch.metadataInternal().presentation?.castShadow ?? false,
+      receiveShadow: batch.metadataInternal().presentation?.receiveShadow ?? false,
+    };
+  });
+}
+
+export interface ProfiledChunkPresentationRequirementInternal {
+  readonly key: string;
+  readonly dependencySignature: string;
+  readonly voxelOrigin: VoxelChunkV1['origin'];
+}
+
+function sameInt3(
+  left: VoxelChunkV1['origin'],
+  right: VoxelChunkV1['origin'],
+): boolean {
+  return left.x === right.x && left.y === right.y && left.z === right.z;
+}
+
+function chunkPresentations(
+  snapshot: OwnedRenderSnapshotV1,
+  deferredProfiledRequirements?: readonly ProfiledChunkPresentationRequirementInternal[],
+): ChunkPresentation[] {
   const palettes = new Map(
     snapshot.resources.flatMap((resource) => resource.kind === 'palette'
       ? [[resource.key, {
@@ -97,18 +191,15 @@ function chunkPresentations(snapshot: OwnedRenderSnapshotV1): ChunkPresentation[
       : []),
   );
   const records = snapshot.chunks.map((resource) => {
-    if (resource.voxels.length * 6 > DEFAULT_MAX_VISIBLE_FACES) {
+    if (!snapshot.descriptor.chunkProfile
+      && resource.voxels.length * 6 > DEFAULT_MAX_VISIBLE_FACES) {
       throw new RangeError(
         `Chunk ${resource.key} exceeds the conservative visible-face oracle budget.`,
       );
     }
     return {
       resource,
-      chunk: new DensePaletteChunk({
-      origin: resource.origin,
-      size: resource.size,
-      voxels: resource.voxels,
-      }),
+      chunk: new OwnedVoxelChunkView(resource),
     };
   });
   const materials = new Map(
@@ -116,6 +207,25 @@ function chunkPresentations(snapshot: OwnedRenderSnapshotV1): ChunkPresentation[
       ? [[resource.key, resource] as const]
       : []),
   );
+  const deferredByKey = deferredProfiledRequirements === undefined
+    ? undefined
+    : new Map(deferredProfiledRequirements.map((requirement) => [
+        requirement.key,
+        requirement,
+      ] as const));
+  const deferredRequirementCount = deferredProfiledRequirements?.length;
+  if (deferredByKey && deferredByKey.size !== deferredRequirementCount) {
+    throw new Error('Deferred profiled chunk requirements contain a duplicate key.');
+  }
+  if (deferredByKey && !snapshot.descriptor.chunkProfile) {
+    throw new Error('Deferred profiled chunk requirements require a uniform chunk profile.');
+  }
+  if (deferredByKey && deferredByKey.size !== snapshot.chunks.length) {
+    throw new Error('Deferred profiled chunk requirements must match the complete chunk lane.');
+  }
+  const profiledWorld = snapshot.descriptor.chunkProfile && !deferredByKey
+    ? meshProfiledSnapshotChunksInternal(snapshot)
+    : undefined;
 
   const sampleNeighbor = (worldX: number, worldY: number, worldZ: number): number | undefined => {
     for (const record of records) {
@@ -142,7 +252,22 @@ function chunkPresentations(snapshot: OwnedRenderSnapshotV1): ChunkPresentation[
     ) {
       throw new Error(`Chunk ${resource.key} requires the opaque voxel presentation path.`);
     }
-    const dependencies = records
+    const profiled = profiledWorld?.chunks.get(resource.key);
+    const deferred = deferredByKey?.get(resource.key);
+    if (profiledWorld && !profiled) {
+      throw new Error(`Missing profiled oracle output for chunk ${resource.key}.`);
+    }
+    if (deferredByKey && !deferred) {
+      throw new Error(`Missing deferred profiled requirement for chunk ${resource.key}.`);
+    }
+    if (deferred && (
+      deferred.key !== resource.key
+      || deferred.dependencySignature.length === 0
+      || !sameInt3(deferred.voxelOrigin, resource.origin)
+    )) {
+      throw new Error(`Deferred profiled requirement does not match chunk ${resource.key}.`);
+    }
+    const dependencies = profiled ? [] : records
       .filter((candidate) => candidate.resource.key !== resource.key)
       .filter((candidate) => chunksMayShareFace(resource, candidate.resource))
       .map((candidate) => `${candidate.resource.key}@${versionOf(snapshot, candidate.resource)}`)
@@ -153,13 +278,19 @@ function chunkPresentations(snapshot: OwnedRenderSnapshotV1): ChunkPresentation[
         versionOf(snapshot, resource),
         `palette@${palette.version}`,
         `scale@${String(snapshot.descriptor.coordinates.worldUnitsPerVoxel.x)},${String(snapshot.descriptor.coordinates.worldUnitsPerVoxel.y)},${String(snapshot.descriptor.coordinates.worldUnitsPerVoxel.z)}`,
+        ...(profiled ? [`oracle@${profiled.dependencySignature}`] : []),
+        ...(deferred ? [`worker@${deferred.dependencySignature}`] : []),
         ...dependencies,
       ].join('|'),
       chunk,
       palette: palette.entries,
       materialKey: resource.materialKey,
       worldUnitsPerVoxel: snapshot.descriptor.coordinates.worldUnitsPerVoxel,
-      sampleNeighbor,
+      ...(profiled
+        ? { precomputedMesh: profiled.mesh, voxelOrigin: profiled.origin }
+        : deferred
+          ? {}
+          : { sampleNeighbor }),
     };
   });
 }
@@ -196,9 +327,10 @@ function chunksMayShareFace(a: ChunkBounds, b: ChunkBounds): boolean {
 export function snapshotToThreePresentation(
   snapshot: OwnedRenderSnapshotV1,
 ): ThreePresentationSnapshot {
-  if (snapshot.chunks.length > MAX_ORACLE_CHUNKS) {
+  if (!snapshot.descriptor.chunkProfile
+    && snapshot.chunks.length > MAX_UNPROFILED_ORACLE_CHUNKS) {
     throw new RangeError(
-      `Three visible-face oracle supports at most ${String(MAX_ORACLE_CHUNKS)} chunks per snapshot.`,
+      `Three visible-face oracle supports at most ${String(MAX_UNPROFILED_ORACLE_CHUNKS)} chunks per snapshot.`,
     );
   }
   return {
@@ -209,4 +341,60 @@ export function snapshotToThreePresentation(
     chunks: chunkPresentations(snapshot),
     batches: instancePresentations(snapshot),
   };
+}
+
+function canonicalSnapshotShell(state: CanonicalRenderStateV1): OwnedRenderSnapshotV1 {
+  return Object.freeze({
+    schemaVersion: 'voxel.render-snapshot/1',
+    descriptor: state.descriptorViewInternal(),
+    revision: state.revision,
+    resources: state.resourcesViewInternal(),
+    chunks: state.chunksViewInternal(),
+    batches: Object.freeze([]),
+  });
+}
+
+/** Package-internal projection that never materializes canonical paged batches. */
+export function canonicalStateToThreePresentationInternal(
+  state: CanonicalRenderStateV1,
+  prepared?: PreparedRenderDeltaInternal,
+): ThreePresentationSnapshot {
+  const snapshot = canonicalSnapshotShell(state);
+  const presentation = snapshotToThreePresentation(snapshot);
+  return {
+    ...presentation,
+    batches: pagedInstancePresentations(state, prepared),
+  };
+}
+
+/**
+ * Package-internal profiled-worker projection. It validates all synchronous
+ * Three lanes and creates chunk shells without invoking any mesher. A shell is
+ * never legal to reconcile until an exact validated worker/retained mesh has
+ * been attached by the revision staging controller.
+ */
+export function canonicalStateToThreeDeferredProfiledPresentationInternal(
+  state: CanonicalRenderStateV1,
+  requirements: readonly ProfiledChunkPresentationRequirementInternal[],
+  prepared?: PreparedRenderDeltaInternal,
+): ThreePresentationSnapshot {
+  const snapshot = canonicalSnapshotShell(state);
+  if (!snapshot.descriptor.chunkProfile) {
+    throw new Error('Deferred profiled presentation requires a uniform chunk profile.');
+  }
+  return {
+    epoch: snapshot.descriptor.epoch,
+    revision: snapshot.revision,
+    materials: materialPresentations(snapshot),
+    geometries: geometryPresentations(snapshot),
+    chunks: chunkPresentations(snapshot, requirements),
+    batches: pagedInstancePresentations(state, prepared),
+  };
+}
+
+/** Package-internal projection with exact sparse ranges for the direct base. */
+export function preparedDeltaToThreePresentationInternal(
+  prepared: PreparedRenderDeltaInternal,
+): ThreePresentationSnapshot {
+  return canonicalStateToThreePresentationInternal(prepared.candidate, prepared);
 }

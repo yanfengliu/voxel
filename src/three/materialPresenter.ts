@@ -79,7 +79,13 @@ export class MaterialPresenter {
 
   dispose(): void {
     if (this.disposed) return;
+    this.resetInternal();
     this.disposed = true;
+  }
+
+  /** Package-internal rollback hook; the presenter remains reusable. */
+  resetInternal(): void {
+    this.assertActive();
     for (const entry of this.entries.values()) entry.material.dispose();
     this.entries.clear();
   }

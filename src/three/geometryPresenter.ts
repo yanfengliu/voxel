@@ -19,7 +19,7 @@ function geometryColors(
   vertexCount: number,
 ): { array: Float32Array; itemSize: number } {
   const itemSize = colors.length === vertexCount * 4 ? 4 : 3;
-  if (colors instanceof Float32Array) return { array: colors, itemSize };
+  if (colors instanceof Float32Array) return { array: colors.slice(), itemSize };
   const result = new Float32Array(colors.length);
   const converted = new Color();
   for (let offset = 0; offset < colors.length; offset += itemSize) {
@@ -41,7 +41,7 @@ function buildGeometry(resource: GeometryPresentation): BufferGeometry {
   const geometry = new BufferGeometry();
   const vertexCount = resource.positions.length / 3;
   const hasPivot = resource.pivot.x !== 0 || resource.pivot.y !== 0 || resource.pivot.z !== 0;
-  const positions = hasPivot ? resource.positions.slice() : resource.positions;
+  const positions = resource.positions.slice();
   if (hasPivot) {
     for (let offset = 0; offset < positions.length; offset += 3) {
       positions[offset] = positions[offset]! - resource.pivot.x;
@@ -50,9 +50,9 @@ function buildGeometry(resource: GeometryPresentation): BufferGeometry {
     }
   }
   geometry.setAttribute('position', new BufferAttribute(positions, 3));
-  geometry.setAttribute('normal', new BufferAttribute(resource.normals, 3));
+  geometry.setAttribute('normal', new BufferAttribute(resource.normals.slice(), 3));
   if (resource.uvs) {
-    geometry.setAttribute('uv', new BufferAttribute(resource.uvs, 2));
+    geometry.setAttribute('uv', new BufferAttribute(resource.uvs.slice(), 2));
   }
 
   if (resource.colors) {
@@ -60,7 +60,7 @@ function buildGeometry(resource: GeometryPresentation): BufferGeometry {
     geometry.setAttribute('color', new BufferAttribute(colors.array, colors.itemSize));
   }
 
-  geometry.setIndex(new BufferAttribute(resource.indices, 1));
+  geometry.setIndex(new BufferAttribute(resource.indices.slice(), 1));
   for (const [materialIndex, group] of resource.groups.entries()) {
     geometry.addGroup(group.start, group.count, materialIndex);
   }
@@ -121,7 +121,13 @@ export class GeometryPresenter {
 
   dispose(): void {
     if (this.disposed) return;
+    this.resetInternal();
     this.disposed = true;
+  }
+
+  /** Package-internal rollback hook; the presenter remains reusable. */
+  resetInternal(): void {
+    this.assertActive();
     for (const entry of this.entries.values()) {
       entry.geometry.dispose();
     }

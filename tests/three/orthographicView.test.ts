@@ -69,5 +69,19 @@ describe('isometric orthographic view', () => {
       tileWidthPixels: 32,
       tileHeightPixels: 64,
     })).toThrow(/tileHeightPixels/);
+
+    expect(() => createIsometricOrthographicCamera({
+      viewportWidth: 800,
+      viewportHeight: 600,
+      center: {} as never,
+      zoom: 1,
+    })).toThrow(/center\.x/);
+
+    expect(() => createIsometricOrthographicCamera({
+      viewportWidth: 800,
+      viewportHeight: 600,
+      center: { x: 0, y: 0, z: 0, irrelevant: Number.NaN } as never,
+      zoom: 1,
+    })).not.toThrow();
   });
 });

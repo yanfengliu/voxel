@@ -37,18 +37,34 @@ const DEFAULT_NEAR = 0.1;
 const DEFAULT_FAR = 4_000;
 const viewByCamera = new WeakMap<OrthographicCamera, ResolvedIsometricOrthographicView>();
 
+/** Package-internal rollback for transactional borrowed-camera operations. */
+export function captureIsometricViewRollbackInternal(
+  camera: OrthographicCamera,
+): () => void {
+  const prior = viewByCamera.get(camera);
+  return (): void => {
+    if (prior) viewByCamera.set(camera, prior);
+    else viewByCamera.delete(camera);
+  };
+}
+
 function requirePositiveFinite(name: string, value: number): void {
   if (!Number.isFinite(value) || value <= 0) {
     throw new RangeError(`${name} must be a positive finite number.`);
   }
 }
 
-function requireFiniteCenter(center: IsometricViewCenter): void {
-  for (const [name, value] of Object.entries(center)) {
-    if (!Number.isFinite(value)) {
-      throw new RangeError(`center.${name} must be finite.`);
+function requireFiniteCenter(centerValue: unknown): IsometricViewCenter {
+  if (typeof centerValue !== 'object' || centerValue === null) {
+    throw new TypeError('center must contain finite x, y, and z coordinates.');
+  }
+  const center = centerValue as Partial<IsometricViewCenter>;
+  for (const axis of ['x', 'y', 'z'] as const) {
+    if (!Number.isFinite(center[axis])) {
+      throw new RangeError(`center.${axis} must be finite.`);
     }
   }
+  return { x: center.x!, y: center.y!, z: center.z! };
 }
 
 function resolveView(
@@ -71,7 +87,7 @@ function resolveView(
   requirePositiveFinite('tileWidthPixels', tileWidthPixels);
   requirePositiveFinite('tileHeightPixels', tileHeightPixels);
   requirePositiveFinite('distance', distance);
-  requireFiniteCenter(input.center);
+  const center = requireFiniteCenter(input.center);
 
   if (tileHeightPixels >= tileWidthPixels) {
     throw new RangeError('tileHeightPixels must be smaller than tileWidthPixels.');
@@ -86,7 +102,7 @@ function resolveView(
   return {
     viewportWidth: input.viewportWidth,
     viewportHeight: input.viewportHeight,
-    center: { ...input.center },
+    center,
     zoom: input.zoom,
     tileWidthPixels,
     tileHeightPixels,

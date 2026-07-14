@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest';
+import { Box3, Group, MeshBasicMaterial } from 'three';
 
 import { validateAndCopySnapshotV1 } from '../../src/core/index.js';
 import { meshVisibleFaces } from '../../src/meshing/index.js';
 import { snapshotToThreePresentation } from '../../src/three/snapshotAdapter.js';
+import { ChunkPresenter } from '../../src/three/chunkPresenter.js';
 import { validSnapshot } from '../core/fixtures.js';
 
 function ownedSnapshot(revision = 1, epoch = 'epoch:one') {
@@ -121,7 +123,7 @@ describe('snapshotToThreePresentation', () => {
     );
   });
 
-  it('bounds the correctness-oracle chunk projection before quadratic neighbour work', () => {
+  it('keeps the fixed cap on unprofiled arbitrary-chunk compatibility', () => {
     const input = ownedSnapshot();
     const source = input.chunks[0]!;
     const chunks = Array.from({ length: 513 }, (_, index) => ({
@@ -134,5 +136,115 @@ describe('snapshotToThreePresentation', () => {
     expect(() => snapshotToThreePresentation({ ...input, chunks })).toThrow(
       /at most 512 chunks/,
     );
+  });
+
+  it('accepts more than 512 profiled chunks under declared indexed budgets', () => {
+    const input = ownedSnapshot();
+    const source = input.chunks[0]!;
+    const chunks = Array.from({ length: 513 }, (_, index) => ({
+      ...source,
+      key: `chunk:${String(index)}`,
+      origin: { x: index * 2, y: 0, z: 0 },
+      voxels: source.voxels.slice(),
+    }));
+    const presentation = snapshotToThreePresentation({
+      ...input,
+      descriptor: {
+        ...input.descriptor,
+        chunkProfile: {
+          layout: 'uniform-grid',
+          size: { x: 2, y: 1, z: 1 },
+          gridOrigin: { x: 0, y: 0, z: 0 },
+          emptyPaletteIndex: 0,
+          surfaceModel: 'opaque',
+          missingNeighbor: 'empty',
+        },
+        limits: { ...input.descriptor.limits, maxChunks: 1_024 },
+      },
+      chunks,
+    });
+
+    expect(presentation.chunks).toHaveLength(513);
+    expect(presentation.chunks[512]).toMatchObject({
+      key: 'chunk:512',
+      voxelOrigin: { x: 1_024, y: 0, z: 0 },
+    });
+    expect(presentation.chunks[512]?.sampleNeighbor).toBeUndefined();
+    expect(presentation.chunks[512]?.precomputedMesh?.bounds).toEqual({
+      min: [0, 0, 0],
+      max: [1, 1, 1],
+    });
+    expect(presentation.chunks[512]?.version).toContain('oracle@');
+  });
+
+  it('uses exact profiled output counts instead of the legacy volume-times-six guard', () => {
+    const input = ownedSnapshot();
+    const size = { x: 64, y: 64, z: 64 };
+    const presentation = snapshotToThreePresentation({
+      ...input,
+      descriptor: {
+        ...input.descriptor,
+        chunkProfile: {
+          layout: 'uniform-grid',
+          size,
+          gridOrigin: { x: 0, y: 0, z: 0 },
+          emptyPaletteIndex: 0,
+          surfaceModel: 'opaque',
+          missingNeighbor: 'empty',
+        },
+        limits: {
+          ...input.descriptor.limits,
+          maxVoxelsPerChunk: size.x * size.y * size.z,
+        },
+      },
+      chunks: [{
+        ...input.chunks[0]!,
+        size,
+        voxels: new Uint16Array(size.x * size.y * size.z).fill(1),
+      }],
+    });
+
+    expect(presentation.chunks[0]?.precomputedMesh?.counts.exposedUnitFaceCount)
+      .toBe(6 * 64 * 64);
+  });
+
+  it('presents profiled output as scaled local geometry with an exact grid transform', () => {
+    const input = ownedSnapshot();
+    const source = input.chunks[0]!;
+    const presentation = snapshotToThreePresentation({
+      ...input,
+      descriptor: {
+        ...input.descriptor,
+        coordinates: {
+          ...input.descriptor.coordinates,
+          worldUnitsPerVoxel: { x: 2, y: 3, z: 4 },
+        },
+        chunkProfile: {
+          layout: 'uniform-grid',
+          size: { x: 2, y: 1, z: 1 },
+          gridOrigin: { x: 0, y: 0, z: 0 },
+          emptyPaletteIndex: 0,
+          surfaceModel: 'opaque',
+          missingNeighbor: 'empty',
+        },
+      },
+      chunks: [{ ...source, origin: { x: -2, y: 0, z: 0 } }],
+    });
+    const root = new Group();
+    const material = new MeshBasicMaterial({ vertexColors: true });
+    const presenter = new ChunkPresenter(root);
+    presenter.reconcile(presentation.chunks, () => material);
+    const mesh = presenter.get(source.key)!;
+    mesh.updateMatrixWorld(true);
+
+    expect(mesh.position.toArray()).toEqual([-4, 0, 0]);
+    expect(mesh.geometry.boundingBox?.min.toArray()).toEqual([0, 0, 0]);
+    expect(mesh.geometry.boundingBox?.max.toArray()).toEqual([2, 3, 4]);
+    const worldBounds = new Box3().setFromObject(mesh);
+    expect(worldBounds.min.toArray()).toEqual([-4, 0, 0]);
+    expect(worldBounds.max.toArray()).toEqual([-2, 3, 4]);
+
+    presenter.dispose();
+    material.dispose();
   });
 });

@@ -1,9 +1,10 @@
-import type { BufferGeometry, Material } from 'three';
+import type { BufferGeometry, Color, Material, Matrix4 } from 'three';
 import type {
-  DensePaletteChunk,
+  DensePaletteChunkReader,
   NeighborSampler,
+  ValidatedMesherOutputV1,
 } from '../meshing/index.js';
-import type { InstanceTransformAnimationV1 } from '../core/index.js';
+import type { InstanceTransformAnimationV1, Int3V1 } from '../core/index.js';
 
 export interface PresentationBounds {
   readonly min: { readonly x: number; readonly y: number; readonly z: number };
@@ -27,7 +28,7 @@ export interface GeometryPresentation {
   }[];
 }
 
-export interface InstanceBatchPresentation {
+export interface DenseInstanceBatchPresentation {
   readonly key: string;
   readonly version: string;
   readonly geometryKey: string;
@@ -38,7 +39,52 @@ export interface InstanceBatchPresentation {
   /** Straight-alpha sRGB8, four bytes per instance. V1 presentation is opaque. */
   readonly colors?: Uint8Array;
   readonly animation?: InstanceTransformAnimationV1;
+  readonly castShadow?: boolean;
+  readonly receiveShadow?: boolean;
 }
+
+export interface InstanceBatchUpdateRangeInternal {
+  readonly start: number;
+  readonly count: number;
+}
+
+/**
+ * Package-internal read-only bridge over canonical copy-on-write pages.
+ * It deliberately exposes values and identity comparisons, never page arrays.
+ */
+export interface PagedInstanceBatchSourceInternal {
+  readonly countInternal: number;
+  readonly hasColorsInternal: boolean;
+  readonly hasAnimationInternal: boolean;
+  readonly opacityPageScansInternal: number;
+  keyAtInternal(slot: number): string;
+  readMatrixAtInternal(slot: number, target: Matrix4): void;
+  readColorAtInternal(slot: number, target: Color): void;
+  readAnimationAtInternal(slot: number, target: Float32Array): void;
+  hasOnlyOpaqueColorsInternal(): boolean;
+  updateRangesFromInternal(
+    previous: PagedInstanceBatchSourceInternal | undefined,
+  ): readonly InstanceBatchUpdateRangeInternal[];
+}
+
+export interface PagedInstanceBatchPresentationInternal {
+  readonly key: string;
+  readonly version: string;
+  readonly geometryKey: string;
+  readonly materialKey: string;
+  /** Empty compatibility lanes for the legacy runtime preflight only. */
+  readonly instanceKeys: readonly [];
+  readonly matrices: Float32Array;
+  readonly colors?: undefined;
+  readonly animation?: undefined;
+  readonly pagedSourceInternal: PagedInstanceBatchSourceInternal;
+  readonly castShadow?: boolean;
+  readonly receiveShadow?: boolean;
+}
+
+export type InstanceBatchPresentation =
+  | DenseInstanceBatchPresentation
+  | PagedInstanceBatchPresentationInternal;
 
 export interface InstanceBatchResolvers {
   geometry(key: string): BufferGeometry | undefined;
@@ -55,7 +101,7 @@ export interface Srgb8Color {
 export interface ChunkPresentation {
   readonly key: string;
   readonly version: string;
-  readonly chunk: DensePaletteChunk;
+  readonly chunk: DensePaletteChunkReader;
   /** Index zero is empty and may use any color value. */
   readonly palette: readonly Srgb8Color[];
   readonly materialKey: string;
@@ -65,6 +111,10 @@ export interface ChunkPresentation {
     readonly z: number;
   };
   readonly sampleNeighbor?: NeighborSampler;
+  /** Indexed profiled path: validated source-local geometry from a copied halo. */
+  readonly precomputedMesh?: ValidatedMesherOutputV1;
+  /** Absolute voxel origin applied as the mesh transform for precomputed output. */
+  readonly voxelOrigin?: Int3V1;
 }
 
 export interface MaterialPresentation {

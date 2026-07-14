@@ -1,23 +1,40 @@
 import {
-  Box3,
   Color,
   DynamicDrawUsage,
   Euler,
   InstancedMesh,
   Matrix4,
-  Sphere,
-  SRGBColorSpace,
   Vector3,
   type BufferGeometry,
   type Group,
   type Material,
 } from 'three';
 
-import { MAX_INSTANCE_ANIMATION_UPDATE_RANGES_V1 } from '../core/index.js';
-
+import {
+  MAX_INSTANCE_ANIMATION_UPDATE_RANGES_V1,
+  type Vec3V1,
+} from '../core/index.js';
+import {
+  raycastPresentedInstancesInternal,
+  type PresentedInstanceRaycastResultInternal,
+} from './instancePicking.js';
+import {
+  INSTANCE_ANIMATION_SAMPLE_LENGTH_INTERNAL,
+  animatedInstanceIndicesInternal,
+  fullInstanceBatchRangeInternal,
+  instanceBatchCountInternal,
+  instanceBatchHasColorsInternal,
+  instanceBatchUpdateRangesInternal,
+  isPagedInstanceBatchPresentationInternal,
+  readInstanceAnimationAtInternal,
+  readInstanceColorAtInternal,
+  readInstanceMatrixAtInternal,
+  updateConservativeBatchBoundsInternal,
+} from './instanceBatchPresentationAccess.js';
 import type {
   InstanceBatchPresentation,
   InstanceBatchResolvers,
+  InstanceBatchUpdateRangeInternal,
 } from './presentationTypes.js';
 
 interface BatchEntry {
@@ -26,11 +43,16 @@ interface BatchEntry {
   readonly materialSignature: string;
   readonly capacity: number;
   readonly hasColors: boolean;
-  readonly baseMatrices: Float32Array;
-  readonly animation: InstanceBatchPresentation['animation'];
-  readonly animatedIndices: readonly number[];
+  batch: InstanceBatchPresentation;
+  animatedIndices: readonly number[];
   fullUploadPending: boolean;
   version: string;
+}
+
+interface SlotWriteMetricsInternal {
+  readonly matrixWrites: number;
+  readonly colorWrites: number;
+  readonly updateRanges: number;
 }
 
 function isNonEmptyStringArray(value: unknown): value is string[] {
@@ -55,8 +77,6 @@ function resolveBatchMaterial(
     return material;
   });
   return {
-    // Three applies BufferGeometry draw ranges only when Mesh.material is an
-    // array, even if the geometry declares exactly one group.
     material: usesGeometryGroups ? materials : materials[0]!,
     signature: materials.map((material) => material.uuid).join('|'),
   };
@@ -67,9 +87,7 @@ const offsetMatrix = new Matrix4();
 const color = new Color();
 const offsetEuler = new Euler(0, 0, 0, 'XYZ');
 const offsetScale = new Vector3();
-const boundsCenter = new Vector3();
-const boundsCorner = new Vector3();
-const transformedSphere = new Sphere();
+const animationSample = new Float32Array(INSTANCE_ANIMATION_SAMPLE_LENGTH_INTERNAL);
 
 function capacityFor(count: number): number {
   let capacity = 1;
@@ -77,89 +95,73 @@ function capacityFor(count: number): number {
   return capacity;
 }
 
-function writeBatch(mesh: InstancedMesh, batch: InstanceBatchPresentation): void {
-  const count = batch.instanceKeys.length;
-  for (let index = 0; index < count; index += 1) {
-    matrix.fromArray(batch.matrices, index * 16);
-    mesh.setMatrixAt(index, matrix);
-
-    if (batch.colors) {
-      const offset = index * 4;
-      color.setRGB(
-        (batch.colors[offset] ?? 0) / 255,
-        (batch.colors[offset + 1] ?? 0) / 255,
-        (batch.colors[offset + 2] ?? 0) / 255,
-        SRGBColorSpace,
-      );
-      mesh.setColorAt(index, color);
-    }
-  }
-  mesh.count = count;
-  mesh.instanceMatrix.clearUpdateRanges();
-  mesh.instanceMatrix.needsUpdate = true;
-  if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
-  mesh.userData.instanceKeys = [...batch.instanceKeys];
-  setConservativeBatchBounds(mesh, batch);
-  mesh.frustumCulled = true;
-}
-
-function expandBySphere(bounds: Box3, sphere: Sphere): void {
-  boundsCorner.setScalar(sphere.radius);
-  bounds.expandByPoint(boundsCenter.copy(sphere.center).sub(boundsCorner));
-  bounds.expandByPoint(boundsCenter.copy(sphere.center).add(boundsCorner));
-}
-
-function linearFrobeniusNorm(value: Matrix4): number {
-  const elements = value.elements;
-  return Math.sqrt(
-    elements[0] ** 2 + elements[1] ** 2 + elements[2] ** 2
-    + elements[4] ** 2 + elements[5] ** 2 + elements[6] ** 2
-    + elements[8] ** 2 + elements[9] ** 2 + elements[10] ** 2,
+function coversWholeBatch(
+  ranges: readonly InstanceBatchUpdateRangeInternal[],
+  count: number,
+): boolean {
+  return count === 0 || (
+    ranges.length === 1
+    && ranges[0]!.start === 0
+    && ranges[0]!.count >= count
   );
 }
 
-function setConservativeBatchBounds(
+function writeBatchSlots(
   mesh: InstancedMesh,
   batch: InstanceBatchPresentation,
-): void {
-  if (!mesh.geometry.boundingSphere) mesh.geometry.computeBoundingSphere();
-  const geometrySphere = mesh.geometry.boundingSphere;
-  if (!geometrySphere) throw new Error(`Geometry for batch ${batch.key} has no bounding sphere.`);
-  const bounds = new Box3().makeEmpty();
-  for (let index = 0; index < batch.instanceKeys.length; index += 1) {
-    matrix.fromArray(batch.matrices, index * 16);
-    const animation = batch.animation;
-    if (animation && animation.periodsMs[index]! > 0) {
-      const offset = index * 3;
-      const maximumScale = Math.max(
-        1 + Math.abs(animation.scaleAmplitudes[offset]!),
-        1 + Math.abs(animation.scaleAmplitudes[offset + 1]!),
-        1 + Math.abs(animation.scaleAmplitudes[offset + 2]!),
-      );
-      const translationRadius = boundsCorner.set(
-        animation.translationAmplitudes[offset]!,
-        animation.translationAmplitudes[offset + 1]!,
-        animation.translationAmplitudes[offset + 2],
-      ).length();
-      transformedSphere.center.set(
-        matrix.elements[12],
-        matrix.elements[13],
-        matrix.elements[14],
-      );
-      transformedSphere.radius = linearFrobeniusNorm(matrix)
-        * maximumScale
-        * (geometrySphere.center.length() + geometrySphere.radius)
-        + translationRadius;
-    } else {
-      transformedSphere.center.copy(geometrySphere.center).applyMatrix4(matrix);
-      transformedSphere.radius = linearFrobeniusNorm(matrix) * geometrySphere.radius;
+  ranges: readonly InstanceBatchUpdateRangeInternal[],
+  fullUpload: boolean,
+): SlotWriteMetricsInternal {
+  const count = instanceBatchCountInternal(batch);
+  const hasColors = instanceBatchHasColorsInternal(batch);
+  mesh.instanceMatrix.clearUpdateRanges();
+  mesh.instanceColor?.clearUpdateRanges();
+  let matrixWrites = 0;
+  let colorWrites = 0;
+  const keys = isNonEmptyStringArray(mesh.userData.instanceKeys)
+    ? mesh.userData.instanceKeys
+    : [];
+  for (const range of ranges) {
+    const end = Math.min(count, range.start + range.count);
+    for (let slot = range.start; slot < end; slot += 1) {
+      readInstanceMatrixAtInternal(batch, slot, matrix);
+      mesh.setMatrixAt(slot, matrix);
+      keys[slot] = isPagedInstanceBatchPresentationInternal(batch)
+        ? batch.pagedSourceInternal.keyAtInternal(slot)
+        : batch.instanceKeys[slot]!;
+      matrixWrites += 1;
+      if (hasColors) {
+        readInstanceColorAtInternal(batch, slot, color);
+        mesh.setColorAt(slot, color);
+        colorWrites += 1;
+      }
     }
-    expandBySphere(bounds, transformedSphere);
   }
-  mesh.boundingBox = bounds;
-  mesh.boundingSphere = bounds.isEmpty()
-    ? new Sphere().makeEmpty()
-    : bounds.getBoundingSphere(new Sphere());
+  keys.length = count;
+  mesh.userData.instanceKeys = keys;
+  mesh.count = count;
+  mesh.castShadow = batch.castShadow ?? false;
+  mesh.receiveShadow = batch.receiveShadow ?? false;
+  if (fullUpload) {
+    mesh.instanceMatrix.needsUpdate = true;
+    if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
+  } else if (matrixWrites > 0) {
+    for (const range of ranges) {
+      const rangeCount = Math.min(range.count, count - range.start);
+      if (rangeCount <= 0) continue;
+      mesh.instanceMatrix.addUpdateRange(range.start * 16, rangeCount * 16);
+      mesh.instanceColor?.addUpdateRange(range.start * 4, rangeCount * 4);
+    }
+    mesh.instanceMatrix.needsUpdate = true;
+    if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
+  }
+  updateConservativeBatchBoundsInternal(mesh, batch, ranges, fullUpload);
+  mesh.frustumCulled = true;
+  return {
+    matrixWrites,
+    colorWrites,
+    updateRanges: fullUpload && count > 0 ? 1 : ranges.length,
+  };
 }
 
 function markAnimatedMatrixRanges(entry: BatchEntry): void {
@@ -202,12 +204,13 @@ export class InstanceBatchPresenter {
   private readonly entries = new Map<string, BatchEntry>();
   private disposed = false;
   private matrixUpdates = 0;
+  private presentationMatricesWritten = 0;
+  private presentationColorsWritten = 0;
+  private presentationRangesUploaded = 0;
 
   constructor(private readonly root: Group) {}
 
-  get count(): number {
-    return this.entries.size;
-  }
+  get count(): number { return this.entries.size; }
 
   get instanceCount(): number {
     let count = 0;
@@ -229,12 +232,38 @@ export class InstanceBatchPresenter {
     return count;
   }
 
-  get animationMatrixUpdates(): number {
-    return this.matrixUpdates;
-  }
+  get animationMatrixUpdates(): number { return this.matrixUpdates; }
+  get presentationMatrixWritesInternal(): number { return this.presentationMatricesWritten; }
+  get presentationColorWritesInternal(): number { return this.presentationColorsWritten; }
+  get presentationUpdateRangesInternal(): number { return this.presentationRangesUploaded; }
 
   get(key: string): InstancedMesh | undefined {
     return this.entries.get(key)?.mesh;
+  }
+
+  pickRayInternal(
+    origin: Vec3V1,
+    direction: Vec3V1,
+    maxDistance: number,
+    maxCandidates: number,
+    maxPrimitiveTests: number,
+    maxHits: number,
+  ): PresentedInstanceRaycastResultInternal {
+    this.assertActive();
+    return raycastPresentedInstancesInternal(
+      [...this.entries.values()].map((entry) => ({
+        batchKey: entry.batch.key,
+        geometryKey: entry.batch.geometryKey,
+        materialKey: entry.batch.materialKey,
+        mesh: entry.mesh,
+      })),
+      origin,
+      direction,
+      maxDistance,
+      maxCandidates,
+      maxPrimitiveTests,
+      maxHits,
+    );
   }
 
   reconcile(
@@ -243,7 +272,6 @@ export class InstanceBatchPresenter {
   ): void {
     this.assertActive();
     const incoming = new Set<string>();
-
     for (const batch of batches) {
       if (incoming.has(batch.key)) {
         throw new Error(`Duplicate instance batch presentation key: ${batch.key}`);
@@ -256,44 +284,56 @@ export class InstanceBatchPresenter {
         batch,
         resolvers,
       );
-
       const existing = this.entries.get(batch.key);
       if (
         existing?.version === batch.version
         && existing.geometry === geometry
         && existing.materialSignature === materialSignature
       ) continue;
-      const count = batch.instanceKeys.length;
+
+      const count = instanceBatchCountInternal(batch);
+      const hasColors = instanceBatchHasColorsInternal(batch);
       if (
         existing?.geometry === geometry
         && existing.materialSignature === materialSignature
         && existing.capacity >= Math.max(1, count)
-        && existing.hasColors === Boolean(batch.colors)
+        && existing.hasColors === hasColors
       ) {
-        writeBatch(existing.mesh, batch);
-        existing.version = batch.version;
-        this.entries.set(batch.key, this.entryFor(
-          existing.mesh,
-          existing.geometry,
-          existing.materialSignature,
-          existing.capacity,
+        const ranges = isPagedInstanceBatchPresentationInternal(batch)
+          ? instanceBatchUpdateRangesInternal(existing.batch, batch)
+          : fullInstanceBatchRangeInternal(batch);
+        const fullUpload = !isPagedInstanceBatchPresentationInternal(batch)
+          || coversWholeBatch(ranges, count);
+        this.recordWrites(writeBatchSlots(existing.mesh, batch, ranges, fullUpload));
+        existing.animatedIndices = animatedInstanceIndicesInternal(
           batch,
-        ));
+          ranges,
+          existing.animatedIndices,
+        );
+        existing.batch = batch;
+        existing.version = batch.version;
+        if (fullUpload) existing.fullUploadPending = true;
         continue;
       }
 
-      const mesh = new InstancedMesh(geometry, material, capacityFor(count));
+      const capacity = capacityFor(count);
+      const mesh = new InstancedMesh(geometry, material, capacity);
       mesh.name = batch.key;
       mesh.instanceMatrix.setUsage(DynamicDrawUsage);
-      writeBatch(mesh, batch);
+      const ranges = fullInstanceBatchRangeInternal(batch);
+      this.recordWrites(writeBatchSlots(mesh, batch, ranges, true));
       this.root.add(mesh);
-      this.entries.set(batch.key, this.entryFor(
+      this.entries.set(batch.key, {
         mesh,
         geometry,
         materialSignature,
-        capacityFor(count),
+        capacity,
+        hasColors,
         batch,
-      ));
+        animatedIndices: animatedInstanceIndicesInternal(batch),
+        fullUploadPending: true,
+        version: batch.version,
+      });
       if (existing) this.removeEntry(existing);
     }
 
@@ -307,31 +347,29 @@ export class InstanceBatchPresenter {
   animate(nowMs: number): void {
     this.assertActive();
     for (const entry of this.entries.values()) {
-      const animation = entry.animation;
-      if (!animation || entry.animatedIndices.length === 0) continue;
+      if (entry.animatedIndices.length === 0) continue;
       for (const index of entry.animatedIndices) {
-        const periodMs = animation.periodsMs[index]!;
-        const phase = (
-          ((nowMs % periodMs) + periodMs) % periodMs
-        ) / periodMs * Math.PI * 2 + animation.phasesRadians[index]!;
+        if (!readInstanceAnimationAtInternal(entry.batch, index, animationSample)) continue;
+        const periodMs = animationSample[0]!;
+        const phase = (((nowMs % periodMs) + periodMs) % periodMs)
+          / periodMs * Math.PI * 2 + animationSample[1]!;
         const wave = Math.sin(phase);
-        const offset = index * 3;
-        matrix.fromArray(entry.baseMatrices, index * 16);
+        readInstanceMatrixAtInternal(entry.batch, index, matrix);
         offsetEuler.set(
-          animation.rotationAmplitudesRadians[offset]! * wave,
-          animation.rotationAmplitudesRadians[offset + 1]! * wave,
-          animation.rotationAmplitudesRadians[offset + 2]! * wave,
+          animationSample[5]! * wave,
+          animationSample[6]! * wave,
+          animationSample[7]! * wave,
         );
         offsetScale.set(
-          1 + animation.scaleAmplitudes[offset]! * wave,
-          1 + animation.scaleAmplitudes[offset + 1]! * wave,
-          1 + animation.scaleAmplitudes[offset + 2]! * wave,
+          1 + animationSample[8]! * wave,
+          1 + animationSample[9]! * wave,
+          1 + animationSample[10]! * wave,
         );
         offsetMatrix.makeRotationFromEuler(offsetEuler).scale(offsetScale);
         matrix.multiply(offsetMatrix);
-        matrix.elements[12] += animation.translationAmplitudes[offset]! * wave;
-        matrix.elements[13] += animation.translationAmplitudes[offset + 1]! * wave;
-        matrix.elements[14] += animation.translationAmplitudes[offset + 2]! * wave;
+        matrix.elements[12] += animationSample[2]! * wave;
+        matrix.elements[13] += animationSample[3]! * wave;
+        matrix.elements[14] += animationSample[4]! * wave;
         entry.mesh.setMatrixAt(index, matrix);
       }
       markAnimatedMatrixRanges(entry);
@@ -341,39 +379,26 @@ export class InstanceBatchPresenter {
 
   dispose(): void {
     if (this.disposed) return;
+    this.resetInternal();
     this.disposed = true;
+  }
+
+  /** Package-internal rollback hook; the presenter remains reusable. */
+  resetInternal(): void {
+    this.assertActive();
     for (const entry of this.entries.values()) this.removeEntry(entry);
     this.entries.clear();
+  }
+
+  private recordWrites(metrics: SlotWriteMetricsInternal): void {
+    this.presentationMatricesWritten += metrics.matrixWrites;
+    this.presentationColorsWritten += metrics.colorWrites;
+    this.presentationRangesUploaded += metrics.updateRanges;
   }
 
   private removeEntry(entry: BatchEntry): void {
     this.root.remove(entry.mesh);
     entry.mesh.dispose();
-  }
-
-  private entryFor(
-    mesh: InstancedMesh,
-    geometry: BufferGeometry,
-    materialSignature: string,
-    capacity: number,
-    batch: InstanceBatchPresentation,
-  ): BatchEntry {
-    const animatedIndices = batch.animation
-      ? Array.from(batch.animation.periodsMs, (period, index) => period > 0 ? index : -1)
-        .filter((index) => index >= 0)
-      : [];
-    return {
-      mesh,
-      geometry,
-      materialSignature,
-      capacity,
-      hasColors: Boolean(batch.colors),
-      baseMatrices: batch.matrices,
-      animation: batch.animation,
-      animatedIndices,
-      fullUploadPending: true,
-      version: batch.version,
-    };
   }
 
   private assertActive(): void {
