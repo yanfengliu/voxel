@@ -16,6 +16,7 @@ import {
   materializePagedInstanceBatchInternal,
   preflightPagedInstanceBatchPatchInternal,
 } from '../../src/core/paged-instance-batch.js';
+import { pagedInstanceBatchEqualsBorrowedInternal } from '../../src/core/paged-instance-batch-equality.js';
 
 function matrices(seeds: readonly number[]): Float32Array {
   const values = new Float32Array(seeds.length * 16);
@@ -118,6 +119,39 @@ function translations(batch: InstanceBatchV1): number[] {
   return batch.instanceKeys.map((_, index) => batch.matrices[index * 16 + 12]!);
 }
 
+function cloneBatch(batch: InstanceBatchV1): InstanceBatchV1 {
+  return {
+    ...batch,
+    instanceKeys: [...batch.instanceKeys],
+    matrices: batch.matrices.slice(),
+    ...(batch.colors ? { colors: batch.colors.slice() } : {}),
+    ...(batch.animation ? {
+      animation: {
+        ...batch.animation,
+        periodsMs: batch.animation.periodsMs.slice(),
+        phasesRadians: batch.animation.phasesRadians.slice(),
+        translationAmplitudes: batch.animation.translationAmplitudes.slice(),
+        rotationAmplitudesRadians: batch.animation.rotationAmplitudesRadians.slice(),
+        scaleAmplitudes: batch.animation.scaleAmplitudes.slice(),
+      },
+    } : {}),
+    ...(batch.presentation ? { presentation: { ...batch.presentation } } : {}),
+  };
+}
+
+function forbidBorrowedTypedArrayHooks<Value extends Float32Array | Uint8Array>(
+  value: Value,
+): Value {
+  const fail = () => { throw new Error('borrowed typed-array hook called'); };
+  for (const name of ['buffer', 'byteOffset', 'byteLength', 'length']) {
+    Object.defineProperty(value, name, { configurable: true, get: fail });
+  }
+  for (const name of ['subarray', 'slice', 'set', 'reduce', 'forEach', 'some']) {
+    Object.defineProperty(value, name, { configurable: true, value: fail });
+  }
+  return value;
+}
+
 describe('paged instance batch core', () => {
   it.each([255, 256, 257])(
     'uses fixed pages and materializes exactly at the %i boundary',
@@ -139,9 +173,67 @@ describe('paged instance batch core', () => {
         copiedTypedArrayBytes: count * 16 * Float32Array.BYTES_PER_ELEMENT,
         allocatedPages: Math.ceil(count / INSTANCE_BATCH_PAGE_SIZE_INTERNAL),
       });
+      expect(pagedInstanceBatchEqualsBorrowedInternal(created.state, source)).toBe(true);
       expect(materializePagedInstanceBatchInternal(created.state)).toEqual(source);
     },
   );
+
+  it('compares metadata, layouts, presentation, and every typed lane exactly', () => {
+    const source = batchForKeys(['a', 'b'], { colors: true, animation: true });
+    source.matrices[1] = -0;
+    const state = createPagedInstanceBatchInternal(source).state;
+    expect(pagedInstanceBatchEqualsBorrowedInternal(state, cloneBatch(source))).toBe(true);
+
+    const cases: readonly ((candidate: InstanceBatchV1) => void)[] = [
+      (candidate) => { candidate.matrices[1] = 0; },
+      (candidate) => {
+        candidate.colors![0] = candidate.colors![0]! ^ 1;
+      },
+      (candidate) => {
+        candidate.animation!.periodsMs[0] = candidate.animation!.periodsMs[0]! + 1;
+      },
+      (candidate) => {
+        candidate.animation!.phasesRadians[0] =
+          candidate.animation!.phasesRadians[0]! + 1;
+      },
+      (candidate) => {
+        candidate.animation!.translationAmplitudes[0] =
+          candidate.animation!.translationAmplitudes[0]! + 1;
+      },
+      (candidate) => {
+        candidate.animation!.rotationAmplitudesRadians[0] =
+          candidate.animation!.rotationAmplitudesRadians[0]! + 1;
+      },
+      (candidate) => {
+        candidate.animation!.scaleAmplitudes[0] =
+          candidate.animation!.scaleAmplitudes[0]! + 1;
+      },
+    ];
+    for (const mutate of cases) {
+      const candidate = cloneBatch(source);
+      mutate(candidate);
+      expect(pagedInstanceBatchEqualsBorrowedInternal(state, candidate)).toBe(false);
+    }
+
+    expect(pagedInstanceBatchEqualsBorrowedInternal(state, {
+      ...cloneBatch(source),
+      geometryKey: 'geometry:changed',
+    })).toBe(false);
+    expect(pagedInstanceBatchEqualsBorrowedInternal(state, {
+      ...cloneBatch(source),
+      presentation: { castShadow: false, receiveShadow: false },
+    })).toBe(false);
+    const colorless = cloneBatch(source);
+    delete (colorless as { colors?: Uint8Array }).colors;
+    expect(pagedInstanceBatchEqualsBorrowedInternal(state, colorless)).toBe(false);
+    const animationless = cloneBatch(source);
+    delete (animationless as { animation?: InstanceTransformAnimationV1 }).animation;
+    expect(pagedInstanceBatchEqualsBorrowedInternal(state, animationless)).toBe(false);
+    const wrongAnimationSchema = cloneBatch(source);
+    (wrongAnimationSchema.animation as { schemaVersion: string }).schemaVersion =
+      'voxel.instance-transform-animation/2';
+    expect(pagedInstanceBatchEqualsBorrowedInternal(state, wrongAnimationSchema)).toBe(false);
+  });
 
   it('clones one page for same-page edits and two pages across a boundary', () => {
     const base = createPagedInstanceBatchInternal(numberedBatch(257)).state;
@@ -200,6 +292,10 @@ describe('paged instance batch core', () => {
       countChanged: true,
       externalOrderChanged: true,
     });
+    expect(pagedInstanceBatchEqualsBorrowedInternal(update.state, materialized)).toBe(true);
+    const wrongOrder = cloneBatch(materialized);
+    (wrongOrder.instanceKeys as string[]).splice(0, 2, 'c', 'a');
+    expect(pagedInstanceBatchEqualsBorrowedInternal(update.state, wrongOrder)).toBe(false);
 
     const left = applyPagedInstanceBatchPatchInternal(
       createPagedInstanceBatchInternal(batchForKeys(['a', 'b', 'c', 'd', 'f'])).state,
@@ -426,6 +522,59 @@ describe('paged instance batch core', () => {
     first.matrices.fill(0);
     expect(materializePagedInstanceBatchInternal(updated).instanceKeys[0]).toBe('a');
     expect(materializePagedInstanceBatchInternal(updated).matrices[12]).toBe(44);
+  });
+
+  it('copies borrowed full and patch payloads without invoking their typed-array methods', () => {
+    const source = batchForKeys(['a'], { colors: true, animation: true });
+    const borrowed: InstanceBatchV1 = {
+      ...source,
+      matrices: forbidBorrowedTypedArrayHooks(source.matrices),
+      colors: forbidBorrowedTypedArrayHooks(source.colors!),
+      animation: {
+        ...source.animation!,
+        periodsMs: forbidBorrowedTypedArrayHooks(source.animation!.periodsMs),
+        phasesRadians: forbidBorrowedTypedArrayHooks(source.animation!.phasesRadians),
+        translationAmplitudes: forbidBorrowedTypedArrayHooks(
+          source.animation!.translationAmplitudes,
+        ),
+        rotationAmplitudesRadians: forbidBorrowedTypedArrayHooks(
+          source.animation!.rotationAmplitudesRadians,
+        ),
+        scaleAmplitudes: forbidBorrowedTypedArrayHooks(
+          source.animation!.scaleAmplitudes,
+        ),
+      },
+    };
+    const created = createPagedInstanceBatchInternal(borrowed).state;
+    expect(pagedInstanceBatchEqualsBorrowedInternal(created, borrowed)).toBe(true);
+
+    const input = patch(2, ['a'], [9], [], { colors: true, animation: true });
+    const guardedPatch: PatchBatchInstancesV1 = {
+      ...input,
+      upserts: {
+        ...input.upserts,
+        matrices: forbidBorrowedTypedArrayHooks(input.upserts.matrices),
+        colors: forbidBorrowedTypedArrayHooks(input.upserts.colors!),
+        animation: {
+          ...input.upserts.animation!,
+          periodsMs: forbidBorrowedTypedArrayHooks(input.upserts.animation!.periodsMs),
+          phasesRadians: forbidBorrowedTypedArrayHooks(
+            input.upserts.animation!.phasesRadians,
+          ),
+          translationAmplitudes: forbidBorrowedTypedArrayHooks(
+            input.upserts.animation!.translationAmplitudes,
+          ),
+          rotationAmplitudesRadians: forbidBorrowedTypedArrayHooks(
+            input.upserts.animation!.rotationAmplitudesRadians,
+          ),
+          scaleAmplitudes: forbidBorrowedTypedArrayHooks(
+            input.upserts.animation!.scaleAmplitudes,
+          ),
+        },
+      },
+    };
+    const updated = applyPagedInstanceBatchPatchInternal(created, guardedPatch).state;
+    expect(materializePagedInstanceBatchInternal(updated).matrices[12]).toBe(9);
   });
 
   it('preflights exact copies and work, and bounds sparse upload ranges to 64', () => {

@@ -1,4 +1,5 @@
 import type { InstanceBatchV1 } from './contracts.js';
+import { typedArrayLengthInternal } from './typed-array-intrinsics.js';
 
 export class PagedInstanceBatchErrorInternal extends Error {
   readonly code: string;
@@ -73,13 +74,13 @@ export function validateBatchLayoutWithBudgetInternal(
 ): ValidatedBatchLayoutInternal {
   const count = batch.instanceKeys.length;
   work.charge(1 + count);
-  if (batch.matrices.length !== count * 16) {
+  if (typedArrayLengthInternal(batch.matrices) !== count * 16) {
     throw new PagedInstanceBatchErrorInternal(
       'paged-batch.matrices.length',
       'Batch matrices do not match the instance count.',
     );
   }
-  if (batch.colors && batch.colors.length !== count * 4) {
+  if (batch.colors && typedArrayLengthInternal(batch.colors) !== count * 4) {
     throw new PagedInstanceBatchErrorInternal(
       'paged-batch.colors.length',
       'Batch colors do not match the instance count.',
@@ -87,11 +88,11 @@ export function validateBatchLayoutWithBudgetInternal(
   }
   const motion = batch.animation;
   if (motion && (
-    motion.periodsMs.length !== count
-    || motion.phasesRadians.length !== count
-    || motion.translationAmplitudes.length !== count * 3
-    || motion.rotationAmplitudesRadians.length !== count * 3
-    || motion.scaleAmplitudes.length !== count * 3
+    typedArrayLengthInternal(motion.periodsMs) !== count
+    || typedArrayLengthInternal(motion.phasesRadians) !== count
+    || typedArrayLengthInternal(motion.translationAmplitudes) !== count * 3
+    || typedArrayLengthInternal(motion.rotationAmplitudesRadians) !== count * 3
+    || typedArrayLengthInternal(motion.scaleAmplitudes) !== count * 3
   )) {
     throw new PagedInstanceBatchErrorInternal(
       'paged-batch.animation.length',

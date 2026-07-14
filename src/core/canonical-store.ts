@@ -10,6 +10,7 @@ import {
   materializePagedInstanceBatchInternal,
   type PagedInstanceBatchInternal,
 } from './paged-instance-batch.js';
+import { pagedInstanceBatchEqualsBorrowedInternal } from './paged-instance-batch-equality.js';
 import { PersistentStringNumberMapInternal } from './persistent-string-number-map.js';
 import {
   copyRenderResourceV1Internal,
@@ -69,12 +70,19 @@ function typedArrayBytes(value: ArrayBufferView): Uint8Array {
   return new Uint8Array(value.buffer, value.byteOffset, value.byteLength);
 }
 
+function sameTypedArrayKind(left: ArrayBufferView, right: ArrayBufferView): boolean {
+  return (left instanceof Float32Array && right instanceof Float32Array)
+    || (left instanceof Uint8Array && right instanceof Uint8Array)
+    || (left instanceof Uint16Array && right instanceof Uint16Array)
+    || (left instanceof Uint32Array && right instanceof Uint32Array);
+}
+
 /** Equality for already validated, acyclic V1 data. Typed-array representation is significant. */
 function canonicalValueEquals(left: unknown, right: unknown): boolean {
   if (Object.is(left, right)) return true;
   if (ArrayBuffer.isView(left) || ArrayBuffer.isView(right)) {
     if (!ArrayBuffer.isView(left) || !ArrayBuffer.isView(right)) return false;
-    if (left.constructor !== right.constructor || left.byteLength !== right.byteLength) return false;
+    if (!sameTypedArrayKind(left, right) || left.byteLength !== right.byteLength) return false;
     const leftBytes = typedArrayBytes(left);
     const rightBytes = typedArrayBytes(right);
     for (let index = 0; index < leftBytes.length; index += 1) {
@@ -115,6 +123,56 @@ function reuseUnchanged<Value extends Identity>(
       ? live
       : value;
   });
+}
+
+function validateSnapshotLaneReplacementInternal<Live extends Identity, Next extends Identity>(
+  name: 'resource' | 'chunk' | 'batch',
+  path: 'resources' | 'chunks' | 'batches',
+  values: readonly Next[],
+  liveValues: ReadonlyMap<string, Live>,
+  tombstones: PersistentStringNumberMapInternal,
+  equals: (live: Live, next: Next) => boolean,
+): CanonicalSnapshotIdentityIssueInternal | null {
+  for (let index = 0; index < values.length; index += 1) {
+    const next = values[index]!;
+    const live = liveValues.get(next.key);
+    if (live?.incarnation === next.incarnation) {
+      if (name === 'resource' && 'kind' in live && 'kind' in next && live.kind !== next.kind) {
+        return {
+          code: 'snapshot.resource-kind-change',
+          path: `${path}[${String(index)}].kind`,
+          message: 'Resource kind cannot change within one live incarnation.',
+        };
+      }
+      if (next.revision < live.revision) {
+        return {
+          code: 'snapshot.item-revision-regressed',
+          path: `${path}[${String(index)}].revision`,
+          message: `${name} revision cannot move backward within one incarnation.`,
+        };
+      }
+      if (next.revision === live.revision && !equals(live, next)) {
+        return {
+          code: 'snapshot.item-revision-conflict',
+          path: `${path}[${String(index)}].revision`,
+          message: `${name} content is immutable for one key, incarnation, and revision.`,
+        };
+      }
+      continue;
+    }
+    const priorIncarnation = Math.max(
+      live?.incarnation ?? -1,
+      tombstones.get(next.key) ?? -1,
+    );
+    if (next.incarnation <= priorIncarnation) {
+      return {
+        code: 'snapshot.incarnation-not-newer',
+        path: `${path}[${String(index)}].incarnation`,
+        message: `${name} incarnation must exceed prior live and tombstoned identities.`,
+      };
+    }
+  }
+  return null;
 }
 
 function retainedResourceViews(resource: RenderResourceV1): readonly ArrayBufferView[] {
@@ -214,7 +272,7 @@ export class CanonicalRenderStateV1 {
       if (
         live?.incarnation === batch.incarnation
         && live.revision === batch.revision
-        && canonicalValueEquals(materializePagedInstanceBatchInternal(live), batch)
+        && pagedInstanceBatchEqualsBorrowedInternal(live, batch)
       ) return live;
       const created = createPagedInstanceBatchInternal(batch);
       copiedTypedArrayBytes += created.metrics.copiedTypedArrayBytes;
@@ -285,43 +343,28 @@ export class CanonicalRenderStateV1 {
         message: 'World descriptor fields are immutable within an epoch.',
       };
     }
-    const lanes = [
-      { name: 'resource', path: 'resources', values: snapshot.resources, live: this.resourcesByKey, tombstones: this.resourceTombstones },
-      { name: 'chunk', path: 'chunks', values: snapshot.chunks, live: this.chunksByKey, tombstones: this.chunkTombstones },
-      {
-        name: 'batch',
-        path: 'batches',
-        values: snapshot.batches,
-        live: new Map([...this.batchesByKey].map(([key, value]) => [
-          key,
-          materializePagedInstanceBatchInternal(value),
-        ])),
-        tombstones: this.batchTombstones,
-      },
-    ] as const;
-    for (const lane of lanes) {
-      for (let index = 0; index < lane.values.length; index += 1) {
-        const next = lane.values[index]!;
-        const live = lane.live.get(next.key);
-        if (live?.incarnation === next.incarnation) {
-          if (lane.name === 'resource' && 'kind' in live && 'kind' in next && live.kind !== next.kind) {
-            return { code: 'snapshot.resource-kind-change', path: `${lane.path}[${String(index)}].kind`, message: 'Resource kind cannot change within one live incarnation.' };
-          }
-          if (next.revision < live.revision) {
-            return { code: 'snapshot.item-revision-regressed', path: `${lane.path}[${String(index)}].revision`, message: `${lane.name} revision cannot move backward within one incarnation.` };
-          }
-          if (next.revision === live.revision && !canonicalValueEquals(live, next)) {
-            return { code: 'snapshot.item-revision-conflict', path: `${lane.path}[${String(index)}].revision`, message: `${lane.name} content is immutable for one key, incarnation, and revision.` };
-          }
-          continue;
-        }
-        const priorIncarnation = Math.max(live?.incarnation ?? -1, lane.tombstones.get(next.key) ?? -1);
-        if (next.incarnation <= priorIncarnation) {
-          return { code: 'snapshot.incarnation-not-newer', path: `${lane.path}[${String(index)}].incarnation`, message: `${lane.name} incarnation must exceed prior live and tombstoned identities.` };
-        }
-      }
-    }
-    return null;
+    return validateSnapshotLaneReplacementInternal(
+      'resource',
+      'resources',
+      snapshot.resources,
+      this.resourcesByKey,
+      this.resourceTombstones,
+      canonicalValueEquals,
+    ) ?? validateSnapshotLaneReplacementInternal(
+      'chunk',
+      'chunks',
+      snapshot.chunks,
+      this.chunksByKey,
+      this.chunkTombstones,
+      canonicalValueEquals,
+    ) ?? validateSnapshotLaneReplacementInternal(
+      'batch',
+      'batches',
+      snapshot.batches,
+      this.batchesByKey,
+      this.batchTombstones,
+      pagedInstanceBatchEqualsBorrowedInternal,
+    );
   }
 
   descriptorViewInternal(): WorldDescriptorV1 { return this.descriptorValue; }

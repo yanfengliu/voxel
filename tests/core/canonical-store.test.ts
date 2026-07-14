@@ -66,4 +66,27 @@ describe('CanonicalRenderStateV1', () => {
     );
     expect(replacement.tombstoneCount).toBe(0);
   });
+
+  it('reuses an identical batch revision and rejects changed content at that revision', () => {
+    const first = CanonicalRenderStateV1.fromSnapshot(owned(validSnapshot(1)));
+    const repeated = owned(validSnapshot(2));
+
+    expect(first.validateSnapshotReplacement(repeated)).toBeNull();
+    const reused = CanonicalRenderStateV1.fromSnapshotWithPagingMetricsInternal(
+      repeated,
+      first,
+    );
+    expect(reused.metrics).toEqual({ copiedTypedArrayBytes: 0, copyOperations: 0 });
+    expect(reused.state.batchStateInternal('batch:triangle')).toBe(
+      first.batchStateInternal('batch:triangle'),
+    );
+
+    const changedInput = validSnapshot(2);
+    changedInput.batches[0]!.matrices[12] = 999;
+    const changed = owned(changedInput);
+    expect(first.validateSnapshotReplacement(changed)).toMatchObject({
+      code: 'snapshot.item-revision-conflict',
+      path: 'batches[0].revision',
+    });
+  });
 });

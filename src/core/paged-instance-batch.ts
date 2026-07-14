@@ -6,6 +6,10 @@ import {
   type PatchBatchInstancesV1,
 } from './contracts.js';
 import { PagedInstanceBatchErrorInternal, PagedInstanceBatchWorkBudgetInternal, boundedNumberSortInternal, boundedSlotRangesInternal, boundedStableSortInternal, checkPagedInstanceBudgetInternal, compareKeysWithBudgetInternal, validateBatchLayoutWithBudgetInternal, type BoundedSlotRangeInternal } from './paged-instance-batch-work.js';
+import {
+  typedArrayByteLengthInternal,
+  typedArrayLengthInternal,
+} from './typed-array-intrinsics.js';
 
 export { PagedInstanceBatchErrorInternal } from './paged-instance-batch-work.js';
 
@@ -266,20 +270,23 @@ function animationArrays(
 }
 
 function inputTypedArrayBytes(payload: InstanceBatchPatchPayloadV1): number {
-  return payload.matrices.byteLength
-    + (payload.colors?.byteLength ?? 0)
+  return typedArrayByteLengthInternal(payload.matrices)
+    + (payload.colors === undefined ? 0 : typedArrayByteLengthInternal(payload.colors))
     + (payload.animation
-      ? animationArrays(payload.animation).reduce((total, value) => total + value.byteLength, 0)
+      ? animationArrays(payload.animation).reduce(
+        (total, value) => total + typedArrayByteLengthInternal(value),
+        0,
+      )
       : 0);
 }
 
 function assertAnimationLengths(animation: InstanceTransformAnimationV1, count: number): void {
   if (
-    animation.periodsMs.length !== count
-    || animation.phasesRadians.length !== count
-    || animation.translationAmplitudes.length !== count * 3
-    || animation.rotationAmplitudesRadians.length !== count * 3
-    || animation.scaleAmplitudes.length !== count * 3
+    typedArrayLengthInternal(animation.periodsMs) !== count
+    || typedArrayLengthInternal(animation.phasesRadians) !== count
+    || typedArrayLengthInternal(animation.translationAmplitudes) !== count * 3
+    || typedArrayLengthInternal(animation.rotationAmplitudesRadians) !== count * 3
+    || typedArrayLengthInternal(animation.scaleAmplitudes) !== count * 3
   ) fail('paged-batch.animation.length', 'Animation arrays do not match the instance count.');
 }
 
@@ -299,7 +306,7 @@ function assertPatchLayout(
   if (patch.removeInstanceKeys.length === 0 && upsertCount === 0) {
     fail('paged-batch.patch.empty', 'A patch must remove or upsert an instance.');
   }
-  if (patch.upserts.matrices.length !== upsertCount * 16) {
+  if (typedArrayLengthInternal(patch.upserts.matrices) !== upsertCount * 16) {
     fail('paged-batch.matrices.length', 'Patch matrices do not match its upsert count.');
   }
   if (
@@ -308,7 +315,10 @@ function assertPatchLayout(
   ) {
     fail('paged-batch.colors.layout', 'Patch color layout must match the live batch.');
   }
-  if (patch.upserts.colors && patch.upserts.colors.length !== upsertCount * 4) {
+  if (
+    patch.upserts.colors
+    && typedArrayLengthInternal(patch.upserts.colors) !== upsertCount * 4
+  ) {
     fail('paged-batch.colors.length', 'Patch colors do not match its upsert count.');
   }
   if (
@@ -347,18 +357,14 @@ function writeAnimationSlot(
   target.phasesRadians[targetOffset] = source.phasesRadians[sourceIndex]!;
   const targetVectorOffset = targetOffset * 3;
   const sourceVectorOffset = sourceIndex * 3;
-  target.translationAmplitudes.set(
-    source.translationAmplitudes.subarray(sourceVectorOffset, sourceVectorOffset + 3),
-    targetVectorOffset,
-  );
-  target.rotationAmplitudesRadians.set(
-    source.rotationAmplitudesRadians.subarray(sourceVectorOffset, sourceVectorOffset + 3),
-    targetVectorOffset,
-  );
-  target.scaleAmplitudes.set(
-    source.scaleAmplitudes.subarray(sourceVectorOffset, sourceVectorOffset + 3),
-    targetVectorOffset,
-  );
+  for (let component = 0; component < 3; component += 1) {
+    target.translationAmplitudes[targetVectorOffset + component] =
+      source.translationAmplitudes[sourceVectorOffset + component]!;
+    target.rotationAmplitudesRadians[targetVectorOffset + component] =
+      source.rotationAmplitudesRadians[sourceVectorOffset + component]!;
+    target.scaleAmplitudes[targetVectorOffset + component] =
+      source.scaleAmplitudes[sourceVectorOffset + component]!;
+  }
 }
 
 function copyAnimationSlot(
@@ -400,9 +406,17 @@ function writePayloadSlot(
   payload: InstanceBatchPatchPayloadV1,
   sourceIndex: number,
 ): void {
-  page.matrices.set(payload.matrices.subarray(sourceIndex * 16, sourceIndex * 16 + 16), offset * 16);
+  const sourceMatrixOffset = sourceIndex * 16;
+  const targetMatrixOffset = offset * 16;
+  for (let component = 0; component < 16; component += 1) {
+    page.matrices[targetMatrixOffset + component] = payload.matrices[sourceMatrixOffset + component]!;
+  }
   if (page.colors && payload.colors) {
-    page.colors.set(payload.colors.subarray(sourceIndex * 4, sourceIndex * 4 + 4), offset * 4);
+    const sourceColorOffset = sourceIndex * 4;
+    const targetColorOffset = offset * 4;
+    for (let component = 0; component < 4; component += 1) {
+      page.colors[targetColorOffset + component] = payload.colors[sourceColorOffset + component]!;
+    }
   }
   if (page.animation && payload.animation) {
     writeAnimationSlot(page.animation, offset, payload.animation, sourceIndex);
@@ -818,10 +832,13 @@ export function preparePagedInstanceBatchCreatePlanInternal(
   const layout = { colors: validated.colors, animation: validated.animation };
   const count = batch.instanceKeys.length;
   const pageCount = Math.ceil(count / INSTANCE_BATCH_PAGE_SIZE_INTERNAL);
-  const writtenBytes = batch.matrices.byteLength
-    + (batch.colors?.byteLength ?? 0)
+  const writtenBytes = typedArrayByteLengthInternal(batch.matrices)
+    + (batch.colors === undefined ? 0 : typedArrayByteLengthInternal(batch.colors))
     + (batch.animation
-      ? animationArrays(batch.animation).reduce((total, value) => total + value.byteLength, 0)
+      ? animationArrays(batch.animation).reduce(
+        (total, value) => total + typedArrayByteLengthInternal(value),
+        0,
+      )
       : 0);
   const allocationWork = pageCount * (
     pageTypedArrayElements(layout) + INSTANCE_BATCH_PAGE_SIZE_INTERNAL * 2 + 1
@@ -873,9 +890,11 @@ export function commitPagedInstanceBatchCreatePlanInternal(
     ...(batch.colors ? { colors: batch.colors } : {}),
     ...(batch.animation ? { animation: batch.animation } : {}),
   };
+  let activeAnimationCount = 0;
   batch.instanceKeys.forEach((key, slot) => {
     writeNewStateSlot(pages, slot, key, slot, payload, slot);
     shards[instanceBatchIndexShardInternal(key)]!.set(key, Object.freeze({ slot, ordinal: slot }));
+    if ((batch.animation?.periodsMs[slot] ?? 0) > 0) activeAnimationCount += 1;
   });
   const state = new PagedInstanceBatchInternal(
     {
@@ -891,10 +910,7 @@ export function commitPagedInstanceBatchCreatePlanInternal(
     shards,
     batch.instanceKeys.length,
     batch.instanceKeys.length,
-    batch.animation?.periodsMs.reduce(
-      (count, period) => count + (period > 0 ? 1 : 0),
-      0,
-    ) ?? 0,
+    activeAnimationCount,
   );
   return Object.freeze({ state, metrics });
 }
@@ -980,7 +996,6 @@ export function commitPagedInstanceBatchPatchPlanInternal(
   );
   return Object.freeze({ state: next, metrics: plan.metrics, effect: plan.effect });
 }
-
 export { materializePagedInstanceBatchInternal } from './paged-instance-batch-materialize.js';
 export {
   PreparedPagedInstanceBatchPatchInternal,

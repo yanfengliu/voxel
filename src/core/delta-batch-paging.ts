@@ -4,6 +4,11 @@ import type {
 } from './contracts.js';
 import type { DeltaBatchSummaryInternal } from './delta-final-graph.js';
 import type { PagedInstanceBatchInternal } from './paged-instance-batch.js';
+import {
+  typedArrayByteLengthInternal,
+  typedArrayLengthInternal,
+  type SupportedTypedArrayInternal,
+} from './typed-array-intrinsics.js';
 
 export function batchTypedArraysInternal(
   value: InstanceBatchV1,
@@ -37,17 +42,23 @@ export function batchSummaryFromStateInternal(
 export function batchSummaryFromPutInternal(
   value: InstanceBatchV1,
 ): DeltaBatchSummaryInternal {
+  let activeAnimationCount = 0;
+  if (value.animation) {
+    const count = typedArrayLengthInternal(value.animation.periodsMs);
+    for (let index = 0; index < count; index += 1) {
+      if (value.animation.periodsMs[index]! > 0) activeAnimationCount += 1;
+    }
+  }
   return {
     key: value.key,
     geometryKey: value.geometryKey,
     materialKey: value.materialKey,
     count: value.instanceKeys.length,
-    activeAnimationCount: value.animation?.periodsMs.reduce(
-      (count, period) => count + (period > 0 ? 1 : 0),
-      0,
-    ) ?? 0,
+    activeAnimationCount,
     logicalTypedArrayBytes: batchTypedArraysInternal(value).reduce(
-      (bytes, array) => bytes + array.byteLength,
+      (bytes, array) => bytes + typedArrayByteLengthInternal(
+        array as SupportedTypedArrayInternal,
+      ),
       0,
     ),
   };
