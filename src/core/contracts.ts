@@ -1,5 +1,6 @@
 export const WORLD_SCHEMA_V1 = 'voxel.world/1' as const;
 export const RENDER_SNAPSHOT_SCHEMA_V1 = 'voxel.render-snapshot/1' as const;
+export const RENDER_DELTA_SCHEMA_V1 = 'voxel.render-delta/1' as const;
 export const INSTANCE_TRANSFORM_ANIMATION_SCHEMA_V1 = 'voxel.instance-transform-animation/1' as const;
 
 /** Largest integer for which Float32 preserves every adjacent voxel boundary. */
@@ -85,6 +86,46 @@ export const HARD_RENDER_LIMITS_V1: Readonly<RenderLimitsV1> = Object.freeze({
   maxTotalBytes: 1_073_741_824,
 });
 
+export interface RenderTransactionLimitsV1 {
+  readonly maxOperations: number;
+  readonly maxInstanceChanges: number;
+  readonly maxInputTypedArrayBytes: number;
+  readonly maxValidationElements: number;
+  readonly maxTombstones: number;
+  readonly maxPresentationWaiters: number;
+}
+
+export interface UniformVoxelChunkProfileV1 {
+  readonly layout: 'uniform-grid';
+  readonly size: Int3V1;
+  readonly gridOrigin: Int3V1;
+  readonly emptyPaletteIndex: 0;
+  readonly surfaceModel: 'opaque';
+  readonly missingNeighbor: 'empty' | 'sealed' | 'unavailable';
+}
+
+/** Defaults sized from the current AoE and City consumer fixtures. */
+export const DEFAULT_RENDER_TRANSACTION_LIMITS_V1: Readonly<RenderTransactionLimitsV1> =
+  Object.freeze({
+    maxOperations: 8_192,
+    maxInstanceChanges: 262_144,
+    maxInputTypedArrayBytes: 536_870_912,
+    maxValidationElements: 16_777_216,
+    maxTombstones: 1_000_000,
+    maxPresentationWaiters: 1_024,
+  });
+
+/** Hard ceilings that a world descriptor may not raise. */
+export const HARD_RENDER_TRANSACTION_LIMITS_V1: Readonly<RenderTransactionLimitsV1> =
+  Object.freeze({
+    maxOperations: 300_000,
+    maxInstanceChanges: 1_000_000,
+    maxInputTypedArrayBytes: HARD_RENDER_LIMITS_V1.maxTotalBytes,
+    maxValidationElements: 100_000_000,
+    maxTombstones: 4_000_000,
+    maxPresentationWaiters: 16_384,
+  });
+
 export interface WorldDescriptorV1 {
   readonly schemaVersion: typeof WORLD_SCHEMA_V1;
   readonly worldId: string;
@@ -93,6 +134,10 @@ export interface WorldDescriptorV1 {
   readonly colorEncoding: 'srgb8-straight-alpha';
   readonly capabilities: readonly RenderCapabilityV1[];
   readonly limits: RenderLimitsV1;
+  /** Explicit opt-in to the indexed production voxel path. */
+  readonly chunkProfile?: UniformVoxelChunkProfileV1;
+  /** Delta/readiness budgets. Omission uses DEFAULT_RENDER_TRANSACTION_LIMITS_V1. */
+  readonly transactionLimits?: RenderTransactionLimitsV1;
 }
 
 export interface PaletteEntryV1 {
@@ -170,6 +215,11 @@ export interface InstanceTransformAnimationV1 {
   readonly scaleAmplitudes: Float32Array;
 }
 
+export interface InstanceBatchPresentationPolicyV1 {
+  readonly castShadow: boolean;
+  readonly receiveShadow: boolean;
+}
+
 export interface InstanceBatchV1 extends ResourceIdentityV1 {
   readonly geometryKey: string;
   readonly materialKey: string;
@@ -181,6 +231,8 @@ export interface InstanceBatchV1 extends ResourceIdentityV1 {
   readonly colors?: Uint8Array;
   /** Optional deterministic rigid motion sampled by the renderer frame clock. */
   readonly animation?: InstanceTransformAnimationV1;
+  /** Neutral opt-in to a host's existing shadow system; omission means false/false. */
+  readonly presentation?: InstanceBatchPresentationPolicyV1;
 }
 
 export interface RenderSnapshotV1 {
@@ -194,6 +246,78 @@ export interface RenderSnapshotV1 {
 
 /** A validated snapshot whose retained arrays have been copied by core. */
 export type OwnedRenderSnapshotV1 = RenderSnapshotV1;
+
+export interface RenderRevisionRefV1 {
+  readonly worldId: string;
+  readonly epoch: string;
+  readonly revision: number;
+}
+
+export type PresentationReadinessV1 =
+  | {
+      readonly status: 'ready';
+      readonly target: RenderRevisionRefV1;
+      readonly presentedThrough: RenderRevisionRefV1;
+    }
+  | {
+      readonly status: 'not-ready';
+      readonly reason: 'not-accepted' | 'pending' | 'context-lost' | 'restoring';
+      readonly accepted: RenderRevisionRefV1 | null;
+      readonly presentedThrough: RenderRevisionRefV1 | null;
+    }
+  | {
+      readonly status: 'unavailable';
+      readonly reason: 'epoch-replaced' | 'disposed' | 'failed';
+      readonly target: RenderRevisionRefV1;
+    };
+
+/** DOM-free structural subset implemented by native AbortSignal objects. */
+export interface PresentationAbortSignalV1 {
+  readonly aborted: boolean;
+  readonly reason?: unknown;
+  addEventListener(
+    type: 'abort',
+    listener: () => void,
+    options?: { readonly once?: boolean },
+  ): void;
+  removeEventListener(type: 'abort', listener: () => void): void;
+}
+
+export interface InstanceBatchPatchPayloadV1 {
+  readonly instanceKeys: readonly string[];
+  readonly matrices: Float32Array;
+  readonly colors?: Uint8Array;
+  /** Complete animation tuples corresponding to instanceKeys, not the full batch. */
+  readonly animation?: InstanceTransformAnimationV1;
+}
+
+export interface PatchBatchInstancesV1 {
+  readonly op: 'patch-batch-instances';
+  readonly key: string;
+  readonly incarnation: number;
+  /** Revision of the complete batch after applying this patch. */
+  readonly revision: number;
+  readonly removeInstanceKeys: readonly string[];
+  readonly upserts: InstanceBatchPatchPayloadV1;
+}
+
+export type RenderOperationV1 =
+  | { readonly op: 'put-resource'; readonly resource: RenderResourceV1 }
+  | { readonly op: 'remove-resource'; readonly key: string; readonly incarnation: number }
+  | { readonly op: 'put-chunk'; readonly chunk: VoxelChunkV1 }
+  | { readonly op: 'remove-chunk'; readonly key: string; readonly incarnation: number }
+  | { readonly op: 'put-batch'; readonly batch: InstanceBatchV1 }
+  | PatchBatchInstancesV1
+  | { readonly op: 'remove-batch'; readonly key: string; readonly incarnation: number };
+
+export interface RenderDeltaV1 extends RenderRevisionRefV1 {
+  readonly schemaVersion: typeof RENDER_DELTA_SCHEMA_V1;
+  readonly baseRevision: number;
+  readonly operations: readonly RenderOperationV1[];
+}
+
+/** A validated delta whose retained arrays have been copied by core. */
+export type OwnedRenderDeltaV1 = RenderDeltaV1;
 
 export interface ValidationIssueV1 {
   readonly code: string;
@@ -217,3 +341,44 @@ export type ApplyResultV1 =
       readonly path: string;
       readonly message: string;
     };
+
+export type DeltaResyncReasonV1 =
+  | 'uninitialized'
+  | 'world-mismatch'
+  | 'epoch-mismatch'
+  | 'base-revision-mismatch';
+
+export type DeltaApplyResultV1 =
+  | ApplyResultV1
+  | {
+      readonly status: 'resync-required';
+      readonly reason: DeltaResyncReasonV1;
+      readonly expected: RenderRevisionRefV1 | null;
+      readonly received: RenderRevisionRefV1 & { readonly baseRevision: number };
+    };
+
+export const DELTA_ISSUE_CODES_V1 = Object.freeze({
+  REVISION_ORDER: 'delta.revision-order',
+  UNKNOWN_OPERATION: 'delta.operation.unknown',
+  DUPLICATE_TARGET: 'delta.operation.duplicate-target',
+  TARGET_MISSING: 'delta.target.missing',
+  INCARNATION_MISMATCH: 'delta.target.incarnation-mismatch',
+  INCARNATION_NOT_NEWER: 'delta.target.incarnation-not-newer',
+  REVISION_NOT_NEWER: 'delta.target.revision-not-newer',
+  RESOURCE_KIND_CHANGE: 'delta.resource.kind-change',
+  REFERENCE_IN_USE: 'delta.reference-in-use',
+  PATCH_EMPTY: 'batch.patch.empty',
+  PATCH_REMOVE_MISSING: 'batch.patch.remove-missing',
+  PATCH_KEY_OVERLAP: 'batch.patch.key-overlap',
+  PATCH_COLORS_LAYOUT: 'batch.patch.colors-layout',
+  PATCH_ANIMATION_LAYOUT: 'batch.patch.animation-layout',
+  LIMIT_OPERATIONS: 'limit.delta-operations',
+  LIMIT_INSTANCE_CHANGES: 'limit.delta-instance-changes',
+  LIMIT_INPUT_BYTES: 'limit.delta-input-bytes',
+  LIMIT_VALIDATION_ELEMENTS: 'limit.delta-validation-elements',
+  LIMIT_TOMBSTONES: 'limit.delta-tombstones',
+  LIMIT_PRESENTATION_BACKLOG: 'limit.presentation-backlog',
+} as const);
+
+export type DeltaIssueCodeV1 =
+  typeof DELTA_ISSUE_CODES_V1[keyof typeof DELTA_ISSUE_CODES_V1];

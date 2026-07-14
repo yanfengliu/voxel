@@ -16,3 +16,9 @@ export {
   createRendererLifecycleReferenceSnapshot,
   type RendererLifecycleReferenceOptions,
 } from './lifecycle-reference-scene.js';
+
+export {
+  readRenderWorldOwnershipMetricsForTesting,
+  resetRenderWorldOwnershipMetricsForTesting,
+  type RenderWorldOwnershipMetricsForTesting,
+} from './ownership-metrics.js';

@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 
 import {
+  HARD_RENDER_TRANSACTION_LIMITS_V1,
   MAX_ACTIVE_INSTANCE_ANIMATIONS_V1,
   MAX_INSTANCES_PER_ANIMATED_BATCH_V1,
   validateAndCopySnapshotV1,
@@ -9,6 +10,7 @@ import {
   type RenderSnapshotV1,
   type VoxelChunkV1,
 } from '../../src/core/index.js';
+import { validateAndCopySnapshotV1WithMetrics } from '../../src/core/snapshot-validation.js';
 import { validSnapshot } from './fixtures.js';
 
 function geometryOf(snapshot: RenderSnapshotV1): GeometryResourceV1 {
@@ -47,6 +49,64 @@ function identityMatrices(count: number): Float32Array {
 }
 
 describe('validateAndCopySnapshotV1', () => {
+  it('densifies sparse lists so holes reject with a typed issue', () => {
+    const snapshot = validSnapshot();
+    snapshot.resources = new Array<GeometryResourceV1>(1);
+    expect(() => validateAndCopySnapshotV1(snapshot)).not.toThrow();
+    expect(validateAndCopySnapshotV1(snapshot)).toEqual({
+      ok: false,
+      issue: {
+        code: 'type.object',
+        path: 'resources[0]',
+        message: 'Expected an object.',
+      },
+    });
+  });
+
+  it('rejects oversized sparse lanes before reading or densifying elements', () => {
+    const snapshot = validSnapshot();
+    let touched = false;
+    const resources = new Array<GeometryResourceV1>(snapshot.descriptor.limits.maxResources + 1);
+    Object.defineProperty(resources, 0, {
+      get() {
+        touched = true;
+        throw new Error('oversized lane was traversed');
+      },
+    });
+    snapshot.resources = resources;
+
+    expect(() => validateAndCopySnapshotV1(snapshot)).not.toThrow();
+    expect(validateAndCopySnapshotV1(snapshot)).toMatchObject({
+      ok: false,
+      issue: { code: 'limit.resources', path: 'resources' },
+    });
+    expect(touched).toBe(false);
+  });
+
+  it('validates the complete snapshot before making any ownership copies', () => {
+    const aggregate = validSnapshot();
+    aggregate.descriptor.limits.maxTotalBytes = 100;
+    const overBudget = validateAndCopySnapshotV1WithMetrics(aggregate);
+    expect(overBudget.result).toMatchObject({
+      ok: false,
+      issue: { code: 'limit.total-bytes', path: '$' },
+    });
+    expect(overBudget.metrics.copiedTypedArrayBytes).toBe(0);
+    expect(overBudget.metrics.copyOperations).toBe(0);
+
+    const invalidMetadata = validSnapshot();
+    (geometryOf(invalidMetadata) as { groups: GeometryResourceV1['groups'] }).groups = new Array(
+      MAX_GEOMETRY_GROUPS_PER_RESOURCE_V1 + 1,
+    ).fill({ start: 0, count: 3, materialKey: 'material:terrain' });
+    const rejectedMetadata = validateAndCopySnapshotV1WithMetrics(invalidMetadata);
+    expect(rejectedMetadata.result).toMatchObject({
+      ok: false,
+      issue: { code: 'limit.geometry-groups' },
+    });
+    expect(rejectedMetadata.metrics.copiedTypedArrayBytes).toBe(0);
+    expect(rejectedMetadata.metrics.copyOperations).toBe(0);
+  });
+
   it('accepts ordinary ArrayBuffer views when SharedArrayBuffer is unavailable', () => {
     vi.stubGlobal('SharedArrayBuffer', undefined);
     try {
@@ -58,10 +118,21 @@ describe('validateAndCopySnapshotV1', () => {
 
   it('accepts a bounded, cross-reference-complete snapshot and owns every retained array', () => {
     const input = validSnapshot();
+    const transactionLimits = {
+      maxOperations: 64,
+      maxInstanceChanges: 1_024,
+      maxInputTypedArrayBytes: 1_000_000,
+      maxValidationElements: 10_000,
+      maxTombstones: 1_024,
+      maxPresentationWaiters: 32,
+    };
+    const presentation = { castShadow: true, receiveShadow: false };
+    input.descriptor.transactionLimits = transactionLimits;
+    input.batches[0] = { ...input.batches[0]!, presentation };
     const sourceAnimation = addAnimation(input);
     const sourceGeometry = geometryOf(input);
     const sourceChunk = input.chunks[0]!;
-    const sourceBatch = input.batches[0]!;
+    const sourceBatch = input.batches[0];
     const result = validateAndCopySnapshotV1(input);
 
     expect(result.ok).toBe(true);
@@ -77,6 +148,8 @@ describe('validateAndCopySnapshotV1', () => {
     expect(result.value.batches[0]!.matrices).not.toBe(sourceBatch.matrices);
     expect(result.value.batches[0]!.colors).not.toBe(sourceBatch.colors);
     expect(result.value.batches[0]!.instanceKeys).not.toBe(sourceBatch.instanceKeys);
+    expect(result.value.descriptor.transactionLimits).not.toBe(transactionLimits);
+    expect(result.value.batches[0]!.presentation).not.toBe(presentation);
     const ownedAnimation = result.value.batches[0]!.animation;
     expect(ownedAnimation?.periodsMs).not.toBe(sourceAnimation.periodsMs);
     expect(ownedAnimation?.phasesRadians).not.toBe(sourceAnimation.phasesRadians);
@@ -88,9 +161,11 @@ describe('validateAndCopySnapshotV1', () => {
     sourceChunk.voxels[0] = 0;
     sourceBatch.matrices[12] = 99;
     sourceBatch.colors![0] = 0;
-    input.batches[0]!.instanceKeys[0] = 'mutated';
+    input.batches[0].instanceKeys[0] = 'mutated';
     sourceAnimation.periodsMs[0] = 0;
     sourceAnimation.translationAmplitudes[1] = 99;
+    transactionLimits.maxOperations = 1;
+    presentation.castShadow = false;
 
     expect(ownedGeometry.positions[0]).toBe(0);
     expect(result.value.chunks[0]!.voxels[0]).toBe(1);
@@ -99,6 +174,43 @@ describe('validateAndCopySnapshotV1', () => {
     expect(result.value.batches[0]!.instanceKeys[0]).toBe('instance:one:0');
     expect(ownedAnimation?.periodsMs[0]).toBe(1_000);
     expect(ownedAnimation?.translationAmplitudes[1]).toBeCloseTo(0.2);
+    expect(result.value.descriptor.transactionLimits?.maxOperations).toBe(64);
+    expect(result.value.batches[0]!.presentation).toEqual({
+      castShadow: true,
+      receiveShadow: false,
+    });
+  });
+
+  it('bounds optional transaction limits and validates neutral batch presentation policy', () => {
+    const excessive = validSnapshot();
+    excessive.descriptor.transactionLimits = {
+      maxOperations: HARD_RENDER_TRANSACTION_LIMITS_V1.maxOperations + 1,
+      maxInstanceChanges: 1,
+      maxInputTypedArrayBytes: 1,
+      maxValidationElements: 1,
+      maxTombstones: 1,
+      maxPresentationWaiters: 1,
+    };
+    expect(validateAndCopySnapshotV1(excessive)).toMatchObject({
+      ok: false,
+      issue: {
+        code: 'limit.exceeds-hard-maximum',
+        path: 'descriptor.transactionLimits.maxOperations',
+      },
+    });
+
+    const invalidPolicy = validSnapshot();
+    invalidPolicy.batches[0] = {
+      ...invalidPolicy.batches[0]!,
+      presentation: { castShadow: true, receiveShadow: 'yes' },
+    } as unknown as typeof invalidPolicy.batches[0];
+    expect(validateAndCopySnapshotV1(invalidPolicy)).toMatchObject({
+      ok: false,
+      issue: {
+        code: 'type.boolean',
+        path: 'batches[0].presentation.receiveShadow',
+      },
+    });
   });
 
   it('rejects malformed or unsafe rigid-instance animation with precise paths', () => {

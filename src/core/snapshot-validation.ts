@@ -1,5 +1,6 @@
 import {
   HARD_RENDER_LIMITS_V1,
+  HARD_RENDER_TRANSACTION_LIMITS_V1,
   INSTANCE_TRANSFORM_ANIMATION_SCHEMA_V1,
   MAX_INSTANCE_ANIMATION_PERIOD_MS_V1,
   MAX_INSTANCE_ANIMATION_ROTATION_RADIANS_V1,
@@ -23,6 +24,7 @@ import {
   type PaletteResourceV1,
   type RenderCapabilityV1,
   type RenderLimitsV1,
+  type RenderTransactionLimitsV1,
   type RenderResourceV1,
   type SnapshotValidationResultV1,
   type Srgb8ColorV1,
@@ -30,6 +32,31 @@ import {
   type VoxelChunkV1,
   type WorldDescriptorV1,
 } from './contracts.js';
+import {
+  finiteArray as validateFiniteArray,
+  float32 as validateFloat32,
+  indices as validateIndices,
+  uint8 as validateUint8,
+  uint16 as validateUint16,
+} from './snapshot-array-validation.js';
+import {
+  copyRenderSnapshotV1,
+  renderSnapshotCopyBytes,
+  renderSnapshotCopyOperations,
+} from './snapshot-copy.js';
+import {
+  failValidationInternal as fail,
+  SnapshotByteBudgetInternal,
+  type SnapshotCopyMetricsInternal,
+  ValidationFailureInternal,
+} from './snapshot-byte-budget.js';
+import { stableMergeSortInternal } from './bounded-sort.js';
+import {
+  assertUniformChunkProfileInternal,
+  parseUniformChunkProfileInternal,
+} from './uniform-profile-validation.js';
+
+export { SnapshotByteBudgetInternal, type SnapshotCopyMetricsInternal };
 
 const MAX_KEY_LENGTH = 256;
 const CAPABILITIES = new Set<RenderCapabilityV1>([
@@ -38,18 +65,9 @@ const CAPABILITIES = new Set<RenderCapabilityV1>([
   'instance-batches',
 ]);
 
-class ValidationFailure extends Error {
-  constructor(
-    readonly code: string,
-    readonly path: string,
-    message: string,
-  ) {
-    super(message);
-  }
-}
-
-function fail(code: string, path: string, message: string): never {
-  throw new ValidationFailure(code, path, message);
+export interface SnapshotValidationWithMetricsInternal {
+  readonly result: SnapshotValidationResultV1;
+  readonly metrics: Readonly<SnapshotCopyMetricsInternal>;
 }
 
 function record(value: unknown, path: string): Record<string, unknown> {
@@ -59,9 +77,16 @@ function record(value: unknown, path: string): Record<string, unknown> {
   return value as Record<string, unknown>;
 }
 
-function list(value: unknown, path: string): unknown[] {
+function list(
+  value: unknown,
+  path: string,
+  maximum: number,
+  limitCode: string,
+  limitMessage: string,
+): unknown[] {
   if (!Array.isArray(value)) fail('type.array', path, 'Expected an array.');
-  return value;
+  if (value.length > maximum) fail(limitCode, path, limitMessage);
+  return Array.from(value);
 }
 
 function literal<T extends string>(
@@ -137,64 +162,24 @@ function color(value: unknown, path: string): Srgb8ColorV1 {
   return { r: channel('r'), g: channel('g'), b: channel('b'), a: channel('a') };
 }
 
-class ByteBudget {
-  private used = 0;
-
-  constructor(private readonly maximum: number) {}
-
-  retain<T extends ArrayBufferView & { slice(): T }>(value: T, path: string): T {
-    if (
-      typeof SharedArrayBuffer !== 'undefined'
-      && value.buffer instanceof SharedArrayBuffer
-    ) {
-      fail('buffer.shared', path, 'SharedArrayBuffer-backed inputs are not accepted.');
-    }
-    if (this.used + value.byteLength > this.maximum) {
-      fail('limit.total-bytes', '$', `Typed-array data exceeds the ${String(this.maximum)}-byte snapshot budget.`);
-    }
-    let copy: T;
-    try {
-      copy = value.slice();
-    } catch {
-      return fail('buffer.detached', path, 'Detached typed-array inputs are not accepted.');
-    }
-    this.used += value.byteLength;
-    return copy;
-  }
+function float32(value: unknown, path: string): Float32Array {
+  return validateFloat32(value, path, fail);
 }
 
-function float32(value: unknown, path: string, budget: ByteBudget): Float32Array {
-  if (!(value instanceof Float32Array)) fail('type.float32-array', path, 'Expected Float32Array.');
-  return budget.retain(value, path);
+function uint8(value: unknown, path: string): Uint8Array {
+  return validateUint8(value, path, fail);
 }
 
-function uint8(value: unknown, path: string, budget: ByteBudget): Uint8Array {
-  if (!(value instanceof Uint8Array)) fail('type.uint8-array', path, 'Expected Uint8Array.');
-  return budget.retain(value, path);
+function uint16(value: unknown, path: string): Uint16Array {
+  return validateUint16(value, path, fail);
 }
 
-function uint16(value: unknown, path: string, budget: ByteBudget): Uint16Array {
-  if (!(value instanceof Uint16Array)) fail('type.uint16-array', path, 'Expected Uint16Array.');
-  return budget.retain(value, path);
-}
-
-function indices(
-  value: unknown,
-  path: string,
-  budget: ByteBudget,
-): Uint16Array | Uint32Array {
-  if (!(value instanceof Uint16Array) && !(value instanceof Uint32Array)) {
-    fail('type.index-array', path, 'Expected Uint16Array or Uint32Array.');
-  }
-  return budget.retain(value, path);
+function indices(value: unknown, path: string): Uint16Array | Uint32Array {
+  return validateIndices(value, path, fail);
 }
 
 function finiteArray(value: Float32Array, path: string): void {
-  for (let index = 0; index < value.length; index += 1) {
-    if (!Number.isFinite(value[index])) {
-      fail('number.non-finite', `${path}[${String(index)}]`, 'Expected a finite number.');
-    }
-  }
+  validateFiniteArray(value, path, fail);
 }
 
 function parseLimits(value: unknown): RenderLimitsV1 {
@@ -212,6 +197,27 @@ function parseLimits(value: unknown): RenderLimitsV1 {
   return output;
 }
 
+function parseTransactionLimits(value: unknown): RenderTransactionLimitsV1 {
+  const input = record(value, 'descriptor.transactionLimits');
+  const names = Object.keys(HARD_RENDER_TRANSACTION_LIMITS_V1) as (
+    keyof RenderTransactionLimitsV1
+  )[];
+  const output = {} as Record<keyof RenderTransactionLimitsV1, number>;
+  for (const name of names) {
+    const path = `descriptor.transactionLimits.${name}`;
+    const parsed = integer(input[name], path, 1);
+    if (parsed > HARD_RENDER_TRANSACTION_LIMITS_V1[name]) {
+      fail(
+        'limit.exceeds-hard-maximum',
+        path,
+        `Limit exceeds the hard maximum of ${String(HARD_RENDER_TRANSACTION_LIMITS_V1[name])}.`,
+      );
+    }
+    output[name] = parsed;
+  }
+  return output;
+}
+
 function parseDescriptor(value: unknown): WorldDescriptorV1 {
   const input = record(value, 'descriptor');
   const coordinates = record(input.coordinates, 'descriptor.coordinates');
@@ -222,7 +228,13 @@ function parseDescriptor(value: unknown): WorldDescriptorV1 {
   const metersPerWorldUnit = finite(coordinates.metersPerWorldUnit, 'descriptor.coordinates.metersPerWorldUnit');
   if (metersPerWorldUnit <= 0) fail('number.positive', 'descriptor.coordinates.metersPerWorldUnit', 'Expected a positive value.');
 
-  const capabilityValues = list(input.capabilities, 'descriptor.capabilities');
+  const capabilityValues = list(
+    input.capabilities,
+    'descriptor.capabilities',
+    CAPABILITIES.size,
+    'limit.capabilities',
+    'Capability count exceeds the supported V1 set.',
+  );
   const capabilities: RenderCapabilityV1[] = [];
   const seen = new Set<string>();
   capabilityValues.forEach((value, index) => {
@@ -233,6 +245,7 @@ function parseDescriptor(value: unknown): WorldDescriptorV1 {
     seen.add(value);
     capabilities.push(value as RenderCapabilityV1);
   });
+  const limits = parseLimits(input.limits);
 
   return {
     schemaVersion: literal(input.schemaVersion, WORLD_SCHEMA_V1, 'descriptor.schemaVersion'),
@@ -248,7 +261,13 @@ function parseDescriptor(value: unknown): WorldDescriptorV1 {
     },
     colorEncoding: literal(input.colorEncoding, 'srgb8-straight-alpha', 'descriptor.colorEncoding'),
     capabilities,
-    limits: parseLimits(input.limits),
+    limits,
+    ...(input.chunkProfile === undefined
+      ? {}
+      : { chunkProfile: parseUniformChunkProfileInternal(input.chunkProfile, limits) }),
+    ...(input.transactionLimits === undefined
+      ? {}
+      : { transactionLimits: parseTransactionLimits(input.transactionLimits) }),
   };
 }
 
@@ -269,10 +288,13 @@ function parsePalette(
   path: string,
   limits: RenderLimitsV1,
 ): PaletteResourceV1 {
-  const rawEntries = list(input.entries, `${path}.entries`);
-  if (rawEntries.length > limits.maxPaletteEntries) {
-    fail('limit.palette-entries', `${path}.entries`, 'Palette entry count exceeds its declared limit.');
-  }
+  const rawEntries = list(
+    input.entries,
+    `${path}.entries`,
+    limits.maxPaletteEntries,
+    'limit.palette-entries',
+    'Palette entry count exceeds its declared limit.',
+  );
   return {
     kind: 'palette',
     ...identity(input, path),
@@ -312,52 +334,60 @@ function parseGeometry(
   input: Record<string, unknown>,
   path: string,
   limits: RenderLimitsV1,
-  budget: ByteBudget,
+  budget: SnapshotByteBudgetInternal,
 ): GeometryResourceV1 {
+  const resourceIdentity = identity(input, path);
   const topology = input.topology;
   if (topology !== 'triangles' && topology !== 'lines' && topology !== 'points') {
     fail('geometry.topology', `${path}.topology`, 'Unsupported primitive topology.');
   }
-  const positions = float32(input.positions, `${path}.positions`, budget);
-  finiteArray(positions, `${path}.positions`);
-  if (positions.length % 3 !== 0) fail('geometry.positions-length', `${path}.positions`, 'Positions must contain xyz triples.');
-  const vertexCount = positions.length / 3;
+  const rawPositions = float32(input.positions, `${path}.positions`);
+  if (rawPositions.length % 3 !== 0) fail('geometry.positions-length', `${path}.positions`, 'Positions must contain xyz triples.');
+  const vertexCount = rawPositions.length / 3;
   if (vertexCount > limits.maxGeometryVertices) fail('limit.geometry-vertices', `${path}.positions`, 'Vertex count exceeds its declared limit.');
 
-  const normals = float32(input.normals, `${path}.normals`, budget);
-  finiteArray(normals, `${path}.normals`);
-  if (normals.length !== positions.length) fail('geometry.normals-length', `${path}.normals`, 'Normals must match positions.');
+  const rawNormals = float32(input.normals, `${path}.normals`);
+  if (rawNormals.length !== rawPositions.length) fail('geometry.normals-length', `${path}.normals`, 'Normals must match positions.');
 
-  const parsedIndices = indices(input.indices, `${path}.indices`, budget);
-  if (parsedIndices.length > limits.maxGeometryIndices) fail('limit.geometry-indices', `${path}.indices`, 'Index count exceeds its declared limit.');
+  const rawIndices = indices(input.indices, `${path}.indices`);
+  if (rawIndices.length > limits.maxGeometryIndices) fail('limit.geometry-indices', `${path}.indices`, 'Index count exceeds its declared limit.');
   const primitiveSize = topology === 'triangles' ? 3 : topology === 'lines' ? 2 : 1;
-  if (parsedIndices.length % primitiveSize !== 0) fail('geometry.indices-length', `${path}.indices`, 'Index count does not match topology.');
-  parsedIndices.forEach((index, offset) => {
-    if (index >= vertexCount) fail('geometry.index-out-of-range', `${path}.indices[${String(offset)}]`, 'Index references a missing vertex.');
-  });
+  if (rawIndices.length % primitiveSize !== 0) fail('geometry.indices-length', `${path}.indices`, 'Index count does not match topology.');
 
-  let uvs: Float32Array | undefined;
+  let rawUvs: Float32Array | undefined;
   if (input.uvs !== undefined) {
-    uvs = float32(input.uvs, `${path}.uvs`, budget);
-    finiteArray(uvs, `${path}.uvs`);
-    if (uvs.length !== vertexCount * 2) fail('geometry.uvs-length', `${path}.uvs`, 'UVs must contain one pair per vertex.');
+    rawUvs = float32(input.uvs, `${path}.uvs`);
+    if (rawUvs.length !== vertexCount * 2) fail('geometry.uvs-length', `${path}.uvs`, 'UVs must contain one pair per vertex.');
   }
-  let colors: Uint8Array | undefined;
+  let rawColors: Uint8Array | undefined;
   if (input.colors !== undefined) {
-    colors = uint8(input.colors, `${path}.colors`, budget);
-    if (colors.length !== vertexCount * 3 && colors.length !== vertexCount * 4) {
+    rawColors = uint8(input.colors, `${path}.colors`);
+    if (rawColors.length !== vertexCount * 3 && rawColors.length !== vertexCount * 4) {
       fail('geometry.colors-length', `${path}.colors`, 'Colors must contain RGB or RGBA per vertex.');
     }
   }
 
-  const rawGroups = list(input.groups, `${path}.groups`);
-  if (rawGroups.length > MAX_GEOMETRY_GROUPS_PER_RESOURCE_V1) {
-    fail(
-      'limit.geometry-groups',
-      `${path}.groups`,
-      `Geometry group count exceeds the hard maximum of ${String(MAX_GEOMETRY_GROUPS_PER_RESOURCE_V1)}.`,
-    );
-  }
+  const positions = budget.retain(rawPositions, `${path}.positions`);
+  const normals = budget.retain(rawNormals, `${path}.normals`);
+  const parsedIndices = budget.retain(rawIndices, `${path}.indices`);
+  const uvs = rawUvs === undefined ? undefined : budget.retain(rawUvs, `${path}.uvs`);
+  const colors = rawColors === undefined
+    ? undefined
+    : budget.retain(rawColors, `${path}.colors`);
+  finiteArray(positions, `${path}.positions`);
+  finiteArray(normals, `${path}.normals`);
+  if (uvs !== undefined) finiteArray(uvs, `${path}.uvs`);
+  parsedIndices.forEach((index, offset) => {
+    if (index >= vertexCount) fail('geometry.index-out-of-range', `${path}.indices[${String(offset)}]`, 'Index references a missing vertex.');
+  });
+
+  const rawGroups = list(
+    input.groups,
+    `${path}.groups`,
+    MAX_GEOMETRY_GROUPS_PER_RESOURCE_V1,
+    'limit.geometry-groups',
+    `Geometry group count exceeds the hard maximum of ${String(MAX_GEOMETRY_GROUPS_PER_RESOURCE_V1)}.`,
+  );
   let nextGroupStart = 0;
   const groups = rawGroups.map((group, index) => {
     const groupPath = `${path}.groups[${String(index)}]`;
@@ -408,7 +438,7 @@ function parseGeometry(
 
   return {
     kind: 'geometry',
-    ...identity(input, path),
+    ...resourceIdentity,
     topology,
     positions,
     normals,
@@ -425,7 +455,7 @@ function parseResource(
   value: unknown,
   path: string,
   limits: RenderLimitsV1,
-  budget: ByteBudget,
+  budget: SnapshotByteBudgetInternal,
 ): RenderResourceV1 {
   const input = record(value, path);
   switch (input.kind) {
@@ -440,9 +470,10 @@ function parseChunk(
   value: unknown,
   path: string,
   limits: RenderLimitsV1,
-  budget: ByteBudget,
+  budget: SnapshotByteBudgetInternal,
 ): VoxelChunkV1 {
   const input = record(value, path);
+  const chunkIdentity = identity(input, path);
   const size = int3(input.size, `${path}.size`, true);
   const origin = int3(input.origin, `${path}.origin`);
   for (const axis of ['x', 'y', 'z'] as const) {
@@ -465,10 +496,11 @@ function parseChunk(
   if (!Number.isSafeInteger(volume) || volume > limits.maxVoxelsPerChunk) {
     fail('limit.chunk-voxels', `${path}.size`, 'Chunk volume exceeds its declared limit.');
   }
-  const voxels = uint16(input.voxels, `${path}.voxels`, budget);
-  if (voxels.length !== volume) fail('chunk.voxel-count', `${path}.voxels`, 'Voxel data length does not match chunk size.');
+  const rawVoxels = uint16(input.voxels, `${path}.voxels`);
+  if (rawVoxels.length !== volume) fail('chunk.voxel-count', `${path}.voxels`, 'Voxel data length does not match chunk size.');
+  const voxels = budget.retain(rawVoxels, `${path}.voxels`);
   return {
-    ...identity(input, path),
+    ...chunkIdentity,
     origin,
     size,
     voxels,
@@ -481,25 +513,37 @@ function parseBatch(
   value: unknown,
   path: string,
   limits: RenderLimitsV1,
-  budget: ByteBudget,
+  budget: SnapshotByteBudgetInternal,
 ): InstanceBatchV1 {
   const input = record(value, path);
-  const rawKeys = list(input.instanceKeys, `${path}.instanceKeys`);
-  if (rawKeys.length > limits.maxInstancesPerBatch) fail('limit.batch-instances', `${path}.instanceKeys`, 'Instance count exceeds its declared limit.');
+  const batchIdentity = identity(input, path);
+  const geometryKey = key(input.geometryKey, `${path}.geometryKey`);
+  const materialKey = key(input.materialKey, `${path}.materialKey`);
+  const rawKeys = list(
+    input.instanceKeys,
+    `${path}.instanceKeys`,
+    limits.maxInstancesPerBatch,
+    'limit.batch-instances',
+    'Instance count exceeds its declared limit.',
+  );
   const instanceKeys = rawKeys.map((value, index) => key(value, `${path}.instanceKeys[${String(index)}]`));
   const seen = new Set<string>();
   instanceKeys.forEach((value, index) => {
     if (seen.has(value)) fail('key.duplicate', `${path}.instanceKeys[${String(index)}]`, 'Duplicate instance key.');
     seen.add(value);
   });
-  const matrices = float32(input.matrices, `${path}.matrices`, budget);
-  finiteArray(matrices, `${path}.matrices`);
-  if (matrices.length !== instanceKeys.length * 16) fail('batch.matrix-count', `${path}.matrices`, 'Expected one matrix per instance.');
-  let colors: Uint8Array | undefined;
+  const rawMatrices = float32(input.matrices, `${path}.matrices`);
+  if (rawMatrices.length !== instanceKeys.length * 16) fail('batch.matrix-count', `${path}.matrices`, 'Expected one matrix per instance.');
+  let rawColors: Uint8Array | undefined;
   if (input.colors !== undefined) {
-    colors = uint8(input.colors, `${path}.colors`, budget);
-    if (colors.length !== instanceKeys.length * 4) fail('batch.color-count', `${path}.colors`, 'Expected one RGBA color per instance.');
+    rawColors = uint8(input.colors, `${path}.colors`);
+    if (rawColors.length !== instanceKeys.length * 4) fail('batch.color-count', `${path}.colors`, 'Expected one RGBA color per instance.');
   }
+  const matrices = budget.retain(rawMatrices, `${path}.matrices`);
+  const colors = rawColors === undefined
+    ? undefined
+    : budget.retain(rawColors, `${path}.colors`);
+  finiteArray(matrices, `${path}.matrices`);
   const animation = input.animation === undefined
     ? undefined
     : parseInstanceAnimation(input.animation, `${path}.animation`, instanceKeys.length, budget);
@@ -516,14 +560,24 @@ function parseBatch(
     }
     validateAnimatedBaseMatrices(matrices, animation, path);
   }
+  const presentation = input.presentation === undefined
+    ? undefined
+    : (() => {
+        const policy = record(input.presentation, `${path}.presentation`);
+        return {
+          castShadow: boolean(policy.castShadow, `${path}.presentation.castShadow`),
+          receiveShadow: boolean(policy.receiveShadow, `${path}.presentation.receiveShadow`),
+        };
+      })();
   return {
-    ...identity(input, path),
-    geometryKey: key(input.geometryKey, `${path}.geometryKey`),
-    materialKey: key(input.materialKey, `${path}.materialKey`),
+    ...batchIdentity,
+    geometryKey,
+    materialKey,
     instanceKeys,
     matrices,
     ...(colors === undefined ? {} : { colors }),
     ...(animation === undefined ? {} : { animation }),
+    ...(presentation === undefined ? {} : { presentation }),
   };
 }
 
@@ -597,22 +651,56 @@ function parseInstanceAnimation(
   value: unknown,
   path: string,
   instanceCount: number,
-  budget: ByteBudget,
+  budget: SnapshotByteBudgetInternal,
 ): InstanceTransformAnimationV1 {
   const input = record(value, path);
-  const periodsMs = float32(input.periodsMs, `${path}.periodsMs`, budget);
-  const phasesRadians = float32(input.phasesRadians, `${path}.phasesRadians`, budget);
-  const translationAmplitudes = float32(
+  const schemaVersion = literal(
+    input.schemaVersion,
+    INSTANCE_TRANSFORM_ANIMATION_SCHEMA_V1,
+    `${path}.schemaVersion`,
+  );
+  const rawPeriodsMs = float32(input.periodsMs, `${path}.periodsMs`);
+  const rawPhasesRadians = float32(input.phasesRadians, `${path}.phasesRadians`);
+  const rawTranslationAmplitudes = float32(
     input.translationAmplitudes,
     `${path}.translationAmplitudes`,
-    budget,
   );
-  const rotationAmplitudesRadians = float32(
+  const rawRotationAmplitudesRadians = float32(
     input.rotationAmplitudesRadians,
     `${path}.rotationAmplitudesRadians`,
-    budget,
   );
-  const scaleAmplitudes = float32(input.scaleAmplitudes, `${path}.scaleAmplitudes`, budget);
+  const rawScaleAmplitudes = float32(input.scaleAmplitudes, `${path}.scaleAmplitudes`);
+  requireAnimationCount(rawPeriodsMs, instanceCount, 'batch.animation.period-count', `${path}.periodsMs`);
+  requireAnimationCount(rawPhasesRadians, instanceCount, 'batch.animation.phase-count', `${path}.phasesRadians`);
+  requireAnimationCount(
+    rawTranslationAmplitudes,
+    instanceCount * 3,
+    'batch.animation.translation-count',
+    `${path}.translationAmplitudes`,
+  );
+  requireAnimationCount(
+    rawRotationAmplitudesRadians,
+    instanceCount * 3,
+    'batch.animation.rotation-count',
+    `${path}.rotationAmplitudesRadians`,
+  );
+  requireAnimationCount(
+    rawScaleAmplitudes,
+    instanceCount * 3,
+    'batch.animation.scale-count',
+    `${path}.scaleAmplitudes`,
+  );
+  const periodsMs = budget.retain(rawPeriodsMs, `${path}.periodsMs`);
+  const phasesRadians = budget.retain(rawPhasesRadians, `${path}.phasesRadians`);
+  const translationAmplitudes = budget.retain(
+    rawTranslationAmplitudes,
+    `${path}.translationAmplitudes`,
+  );
+  const rotationAmplitudesRadians = budget.retain(
+    rawRotationAmplitudesRadians,
+    `${path}.rotationAmplitudesRadians`,
+  );
+  const scaleAmplitudes = budget.retain(rawScaleAmplitudes, `${path}.scaleAmplitudes`);
   for (const [name, array] of Object.entries({
     periodsMs,
     phasesRadians,
@@ -622,26 +710,6 @@ function parseInstanceAnimation(
   })) {
     finiteArray(array, `${path}.${name}`);
   }
-  requireAnimationCount(periodsMs, instanceCount, 'batch.animation.period-count', `${path}.periodsMs`);
-  requireAnimationCount(phasesRadians, instanceCount, 'batch.animation.phase-count', `${path}.phasesRadians`);
-  requireAnimationCount(
-    translationAmplitudes,
-    instanceCount * 3,
-    'batch.animation.translation-count',
-    `${path}.translationAmplitudes`,
-  );
-  requireAnimationCount(
-    rotationAmplitudesRadians,
-    instanceCount * 3,
-    'batch.animation.rotation-count',
-    `${path}.rotationAmplitudesRadians`,
-  );
-  requireAnimationCount(
-    scaleAmplitudes,
-    instanceCount * 3,
-    'batch.animation.scale-count',
-    `${path}.scaleAmplitudes`,
-  );
   for (let index = 0; index < periodsMs.length; index += 1) {
     const period = periodsMs[index]!;
     if (
@@ -675,11 +743,7 @@ function parseInstanceAnimation(
     `${path}.scaleAmplitudes`,
   );
   return {
-    schemaVersion: literal(
-      input.schemaVersion,
-      INSTANCE_TRANSFORM_ANIMATION_SCHEMA_V1,
-      `${path}.schemaVersion`,
-    ),
+    schemaVersion,
     periodsMs,
     phasesRadians,
     translationAmplitudes,
@@ -697,9 +761,10 @@ function assertUniqueKeys(values: readonly { readonly key: string }[], path: str
 }
 
 function assertChunksDoNotOverlap(chunks: readonly VoxelChunkV1[]): void {
-  const indexed = chunks
-    .map((chunk, index) => ({ chunk, index }))
-    .sort((a, b) => a.chunk.origin.x - b.chunk.origin.x || a.index - b.index);
+  const indexed = stableMergeSortInternal(
+    chunks.map((chunk, index) => ({ chunk, index })),
+    (left, right) => left.chunk.origin.x - right.chunk.origin.x || left.index - right.index,
+  );
   let comparisons = 0;
   const maxComparisons = 1_000_000;
   for (let leftIndex = 0; leftIndex < indexed.length; leftIndex += 1) {
@@ -760,23 +825,47 @@ function assertReferences(snapshot: OwnedRenderSnapshotV1): void {
   });
 }
 
-function parseSnapshot(value: unknown): OwnedRenderSnapshotV1 {
+export function parseSnapshot(
+  value: unknown,
+  copyMetrics?: SnapshotCopyMetricsInternal,
+  copyArrays = true,
+): OwnedRenderSnapshotV1 {
   const input = record(value, '$');
   const descriptor = parseDescriptor(input.descriptor);
-  const budget = new ByteBudget(descriptor.limits.maxTotalBytes);
-  const rawResources = list(input.resources, 'resources');
-  if (rawResources.length > descriptor.limits.maxResources) fail('limit.resources', 'resources', 'Resource count exceeds its declared limit.');
+  const budget = new SnapshotByteBudgetInternal(
+    descriptor.limits.maxTotalBytes,
+    copyMetrics,
+    copyArrays,
+  );
+  const rawResources = list(
+    input.resources,
+    'resources',
+    descriptor.limits.maxResources,
+    'limit.resources',
+    'Resource count exceeds its declared limit.',
+  );
   const resources = rawResources.map((resource, index) => parseResource(resource, `resources[${String(index)}]`, descriptor.limits, budget));
   assertUniqueKeys(resources, 'resources');
 
-  const rawChunks = list(input.chunks, 'chunks');
-  if (rawChunks.length > descriptor.limits.maxChunks) fail('limit.chunks', 'chunks', 'Chunk count exceeds its declared limit.');
+  const rawChunks = list(
+    input.chunks,
+    'chunks',
+    descriptor.limits.maxChunks,
+    'limit.chunks',
+    'Chunk count exceeds its declared limit.',
+  );
   const chunks = rawChunks.map((chunk, index) => parseChunk(chunk, `chunks[${String(index)}]`, descriptor.limits, budget));
   assertUniqueKeys(chunks, 'chunks');
+  if (descriptor.chunkProfile) assertUniformChunkProfileInternal(chunks, descriptor.chunkProfile);
   assertChunksDoNotOverlap(chunks);
 
-  const rawBatches = list(input.batches, 'batches');
-  if (rawBatches.length > descriptor.limits.maxBatches) fail('limit.batches', 'batches', 'Batch count exceeds its declared limit.');
+  const rawBatches = list(
+    input.batches,
+    'batches',
+    descriptor.limits.maxBatches,
+    'limit.batches',
+    'Batch count exceeds its declared limit.',
+  );
   const batches = rawBatches.map((batch, index) => parseBatch(batch, `batches[${String(index)}]`, descriptor.limits, budget));
   let activeAnimations = 0;
   batches.forEach((batch, batchIndex) => {
@@ -807,11 +896,93 @@ function parseSnapshot(value: unknown): OwnedRenderSnapshotV1 {
 }
 
 export function validateAndCopySnapshotV1(value: unknown): SnapshotValidationResultV1 {
+  return validateAndCopySnapshotV1WithMetrics(value).result;
+}
+
+export type InternalValidationResult<Value> =
+  | { readonly ok: true; readonly value: Value }
+  | { readonly ok: false; readonly issue: { readonly code: string; readonly path: string; readonly message: string } };
+
+function captureInternalValidation<Value>(parse: () => Value): InternalValidationResult<Value> {
   try {
-    return { ok: true, value: parseSnapshot(value) };
+    return { ok: true, value: parse() };
   } catch (error) {
-    if (error instanceof ValidationFailure) {
-      return { ok: false, issue: { code: error.code, path: error.path, message: error.message } };
+    if (error instanceof ValidationFailureInternal) {
+      return {
+        ok: false,
+        issue: { code: error.code, path: error.path, message: error.message },
+      };
+    }
+    throw error;
+  }
+}
+
+/** Package-internal one-copy parser for a delta resource payload. */
+export function validateAndCopyRenderResourceV1Internal(
+  value: unknown,
+  path: string,
+  limits: RenderLimitsV1,
+  budget: SnapshotByteBudgetInternal,
+): InternalValidationResult<RenderResourceV1> {
+  return captureInternalValidation(() => parseResource(value, path, limits, budget));
+}
+
+/** Package-internal one-copy parser for a delta chunk payload. */
+export function validateAndCopyVoxelChunkV1Internal(
+  value: unknown,
+  path: string,
+  limits: RenderLimitsV1,
+  budget: SnapshotByteBudgetInternal,
+): InternalValidationResult<VoxelChunkV1> {
+  return captureInternalValidation(() => parseChunk(value, path, limits, budget));
+}
+
+/** Package-internal one-copy parser for a delta batch or patch payload. */
+export function validateAndCopyInstanceBatchV1Internal(
+  value: unknown,
+  path: string,
+  limits: RenderLimitsV1,
+  budget: SnapshotByteBudgetInternal,
+): InternalValidationResult<InstanceBatchV1> {
+  return captureInternalValidation(() => parseBatch(value, path, limits, budget));
+}
+
+/** Package-internal final-graph validation that never recopies canonical arrays. */
+export function validateOwnedSnapshotV1Internal(
+  value: unknown,
+): SnapshotValidationResultV1 {
+  return captureInternalValidation(() => parseSnapshot(value, undefined, false));
+}
+
+/** Package-internal ownership telemetry used by the Three ingest regression gate. */
+export function validateAndCopySnapshotV1WithMetrics(
+  value: unknown,
+): SnapshotValidationWithMetricsInternal {
+  const metrics: SnapshotCopyMetricsInternal = {
+    inputTypedArrayBytes: 0,
+    copiedTypedArrayBytes: 0,
+    copyOperations: 0,
+  };
+  try {
+    return {
+      result: (() => {
+        const validated = parseSnapshot(value, metrics, false);
+        const owned = copyRenderSnapshotV1(validated);
+        metrics.copiedTypedArrayBytes = renderSnapshotCopyBytes(validated);
+        metrics.copyOperations = renderSnapshotCopyOperations(validated);
+        return { ok: true as const, value: owned };
+      })(),
+      metrics,
+    };
+  } catch (error) {
+    if (error instanceof ValidationFailureInternal) {
+      return {
+        result: {
+          ok: false,
+          issue: { code: error.code, path: error.path, message: error.message },
+        },
+        metrics,
+      };
     }
     throw error;
   }
