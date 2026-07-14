@@ -50,7 +50,7 @@ The repository currently contains a production-shaped V1 vertical slice: strict-
 
 - Read the affected path and trace data flow end to end before editing.
 - Prefer the smallest coherent change that proves a real consumer need. Extract after a contract is understood; do not move an entire game renderer into this repository.
-- During substantial multi-step work, treat each minimal coherent unit as a delivery boundary: once it passes the applicable verification and review, promptly stage only its scoped files and commit it before unrelated completed units accumulate in the worktree or diff. Self-review trivial changes; adversarially review behavior and public-contract changes. Never commit failing, in-flight, or partial work merely as a checkpoint.
+- During substantial multi-step work, treat each minimal coherent unit as a delivery boundary: complete its applicable verification, review it as soon as it is coherent, resolve substantive findings, then promptly stage only its scoped files and commit it before unrelated completed units accumulate in the worktree or diff. Self-review trivial changes; adversarially review behavior and public-contract changes. Never commit failing, in-flight, or partial work merely as a checkpoint.
 - Use test-driven development for behavior. Start with an externally meaningful contract: geometry topology, chunk seams, revision ordering, picking, disposal, public exports, or rendered output.
 - Make async state, ordering, cancellation, retries, ownership, cleanup, and terminal outcomes explicit.
 - Preserve public API compatibility unless the task authorizes a versioned breaking change. Schema changes require explicit versioning and migration guidance.
