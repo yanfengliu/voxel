@@ -117,7 +117,9 @@ async function assertFile(path, description) {
     file = await stat(path);
   } catch (error) {
     if (error && typeof error === 'object' && error.code === 'ENOENT') {
-      throw new Error(`${description} is missing at ${path}. Run npm run build first.`);
+      throw new Error(`${description} is missing at ${path}. Run npm run build first.`, {
+        cause: error,
+      });
     }
     throw error;
   }

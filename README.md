@@ -32,6 +32,7 @@ The runtime is tested with `three@0.185.1` and `@types/three@0.185.0`. `three` i
 
 ```bash
 npm install
+npm run test:browser:install
 npm run verify
 npm pack --dry-run
 ```
