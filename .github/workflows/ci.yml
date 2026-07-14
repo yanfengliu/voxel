@@ -51,9 +51,13 @@ jobs:
         run: npm run verify
 
   node-24-portable:
-    name: Node 24 portable (ubuntu-latest)
-    runs-on: ubuntu-latest
+    name: Node 24 portable (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
     timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
 
     steps:
       - name: Checkout
