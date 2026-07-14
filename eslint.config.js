@@ -27,11 +27,16 @@ export default tseslint.config(
         { prefer: 'type-imports', fixStyle: 'inline-type-imports' }
       ],
       '@typescript-eslint/no-confusing-void-expression': 'off',
-      '@typescript-eslint/no-non-null-assertion': 'off'
+      '@typescript-eslint/no-non-null-assertion': 'off',
+      'max-lines': ['error', { max: 1000, skipBlankLines: true, skipComments: true }]
     }
   },
   {
     files: ['eslint.config.js', 'scripts/**/*.mjs'],
+    extends: [tseslint.configs.disableTypeChecked]
+  },
+  {
+    files: ['fixtures/**/*.ts'],
     extends: [tseslint.configs.disableTypeChecked]
   }
 );

@@ -1,0 +1,15 @@
+{
+  "compilerOptions": {
+    "exactOptionalPropertyTypes": true,
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "noEmit": true,
+    "noUncheckedIndexedAccess": true,
+    "skipLibCheck": false,
+    "strict": true,
+    "target": "ES2022",
+    "types": []
+  },
+  "files": ["./city-shaped-consumer.ts"]
+}

@@ -1,0 +1,186 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Voxel packaged mesh worker</title>
+  </head>
+  <body>
+    <script type="module" nonce="voxel-worker-test">
+      import {
+        GREEDY_OPAQUE_MESHER_DESCRIPTOR_V1,
+        MESHER_INPUT_SCHEMA_V1,
+        prepareMeshWorkerRequestV1,
+        resolveMeshWorkerModuleUrlV1,
+        startMeshWorkerV1,
+        validateMeshWorkerResultV1,
+      } from '/dist/meshing/index.js';
+
+      const createInput = (canonicalSample) => ({
+        schemaVersion: MESHER_INPUT_SCHEMA_V1,
+        mesherId: GREEDY_OPAQUE_MESHER_DESCRIPTOR_V1.id,
+        mesherVersion: GREEDY_OPAQUE_MESHER_DESCRIPTOR_V1.version,
+        dependencySignature: 'browser-worker:solid-one-voxel',
+        source: {
+          coordinate: { x: -2, y: 3, z: -4 },
+          slotGeneration: 7,
+          key: 'browser-worker-source',
+          incarnation: 2,
+          sourceRevision: 11,
+          size: { x: 1, y: 1, z: 1 },
+        },
+        dependencies: GREEDY_OPAQUE_MESHER_DESCRIPTOR_V1.dependencyOffsets.map((offset) => ({
+          state: 'missing',
+          offset,
+          slotGeneration: 0,
+          missingNeighbor: 'empty',
+        })),
+        missingNeighbor: 'empty',
+        paletteEntryCount: 2,
+        materialEntryCount: 0,
+        sampleVolume: canonicalSample,
+        outputBudget: GREEDY_OPAQUE_MESHER_DESCRIPTOR_V1.limits.output,
+      });
+
+      const receiveOneMessage = (worker, request, transfer) => {
+        let timeout;
+        return new Promise((resolve, reject) => {
+          const cleanup = () => {
+            clearTimeout(timeout);
+            worker.removeEventListener('message', onMessage);
+            worker.removeEventListener('error', onError);
+            worker.removeEventListener('messageerror', onMessageError);
+          };
+          const onMessage = (event) => {
+            cleanup();
+            resolve(event.data);
+          };
+          const onError = (event) => {
+            event.preventDefault();
+            cleanup();
+            reject(new Error(`mesh worker error: ${event.message}`));
+          };
+          const onMessageError = () => {
+            cleanup();
+            reject(new Error('mesh worker returned an unreadable message'));
+          };
+          timeout = setTimeout(() => {
+            cleanup();
+            reject(new Error('mesh worker response timed out'));
+          }, 10_000);
+          worker.addEventListener('message', onMessage);
+          worker.addEventListener('error', onError);
+          worker.addEventListener('messageerror', onMessageError);
+          worker.postMessage(request, transfer);
+        });
+      };
+
+      const observeStartupError = async () => {
+        const worker = new Worker('/__voxel_worker_startup_failure__.js', {
+          type: 'module',
+          name: 'voxel-worker-startup-failure-test',
+        });
+        let terminated = false;
+        try {
+          return await new Promise((resolve, reject) => {
+            const timeout = setTimeout(() => {
+              reject(new Error('startup-error worker did not fail deterministically'));
+            }, 10_000);
+            worker.addEventListener('error', (event) => {
+              event.preventDefault();
+              clearTimeout(timeout);
+              resolve({
+                message: event.message,
+                filename: new URL(event.filename).pathname,
+              });
+            }, { once: true });
+          });
+        } finally {
+          worker.terminate();
+          terminated = true;
+          window.__meshWorkerStartupFailureTerminated = terminated;
+        }
+      };
+
+      window.runMeshWorkerBrowserEvidence = async () => {
+        const canonicalSample = new Uint16Array(27);
+        canonicalSample[13] = 1;
+        const canonicalBuffer = canonicalSample.buffer;
+        const canonicalBytesBefore = canonicalBuffer.byteLength;
+        const prepared = prepareMeshWorkerRequestV1({
+          jobId: 'browser-worker-job',
+          groupId: 'browser-worker-group',
+          worldId: 'browser-worker-world',
+          epoch: 'browser-worker-epoch',
+          targetRevision: 12,
+          pipelineGeneration: 5,
+          descriptor: GREEDY_OPAQUE_MESHER_DESCRIPTOR_V1,
+          input: createInput(canonicalSample),
+        });
+        const moduleUrl = resolveMeshWorkerModuleUrlV1();
+        let startupOptions;
+        const startup = startMeshWorkerV1(
+          (url, options) => {
+            startupOptions = { ...options };
+            return new Worker(url, options);
+          },
+        );
+        if (startup.status !== 'started') {
+          throw new Error(`${startup.code}: ${startup.message}`);
+        }
+        const worker = startup.handle;
+        let evidence;
+        let terminated = false;
+        try {
+          const resultPromise = receiveOneMessage(
+            worker,
+            prepared.request,
+            [...prepared.transfer],
+          );
+          const transferredBytesAfterPost = prepared.request.input.sampleVolume.buffer.byteLength;
+          const canonicalBytesAfterPost = canonicalBuffer.byteLength;
+          const message = await resultPromise;
+          const validation = validateMeshWorkerResultV1(message, prepared.expectation);
+          if (!validation.ok) {
+            throw new Error(
+              `${validation.issue.code} at ${validation.issue.path}: ${validation.issue.message}`,
+            );
+          }
+          if (validation.value.status !== 'completed') {
+            throw new Error(`unexpected mesh worker result: ${validation.value.status}`);
+          }
+          evidence = {
+            moduleUrl,
+            modulePath: new URL(moduleUrl).pathname,
+            startupOptions,
+            copiedSampleBytes: prepared.copiedSampleBytes,
+            canonicalBytesBefore,
+            canonicalBytesAfterPost,
+            transferredBytesAfterPost,
+            sourceCoordinate: validation.value.identity.source.coordinate,
+            exposedUnitFaceCount: validation.value.output.counts.exposedUnitFaceCount,
+            vertexCount: validation.value.output.counts.vertexCount,
+            indexCount: validation.value.output.counts.indexCount,
+            outputBytes: validation.value.output.metrics.outputBytes,
+            outputBuffersAttached: [
+              validation.value.output.positions.buffer.byteLength,
+              validation.value.output.normals.buffer.byteLength,
+              validation.value.output.paletteIndices.buffer.byteLength,
+              validation.value.output.indices.buffer.byteLength,
+            ],
+          };
+        } finally {
+          worker.terminate();
+          terminated = true;
+        }
+        const startupFailure = await observeStartupError();
+        return {
+          ...evidence,
+          terminated,
+          startupFailure,
+          startupFailureTerminated: window.__meshWorkerStartupFailureTerminated === true,
+        };
+      };
+    </script>
+  </body>
+</html>

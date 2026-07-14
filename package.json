@@ -1,9 +1,21 @@
 {
   "name": "voxel",
   "version": "0.1.4",
+  "description": "Browser-first voxel and low-poly 3D rendering toolkit for strategy and building games.",
   "private": true,
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/yanfengliu/voxel.git"
+  },
+  "bugs": {
+    "url": "https://github.com/yanfengliu/voxel/issues"
+  },
+  "homepage": "https://github.com/yanfengliu/voxel#readme",
   "type": "module",
-  "sideEffects": false,
+  "sideEffects": [
+    "./dist/meshing/mesh-worker-entry.js"
+  ],
   "files": [
     "dist"
   ],
@@ -15,6 +27,10 @@
     "./meshing": {
       "types": "./dist/meshing/index.d.ts",
       "import": "./dist/meshing/index.js"
+    },
+    "./meshing/browser-worker": {
+      "types": "./dist/meshing/browser-worker.d.ts",
+      "import": "./dist/meshing/browser-worker.js"
     },
     "./three": {
       "types": "./dist/three/index.d.ts",
@@ -29,13 +45,20 @@
     "prepare": "npm run build",
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
-    "lint": "eslint src tests scripts playwright.config.ts vitest.config.ts --max-warnings 0",
+    "lint": "eslint src tests fixtures scripts playwright.config.ts vitest.config.ts --max-warnings 0",
     "build": "tsc -p tsconfig.build.json",
+    "test:compatibility": "node scripts/verify-consumer-compatibility.mjs",
+    "test:api": "node scripts/verify-public-api.mjs",
+    "test:api:self": "node scripts/verify-public-api.mjs --self-test",
+    "api:update": "npm run build && node scripts/verify-public-api.mjs --update",
     "test:core-only-package": "node scripts/verify-core-only-package.mjs",
+    "test:mesh-worker-package": "node scripts/verify-mesh-worker-package.mjs",
+    "test:three-package": "node scripts/verify-three-package.mjs",
+    "benchmark:meshers": "npm run build && node scripts/benchmark-meshers.mjs",
     "pretest:browser": "npm run build",
     "test:browser": "playwright test",
     "test:browser:install": "playwright install chromium",
-    "verify": "npm run test && npm run typecheck && npm run lint && npm run build && npm run test:core-only-package && npm run test:browser"
+    "verify": "npm run test && npm run typecheck && npm run lint && npm run build && npm run test:compatibility && npm run test:api && npm run test:api:self && npm run test:core-only-package && npm run test:mesh-worker-package && npm run test:three-package && npm run test:browser"
   },
   "peerDependencies": {
     "@types/three": ">=0.185.0 <0.186.0",
@@ -58,7 +81,10 @@
     "globals": "17.7.0",
     "three": "0.185.1",
     "typescript": "5.9.3",
+    "typescript-5-7": "npm:typescript@5.7.3",
+    "typescript-6-0": "npm:typescript@6.0.3",
     "typescript-eslint": "8.63.0",
+    "vite": "8.1.4",
     "vitest": "4.1.10"
   }
 }

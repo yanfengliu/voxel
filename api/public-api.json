@@ -1,0 +1,374 @@
+{
+  "formatVersion": 1,
+  "packageName": "voxel",
+  "entrypoints": {
+    "./core": "dist/core/index.d.ts",
+    "./meshing": "dist/meshing/index.d.ts",
+    "./meshing/browser-worker": "dist/meshing/browser-worker.d.ts",
+    "./testing": "dist/testing/index.d.ts",
+    "./three": "dist/three/index.d.ts"
+  },
+  "files": {
+    "dist/core/canonical-store.d.ts": {
+      "sha256": "65b21c59af8d6bc6e0347e255eb998ab1697c3fa77166cf87f9b801ce409e247",
+      "reachableFrom": [
+        "./core",
+        "./testing",
+        "./three"
+      ]
+    },
+    "dist/core/contracts.d.ts": {
+      "sha256": "e24eff8a9d0f2fbd96e4152cd520c5b7b2b058146c2c21e5ef5cc10021504d59",
+      "reachableFrom": [
+        "./core",
+        "./meshing",
+        "./testing",
+        "./three"
+      ]
+    },
+    "dist/core/coordinates.d.ts": {
+      "sha256": "cc4fc6e9aa8ce5aa596a895b2186e01710ff46c695015d53c77445f0c05ea3f2",
+      "reachableFrom": [
+        "./core",
+        "./testing",
+        "./three"
+      ]
+    },
+    "dist/core/delta-reducer.d.ts": {
+      "sha256": "ea50287509609ad78747f8f2a0978ae8f7fcb96706964cf56e2c60ba34fc5391",
+      "reachableFrom": [
+        "./core",
+        "./testing",
+        "./three"
+      ]
+    },
+    "dist/core/index.d.ts": {
+      "sha256": "8e88fd3fdeb33b8594a427d10e1fc43a145727e9d506c170b84a03d759b0d14e",
+      "reachableFrom": [
+        "./core",
+        "./testing",
+        "./three"
+      ]
+    },
+    "dist/core/paged-instance-batch-materialize.d.ts": {
+      "sha256": "35e7baa428fc2727109ecc15439af9260d08a083c06721800e67de040743c192",
+      "reachableFrom": [
+        "./core",
+        "./testing",
+        "./three"
+      ]
+    },
+    "dist/core/paged-instance-batch-prepared.d.ts": {
+      "sha256": "5d6a79234f4cc0a68dacbed89fde04279f02bc31d1293ac76be2e4291f06802b",
+      "reachableFrom": [
+        "./core",
+        "./testing",
+        "./three"
+      ]
+    },
+    "dist/core/paged-instance-batch-work.d.ts": {
+      "sha256": "b6adb728d53e92a7ff325fda8f39f49face1c113ee52699c12967652930d528e",
+      "reachableFrom": [
+        "./core",
+        "./testing",
+        "./three"
+      ]
+    },
+    "dist/core/paged-instance-batch.d.ts": {
+      "sha256": "4f1deccc689f59ace3f4c043f2e63f59804fe8bd01bd56b500db0e34deef4894",
+      "reachableFrom": [
+        "./core",
+        "./testing",
+        "./three"
+      ]
+    },
+    "dist/core/presentation-ledger.d.ts": {
+      "sha256": "37bbeb95f659159ec1007055bbae6446e5183efef3341ed924be99132043d747",
+      "reachableFrom": [
+        "./core",
+        "./testing",
+        "./three"
+      ]
+    },
+    "dist/core/render-world.d.ts": {
+      "sha256": "e2a2f81144dab7c3d41d3c84a784c9ad0d602275975aab1a3d0e62df96b1e8e8",
+      "reachableFrom": [
+        "./core",
+        "./testing",
+        "./three"
+      ]
+    },
+    "dist/core/snapshot-byte-budget.d.ts": {
+      "sha256": "be0b35b42900dfd4f6229d100163f8ce304d80dd3ba670afe5796229ca04dd08",
+      "reachableFrom": [
+        "./core",
+        "./testing",
+        "./three"
+      ]
+    },
+    "dist/core/snapshot-validation.d.ts": {
+      "sha256": "7d2336a5298f2f8a5c8519d8d7945742da1084d6d9b70f0fe49b713e4a7e2dba",
+      "reachableFrom": [
+        "./core",
+        "./testing",
+        "./three"
+      ]
+    },
+    "dist/core/voxel-grid.d.ts": {
+      "sha256": "d26b753f3abdaa1e1e8b91ad49d83fc6d156d9dd1944f9a8aee2bebffa6f4736",
+      "reachableFrom": [
+        "./core",
+        "./testing",
+        "./three"
+      ]
+    },
+    "dist/meshing/browser-worker.d.ts": {
+      "sha256": "afba4315073275bf1ed38683872ee5363a357a317db2c4300ecad16859d62d9e",
+      "reachableFrom": [
+        "./meshing/browser-worker"
+      ]
+    },
+    "dist/meshing/chunk-dirty-closure.d.ts": {
+      "sha256": "d5e6bbfb39713d7db18c1af50cd2c3d89983b76554f0b2819503b2c6d4770904",
+      "reachableFrom": [
+        "./meshing",
+        "./three"
+      ]
+    },
+    "dist/meshing/chunk-index.d.ts": {
+      "sha256": "3c27509971e35d8eb15d58e0945fcdeea1553e59d8c5b46a4efca4134016e1b6",
+      "reachableFrom": [
+        "./meshing",
+        "./three"
+      ]
+    },
+    "dist/meshing/dense-palette-chunk.d.ts": {
+      "sha256": "e8e4302f1c44e73e0c9d698b1c44d661a739cfdf3363a2f3467c0e51e3a9e0f6",
+      "reachableFrom": [
+        "./meshing",
+        "./three"
+      ]
+    },
+    "dist/meshing/dense-palette-raycast.d.ts": {
+      "sha256": "bf4e8ccd81b46df24aad1e98a100f9042a0b3a3436c3acaac6bb14857966e63c",
+      "reachableFrom": [
+        "./meshing",
+        "./three"
+      ]
+    },
+    "dist/meshing/greedy-opaque-mesher.d.ts": {
+      "sha256": "a6abd9171ed88b5cdf26aab15d194f5113fba417309753edb793e4b4f63d7820",
+      "reachableFrom": [
+        "./meshing",
+        "./three"
+      ]
+    },
+    "dist/meshing/index.d.ts": {
+      "sha256": "9ee406a6a3fe7645261ba84b61119a9882d5a1935736fc4bdb7cc4b9ac5d3a7b",
+      "reachableFrom": [
+        "./meshing",
+        "./three"
+      ]
+    },
+    "dist/meshing/indexed-oracle-input.d.ts": {
+      "sha256": "18bc4c8e4b3a500b0ea731f169c1e71b715c7362ed73f0dfe6721183c76aab76",
+      "reachableFrom": [
+        "./meshing",
+        "./three"
+      ]
+    },
+    "dist/meshing/mesh-worker-contract.d.ts": {
+      "sha256": "3a0314d974bfdc8c1ea037f6d851ca6842dba5ef9ca3944912bf7489de2383e9",
+      "reachableFrom": [
+        "./meshing",
+        "./three"
+      ]
+    },
+    "dist/meshing/mesh-worker-execution.d.ts": {
+      "sha256": "ec0fedd4f3208228282d55fc25af6233a01da577b6c8dd5bc61b948cfef4e63d",
+      "reachableFrom": [
+        "./meshing",
+        "./three"
+      ]
+    },
+    "dist/meshing/mesh-worker-module.d.ts": {
+      "sha256": "847622ce94d61b2e6f4a159c20e3a027c98571a67322b1049b39f25aa892dde5",
+      "reachableFrom": [
+        "./meshing",
+        "./three"
+      ]
+    },
+    "dist/meshing/mesh-worker-request.d.ts": {
+      "sha256": "38de160749ef64f15130d50708bcfd02346e6eb98b29e736788f92ef37939643",
+      "reachableFrom": [
+        "./meshing",
+        "./three"
+      ]
+    },
+    "dist/meshing/mesh-worker-result.d.ts": {
+      "sha256": "fc87548a9c7efcda784468f1db0cfbafb5a8602e735d040ed88e1a77d2b91024",
+      "reachableFrom": [
+        "./meshing",
+        "./three"
+      ]
+    },
+    "dist/meshing/mesher-contract-validation.d.ts": {
+      "sha256": "b4dc83be0e9b5f23178f7d8307ef2aad9b71929eae7ac09e44716ba87098e1a2",
+      "reachableFrom": [
+        "./meshing",
+        "./three"
+      ]
+    },
+    "dist/meshing/mesher-contract.d.ts": {
+      "sha256": "3c3c923c74db38bce2469ffb53872b7ba7512d5fd945c1e61bdbefe141df5d10",
+      "reachableFrom": [
+        "./meshing",
+        "./testing",
+        "./three"
+      ]
+    },
+    "dist/meshing/mesher-result-validation.d.ts": {
+      "sha256": "b16f64f9f3ee97876c98bedbfbdcf0d08869d7b7a004691ff58017ccbdd62753",
+      "reachableFrom": [
+        "./meshing",
+        "./three"
+      ]
+    },
+    "dist/meshing/visible-face-mesher.d.ts": {
+      "sha256": "8a11d085ea5ac5a3b2edae7fda4077c30a64131a81006b60c857dbdc734673be",
+      "reachableFrom": [
+        "./meshing",
+        "./three"
+      ]
+    },
+    "dist/meshing/visible-face-oracle.d.ts": {
+      "sha256": "4e06f198cba07e3fd2139fca67e48307f7ccee76dd47985f3ca5a8286602a7fe",
+      "reachableFrom": [
+        "./meshing",
+        "./three"
+      ]
+    },
+    "dist/meshing/voxel-mesh-scheduler-contract.d.ts": {
+      "sha256": "e3703f58a1935106b67edf7d1046c1e0b99b2734c8085b4382d15b061cd800f9",
+      "reachableFrom": [
+        "./meshing",
+        "./three"
+      ]
+    },
+    "dist/meshing/voxel-mesh-scheduler.d.ts": {
+      "sha256": "c2d9e7d98913f99ed605ee9afbcc5fbf98ffec1d5258f5b3f89c13b44232a370",
+      "reachableFrom": [
+        "./meshing",
+        "./three"
+      ]
+    },
+    "dist/testing/frame-budget.d.ts": {
+      "sha256": "6358f01e8fbc8f53bd65c8fddcac284d090624118bbf07b63d1a88b007af4979",
+      "reachableFrom": [
+        "./testing"
+      ]
+    },
+    "dist/testing/index.d.ts": {
+      "sha256": "fb6299c4c347232dfb403da1ffb008fcd487afead814a3d201527983c939762d",
+      "reachableFrom": [
+        "./testing"
+      ]
+    },
+    "dist/testing/lifecycle-reference-scene.d.ts": {
+      "sha256": "19b2c0ad9fd84680d2ed9e0841f151583ce532d6e645e034ae407e6a1f7598c2",
+      "reachableFrom": [
+        "./testing"
+      ]
+    },
+    "dist/testing/mesher-corpus.d.ts": {
+      "sha256": "d2b1efabce3a5fc9b2b0d8c087edd212689443200fa00d38640441f2895fb727",
+      "reachableFrom": [
+        "./testing"
+      ]
+    },
+    "dist/testing/oriented-unit-face-coverage.d.ts": {
+      "sha256": "1ff577a01d44d19bda2bc625e82a5905302fbf277fb38f76d806a19187227846",
+      "reachableFrom": [
+        "./testing"
+      ]
+    },
+    "dist/testing/ownership-metrics.d.ts": {
+      "sha256": "2c24cca1907c135847722337e51345f4904272102f910f4474d26a2a08b81f6d",
+      "reachableFrom": [
+        "./testing"
+      ]
+    },
+    "dist/three/cameraStrategy.d.ts": {
+      "sha256": "9407810f74a40dac76525840df10013986b2fb1f454c6111f5f80f57a81434b4",
+      "reachableFrom": [
+        "./three"
+      ]
+    },
+    "dist/three/capabilities.d.ts": {
+      "sha256": "c475c40e356aac47740c511b34e7e4465e3061277db1f61bc49729d6697adea7",
+      "reachableFrom": [
+        "./three"
+      ]
+    },
+    "dist/three/daylightRig.d.ts": {
+      "sha256": "04fbfb67a462d5bbabb15b25dd850e3f9ef05abb7d83e896448283909a7da2cd",
+      "reachableFrom": [
+        "./three"
+      ]
+    },
+    "dist/three/hostFrameProtocol.d.ts": {
+      "sha256": "ff12d096a246d463ac6aa02f7580a7800ff1b8a7f525b045c970a81bf3971e8a",
+      "reachableFrom": [
+        "./three"
+      ]
+    },
+    "dist/three/index.d.ts": {
+      "sha256": "aa0fd903a0ac0f1ad3883b2e6fd76fe5e3fafe64a4c57926942b9b3efe9d4186",
+      "reachableFrom": [
+        "./three"
+      ]
+    },
+    "dist/three/orthographicView.d.ts": {
+      "sha256": "23142d3a4ceb96553906ffdd726b7ae1ab232bf5053d78eaf58b2bdb24e4140b",
+      "reachableFrom": [
+        "./three"
+      ]
+    },
+    "dist/three/pickingContracts.d.ts": {
+      "sha256": "fab1d3341b959af4b08e9d7d4040818f35bcbfb8480899cf3aa93ec282a0fd23",
+      "reachableFrom": [
+        "./three"
+      ]
+    },
+    "dist/three/presentationTypes.d.ts": {
+      "sha256": "7e9a532077f799bccc50850cbd3240e1512a6762b7a7950a97aca09d6f918020",
+      "reachableFrom": [
+        "./three"
+      ]
+    },
+    "dist/three/rendererTypes.d.ts": {
+      "sha256": "93de70bb7432be2ae8b62719dc14f0ecbee1d6a0bf5e35f3ea436e9ddb0bf8ca",
+      "reachableFrom": [
+        "./three"
+      ]
+    },
+    "dist/three/runtimeSnapshotMetrics.d.ts": {
+      "sha256": "13bb6a1be209252637a15d3e1153b6ce74db309ea78b9f9a6c756797a40976ba",
+      "reachableFrom": [
+        "./three"
+      ]
+    },
+    "dist/three/runtimeTypes.d.ts": {
+      "sha256": "76ed882a10450a78e41b83806ca7392d864b8d8918fddf73bad96e8597461536",
+      "reachableFrom": [
+        "./three"
+      ]
+    },
+    "dist/three/ThreeRenderRuntime.d.ts": {
+      "sha256": "ea54f4183bc68cbbe15173d8c474acc10c9a92aa848ec8e6a7925e7f122e4f3e",
+      "reachableFrom": [
+        "./three"
+      ]
+    }
+  }
+}
