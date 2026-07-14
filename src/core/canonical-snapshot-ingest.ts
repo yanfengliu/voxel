@@ -31,10 +31,14 @@ export function validateSnapshotForCanonicalIngestInternal(
   };
   try {
     const parsed = parseSnapshot(value, metrics, false);
+    // Parsing normalizes the object graph. Validate that getter-free graph a
+    // second time so a hostile accessor cannot mutate an earlier typed lane
+    // after its first validation but before ownership is established.
+    const normalized = parseSnapshot(parsed, undefined, false);
     const nonBatchSnapshot: OwnedRenderSnapshotV1 = {
-      ...parsed,
-      resources: parsed.resources.map(copyRenderResourceV1Internal),
-      chunks: parsed.chunks.map(copyVoxelChunkV1Internal),
+      ...normalized,
+      resources: normalized.resources.map(copyRenderResourceV1Internal),
+      chunks: normalized.chunks.map(copyVoxelChunkV1Internal),
       batches: [],
     };
     metrics.copiedTypedArrayBytes = renderSnapshotCopyBytes(nonBatchSnapshot);
@@ -43,7 +47,7 @@ export function validateSnapshotForCanonicalIngestInternal(
       result: {
         ok: true,
         value: {
-          ...parsed,
+          ...normalized,
           resources: nonBatchSnapshot.resources,
           chunks: nonBatchSnapshot.chunks,
         },
