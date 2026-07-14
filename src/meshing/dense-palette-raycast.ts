@@ -1,7 +1,7 @@
 import {
   EMPTY_PALETTE_INDEX,
   MAX_DENSE_CHUNK_VOXELS,
-  type DensePaletteChunk,
+  type DensePaletteChunkReader,
   type Int3,
 } from './dense-palette-chunk.js';
 
@@ -10,6 +10,8 @@ type Axis = (typeof AXES)[number];
 
 /** Default hard guard on the number of cells one ray query may visit. */
 export const DEFAULT_MAX_VOXEL_RAY_STEPS = 65_536;
+/** Absolute guard against caller overrides turning one query into an unbounded walk. */
+export const HARD_MAX_VOXEL_RAY_STEPS = 16_777_216;
 
 /** Finite three-dimensional point or direction in voxel world units. */
 export interface VoxelRayVector3 {
@@ -27,7 +29,7 @@ export type DensePaletteChunkLookup = (
   chunkX: number,
   chunkY: number,
   chunkZ: number,
-) => DensePaletteChunk | undefined;
+) => DensePaletteChunkReader | undefined;
 
 export interface DensePaletteRaycastOptions {
   readonly origin: VoxelRayVector3;
@@ -55,6 +57,15 @@ export interface DensePaletteRaycastHit {
   readonly chunkCoordinate: Int3;
   readonly localCoordinate: Int3;
 }
+
+export type DensePaletteRaycastResult =
+  | {
+      readonly status: 'hit';
+      readonly hit: DensePaletteRaycastHit;
+      readonly visitedCells: number;
+    }
+  | { readonly status: 'miss'; readonly visitedCells: number }
+  | { readonly status: 'budget-exceeded'; readonly visitedCells: number };
 
 interface MutableInt3 {
   x: number;
@@ -145,7 +156,7 @@ function expectedChunkOrigin(chunkCoordinate: Int3, chunkSize: Int3): Int3 {
 }
 
 function assertMatchingChunk(
-  chunk: DensePaletteChunk,
+  chunk: DensePaletteChunkReader,
   chunkCoordinate: Int3,
   chunkSize: Int3,
 ): void {
@@ -167,12 +178,13 @@ function assertMatchingChunk(
  * A stationary axis on a boundary uses the floor (positive-side) cell.
  * Simultaneous crossings step every exactly tied axis together, so cells
  * touched only along an edge or corner do not become false hits. The maximum
- * distance is inclusive. Exhausting `maxSteps` throws rather than reporting a
- * false miss.
+ * distance is inclusive. The detailed form reports `budget-exceeded` rather
+ * than a false miss; the compatibility wrapper below preserves the original
+ * throwing behavior.
  */
-export function raycastDensePaletteChunks(
+export function raycastDensePaletteChunksDetailed(
   options: DensePaletteRaycastOptions,
-): DensePaletteRaycastHit | null {
+): DensePaletteRaycastResult {
   assertFiniteVector('origin', options.origin);
   assertFiniteVector('direction', options.direction);
   if (!Number.isFinite(options.maxDistance)) {
@@ -190,9 +202,13 @@ export function raycastDensePaletteChunks(
     throw new TypeError('getChunk must be a function.');
   }
   const maxSteps = options.maxSteps ?? DEFAULT_MAX_VOXEL_RAY_STEPS;
-  if (!Number.isSafeInteger(maxSteps) || maxSteps <= 0) {
+  if (
+    !Number.isSafeInteger(maxSteps)
+    || maxSteps <= 0
+    || maxSteps > HARD_MAX_VOXEL_RAY_STEPS
+  ) {
     throw new RangeError(
-      `maxSteps must be a positive safe integer, got ${String(maxSteps)}`,
+      `maxSteps must be a positive safe integer no greater than ${String(HARD_MAX_VOXEL_RAY_STEPS)}, got ${String(maxSteps)}`,
     );
   }
 
@@ -242,7 +258,7 @@ export function raycastDensePaletteChunks(
   }
 
   let cachedChunkCoordinate: Int3 | null = null;
-  let cachedChunk: DensePaletteChunk | undefined;
+  let cachedChunk: DensePaletteChunkReader | undefined;
   const sampleCell = (): Sample => {
     const chunkCoordinate = {
       x: Math.floor(cell.x / options.chunkSize.x),
@@ -284,17 +300,21 @@ export function raycastDensePaletteChunks(
     const sample = sampleCell();
     if (sample.paletteIndex !== EMPTY_PALETTE_INDEX) {
       return {
-        cell: { ...cell },
-        paletteIndex: sample.paletteIndex,
-        distance: entryDistance,
-        point: {
-          x: canonicalZero(options.origin.x + direction.x * entryDistance),
-          y: canonicalZero(options.origin.y + direction.y * entryDistance),
-          z: canonicalZero(options.origin.z + direction.z * entryDistance),
+        status: 'hit',
+        visitedCells: visitedCells + 1,
+        hit: {
+          cell: { ...cell },
+          paletteIndex: sample.paletteIndex,
+          distance: entryDistance,
+          point: {
+            x: canonicalZero(options.origin.x + direction.x * entryDistance),
+            y: canonicalZero(options.origin.y + direction.y * entryDistance),
+            z: canonicalZero(options.origin.z + direction.z * entryDistance),
+          },
+          entryNormal: { ...entryNormal },
+          chunkCoordinate: sample.chunkCoordinate,
+          localCoordinate: sample.localCoordinate,
         },
-        entryNormal: { ...entryNormal },
-        chunkCoordinate: sample.chunkCoordinate,
-        localCoordinate: sample.localCoordinate,
       };
     }
 
@@ -303,11 +323,11 @@ export function raycastDensePaletteChunks(
       nextDistance.y,
       nextDistance.z,
     );
-    if (crossingDistance > options.maxDistance) return null;
+    if (crossingDistance > options.maxDistance) {
+      return { status: 'miss', visitedCells: visitedCells + 1 };
+    }
     if (visitedCells + 1 >= maxSteps) {
-      throw new RangeError(
-        `Voxel ray traversal exhausted the ${String(maxSteps)} cell step budget before maxDistance.`,
-      );
+      return { status: 'budget-exceeded', visitedCells: visitedCells + 1 };
     }
 
     const crossed: Record<Axis, boolean> = {
@@ -338,6 +358,18 @@ export function raycastDensePaletteChunks(
     entryDistance = crossingDistance;
   }
 
-  // The loop always returns, hits, or throws at the configured boundary.
-  throw new RangeError('Voxel ray traversal exhausted its cell step budget.');
+  return { status: 'budget-exceeded', visitedCells: maxSteps };
+}
+
+/** Compatibility wrapper that throws on budget exhaustion and returns null on a miss. */
+export function raycastDensePaletteChunks(
+  options: DensePaletteRaycastOptions,
+): DensePaletteRaycastHit | null {
+  const result = raycastDensePaletteChunksDetailed(options);
+  if (result.status === 'hit') return result.hit;
+  if (result.status === 'miss') return null;
+  const maxSteps = options.maxSteps ?? DEFAULT_MAX_VOXEL_RAY_STEPS;
+  throw new RangeError(
+    `Voxel ray traversal exhausted the ${String(maxSteps)} cell step budget before maxDistance.`,
+  );
 }

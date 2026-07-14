@@ -1,8 +1,10 @@
 import {
   EMPTY_PALETTE_INDEX,
+  MAX_DENSE_CHUNK_VOXELS,
   MAX_PALETTE_INDEX,
-  type DensePaletteChunk,
+  type DensePaletteChunkReader,
 } from './dense-palette-chunk.js';
+import { MAX_EXACT_FLOAT32_VOXEL_COORDINATE_V1 } from '../core/contracts.js';
 
 type Vec3Tuple = readonly [number, number, number];
 
@@ -90,6 +92,8 @@ export interface VisibleFaceMesherOptions {
   readonly sampleNeighbor?: NeighborSampler;
   /** Hard output guard for the correctness-first, non-greedy mesher. */
   readonly maxFaces?: number;
+  /** Defaults to the historical absolute-world output contract. */
+  readonly positionSpace?: 'world' | 'source-local';
 }
 
 export const DEFAULT_MAX_VISIBLE_FACES = 262_144;
@@ -100,7 +104,7 @@ export interface MeshBounds {
 }
 
 export interface VisibleFaceMesh {
-  /** Absolute world-space vertex positions, four vertices per face. */
+  /** Vertex positions in the requested coordinate space, four per face. */
   readonly positions: Float32Array;
   /** Flat outward normals, one normal per vertex. */
   readonly normals: Float32Array;
@@ -123,18 +127,72 @@ function normalizeSample(value: number | undefined): number {
   return value;
 }
 
+function normalizeVoxel(value: number | undefined): number {
+  if (value === undefined) {
+    throw new RangeError('in-chunk palette index must be defined.');
+  }
+  return normalizeSample(value);
+}
+
+interface ValidatedChunkShape {
+  readonly origin: { readonly x: number; readonly y: number; readonly z: number };
+  readonly size: { readonly x: number; readonly y: number; readonly z: number };
+}
+
+function validateChunkShape(chunk: DensePaletteChunkReader): ValidatedChunkShape {
+  const origin = { x: chunk.origin.x, y: chunk.origin.y, z: chunk.origin.z };
+  const size = { x: chunk.size.x, y: chunk.size.y, z: chunk.size.z };
+  for (const axis of ['x', 'y', 'z'] as const) {
+    if (!Number.isSafeInteger(origin[axis])) {
+      throw new RangeError(`chunk origin.${axis} must be a safe integer.`);
+    }
+    if (!Number.isSafeInteger(size[axis]) || size[axis] <= 0) {
+      throw new RangeError(`chunk size.${axis} must be a positive safe integer.`);
+    }
+    const end = origin[axis] + size[axis];
+    if (
+      !Number.isSafeInteger(end)
+      || origin[axis] < -MAX_EXACT_FLOAT32_VOXEL_COORDINATE_V1
+      || end > MAX_EXACT_FLOAT32_VOXEL_COORDINATE_V1
+    ) {
+      throw new RangeError(`chunk ${axis} boundaries exceed the exact Float32 voxel range.`);
+    }
+  }
+  const volume = size.x * size.y * size.z;
+  if (
+    !Number.isSafeInteger(volume)
+    || volume > MAX_DENSE_CHUNK_VOXELS
+    || chunk.volume !== volume
+  ) {
+    throw new RangeError(
+      `chunk volume must equal its bounded size product and be at most ${String(MAX_DENSE_CHUNK_VOXELS)}.`,
+    );
+  }
+  return { origin, size };
+}
+
 /**
  * Deterministic, non-greedy opaque voxel mesher used as the correctness oracle.
  * Every non-empty cell emits one quad for each empty adjacent cell.
  */
 export function meshVisibleFaces(
-  chunk: DensePaletteChunk,
+  chunk: DensePaletteChunkReader,
   options: VisibleFaceMesherOptions = {},
 ): VisibleFaceMesh {
   const maxFaces = options.maxFaces ?? DEFAULT_MAX_VISIBLE_FACES;
-  if (!Number.isSafeInteger(maxFaces) || maxFaces <= 0) {
-    throw new RangeError('maxFaces must be a positive safe integer.');
+  if (!Number.isSafeInteger(maxFaces) || maxFaces < 0) {
+    throw new RangeError('maxFaces must be a nonnegative safe integer.');
   }
+  const positionSpace: unknown = options.positionSpace;
+  if (positionSpace !== undefined
+    && positionSpace !== 'world'
+    && positionSpace !== 'source-local') {
+    throw new RangeError('positionSpace must be world or source-local.');
+  }
+  const shape = validateChunkShape(chunk);
+  const positionOrigin = options.positionSpace === 'source-local'
+    ? { x: 0, y: 0, z: 0 }
+    : shape.origin;
   const positions: number[] = [];
   const normals: number[] = [];
   const paletteIndices: number[] = [];
@@ -149,23 +207,30 @@ export function meshVisibleFaces(
   let maxZ = -Infinity;
 
   const sample = (localX: number, localY: number, localZ: number): number => {
-    if (chunk.containsLocal(localX, localY, localZ)) {
-      return chunk.getLocal(localX, localY, localZ);
+    if (
+      localX >= 0
+      && localY >= 0
+      && localZ >= 0
+      && localX < shape.size.x
+      && localY < shape.size.y
+      && localZ < shape.size.z
+    ) {
+      return normalizeVoxel(chunk.getLocal(localX, localY, localZ));
     }
     return normalizeSample(
       options.sampleNeighbor?.(
-        chunk.origin.x + localX,
-        chunk.origin.y + localY,
-        chunk.origin.z + localZ,
+        shape.origin.x + localX,
+        shape.origin.y + localY,
+        shape.origin.z + localZ,
       ),
     );
   };
 
   // Iteration order matches chunk storage: y layers, then z rows, then x.
-  for (let y = 0; y < chunk.size.y; y++) {
-    for (let z = 0; z < chunk.size.z; z++) {
-      for (let x = 0; x < chunk.size.x; x++) {
-        const paletteIndex = chunk.getLocal(x, y, z);
+  for (let y = 0; y < shape.size.y; y++) {
+    for (let z = 0; z < shape.size.z; z++) {
+      for (let x = 0; x < shape.size.x; x++) {
+        const paletteIndex = normalizeVoxel(chunk.getLocal(x, y, z));
         if (paletteIndex === EMPTY_PALETTE_INDEX) continue;
         voxelCount++;
 
@@ -180,18 +245,18 @@ export function meshVisibleFaces(
 
           const baseVertex = positions.length / 3;
           for (const [cornerX, cornerY, cornerZ] of face.corners) {
-            const worldX = chunk.origin.x + x + cornerX;
-            const worldY = chunk.origin.y + y + cornerY;
-            const worldZ = chunk.origin.z + z + cornerZ;
-            positions.push(worldX, worldY, worldZ);
+            const positionX = positionOrigin.x + x + cornerX;
+            const positionY = positionOrigin.y + y + cornerY;
+            const positionZ = positionOrigin.z + z + cornerZ;
+            positions.push(positionX, positionY, positionZ);
             normals.push(face.normal[0], face.normal[1], face.normal[2]);
             paletteIndices.push(paletteIndex);
-            minX = Math.min(minX, worldX);
-            minY = Math.min(minY, worldY);
-            minZ = Math.min(minZ, worldZ);
-            maxX = Math.max(maxX, worldX);
-            maxY = Math.max(maxY, worldY);
-            maxZ = Math.max(maxZ, worldZ);
+            minX = Math.min(minX, positionX);
+            minY = Math.min(minY, positionY);
+            minZ = Math.min(minZ, positionZ);
+            maxX = Math.max(maxX, positionX);
+            maxY = Math.max(maxY, positionY);
+            maxZ = Math.max(maxZ, positionZ);
           }
           indices.push(
             baseVertex,

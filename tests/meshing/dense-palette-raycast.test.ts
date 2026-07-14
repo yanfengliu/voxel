@@ -2,7 +2,9 @@ import { describe, expect, it } from 'vitest';
 
 import {
   DensePaletteChunk,
+  HARD_MAX_VOXEL_RAY_STEPS,
   raycastDensePaletteChunks,
+  raycastDensePaletteChunksDetailed,
   type DensePaletteChunkLookup,
   type Int3,
 } from '../../src/meshing/index.js';
@@ -331,6 +333,10 @@ describe('raycastDensePaletteChunks', () => {
       .toThrow(/maxSteps.*positive safe integer/i);
     expect(() => raycastDensePaletteChunks({ ...base, maxSteps: 1.5 }))
       .toThrow(/maxSteps.*positive safe integer/i);
+    expect(() => raycastDensePaletteChunks({
+      ...base,
+      maxSteps: HARD_MAX_VOXEL_RAY_STEPS + 1,
+    })).toThrow(/maxSteps.*no greater/i);
 
     const mismatchedChunk = new DensePaletteChunk({
       origin: { x: 0, y: 0, z: 0 },
@@ -344,6 +350,15 @@ describe('raycastDensePaletteChunks', () => {
 
   it('throws instead of returning a false miss when the traversal budget is exhausted', () => {
     const world = createWorld(CHUNK_SIZE);
+
+    expect(raycastDensePaletteChunksDetailed({
+      origin: { x: 0.5, y: 0.5, z: 0.5 },
+      direction: { x: 1, y: 0, z: 0 },
+      maxDistance: 10,
+      maxSteps: 2,
+      chunkSize: CHUNK_SIZE,
+      getChunk: world.getChunk,
+    })).toEqual({ status: 'budget-exceeded', visitedCells: 2 });
 
     expect(() => raycastDensePaletteChunks({
       origin: { x: 0.5, y: 0.5, z: 0.5 },

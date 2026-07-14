@@ -22,3 +22,22 @@ export {
   resetRenderWorldOwnershipMetricsForTesting,
   type RenderWorldOwnershipMetricsForTesting,
 } from './ownership-metrics.js';
+
+export {
+  MESHER_CORPUS_DESCRIPTOR_V1,
+  createMesherCorpusV1,
+  type MesherCorpusFixtureV1,
+  type MesherCorpusNameV1,
+} from './mesher-corpus.js';
+
+export {
+  DEFAULT_MAX_ORIENTED_FACE_RASTER_CELLS_V1,
+  compareOrientedUnitFaceCoverageV1,
+  createExpectedOrientedUnitFaceCoverageV1,
+  extractOrientedUnitFaceCoverageV1,
+  type OrientedAxisNormalV1,
+  type OrientedUnitFaceAttributeMismatchV1,
+  type OrientedUnitFaceComparisonV1,
+  type OrientedUnitFaceCoverageV1,
+  type OrientedUnitFaceV1,
+} from './oriented-unit-face-coverage.js';

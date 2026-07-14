@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
   DensePaletteChunk,
   meshVisibleFaces,
+  type DensePaletteChunkReader,
   type VisibleFaceMesh,
 } from '../../src/meshing/index.js';
 
@@ -194,5 +195,36 @@ describe('meshVisibleFaces', () => {
     source.setLocal(0, 0, 0, 1);
     source.setLocal(1, 0, 0, 1);
     expect(() => meshVisibleFaces(source, { maxFaces: 1 })).toThrow(/face budget/);
+  });
+
+  it('rejects an unknown position-space mode at the public boundary', () => {
+    const source = chunk({ x: 1, y: 1, z: 1 });
+    expect(() => meshVisibleFaces(source, {
+      positionSpace: 'camera' as 'world',
+    })).toThrow(/positionSpace/);
+  });
+
+  it('bounds structural readers before entering voxel loops', () => {
+    const reader: DensePaletteChunkReader = {
+      origin: { x: 0, y: 0, z: 0 },
+      size: { x: Number.MAX_SAFE_INTEGER, y: 1, z: 1 },
+      volume: Number.MAX_SAFE_INTEGER,
+      containsLocal: () => true,
+      getLocal: () => 0,
+    };
+
+    expect(() => meshVisibleFaces(reader)).toThrow(/size|bound|volume/);
+  });
+
+  it('rejects invalid in-chunk palette values from structural readers', () => {
+    const reader: DensePaletteChunkReader = {
+      origin: { x: 0, y: 0, z: 0 },
+      size: { x: 1, y: 1, z: 1 },
+      volume: 1,
+      containsLocal: () => true,
+      getLocal: () => 65_536,
+    };
+
+    expect(() => meshVisibleFaces(reader)).toThrow(/palette index/);
   });
 });

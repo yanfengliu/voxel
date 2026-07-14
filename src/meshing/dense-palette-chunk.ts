@@ -24,6 +24,15 @@ export interface DensePaletteChunkOptions {
   readonly voxels?: Uint16Array;
 }
 
+/** Read-only storage surface accepted by deterministic voxel queries/meshers. */
+export interface DensePaletteChunkReader {
+  readonly origin: Int3;
+  readonly size: Int3;
+  readonly volume: number;
+  containsLocal(x: number, y: number, z: number): boolean;
+  getLocal(x: number, y: number, z: number): number;
+}
+
 function assertIntegerVector(name: string, value: Int3, positive: boolean): void {
   for (const [axis, component] of [
     ['x', value.x],
@@ -70,7 +79,7 @@ function assertRenderableCoordinateRange(origin: Int3, size: Int3): void {
  * Cells use x-major order: `x + size.x * (z + size.z * y)`. Constructor input
  * and exported voxel arrays are copied so the chunk always owns its storage.
  */
-export class DensePaletteChunk {
+export class DensePaletteChunk implements DensePaletteChunkReader {
   readonly origin: Int3;
   readonly size: Int3;
   readonly volume: number;

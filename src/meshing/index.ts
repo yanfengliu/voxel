@@ -3,15 +3,19 @@ export {
   EMPTY_PALETTE_INDEX,
   MAX_DENSE_CHUNK_VOXELS,
   MAX_PALETTE_INDEX,
+  type DensePaletteChunkReader,
   type DensePaletteChunkOptions,
   type Int3,
 } from './dense-palette-chunk.js';
 export {
   DEFAULT_MAX_VOXEL_RAY_STEPS,
+  HARD_MAX_VOXEL_RAY_STEPS,
   raycastDensePaletteChunks,
+  raycastDensePaletteChunksDetailed,
   type DensePaletteChunkLookup,
   type DensePaletteRaycastHit,
   type DensePaletteRaycastOptions,
+  type DensePaletteRaycastResult,
   type VoxelRayVector3,
 } from './dense-palette-raycast.js';
 export {
@@ -22,3 +26,90 @@ export {
   type VisibleFaceMesh,
   type VisibleFaceMesherOptions,
 } from './visible-face-mesher.js';
+export {
+  ChunkIndexV1,
+  FACE_NEIGHBOR_OFFSETS_V1,
+  MAX_CHUNK_DEPENDENCY_OFFSETS_V1,
+  type ChunkDependencySignatureContextV1,
+  type ChunkDependencyTokenV1,
+  type ChunkIndexEntryV1,
+} from './chunk-index.js';
+export {
+  DEFAULT_MAX_CHUNK_INVALIDATION_CHANGES_V1,
+  DEFAULT_MAX_CHUNK_INVALIDATION_DEPENDENCY_CHECKS_V1,
+  DEFAULT_MAX_CHUNK_INVALIDATION_REFERENCE_SCANS_V1,
+  DEFAULT_MAX_CHUNK_INVALIDATION_VOXEL_COMPARISONS_V1,
+  DEFAULT_MAX_CHUNK_INVALIDATION_TARGETS_V1,
+  deriveChunkDirtyClosureV1,
+  type ChunkDirtyClosureInputV1,
+  type ChunkDirtyClosureLimitsV1,
+  type ChunkDirtyClosureResultV1,
+  type ChunkInvalidationChangeSetV1,
+  type ChunkInvalidationClassV1,
+  type ChunkInvalidationReasonV1,
+  type ChunkPreparationGroupV1,
+  type ChunkPreparationTargetV1,
+  type MaterialResourceChangeV1,
+  type PaletteResourceChangeV1,
+} from './chunk-dirty-closure.js';
+export {
+  MAX_MESHER_DEPENDENCY_OFFSETS_V1,
+  MAX_MESHER_DEPENDENCY_SIGNATURE_LENGTH_V1,
+  MAX_MESHER_HALO_VOXELS_PER_AXIS_V1,
+  MAX_MESHER_ID_LENGTH_V1,
+  MAX_MESHER_SAMPLE_VOXELS_V1,
+  MAX_MESHER_WORK_ELEMENTS_V1,
+  MESHER_DESCRIPTOR_SCHEMA_V1,
+  MESHER_INPUT_SCHEMA_V1,
+  MESHER_OUTPUT_SCHEMA_V1,
+  type MesherAttributePolicyV1,
+  type MesherDependencyTokenV1,
+  type MesherDescriptorLimitsV1,
+  type MesherHaloV1,
+  type MesherLocalBoundsV1,
+  type MesherOutputBudgetV1,
+  type MesherOutputCountsV1,
+  type MesherOutputMetricsV1,
+  type MesherOutputV1,
+  type MesherSourceTokenV1,
+  type MesherValidationIssueV1,
+  type MesherValidationResultV1,
+  type PureMesherDescriptorV1,
+  type PureMesherInputV1,
+  type PureVoxelMesherV1,
+  type ValidatedMesherOutputV1,
+} from './mesher-contract.js';
+export {
+  validatePureMesherDescriptorV1,
+  validatePureMesherInputV1,
+} from './mesher-contract-validation.js';
+export { validateMesherOutputV1 } from './mesher-result-validation.js';
+export {
+  INDEXED_VISIBLE_FACE_ORACLE_DEFAULT_OUTPUT_BUDGET_V1,
+  VISIBLE_FACE_ORACLE_DESCRIPTOR_V1,
+  VISIBLE_FACE_ORACLE_ID_V1,
+  VISIBLE_FACE_ORACLE_MESHER_V1,
+  VISIBLE_FACE_ORACLE_VERSION_V1,
+  meshIndexedVisibleFaceOracleV1,
+} from './visible-face-oracle.js';
+export {
+  GREEDY_OPAQUE_MESHER_DESCRIPTOR_V1,
+  GREEDY_OPAQUE_MESHER_ID_V1,
+  GREEDY_OPAQUE_MESHER_VERSION_V1,
+  GREEDY_OPAQUE_MESHER_V1,
+  meshGreedyOpaqueV1,
+} from './greedy-opaque-mesher.js';
+export {
+  preflightIndexedMesherWorldV1,
+  preflightIndexedVisibleFaceOracleWorldV1,
+  prepareIndexedMesherInputV1,
+  prepareIndexedVisibleFaceOracleInputV1,
+  type IndexedMesherPreparationLimitsV1,
+  type IndexedMesherPreparationMetricsV1,
+  type IndexedVisibleFaceOraclePreparationLimitsV1,
+  type IndexedVisibleFaceOraclePreparationMetricsV1,
+  type PrepareIndexedMesherInputOptionsV1,
+  type PrepareIndexedVisibleFaceOracleInputOptionsV1,
+  type PreparedIndexedMesherInputV1,
+  type PreparedIndexedVisibleFaceOracleInputV1,
+} from './indexed-oracle-input.js';
