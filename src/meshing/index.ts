@@ -113,3 +113,77 @@ export {
   type PreparedIndexedMesherInputV1,
   type PreparedIndexedVisibleFaceOracleInputV1,
 } from './indexed-oracle-input.js';
+export {
+  MAX_MESH_WORKER_FAILURE_MESSAGE_LENGTH_V1,
+  MAX_MESH_WORKER_ID_LENGTH_V1,
+  MESH_WORKER_ENTRY_SCHEMA_V1,
+  MESH_WORKER_MODULE_NAME_V1,
+  MESH_WORKER_SCHEMA_V1,
+  type MeshWorkerCancelledResultV1,
+  type MeshWorkerCompletedResultV1,
+  type MeshWorkerFailedResultV1,
+  type MeshWorkerFailureV1,
+  type MeshWorkerJobIdentityV1,
+  type MeshWorkerModuleOptionsV1,
+  type MeshWorkerOutboundMessageV1,
+  type MeshWorkerProtocolErrorV1,
+  type MeshWorkerRequestV1,
+  type MeshWorkerResultExpectationV1,
+  type MeshWorkerResultV1,
+  type MeshWorkerStartupResultV1,
+  type MeshWorkerValidationIssueV1,
+  type MeshWorkerValidationResultV1,
+  type PrepareMeshWorkerRequestOptionsV1,
+  type PreparedMeshWorkerRequestV1,
+  type ValidatedMeshWorkerResultV1,
+} from './mesh-worker-contract.js';
+export {
+  prepareMeshWorkerRequestV1,
+  validateMeshWorkerRequestV1,
+} from './mesh-worker-request.js';
+export {
+  meshWorkerResultTransferListV1,
+  validateMeshWorkerResultV1,
+} from './mesh-worker-result.js';
+export {
+  executeMeshWorkerRequestV1,
+  type MeshWorkerExecutionV1,
+} from './mesh-worker-execution.js';
+export {
+  resolveMeshWorkerModuleUrlV1,
+  startMeshWorkerV1,
+} from './mesh-worker-module.js';
+export { VoxelMeshSchedulerV1 } from './voxel-mesh-scheduler.js';
+export {
+  MAX_MESH_SCHEDULER_QUEUED_JOBS_V1,
+  MAX_MESH_SCHEDULER_RUNTIME_ID_LENGTH_V1,
+  MAX_MESH_SCHEDULER_WORKERS_V1,
+  type MeshSchedulerCancellationReasonV1,
+  type MeshSchedulerCancelResultV1,
+  type MeshSchedulerCommitGroupResultV1,
+  type MeshSchedulerCompleteGroupResultV1,
+  type MeshSchedulerConfigV1,
+  type MeshSchedulerCrashResultV1,
+  type MeshSchedulerDispatchPreparationV1,
+  type MeshSchedulerDispatchV1,
+  type MeshSchedulerDisposeResultV1,
+  type MeshSchedulerEligibilityResolverV1,
+  type MeshSchedulerEligibilityV1,
+  type MeshSchedulerEnqueueResultV1,
+  type MeshSchedulerEpochReplacementResultV1,
+  type MeshSchedulerGroupOutcomeV1,
+  type MeshSchedulerGroupV1,
+  type MeshSchedulerJobV1,
+  type MeshSchedulerMetricsV1,
+  type MeshSchedulerPreparedGroupV1,
+  type MeshSchedulerPreparedOutputV1,
+  type MeshSchedulerPriorityClassV1,
+  type MeshSchedulerPriorityV1,
+  type MeshSchedulerPumpResultV1,
+  type MeshSchedulerReceiveResultV1,
+  type MeshSchedulerRequestAllocatorV1,
+  type MeshSchedulerTerminalCodeV1,
+  type MeshSchedulerWorkerContextV1,
+  type MeshSchedulerWorkerFactoryV1,
+  type MeshSchedulerWorkerPortV1,
+} from './voxel-mesh-scheduler-contract.js';
