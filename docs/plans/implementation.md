@@ -1,18 +1,18 @@
 # Cross-game implementation plan
 
-Status: active from 2026-07-11. This is the durable execution plan for the first working package and consumer. Update checkboxes only when the named evidence exists; do not infer completion from partial scaffolding.
+Status: active from 2026-07-11. The first working package and AoE2 standalone consumer are delivered; cross-game proof and advanced engine increments remain active. Update checkboxes only when the named evidence exists; do not infer completion from partial scaffolding.
 
 ## Outcome
 
-Deliver an executable `voxel` package and a playable AoE2 isometric-voxel vertical slice while preserving contracts needed by City and Townscaper.
+Deliver and extend an executable `voxel` package while preserving contracts needed by City and Townscaper. The playable AoE2 isometric-voxel slice and its promotion to a standalone sole renderer are complete.
 
-The first slice is successful when:
+The first slice succeeded with the following evidence:
 
 - `voxel/core`, `voxel/meshing`, `voxel/three`, and `voxel/testing` resolve from built output;
 - ordinary ingest copies retained typed arrays, invalid snapshots fail atomically, and accepted state is staged until an explicit frame boundary;
 - one AoE seed renders terrain through voxel chunks and renders units, buildings, and resources through geometry resources plus instance batches;
 - the AoE adapter contains all AoE semantics, with stable `id:generation` keys and a renderer epoch reset on bridge replacement;
-- Phaser-owned fog, selection, placement, health, input, replay, HUD, and browser hooks remain functional during the migration;
+- AoE-owned fog, selection, placement, health, input, replay, HUD, and browser hooks remained functional through promotion, after which the Phaser source, dependency, selector, fallback, and second world canvas were removed;
 - fixed 800x600 before, after, and pixel-diff evidence plus structural metrics are recorded;
 - dependency audits and both repositories' complete applicable gates pass.
 
@@ -24,7 +24,7 @@ The first slice is successful when:
 - [x] Implement atomic snapshot validation and owned copies of every retained typed array, including detached-buffer, overlap, group, bounds, and byte/output guards.
 - [x] Implement accepted versus successfully rendered frame-boundary presentation, world+epoch namespacing, and idempotent disposal.
 - [x] Add deterministic unit tests for invalid input, mutation after ingest, world/epoch replacement, revision ordering, backend rejection, and resource replacement.
-- [ ] Add a packed core-only consumer fixture that compiles without Three installed; the current tarball dry-run proves contents but not that isolation scenario.
+- [x] Add a packed portable-consumer fixture: `npm run test:core-only-package` installs the actual tarball offline into a fresh temporary consumer, proves Three and consumer-local TypeScript are absent, imports `voxel/core`, `voxel/meshing`, and `voxel/testing` from installed `dist`, compiles their installed declarations with the repository TypeScript CLI, and removes the fixture in `finally`.
 
 Exit gate: package builds from a clean checkout and `npm run verify` passes; no consumer types appear in declarations.
 
@@ -32,13 +32,14 @@ Exit gate: package builds from a clean checkout and `npm run verify` passes; no 
 
 - [x] Implement dense palette chunks and a pure visible-face oracle mesher with neighbour sampling, deterministic typed output, and a hard face budget.
 - [x] Add fixtures for empty, single, adjacent, solid, boundary-neighbour, negative-origin, deterministic-repeat, and budget-exhaustion chunks.
+- [x] Export a Three-free deterministic `raycastDensePaletteChunks` DDA over uniform aligned dense chunks, with normalized direction, inclusive distance, negative-coordinate and seam coverage, exact-boundary/tied-axis rules, and an explicit cell-step budget that throws rather than returning a false miss.
 - [x] Implement Three presenters for chunks, geometry resources, grouped materials, and stable-key instance batches with dependency rebinding.
 - [x] Add a parameterized orthographic 2:1 isometric view, explicit frame/readback capture, metrics, resize, context-loss fencing, and idempotent teardown.
-- [ ] Add a repeated real-WebGL rebuild/dispose resource-count lane; fake-renderer and AoE browser coverage exist, but this engine-owned endurance gate remains open.
+- [x] Add a repeated engine-owned real-WebGL rebuild/dispose lane: the headless fixed-view reference runs six renderer lifecycles and 20 forced resource revisions per lifecycle, checks accepted/presented ordering, stable nonzero geometry and shader-program counts, the intentional zero-texture baseline, direct post-dispose Three counters, draw/triangle metrics, capture, idempotent teardown, terminal rejection, request/console warnings and errors, explicit test-context loss, and owned server/browser cleanup.
 
 Exit gate: a fixed reference scene reports deterministic topology and resource metrics; simple meshing is explicitly the oracle, not the planned advanced backend.
 
-## Phase C: AoE-owned adapter and reversible composition
+## Phase C: AoE-owned adapter and reversible composition (completed historical proving step)
 
 - [x] Write the matching AoE design and plan under `docs/threads/current/voxel-renderer-migration/` before code changes.
 - [x] Add opt-in `?renderer=voxel`, safe-default `?renderer=phaser`, and a deterministic two-canvas stack.
@@ -107,7 +108,7 @@ Exit gate: the named reference profiles meet their measured 60 Hz budget, every 
 
 ## Explicitly deferred
 
-- Full Phaser removal and a standalone AoE Three input/overlay host.
+- Runtime-owned presented-state voxel picking, geometry/instance hit composition, cross-lane priority, and spatial acceleration; the portable dense-chunk occupancy DDA is implemented but intentionally unbound.
 - General skeletal crowd animation, animation textures, clip graphs, root motion, and gameplay-event synchronization.
 - Greedy/WASM/worker meshing, AO, propagated light, transparent voxel merging, liquids, and block-model registries.
 - Smooth-terrain Surface Nets or Transvoxel, WebGPU/TSL, LOD, streaming, indirect draws, and GPU-driven particles.

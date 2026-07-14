@@ -4,7 +4,8 @@
     "useDefineForClassFields": true,
     "lib": [
       "ES2022",
-      "DOM"
+      "DOM",
+      "ESNext.Disposable"
     ],
     "module": "ESNext",
     "moduleResolution": "Bundler",
@@ -26,6 +27,8 @@
   "include": [
     "src",
     "tests",
-    "eslint.config.js"
+    "eslint.config.js",
+    "playwright.config.ts",
+    "vitest.config.ts"
   ]
 }

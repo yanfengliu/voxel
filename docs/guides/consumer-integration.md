@@ -1,6 +1,6 @@
 # Consumer integration guide
 
-Status: V1 vertical-slice contract, implemented and exercised by AoE2's opt-in renderer on 2026-07-11.
+Status: V1 vertical-slice contract, implemented on 2026-07-11 and exercised by AoE2's sole standalone world renderer since 2026-07-13.
 
 ## Install and link
 
@@ -77,6 +77,8 @@ V1 admits at most 8,192 active animated slots per snapshot and 16,384 total slot
 - `GeometryResourceV1` is for deterministic arbitrary topology, including irregular Townscaper shells and consumer-authored block recipes. Positions, normals, indices, pivot, and declared bounds are explicit. Leave material groups empty to use the instance batch's one material; otherwise groups must be topology-aligned, ordered, non-overlapping, and cover the index range exactly once.
 - `InstanceBatchV1` is for repeated rigid geometry and optional bounded harmonic transform playback. Every instance key must be opaque and never reused in an epoch, or encode a consumer generation such as `entityId:generation`.
 
+For portable occupancy queries, `voxel/meshing` exports `raycastDensePaletteChunks(options)`. It normalizes a finite nonzero direction and traverses caller-supplied, uniformly sized and aligned `DensePaletteChunk` grids up to an inclusive `maxDistance`. Missing chunks are empty; `maxSteps` defaults to the exported `DEFAULT_MAX_VOXEL_RAY_STEPS` limit of 65,536 visited cells, and budget exhaustion throws rather than returning a false miss. Hits include the world cell, palette index, distance, point, entry normal, chunk coordinate, and local coordinate. Exact boundary starts and simultaneous crossings have documented deterministic rules. This helper is data-only: it is not bound to `ThreeRenderRuntime` accepted/presented state and does not compose geometry or instance hits, so a consumer remains responsible for querying occupancy that matches its displayed frame.
+
 Use a new resource incarnation when a logical key is destroyed and later recreated. Use a higher resource revision when the same incarnation changes. Keep consumer semantics out of resource keys and shared payload fields when identity alone suffices.
 
 ## Consumer-owned responsibilities
@@ -89,7 +91,7 @@ Every game keeps ownership of:
 - capacity/sharding policy that depends on gameplay density;
 - composite capture when another canvas or DOM overlay participates in the final frame.
 
-AoE2 currently uses chunks for terrain, one consumer-authored block geometry plus a rigid instance batch for entities, and a transparent Phaser overlay for input/fog/selection/health/UI. City should begin with one existing building or vehicle instance batch in embedded mode while retaining its terrain and composition root. Townscaper should first align to the tested Three release, then pass its locally generated connected shell through geometry resources; its massing and facade rules stay local.
+AoE2 currently uses chunks for terrain and consumer-authored geometry plus rigid instance batches for entities and feedback. Its AoE-owned `AoeVoxelGameView` is the sole world-renderer host: it owns camera/input orchestration and projects fog, selection, placement, health, hit, and death feedback into the same Three/`voxel` presentation. The DOM HUD and minimap remain separate product UI; there is no Phaser source, dependency, renderer selector, fallback, or second world canvas. City should begin with one existing building or vehicle instance batch in embedded mode while retaining its terrain and composition root. Townscaper should first align to the tested Three release, then pass its locally generated connected shell through geometry resources; its massing and facade rules stay local.
 
 ## Current constraints
 
@@ -97,7 +99,7 @@ AoE2 currently uses chunks for terrain, one consumer-authored block geometry plu
 - Per-instance alpha is rejected by the current `InstancedMesh` path. Use opaque instance colors or a consumer-owned extension until a deliberate transparent-batch contract exists.
 - The visible-face mesher is a correctness oracle, not a greedy production mesher. Run the documented Voxelize versus `block-mesh-rs` bake-off before replacing it.
 - The oracle path caps output at 262,144 faces and 512 chunks per snapshot. These are safety bounds, not production streaming targets.
-- V1 is whole-snapshot ingest. Deltas, async worker jobs, picking, assets, and spatial sharding are later contracts and must preserve accepted/presented revision semantics.
+- V1 is whole-snapshot ingest. Deltas, async worker jobs, runtime-owned presented-state picking, geometry/instance hit composition, assets, and spatial sharding are later contracts and must preserve accepted/presented revision semantics. The portable dense-chunk ray query does not claim those runtime contracts.
 - Browser page capture is distinct from `ThreeRenderRuntime.capture()` when other canvases or DOM overlays are part of the product image.
 
 ## Promotion checklist

@@ -1,6 +1,6 @@
 # Voxel graphics engine design
 
-Status: the V1 vertical slice was implemented on 2026-07-11; broader consumer adoption and advanced phases remain proposed. The shipped surface is bounded snapshots, an oracle mesher, and a Three.js WebGL runtime, proven first through AoE2.
+Status: the V1 vertical slice was implemented on 2026-07-11; broader consumer adoption and advanced phases remain proposed. The shipped surface is bounded snapshots, an oracle mesher, a deterministic dense-chunk occupancy ray query, and a Three.js WebGL runtime, proven first through AoE2.
 
 ## Decision summary
 
@@ -31,7 +31,7 @@ The first TypeScript visible-face mesher is a deterministic correctness oracle b
 
 ## Goals
 
-- Share rendering infrastructure across `city`, `townscaper`, future 3D work in `aoe2`, and similar browser games.
+- Share rendering infrastructure across `city`, `townscaper`, AoE2's live 3D renderer, and similar browser games.
 - Render chunked voxel terrain without internal faces or one-object-per-voxel overhead.
 - Render large repeated populations through explicit instance batches and capacity policies.
 - Accept procedural meshes and imported assets without making the engine an asset authoring tool.
@@ -54,7 +54,7 @@ The first TypeScript visible-face mesher is a deterministic correctness oracle b
 
 ### City
 
-`city` is the closest first consumer. Its simulation runs in a worker and emits structured-clone-safe render views; its renderer already uses Three.js, instanced buildings, vehicles, structures, trees, texture overlays, renderer-side interpolation, and versioned road geometry.
+`city` is the closest next Three-native consumer. Its simulation runs in a worker and emits structured-clone-safe render views; its renderer already uses Three.js, instanced buildings, vehicles, structures, trees, texture overlays, renderer-side interpolation, and versioned road geometry.
 
 The reusable ideas are the simulation/render boundary, revision-aware updates, growable or capped instance pools, sparse overlays, renderer-owned interpolation, explicit draw-call budgets, and ground/preview picking.
 
@@ -70,9 +70,9 @@ Townscaper's connected massing, facade placement, harbor, courtyard, wildlife, c
 
 ### AoE2
 
-`aoe2` currently uses Phaser 3 rather than Three.js, so this engine is not a drop-in extraction from its present renderer. Its simulation boundary is nevertheless favorable: typed render snapshots and create/update/destroy deltas feed a renderer-owned store, display interpolation does not mutate gameplay, and stable render identity includes an entity generation because ECS IDs can recycle.
+`aoe2` is the first live proving consumer. Its `AoeVoxelGameView` is the sole renderer host and drives one interactive Three/`voxel` world canvas; the former Phaser source, dependency, selector, fallback, and second world canvas are gone. The simulation boundary remains authoritative: typed render projections feed an AoE-owned adapter, display interpolation does not mutate gameplay, and stable render identity includes an entity generation because ECS IDs can recycle.
 
-A future 3D adapter can preserve the simulation, DOM HUD, saves, and replay data, but the current Phaser scene also hosts frame ordering, input, camera conversion, bridge replacement, and browser-test hooks. Migration therefore needs an AoE-owned renderer-host facade before the world renderer can change safely; it is not only a canvas-class swap. The projected render contract also needs elevation, vertical extent, orientation, asset or archetype ID, palette/material data, animation state, and transient effects. Fog visibility, explored memory, occlusion readability, drag selection, minimap transforms, and headless screenshots are first-class requirements, not polish.
+The completed migration preserved the simulation, DOM HUD and minimap, saves, replay data, bridge replacement, camera/input behavior, browser-test hooks, and direct capture. AoE keeps elevation and visual semantics in its own projection, currently renders terrain flat at elevation zero, owns displayed silhouette-proxy picking, and emits fog, selection, placement, health, hit, and death feedback through normal snapshot lanes. Those current consumer choices are proof of the package boundary, not engine-wide picking, heightfield, overlay, or art contracts.
 
 ### Adjacent repositories
 
@@ -280,6 +280,8 @@ Do not couple the portable core to `ShaderMaterial`, `onBeforeCompile`, TSL, GLS
 
 The engine returns stable pick records such as world position, surface normal, voxel coordinate, object ID, batch ID, and instance ID. It does not decide what a click means.
 
+The first portable query primitive is implemented in `voxel/meshing`: `raycastDensePaletteChunks(options)` performs deterministic Amanatides-Woo traversal over caller-supplied uniform, aligned `DensePaletteChunk` grids. It normalizes direction, treats missing chunks as empty, includes hits at `maxDistance`, defines exact-boundary and tied-axis behavior, and throws when its bounded cell-step budget is exhausted. It returns occupancy identity and geometry only. It is not yet bound to the runtime's presented revision, does not query geometry resources or instance batches, and does not provide spatial acceleration or cross-lane hit priority.
+
 Provide separate strategies:
 
 - voxel DDA ray traversal for chunk worlds;
@@ -327,7 +329,7 @@ Advantages:
 
 Costs:
 
-- `aoe2` requires a renderer migration from Phaser rather than a package swap.
+- AoE2 required a renderer migration from Phaser rather than a package swap; its completed standalone promotion demonstrates the integration cost beyond the package boundary.
 - Consumer Three.js versions are currently inconsistent, so the first integration must align them or document and test a narrow supported peer range.
 - Three.js does not solve chunk design, topology, revision ordering, game adapters, or resource ownership automatically.
 
@@ -355,7 +357,7 @@ Advantages:
 Costs:
 
 - Rewrites the two current Three.js consumers and prevents straightforward extraction of their existing renderer utilities.
-- Adds a second scene/material/asset ecosystem while `aoe2` still needs a separate Phaser migration.
+- Would have added a second scene/material/asset ecosystem while AoE2 was already migrating away from Phaser.
 - Solves more than this repository is intended to own and increases lock-in.
 
 Decision: reasonable for a new standalone game, but a poor fit for the stated goal of sharing current sibling rendering code.
@@ -376,7 +378,7 @@ Decision: do not choose this unless measured production scenes hit a hard ceilin
 
 ## Migration and delivery plan
 
-### Active delivery adjustment: AoE2 proving slice
+### Delivered adjustment: AoE2 proving slice
 
 On 2026-07-11 the user requested that AoE2 be co-edited first while the design remains reusable for City and Townscaper. The first implementation therefore cuts a narrow vertical path through the phases below rather than claiming each broad phase complete: executable contracts, a visible-face oracle, Three chunk/geometry/instance presenters, and an AoE-owned adapter.
 
@@ -402,7 +404,7 @@ Exit gate: the sandbox exercises the full runtime contracts and a City compile/l
 
 ### Phase 2: voxel path
 
-- Implement opaque palette-indexed chunk storage and boundary-aware visible-face meshing as the correctness oracle, then bake off Voxelize's mesher and `block-mesh-rs` before selecting or implementing greedy optimization. Add halo-derived invalidation, worker scheduling, stale-result rejection, atomic presentation groups, chunk culling, and presented-state voxel DDA picking only behind the same tested mesher contract.
+- Implement opaque palette-indexed chunk storage and boundary-aware visible-face meshing as the correctness oracle, then bake off Voxelize's mesher and `block-mesh-rs` before selecting or implementing greedy optimization. The portable deterministic dense-chunk DDA is now implemented; runtime binding to presented occupancy remains open alongside halo-derived invalidation, worker scheduling, stale-result rejection, atomic presentation groups, and chunk culling.
 - Establish correctness fixtures for empty/full/checkerboard/staircase/negative-coordinate/load-unload/neighbor-boundary chunks, palette opacity changes, tombstone/recreate, and adversarial revision races.
 - Add named performance scenes and budgets only after recording representative baselines.
 
@@ -425,14 +427,14 @@ Exit gate: one playable City building path uses the engine without importing Cit
 
 Exit gate: a representative town matches structural and visual expectations with stable resource counts and no public debug/export regressions.
 
-### Phase 5: AoE2 3D vertical slice
+### Phase 5: AoE2 3D vertical slice (completed 2026-07-13)
 
-- Introduce an AoE-owned renderer-host facade that decouples Phaser-specific bootstrap, frame ordering, input/camera conversion, bridge swapping, and browser-test APIs from the world renderer. This is more than replacing a canvas class, even though simulation rules remain unchanged.
-- Extend AoE2's game-owned projected render contract for elevation, orientation, asset/archetype identity, animation, palette, and effects.
-- Render chunked terrain, one static or rigid-transform unit archetype, one multi-cell building, selection, and fog through an orthographic adapter. General independently skinned instancing is not part of this slice.
-- Preserve DOM HUD, bridge replacement, replay, smooth display interpolation, minimap conversions, and headless screenshot behavior.
+- Introduced the AoE-owned `AoeVoxelGameView` facade and then promoted it to the sole host for frame ordering, renderer-neutral camera/input, bridge swapping, and browser-test APIs.
+- Kept orientation, archetype identity, palette, rigid animation, effects, and elevation semantics in AoE's projected contract; the current terrain presentation deliberately remains flat at elevation zero.
+- Rendered chunked terrain, multi-part rigid units, buildings, resources, fog, selection, placement, health, and transient feedback through the orthographic adapter while keeping picking proxies AoE-owned.
+- Preserved the DOM HUD and minimap, bridge replacement, replay, smooth display interpolation, direct capture, context-loss handling, and headless browser behavior.
 
-Exit gate: a small playable scenario can switch to the 3D renderer without changing simulation results. Complete replacement remains a separate product decision.
+Exit gate: passed. The playable Three/`voxel` host became the only world-renderer path without changing authoritative simulation results; the Phaser dependency, source path, selector, fallback, and second world canvas were removed.
 
 ### Phase 6: measured advanced features
 
@@ -466,11 +468,11 @@ GPU and browser rasterization is not perfectly deterministic across machines. Us
 
 ### Consumer and dependency drift
 
-The current consumers do not use one Three.js version, and AoE2 uses a different renderer entirely. A peer declaration alone does not prevent linked Vite builds from duplicating Three. Adoption needs one tested Three/type release, externalization, consumer deduplication, runtime identity checks, version alignment, and an intentional public API policy.
+The Three-native consumers still require deliberate version alignment. AoE2 now uses the package's tested Three line and verifies one production runtime identity, while City and Townscaper remain separate alignment/adoption work. A peer declaration alone does not prevent linked Vite builds from duplicating Three, so adoption still needs externalization, consumer deduplication, runtime identity checks, and an intentional public API policy.
 
 ### Asset and art-direction work
 
-A graphics engine cannot manufacture a coherent art style. AoE2's move from 2D procedural sprites to readable 3D units/buildings is at least as much an asset, animation, camera, fog, and readability project as an engine migration.
+A graphics engine cannot manufacture a coherent art style. AoE2's completed renderer migration demonstrates that moving from 2D procedural sprites to readable 3D units/buildings is at least as much an asset, animation, camera, fog, and readability project as an engine integration.
 
 ## Achievability
 
@@ -485,7 +487,7 @@ Approximate focused full-time-equivalent ranges, intended as planning bands rath
 | Opaque chunk store, mesher, worker scheduling, atomic presentation, voxel picking | High but technical | 4-8 additional weeks | Algorithms are known; halo, race, packaging, and parity coverage take care |
 | First narrow City building-batch integration | High | 1-3 weeks | Same stack and already clean snapshot boundary; no terrain/camera migration |
 | Townscaper version alignment and shared-runtime adoption | Medium-high | 4-10 weeks | Many reusable patterns, but version drift and product-specific geometry/effects add risk |
-| AoE2 playable 3D vertical slice | Medium | 1-3 months | Simulation seam is good; projection, assets, fog, picking, and readability are new work |
+| AoE2 playable standalone 3D vertical slice | Complete | Delivered 2026-07-11 to 2026-07-13 | The simulation seam held; AoE now owns projection, procedural visuals, fog, silhouette picking, and readability around one Three/`voxel` world canvas |
 | Production-grade multi-game toolkit with LOD, streaming, polished effects, broad compatibility | Medium | 6-15 months total | Integration, profiling, art pipelines, and long-tail lifecycle issues dominate |
 | Raw WebGPU engine with comparable facilities | Low for the current goal | Multi-year risk | Rebuilds a mature renderer ecosystem before proving shared value |
 
@@ -495,7 +497,7 @@ The best success criterion for roughly the first 10-21 focused full-time-equival
 
 Proceed, but keep the promise narrow: build reusable rendering infrastructure and an optional true-voxel module on top of Three.js. Do not begin by porting a whole game or designing a universal plugin system.
 
-Start with the bounded AoE2 proving slice described above because the user explicitly selected it, but do not let AoE concepts define the package. Follow with one City embedded instance batch, then bring Townscaper in through geometry resources and batches after Three-version alignment. AoE2's existing render projection is an asset, not evidence that complete migration is small.
+The bounded AoE2 proving slice and standalone promotion are complete, without moving AoE concepts into the package. Next prove one City embedded instance batch, then bring Townscaper in through geometry resources and batches after Three-version alignment. AoE2's delivery is evidence for the boundary, not evidence that future consumer migrations are automatically small.
 
 ## Non-normative references
 

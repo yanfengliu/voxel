@@ -7,6 +7,14 @@ export {
   type Int3,
 } from './dense-palette-chunk.js';
 export {
+  DEFAULT_MAX_VOXEL_RAY_STEPS,
+  raycastDensePaletteChunks,
+  type DensePaletteChunkLookup,
+  type DensePaletteRaycastHit,
+  type DensePaletteRaycastOptions,
+  type VoxelRayVector3,
+} from './dense-palette-raycast.js';
+export {
   DEFAULT_MAX_VISIBLE_FACES,
   meshVisibleFaces,
   type MeshBounds,

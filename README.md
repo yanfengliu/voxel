@@ -6,9 +6,9 @@ The intended engine is voxel-first, not voxel-only: it should render chunked vox
 
 ## Status
 
-Version 0.1.3 is an executable strict-TypeScript package with built ESM and declarations. It provides bounded V1 render snapshots, owned ingest, explicit accepted/presented frame boundaries, a deterministic visible-face voxel mesher, a Three.js WebGL runtime, configurable target-tracked daylight, bounded injected-time rigid-instance animation, 2:1 orthographic camera helpers, capture, metrics, context-loss handling, idempotent teardown, and reusable 60 Hz frame-budget reporting. AoE2 is the first live proving consumer.
+Version 0.1.4 is an executable strict-TypeScript package with built ESM and declarations. It provides bounded V1 render snapshots, owned ingest, explicit accepted/presented frame boundaries, a deterministic visible-face voxel mesher, a bounded deterministic dense-chunk occupancy ray query, a Three.js WebGL runtime, configurable target-tracked daylight, bounded injected-time rigid-instance animation, 2:1 orthographic camera helpers, capture, metrics, context-loss handling, idempotent teardown, and reusable lifecycle and 60 Hz frame-budget fixtures. AoE2 is the first live proving consumer.
 
-This is a production-shaped vertical slice, not a finished universal engine. Opaque voxel chunks, consumer-authored geometry, and repeated rigid instances are implemented. Greedy/worker meshing, transparency, skeletal animation, LOD, streaming, WebGPU, and native fog/selection/effects remain deliberately deferred.
+This is a production-shaped vertical slice, not a finished universal engine. Opaque voxel chunks, consumer-authored geometry, repeated rigid instances, and portable dense-grid occupancy raycasts are implemented. Greedy/worker meshing, runtime-owned presented-state and geometry/instance picking, transparency, skeletal animation, LOD, streaming, WebGPU, and native fog/selection/effects remain deliberately deferred.
 
 ## Scope
 
@@ -24,9 +24,9 @@ Each game should continue to own simulation, gameplay rules, UI, save data, art 
 ## Package surface
 
 - `voxel/core` — V1 contracts, bounded validation/copying, coordinates, and the accepted/presented `RenderWorld` lifecycle.
-- `voxel/meshing` — dense palette chunks and a deterministic boundary-aware visible-face oracle.
+- `voxel/meshing` — dense palette chunks, a deterministic boundary-aware visible-face oracle, and a Three-free bounded DDA occupancy ray query for uniform chunk grids.
 - `voxel/three` — snapshot-only Three.js runtime, instance/chunk/geometry presentation, configurable engine-owned daylight, deterministic rigid-instance playback, orthographic camera helpers, capture, metrics, and disposal.
-- `voxel/testing` — small consumer-independent test helpers, including a clock-free frame-budget reporter for comparable 60 Hz reference evidence; this surface grows only with proven shared fixtures.
+- `voxel/testing` — small consumer-independent test helpers, including an allocation-fresh V1 renderer-lifecycle scene and a clock-free frame-budget reporter for comparable 60 Hz reference evidence; this surface grows only with proven shared fixtures.
 
 The runtime is tested with `three@0.185.1` and `@types/three@0.185.0`. `three` is a narrow optional peer so core and meshing remain renderer-independent; applications importing `voxel/three` must install the tested Three runtime and deduplicate linked copies.
 

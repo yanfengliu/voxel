@@ -1,0 +1,176 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="icon" href="data:,">
+    <title>Voxel renderer lifecycle reference</title>
+    <style>
+      html,
+      body {
+        width: 100%;
+        height: 100%;
+        margin: 0;
+        overflow: hidden;
+        background: #18202a;
+      }
+
+      canvas {
+        display: block;
+        width: 640px;
+        height: 480px;
+      }
+    </style>
+    <script type="importmap">
+      {
+        "imports": {
+          "three": "/node_modules/three/build/three.module.js"
+        }
+      }
+    </script>
+  </head>
+  <body>
+    <script type="module">
+      import { WebGLRenderer } from 'three';
+      import { ThreeRenderRuntime } from '/dist/three/index.js';
+      import { createRendererLifecycleReferenceSnapshot } from '/dist/testing/index.js';
+
+      const WIDTH = 640;
+      const HEIGHT = 480;
+      const PIXEL_RATIO = 1;
+
+      const rendererInfo = (renderer) => ({
+        geometries: renderer.info.memory.geometries,
+        textures: renderer.info.memory.textures,
+        programs: renderer.info.programs?.length ?? 0,
+      });
+
+      window.runRendererLifecycleEndurance = ({ cycles, revisions }) => {
+        const cycleEvidence = [];
+
+        for (let cycle = 0; cycle < cycles; cycle += 1) {
+          const canvas = document.createElement('canvas');
+          canvas.dataset.cycle = String(cycle);
+          canvas.style.width = `${WIDTH}px`;
+          canvas.style.height = `${HEIGHT}px`;
+          document.body.append(canvas);
+
+          let runtime;
+          let renderer;
+          try {
+            runtime = new ThreeRenderRuntime({
+              canvas,
+              width: WIDTH,
+              height: HEIGHT,
+              pixelRatio: PIXEL_RATIO,
+              center: { x: 1, y: 0.5, z: 1 },
+              zoom: 1,
+              daylight: false,
+              rendererFactory: (parameters) => {
+                renderer = new WebGLRenderer(parameters);
+                return renderer;
+              },
+            });
+            if (!renderer) throw new Error('The owned WebGL renderer was not created.');
+            const epoch = `epoch:renderer-lifecycle:${cycle}`;
+            const revisionEvidence = [];
+
+            for (let revision = 1; revision <= revisions; revision += 1) {
+              const acceptance = runtime.acceptSnapshot(
+                createRendererLifecycleReferenceSnapshot({
+                  epoch,
+                  revision,
+                  resourceRevision: revision,
+                }),
+              );
+              const beforeFrame = runtime.metrics();
+              const frameIndex = cycle * revisions + revision;
+              runtime.frame({
+                nowMs: frameIndex * (1000 / 60),
+                deltaMs: revision === 1 ? 0 : 1000 / 60,
+                frameIndex,
+              });
+              revisionEvidence.push({
+                revision,
+                acceptance,
+                beforeFrame,
+                afterFrame: runtime.metrics(),
+                rendererInfo: rendererInfo(renderer),
+              });
+            }
+
+            const capture = runtime.capture();
+            const liveMetrics = runtime.metrics();
+            const liveRendererInfo = rendererInfo(renderer);
+            const rendererContext = renderer.getContext();
+            const webgl2 = rendererContext instanceof WebGL2RenderingContext
+              && canvas.getContext('webgl2') === rendererContext;
+            const canvasEvidence = {
+              width: canvas.width,
+              height: canvas.height,
+              clientWidth: canvas.clientWidth,
+              clientHeight: canvas.clientHeight,
+              devicePixelRatio: window.devicePixelRatio,
+            };
+
+            runtime.dispose();
+            runtime.dispose();
+            const disposedMetrics = runtime.metrics();
+            const disposedRendererInfo = rendererInfo(renderer);
+            let postDisposeFrameError = null;
+            try {
+              runtime.frame({ nowMs: 0, deltaMs: 0, frameIndex: 0 });
+            } catch (error) {
+              postDisposeFrameError = error instanceof Error ? error.message : String(error);
+            }
+            renderer.forceContextLoss();
+            const contextLostAfterCleanup = renderer.getContext().isContextLost();
+
+            cycleEvidence.push({
+              cycle,
+              epoch,
+              webgl2,
+              canvas: canvasEvidence,
+              revisions: revisionEvidence,
+              capture: {
+                dataUrlPrefix: capture.dataUrl.slice(0, 'data:image/png;base64,'.length),
+                dataUrlLength: capture.dataUrl.length,
+                width: capture.width,
+                height: capture.height,
+                epoch: capture.epoch,
+                presentedRevision: capture.presentedRevision,
+                metrics: capture.metrics,
+              },
+              liveMetrics,
+              liveRendererInfo,
+              disposedMetrics,
+              disposedRendererInfo,
+              postDisposeFrameError,
+              contextLostAfterCleanup,
+            });
+          } finally {
+            runtime?.dispose();
+            if (renderer && !renderer.getContext().isContextLost()) {
+              renderer.forceContextLoss();
+            }
+            canvas.remove();
+          }
+        }
+
+        return {
+          modules: {
+            runtime: '/dist/three/index.js',
+            testing: '/dist/testing/index.js',
+            three: '/node_modules/three/build/three.module.js',
+          },
+          viewport: {
+            width: WIDTH,
+            height: HEIGHT,
+            pixelRatio: PIXEL_RATIO,
+          },
+          cycles: cycleEvidence,
+        };
+      };
+    </script>
+  </body>
+</html>

@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.1.4 - 2026-07-13
+
+- Added the Three-free `raycastDensePaletteChunks` query with normalized-distance hits, exact grid-boundary and simultaneous-crossing rules, negative-coordinate and chunk-seam coverage, and a bounded visited-cell guard.
+- Added an allocation-fresh V1 renderer-lifecycle reference scene plus a headless real-WebGL endurance gate covering 120 forced resource revisions across repeated create, capture, idempotent-dispose, and terminal-operation cycles.
+- Hardened the packed portable-consumer gate to install without Three, import `voxel/core`, `voxel/meshing`, and `voxel/testing`, and compile their installed declarations without renderer dependencies.
+- Reconciled the active documentation with AoE2's completed promotion to a sole Three/`voxel` renderer while keeping the former Phaser composition as dated history.
+
+## 0.1.3 - 2026-07-13
+
+- Added the clock-free `createFrameBudgetReport` helper under `voxel/testing` for comparable consumer-owned frame evidence.
+- Reported nearest-rank p50/p95/p99/max timing, steady versus presentation-frame costs, over-budget ratios and streaks, and estimated missed refreshes after an explicit warmup.
+- Kept scheduling, wall-clock sampling, hardware acceptance, and adaptive-quality policy in consumers rather than the reusable package.
+
 ## 0.1.2 - 2026-07-12
 
 - Added optional copied and validated `InstanceTransformAnimationV1` arrays for deterministic harmonic translation, local rotation, and scale offsets over rigid instance batches.

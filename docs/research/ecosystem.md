@@ -1,6 +1,6 @@
 # Rendering and voxel ecosystem review
 
-Reviewed: 2026-07-11. Re-check versions, activity, licenses, and browser support before adding a dependency; this is a decision record, not a forever-current catalog.
+Reviewed: 2026-07-13. Re-check versions, activity, licenses, and browser support before adding a dependency; this is a decision record, not a forever-current catalog.
 
 ## What we should adopt
 
@@ -11,6 +11,12 @@ Reviewed: 2026-07-11. Re-check versions, activity, licenses, and browser support
 | MagicaVoxel `.vox` input | [Three.js `VOXLoader`](https://threejs.org/docs/pages/VOXLoader.html) | Use if a consumer introduces `.vox` assets. Do not write a format parser first. Convert loaded content into a game-owned recipe or a versioned geometry resource. |
 | Imported asset processing | [glTF Transform](https://gltf-transform.dev/) and [meshoptimizer/gltfpack](https://github.com/zeux/meshoptimizer/tree/master/gltf) | Defer until GLB assets enter a real slice, then adopt for validation, deduplication, quantization, compression, and mesh optimization. Keep this offline rather than in the frame loop. |
 | Heavy triangle queries | [`three-mesh-bvh`](https://github.com/gkjohnson/three-mesh-bvh) | Defer until measured picking or spatial-query cost requires it. Voxel occupancy should still use grid/DDA queries rather than triangle raycasts. |
+
+## Verification toolchain provenance
+
+- `@playwright/test` `1.59.1` is locked from the npm registry, is Apache-2.0 licensed, and is used only for the headless real-WebGL lifecycle gate. Neither Playwright nor its downloaded browser is included in the package's `dist`-only tarball.
+- `@types/node` `22.14.1` is locked from the npm registry's DefinitelyTyped package, is MIT licensed, and is used only to typecheck the Node-owned browser fixture server and configuration. It is not a runtime or packed dependency.
+- `package-lock.json` records the exact registry sources and integrity hashes. A dependency change must continue to pass both runtime-only and complete audits.
 
 ## Voxel-specific candidates
 
@@ -42,7 +48,7 @@ Decision: do not put Taichi.js in the game runtime. Revisit it only for a measur
 
 ## Renderer alternatives
 
-[Babylon.js](https://doc.babylonjs.com/setup/support/webGPU/) is a mature, fuller game engine and a reasonable greenfield choice. It is not selected because it would rewrite both existing Three consumers and still require the AoE Phaser migration. Raw WebGPU gives more control but would require us to recreate the scene, material, asset, readback, fallback, and debugging infrastructure we are explicitly trying to share.
+[Babylon.js](https://doc.babylonjs.com/setup/support/webGPU/) is a mature, fuller game engine and a reasonable greenfield choice. At selection time it would have rewritten both existing Three consumers while requiring a separate AoE migration away from Phaser; AoE has since completed that migration on Three/`voxel`, which reinforces rather than changes the shared-stack decision. Raw WebGPU gives more control but would require us to recreate the scene, material, asset, readback, fallback, and debugging infrastructure we are explicitly trying to share.
 
 The practical boundary is therefore selective ownership:
 

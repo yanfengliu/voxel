@@ -11,3 +11,8 @@ export {
   type FramePacingSample,
   type FrameTimingPercentiles,
 } from './frame-budget.js';
+
+export {
+  createRendererLifecycleReferenceSnapshot,
+  type RendererLifecycleReferenceOptions,
+} from './lifecycle-reference-scene.js';

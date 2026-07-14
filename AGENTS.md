@@ -28,7 +28,7 @@ This repository is a browser-first, voxel-first 3D graphics and rendering toolki
 
 It is not a simulation engine, ECS, game-rules library, UI framework, persistence layer, asset evolution studio, or complete general-purpose replacement for Three.js. A useful renderer shared by two games is preferable to a universal abstraction that serves none well.
 
-The repository currently contains a production-shaped V1 vertical slice: strict-TypeScript package exports, bounded snapshots, a visible-face oracle mesher, and a Three.js WebGL runtime proven through AoE2's opt-in adapter. Advanced meshing, deltas, picking, assets, workers, spatial sharding, and broader consumer adoption remain planned. Do not claim that a package, command, backend, benchmark, shader, mesher, adapter, or test exists until live files and executable behavior prove it.
+The repository currently contains a production-shaped V1 vertical slice: strict-TypeScript package exports, bounded snapshots, a visible-face oracle mesher, a bounded Three-free dense-chunk occupancy ray query, and a Three.js WebGL runtime proven through AoE2's standalone sole-renderer host after an initial opt-in composition. Advanced meshing, deltas, runtime-owned presented-state and geometry/instance picking, assets, workers, spatial sharding, and broader consumer adoption remain planned. Do not claim that a package, command, backend, benchmark, shader, mesher, adapter, or test exists until live files and executable behavior prove it.
 
 ## Load-bearing boundaries
 

@@ -1,6 +1,6 @@
 {
   "name": "voxel",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "private": true,
   "type": "module",
   "sideEffects": false,
@@ -29,9 +29,12 @@
     "prepare": "npm run build",
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
-    "lint": "eslint src tests --max-warnings 0",
+    "lint": "eslint src tests playwright.config.ts vitest.config.ts --max-warnings 0",
     "build": "tsc -p tsconfig.build.json",
-    "verify": "npm run test && npm run typecheck && npm run lint && npm run build"
+    "test:core-only-package": "node scripts/verify-core-only-package.mjs",
+    "pretest:browser": "npm run build",
+    "test:browser": "playwright test",
+    "verify": "npm run test && npm run typecheck && npm run lint && npm run build && npm run test:core-only-package && npm run test:browser"
   },
   "peerDependencies": {
     "@types/three": ">=0.185.0 <0.186.0",
@@ -47,6 +50,8 @@
   },
   "devDependencies": {
     "@eslint/js": "10.0.1",
+    "@playwright/test": "1.59.1",
+    "@types/node": "22.14.1",
     "@types/three": "0.185.0",
     "eslint": "10.7.0",
     "globals": "17.7.0",
