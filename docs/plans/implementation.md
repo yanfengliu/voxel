@@ -1,6 +1,6 @@
 # Cross-game implementation plan
 
-Status: active from 2026-07-11. The first working package and AoE2 standalone consumer are delivered; cross-game proof and advanced engine increments remain active. Update checkboxes only when the named evidence exists; do not infer completion from partial scaffolding.
+Status: historical/current-0.1 delivery ledger from 2026-07-11. The first working package and AoE2 standalone consumer are delivered. New work toward a stable release is tracked in the [1.0 roadmap](v1-roadmap.md), [target architecture](../design/v1-architecture.md), and [1.0 implementation plan](v1-implementation.md). Preserve this file as evidence of the proving slice; update a checkbox only when its named evidence exists.
 
 ## Outcome
 

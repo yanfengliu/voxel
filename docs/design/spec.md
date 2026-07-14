@@ -1,6 +1,6 @@
 # Voxel graphics engine design
 
-Status: the V1 vertical slice was implemented on 2026-07-11; broader consumer adoption and advanced phases remain proposed. The shipped surface is bounded snapshots, an oracle mesher, a deterministic dense-chunk occupancy ray query, and a Three.js WebGL runtime, proven first through AoE2.
+Status: the V1 vertical slice was implemented on 2026-07-11. This document records the original architecture and option analysis; it is not a claim that every proposed section exists. The shipped surface is bounded snapshots, an oracle mesher, a deterministic dense-chunk occupancy ray query, and a Three.js WebGL runtime, proven first through AoE2. Forward work toward a stable release is governed by the [1.0 roadmap](../plans/v1-roadmap.md), [target architecture](v1-architecture.md), and [implementation plan](../plans/v1-implementation.md).
 
 ## Decision summary
 
@@ -19,7 +19,7 @@ Split these into independently versioned workspace packages only if real release
 
 Keep WebGPU as a later experimental backend. The portable data plane and Three-free mesher should not prevent it, but MVP APIs should not pretend that WebGL and WebGPU shaders, post-processing, readback, and lifecycle behavior are interchangeable.
 
-Implementation is governed by the durable [architecture decisions](../architecture/decisions.md), [ecosystem review](../research/ecosystem.md), and [cross-game implementation plan](../plans/implementation.md). Those documents record the selective build-versus-adopt boundary and the user-requested AoE2-first proving slice.
+The delivered 0.1 slice is governed by the durable [architecture decisions](../architecture/decisions.md), [ecosystem review](../research/ecosystem.md), and [cross-game implementation ledger](../plans/implementation.md). Those documents record the selective build-versus-adopt boundary and the user-requested AoE2-first proving slice. The separate 1.0 documents are authoritative for future scope and ordering.
 
 ### Dependency and ownership strategy
 
@@ -404,7 +404,7 @@ Exit gate: the sandbox exercises the full runtime contracts and a City compile/l
 
 ### Phase 2: voxel path
 
-- Implement opaque palette-indexed chunk storage and boundary-aware visible-face meshing as the correctness oracle, then bake off Voxelize's mesher and `block-mesh-rs` before selecting or implementing greedy optimization. The portable deterministic dense-chunk DDA is now implemented; runtime binding to presented occupancy remains open alongside halo-derived invalidation, worker scheduling, stale-result rejection, atomic presentation groups, and chunk culling.
+- Implement opaque palette-indexed chunk storage and boundary-aware visible-face meshing as the correctness oracle, then bake off Voxelize's mesher and `block-mesh-rs` before selecting or implementing greedy optimization. The portable deterministic dense-chunk DDA, indexed halo/invalidation path, packaged worker protocol, bounded scheduler/stale firewall, frozen corpus, and provisional in-repo greedy selection are now implemented. Revision-atomic runtime groups, committed occupancy binding, final production measurements, and chunk pipeline/culling metrics remain open.
 - Establish correctness fixtures for empty/full/checkerboard/staircase/negative-coordinate/load-unload/neighbor-boundary chunks, palette opacity changes, tombstone/recreate, and adversarial revision races.
 - Add named performance scenes and budgets only after recording representative baselines.
 

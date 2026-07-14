@@ -2,7 +2,25 @@
 
 ## Unreleased
 
+- Added the authoritative Voxel 1.0 roadmap, target architecture, executable implementation plan, and support/distribution policy.
+- Added a committed declaration/API compatibility report and CI jobs for Node 22 Windows/Linux complete verification, Node 24 portable compatibility, dependency audits, and package inspection.
 - Bounded the packed build payload to emitted ESM and declarations, disabled source-map directives/maps so the tarball is self-consistent, and added hard 350,000-byte packed and 1,700,000-byte unpacked gates. The resulting API-report hash update changes declaration emission only, not exported TypeScript semantics.
+- Added prepared Three snapshot ingest, defensive public RenderWorld accessors, presentation reuse, and mutable borrowed-scene isolation; fixed-page canonicalization still performs a second batch-array copy and remains open F-05 work.
+- Added snapshot validation-copy telemetry for inspected/copied bytes and copy operations, defensive exports, current/peak canonical retention, and presentation staging; fixed-page paging copies are not yet folded into the public ingest-copy counters, and deterministic RenderWorld read/reset hooks live under `voxel/testing`.
+- Added exact TypeScript 5.7.3, 5.9.3, and 6.0.3 declaration fixtures plus an executable City-shaped sparse building lane using a borrowed renderer/scene, perspective camera, sparse generational deltas, host-owned frame/capture/viewport flow, neutral shadows, bounds, and ownership-safe teardown.
+- Added the additive `voxel.render-delta/1` contract, stable delta issue-code table, descriptor transaction budgets, immutable canonical lane indexes/tombstones, and atomic `acceptDelta` paths in RenderWorld and ThreeRenderRuntime.
+- Added deterministic put/remove operations for resources, chunks, and batches plus keyed instance patching, ordered resync results, final-graph validation, backend-atomic rejection, operation-order independence, and delta copy/retention telemetry.
+- Added fixed-size copy-on-write instance pages, exact sparse presenter ranges, reentrancy-safe presentation commits/waiters, and cumulative matrix/color/range upload metrics. Sparse patches no longer materialize or upload an entire unchanged batch.
+- Added optional per-batch cast/receive-shadow participation; omission remains neutral and Voxel does not create or configure a shadow system.
+- Added indexed uniform voxel profiles, O(1) chunk/neighbor identity, exact dirty closures, frozen mesher contracts/corpus, and a budgeted local-space indexed oracle that removes the fixed 512-chunk limit for profiled worlds.
+- Added the packaged Three-free `voxel.mesh-worker/1` module, copied job-owned transfer buffers, validation on both sides, offline/CSP-relative loading, startup-failure handling, a browser-bundler launcher under `voxel/meshing/browser-worker`, a bounded deterministic scheduler, atomic group staging leases, coalescing/cancellation, one crash retry, and receipt/completion/precommit stale-result firewalls.
+- Added a palette-preserving greedy opaque mesher candidate, shared oriented-face correctness corpus, installed worker execution, reproducible benchmark harness/evidence, package-closure budget, external feasibility audit, and provisional production selection ADR. Revision-atomic runtime integration remains the final acceptance gate.
+- Added isometric, owned-perspective, and borrowed-camera policies; explicit viewport ownership; finite-safe projection/ray helpers; and an immutable Three capability report that truthfully includes runtime-rendered and embedded host modes while keeping worker presentation, picking, revision-aware capture, and full GPU reconstruction disabled until their runtime gates land.
+- Added host-managed single-use frame tickets with prepare/commit/abort, exact canonical target tokens, reentrancy/device fences, rollback, standalone protocol reuse, host-owned draw/capture/viewport policy, and immutable frame/camera/viewport manifests.
+- Added bounded plain presented-picking query/result contracts and internal voxel/instance paths with full frame/generational identities, hard voxel/instance/primitive work caps, typed budget/lifecycle outcomes, robust rays, exact group materials, and deterministic distance/lane/stable-identity ordering; committed runtime-store exposure remains a staged milestone.
+- Added the initializing/running/lost/restoring/failed/disposed runtime state machine, stable failure codes, exact waiter integration, generation fences, and transactional initialization/resize; full GPU resource reconstruction remains an open H-05 milestone.
+
+Migration: snapshot and delta schemas remain additive. The pre-1.0 `RendererLike` boundary now requires `getSize(Vector2)` and `getPixelRatio()` so a borrowed runtime-owned viewport can be rolled back exactly if construction fails; Three.js `WebGLRenderer` already implements both. Custom renderer test doubles and adapters must add those two methods. See [the consumer integration guide](docs/guides/consumer-integration.md) and [the 0.2 foundation migration note](docs/guides/v0.2-foundations.md).
 
 ## 0.1.4 - 2026-07-13
 
