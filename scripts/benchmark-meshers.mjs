@@ -1,29 +1,17 @@
 import { createHash } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import { cpus, platform, release, totalmem } from 'node:os';
-import { resolve } from 'node:path';
+import { dirname, relative, resolve } from 'node:path';
 import { performance } from 'node:perf_hooks';
-
-import {
-  GREEDY_OPAQUE_MESHER_DESCRIPTOR_V1,
-  VISIBLE_FACE_ORACLE_DESCRIPTOR_V1,
-  meshGreedyOpaqueV1,
-  meshIndexedVisibleFaceOracleV1,
-  validateMesherOutputV1,
-  validatePureMesherInputV1,
-} from '../dist/meshing/index.js';
-import {
-  compareOrientedUnitFaceCoverageV1,
-  createExpectedOrientedUnitFaceCoverageV1,
-  createMesherCorpusV1,
-  extractOrientedUnitFaceCoverageV1,
-} from '../dist/testing/index.js';
+import { fileURLToPath } from 'node:url';
 
 const SCENES = Object.freeze(['aoe-like', 'city-like', 'worst-output']);
 const DEFAULT_WARMUP_ITERATIONS = 250;
 const DEFAULT_SAMPLES = 40;
 const DEFAULT_ITERATIONS_PER_SAMPLE = 50;
+const REPOSITORY_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
+const GIT_SAFE_REPOSITORY_ROOT = REPOSITORY_ROOT.replaceAll('\\', '/');
 
 function positiveInteger(value, name, fallback) {
   if (value === undefined) return fallback;
@@ -32,6 +20,13 @@ function positiveInteger(value, name, fallback) {
     throw new RangeError(`${name} must be a positive safe integer.`);
   }
   return parsed;
+}
+
+function booleanOption(value, name, fallback) {
+  if (value === undefined) return fallback;
+  if (value === 'true') return true;
+  if (value === 'false') return false;
+  throw new RangeError(`${name} must be true or false.`);
 }
 
 function options(argv) {
@@ -48,7 +43,7 @@ function options(argv) {
     index += 1;
   }
   for (const name of values.keys()) {
-    if (!['warmup', 'samples', 'iterations'].includes(name)) {
+    if (!['warmup', 'samples', 'iterations', 'allow-dirty'].includes(name)) {
       throw new RangeError(`Unknown option --${name}.`);
     }
   }
@@ -64,6 +59,7 @@ function options(argv) {
       '--iterations',
       DEFAULT_ITERATIONS_PER_SAMPLE,
     ),
+    allowDirty: booleanOption(values.get('allow-dirty'), '--allow-dirty', false),
   });
 }
 
@@ -153,18 +149,76 @@ function summarize(samples) {
 }
 
 function sourceHash(path) {
-  return hashBytes(readFileSync(resolve(path)));
+  return hashBytes(readFileSync(resolve(REPOSITORY_ROOT, path)));
 }
 
-function gitValue(args, fallback) {
-  try {
-    return execFileSync('git', [
-      '-c',
-      'safe.directory=C:/Users/38909/Documents/github/voxel',
-      ...args,
-    ], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim();
-  } catch {
-    return fallback;
+function directoryHash(...paths) {
+  const hash = createHash('sha256');
+  const visit = (path) => {
+    const absolute = resolve(REPOSITORY_ROOT, path);
+    const entries = readdirSync(absolute, { withFileTypes: true })
+      .sort((left, right) => left.name < right.name ? -1 : left.name > right.name ? 1 : 0);
+    for (const entry of entries) {
+      const child = resolve(absolute, entry.name);
+      const repositoryPath = relative(REPOSITORY_ROOT, child).replaceAll('\\', '/');
+      if (entry.isDirectory()) {
+        visit(repositoryPath);
+      } else if (entry.isFile()) {
+        const contents = readFileSync(child);
+        hash.update(repositoryPath);
+        hash.update('\0');
+        hash.update(String(contents.byteLength));
+        hash.update('\0');
+        hash.update(contents);
+      }
+    }
+  }
+  for (const path of [...paths].sort()) visit(path);
+  return hash.digest('hex');
+}
+
+function gitValue(args) {
+  return execFileSync('git', [
+    '-c',
+    `safe.directory=${GIT_SAFE_REPOSITORY_ROOT}`,
+    '-C',
+    REPOSITORY_ROOT,
+    ...args,
+  ], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
+}
+
+function captureInputHashes() {
+  return Object.freeze({
+    lockfileSha256: sourceHash('package-lock.json'),
+    benchmarkSourceSha256: sourceHash('scripts/benchmark-meshers.mjs'),
+    corpusSourceSha256: sourceHash('src/testing/mesher-corpus.ts'),
+    contractSourceSha256: sourceHash('src/meshing/mesher-contract.ts'),
+    resultValidationSourceSha256: sourceHash('src/meshing/mesher-result-validation.ts'),
+    oracleSourceSha256: sourceHash('src/meshing/visible-face-oracle.ts'),
+    greedySourceSha256: sourceHash('src/meshing/greedy-opaque-mesher.ts'),
+    builtModuleTreeSha256: directoryHash('dist/core', 'dist/meshing', 'dist/testing'),
+  });
+}
+
+function assertStableProvenance(initial) {
+  const final = Object.freeze({
+    commit: gitValue(['rev-parse', 'HEAD^{commit}']),
+    workingTreeStatus: gitValue(['status', '--porcelain=v1', '--untracked-files=all']),
+    hashes: captureInputHashes(),
+  });
+  const changedHashes = Object.keys(initial.hashes)
+    .filter((name) => initial.hashes[name] !== final.hashes[name]);
+  if (
+    final.commit !== initial.commit
+    || final.workingTreeStatus !== initial.workingTreeStatus
+    || changedHashes.length > 0
+  ) {
+    const details = [
+      final.commit !== initial.commit ? 'HEAD' : null,
+      final.workingTreeStatus !== initial.workingTreeStatus ? 'worktree status' : null,
+      ...changedHashes,
+    ].filter(Boolean).join(', ');
+    throw new Error(`Mesher benchmark provenance changed during the run: ${details}.`);
   }
 }
 
@@ -248,6 +302,37 @@ function benchmarkScene(fixture, benchmarkOptions) {
 }
 
 const benchmarkOptions = options(process.argv.slice(2));
+const sourceCommit = gitValue(['rev-parse', 'HEAD^{commit}']);
+const sourceTree = gitValue(['rev-parse', `${sourceCommit}^{tree}`]);
+const workingTreeStatus = gitValue([
+  'status',
+  '--porcelain=v1',
+  '--untracked-files=all',
+]);
+const workingTreeDirty = workingTreeStatus.length > 0;
+if (workingTreeDirty && !benchmarkOptions.allowDirty) {
+  throw new Error(
+    'Mesher benchmark evidence requires a clean worktree. '
+      + 'Use --allow-dirty true only for explicitly non-releasable exploratory runs.',
+  );
+}
+const inputHashes = captureInputHashes();
+const [{
+  GREEDY_OPAQUE_MESHER_DESCRIPTOR_V1,
+  VISIBLE_FACE_ORACLE_DESCRIPTOR_V1,
+  meshGreedyOpaqueV1,
+  meshIndexedVisibleFaceOracleV1,
+  validateMesherOutputV1,
+  validatePureMesherInputV1,
+}, {
+  compareOrientedUnitFaceCoverageV1,
+  createExpectedOrientedUnitFaceCoverageV1,
+  createMesherCorpusV1,
+  extractOrientedUnitFaceCoverageV1,
+}] = await Promise.all([
+  import('../dist/meshing/index.js'),
+  import('../dist/testing/index.js'),
+]);
 const corpus = createMesherCorpusV1();
 for (const fixture of corpus) {
   proveCorrect(fixture, GREEDY_OPAQUE_MESHER_DESCRIPTOR_V1, meshGreedyOpaqueV1);
@@ -257,17 +342,22 @@ const scenes = SCENES.map((name) => {
   if (!fixture) throw new Error(`Missing frozen scene ${name}.`);
   return benchmarkScene(fixture, benchmarkOptions);
 });
+assertStableProvenance(Object.freeze({
+  commit: sourceCommit,
+  workingTreeStatus,
+  hashes: inputHashes,
+}));
 const cpu = cpus()[0];
 const report = Object.freeze({
   schemaVersion: 'voxel.mesher-benchmark/1',
   scope: 'pure-algorithm-baseline-not-end-to-end-presentation',
   generatedAt: new Date().toISOString(),
   source: {
-    commit: gitValue(['rev-parse', 'HEAD'], 'unavailable'),
-    workingTreeDirty: gitValue(['status', '--porcelain'], '').length > 0,
-    lockfileSha256: sourceHash('package-lock.json'),
-    oracleSourceSha256: sourceHash('src/meshing/visible-face-oracle.ts'),
-    greedySourceSha256: sourceHash('src/meshing/greedy-opaque-mesher.ts'),
+    commit: sourceCommit,
+    tree: sourceTree,
+    workingTreeDirty,
+    dirtyRunAuthorized: benchmarkOptions.allowDirty,
+    ...inputHashes,
   },
   environment: {
     node: process.version,
