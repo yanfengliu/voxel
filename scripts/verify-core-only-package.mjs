@@ -1,11 +1,13 @@
 import { spawn } from 'node:child_process';
-import { mkdir, mkdtemp, rm, stat, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { delimiter, dirname, join, resolve as resolvePath } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const LOG_PREFIX = '[core-only-package]';
 const PROJECT_ROOT = resolvePath(dirname(fileURLToPath(import.meta.url)), '..');
+const MAX_PACKED_BYTES = 350_000;
+const MAX_UNPACKED_BYTES = 1_700_000;
 const TYPESCRIPT_CLI_PATH = join(
   PROJECT_ROOT,
   'node_modules',
@@ -142,6 +144,28 @@ async function assertPathMissing(path, description) {
   throw new Error(`${description} unexpectedly exists at ${path}`);
 }
 
+async function assertNoDanglingSourceMapDirectives(root) {
+  const pending = [root];
+  while (pending.length > 0) {
+    const directory = pending.pop();
+    const entries = await readdir(directory, { withFileTypes: true });
+    for (const entry of entries) {
+      const path = join(directory, entry.name);
+      if (entry.isDirectory()) {
+        pending.push(path);
+        continue;
+      }
+      if (!entry.isFile() || (!entry.name.endsWith('.js') && !entry.name.endsWith('.d.ts'))) {
+        continue;
+      }
+      const contents = await readFile(path, 'utf8');
+      if (/^\/[/*]# sourceMappingURL=/mu.test(contents)) {
+        throw new Error(`packed artifact contains a dangling source-map directive: ${path}`);
+      }
+    }
+  }
+}
+
 function parsePackedTarball(stdout, packDirectory) {
   let manifest;
   try {
@@ -158,11 +182,40 @@ function parsePackedTarball(stdout, packDirectory) {
     throw new Error(`npm pack returned an unexpected manifest:\n${stdout}`);
   }
 
-  const tarballPath = resolvePath(packDirectory, manifest[0].filename);
+  const packed = manifest[0];
+  const tarballPath = resolvePath(packDirectory, packed.filename);
   if (dirname(tarballPath) !== resolvePath(packDirectory)) {
-    throw new Error(`npm pack returned an unsafe tarball path: ${manifest[0].filename}`);
+    throw new Error(`npm pack returned an unsafe tarball path: ${packed.filename}`);
   }
-  return tarballPath;
+  return Object.freeze({ packed, tarballPath });
+}
+
+function assertPackedArtifactPolicy(packed) {
+  if (
+    !Array.isArray(packed.files)
+    || !Number.isSafeInteger(packed.size)
+    || !Number.isSafeInteger(packed.unpackedSize)
+  ) {
+    throw new Error('npm pack omitted the file list or package byte counts.');
+  }
+  const sourceMaps = packed.files
+    .map((file) => file?.path)
+    .filter((path) => typeof path === 'string' && path.endsWith('.map'));
+  if (sourceMaps.length > 0) {
+    throw new Error(
+      `packed artifact contains ${sourceMaps.length} source maps; first: ${sourceMaps[0]}`,
+    );
+  }
+  if (packed.size > MAX_PACKED_BYTES) {
+    throw new Error(
+      `packed artifact is ${packed.size} bytes; maximum is ${MAX_PACKED_BYTES}.`,
+    );
+  }
+  if (packed.unpackedSize > MAX_UNPACKED_BYTES) {
+    throw new Error(
+      `unpacked artifact is ${packed.unpackedSize} bytes; maximum is ${MAX_UNPACKED_BYTES}.`,
+    );
+  }
 }
 
 async function verifyCoreOnlyPackage(temporaryRoot) {
@@ -190,7 +243,8 @@ async function verifyCoreOnlyPackage(temporaryRoot) {
     PROJECT_ROOT,
     npmEnvironment,
   );
-  const tarballPath = parsePackedTarball(packResult.stdout, packDirectory);
+  const { packed, tarballPath } = parsePackedTarball(packResult.stdout, packDirectory);
+  assertPackedArtifactPolicy(packed);
   await assertFile(tarballPath, 'packed voxel tarball');
 
   await writeFile(
@@ -221,6 +275,10 @@ async function verifyCoreOnlyPackage(temporaryRoot) {
     ],
     consumerDirectory,
     npmEnvironment,
+  );
+
+  await assertNoDanglingSourceMapDirectives(
+    join(consumerDirectory, 'node_modules', 'voxel', 'dist'),
   );
 
   await assertPathMissing(
@@ -354,7 +412,7 @@ async function main() {
   }
 
   console.log(
-    `${LOG_PREFIX} imported and typechecked packed portable entry points without Three.js`,
+    `${LOG_PREFIX} enforced package budgets and imported/typechecked portable entries without Three.js`,
   );
 }
 

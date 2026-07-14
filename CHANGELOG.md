@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Bounded the packed build payload to emitted ESM and declarations, disabled source-map directives/maps so the tarball is self-consistent, and added hard 350,000-byte packed and 1,700,000-byte unpacked gates. The resulting API-report hash update changes declaration emission only, not exported TypeScript semantics.
+
 ## 0.1.4 - 2026-07-13
 
 - Added the Three-free `raycastDensePaletteChunks` query with normalized-distance hits, exact grid-boundary and simultaneous-crossing rules, negative-coordinate and chunk-seam coverage, and a bounded visited-cell guard.
