@@ -148,8 +148,11 @@ function summarize(samples) {
   });
 }
 
-function sourceHash(path) {
-  return hashBytes(readFileSync(resolve(REPOSITORY_ROOT, path)));
+function sourceHash(path, sourceCommit, workingTreeDirty) {
+  const bytes = workingTreeDirty
+    ? readFileSync(resolve(REPOSITORY_ROOT, path))
+    : gitOutput(['show', `${sourceCommit}:${path}`]);
+  return hashBytes(bytes);
 }
 
 function directoryHash(...paths) {
@@ -177,25 +180,54 @@ function directoryHash(...paths) {
   return hash.digest('hex');
 }
 
-function gitValue(args) {
+function gitOutput(args) {
   return execFileSync('git', [
     '-c',
     `safe.directory=${GIT_SAFE_REPOSITORY_ROOT}`,
     '-C',
     REPOSITORY_ROOT,
     ...args,
-  ], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
+  ], { stdio: ['ignore', 'pipe', 'pipe'] });
 }
 
-function captureInputHashes() {
+function gitValue(args) {
+  return gitOutput(args).toString('utf8').trim();
+}
+
+function captureInputHashes(sourceCommit, workingTreeDirty) {
   return Object.freeze({
-    lockfileSha256: sourceHash('package-lock.json'),
-    benchmarkSourceSha256: sourceHash('scripts/benchmark-meshers.mjs'),
-    corpusSourceSha256: sourceHash('src/testing/mesher-corpus.ts'),
-    contractSourceSha256: sourceHash('src/meshing/mesher-contract.ts'),
-    resultValidationSourceSha256: sourceHash('src/meshing/mesher-result-validation.ts'),
-    oracleSourceSha256: sourceHash('src/meshing/visible-face-oracle.ts'),
-    greedySourceSha256: sourceHash('src/meshing/greedy-opaque-mesher.ts'),
+    sourceHashMode: workingTreeDirty ? 'working-tree-bytes' : 'canonical-git-blobs',
+    lockfileSha256: sourceHash('package-lock.json', sourceCommit, workingTreeDirty),
+    benchmarkSourceSha256: sourceHash(
+      'scripts/benchmark-meshers.mjs',
+      sourceCommit,
+      workingTreeDirty,
+    ),
+    corpusSourceSha256: sourceHash(
+      'src/testing/mesher-corpus.ts',
+      sourceCommit,
+      workingTreeDirty,
+    ),
+    contractSourceSha256: sourceHash(
+      'src/meshing/mesher-contract.ts',
+      sourceCommit,
+      workingTreeDirty,
+    ),
+    resultValidationSourceSha256: sourceHash(
+      'src/meshing/mesher-result-validation.ts',
+      sourceCommit,
+      workingTreeDirty,
+    ),
+    oracleSourceSha256: sourceHash(
+      'src/meshing/visible-face-oracle.ts',
+      sourceCommit,
+      workingTreeDirty,
+    ),
+    greedySourceSha256: sourceHash(
+      'src/meshing/greedy-opaque-mesher.ts',
+      sourceCommit,
+      workingTreeDirty,
+    ),
     builtModuleTreeSha256: directoryHash('dist/core', 'dist/meshing', 'dist/testing'),
   });
 }
@@ -204,7 +236,7 @@ function assertStableProvenance(initial) {
   const final = Object.freeze({
     commit: gitValue(['rev-parse', 'HEAD^{commit}']),
     workingTreeStatus: gitValue(['status', '--porcelain=v1', '--untracked-files=all']),
-    hashes: captureInputHashes(),
+    hashes: captureInputHashes(initial.commit, initial.workingTreeDirty),
   });
   const changedHashes = Object.keys(initial.hashes)
     .filter((name) => initial.hashes[name] !== final.hashes[name]);
@@ -316,7 +348,7 @@ if (workingTreeDirty && !benchmarkOptions.allowDirty) {
       + 'Use --allow-dirty true only for explicitly non-releasable exploratory runs.',
   );
 }
-const inputHashes = captureInputHashes();
+const inputHashes = captureInputHashes(sourceCommit, workingTreeDirty);
 const [{
   GREEDY_OPAQUE_MESHER_DESCRIPTOR_V1,
   VISIBLE_FACE_ORACLE_DESCRIPTOR_V1,
@@ -345,6 +377,7 @@ const scenes = SCENES.map((name) => {
 assertStableProvenance(Object.freeze({
   commit: sourceCommit,
   workingTreeStatus,
+  workingTreeDirty,
   hashes: inputHashes,
 }));
 const cpu = cpus()[0];

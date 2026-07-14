@@ -39,6 +39,7 @@ describe('mesher benchmark harness', () => {
         tree: string;
         workingTreeDirty: boolean;
         dirtyRunAuthorized: boolean;
+        sourceHashMode: string;
         lockfileSha256: string;
         benchmarkSourceSha256: string;
         corpusSourceSha256: string;
@@ -57,6 +58,11 @@ describe('mesher benchmark harness', () => {
       dirtyRunAuthorized: true,
     });
     expect(typeof report.source.workingTreeDirty).toBe('boolean');
+    expect(report.source.sourceHashMode).toBe(
+      report.source.workingTreeDirty
+        ? 'working-tree-bytes'
+        : 'canonical-git-blobs',
+    );
     for (const hash of [
       report.source.lockfileSha256,
       report.source.benchmarkSourceSha256,
