@@ -1,21 +1,34 @@
+import {
+  baseTypedArrayViewInternal,
+  isSharedArrayBufferInternal,
+  supportedTypedArrayKindInternal,
+  typedArrayLengthInternal,
+  typedArrayViewMetadataInternal,
+  type SupportedTypedArrayInternal,
+  type SupportedTypedArrayKindInternal,
+} from './typed-array-intrinsics.js';
+
 type ValidationFailInternal = (code: string, path: string, message: string) => never;
 
 function inspectView(
-  value: ArrayBufferView,
+  value: SupportedTypedArrayInternal,
+  kind: SupportedTypedArrayKindInternal,
   path: string,
   fail: ValidationFailInternal,
-): void {
-  if (
-    typeof SharedArrayBuffer !== 'undefined'
-    && value.buffer instanceof SharedArrayBuffer
-  ) {
+): SupportedTypedArrayInternal {
+  let metadata;
+  try {
+    metadata = typedArrayViewMetadataInternal(value);
+  } catch {
+    return fail('buffer.detached', path, 'Detached typed-array inputs are not accepted.');
+  }
+  if (isSharedArrayBufferInternal(metadata.buffer)) {
     fail('buffer.shared', path, 'SharedArrayBuffer-backed inputs are not accepted.');
   }
   try {
-    // Constructing even a zero-length view fails for a detached ArrayBuffer.
-    new Uint8Array(value.buffer, value.byteOffset, 0);
+    return baseTypedArrayViewInternal(kind, metadata);
   } catch {
-    fail('buffer.detached', path, 'Detached typed-array inputs are not accepted.');
+    return fail('buffer.detached', path, 'Detached typed-array inputs are not accepted.');
   }
 }
 
@@ -24,9 +37,9 @@ export function float32(
   path: string,
   fail: ValidationFailInternal,
 ): Float32Array {
-  if (!(value instanceof Float32Array)) fail('type.float32-array', path, 'Expected Float32Array.');
-  inspectView(value, path, fail);
-  return value;
+  const kind = supportedTypedArrayKindInternal(value);
+  if (kind !== 'Float32Array') fail('type.float32-array', path, 'Expected Float32Array.');
+  return inspectView(value as Float32Array, kind, path, fail) as Float32Array;
 }
 
 export function uint8(
@@ -34,9 +47,9 @@ export function uint8(
   path: string,
   fail: ValidationFailInternal,
 ): Uint8Array {
-  if (!(value instanceof Uint8Array)) fail('type.uint8-array', path, 'Expected Uint8Array.');
-  inspectView(value, path, fail);
-  return value;
+  const kind = supportedTypedArrayKindInternal(value);
+  if (kind !== 'Uint8Array') fail('type.uint8-array', path, 'Expected Uint8Array.');
+  return inspectView(value as Uint8Array, kind, path, fail) as Uint8Array;
 }
 
 export function uint16(
@@ -44,9 +57,9 @@ export function uint16(
   path: string,
   fail: ValidationFailInternal,
 ): Uint16Array {
-  if (!(value instanceof Uint16Array)) fail('type.uint16-array', path, 'Expected Uint16Array.');
-  inspectView(value, path, fail);
-  return value;
+  const kind = supportedTypedArrayKindInternal(value);
+  if (kind !== 'Uint16Array') fail('type.uint16-array', path, 'Expected Uint16Array.');
+  return inspectView(value as Uint16Array, kind, path, fail) as Uint16Array;
 }
 
 export function indices(
@@ -54,11 +67,12 @@ export function indices(
   path: string,
   fail: ValidationFailInternal,
 ): Uint16Array | Uint32Array {
-  if (!(value instanceof Uint16Array) && !(value instanceof Uint32Array)) {
+  const kind = supportedTypedArrayKindInternal(value);
+  if (kind !== 'Uint16Array' && kind !== 'Uint32Array') {
     fail('type.index-array', path, 'Expected Uint16Array or Uint32Array.');
   }
-  inspectView(value, path, fail);
-  return value;
+  return inspectView(value as Uint16Array | Uint32Array, kind, path, fail) as
+    Uint16Array | Uint32Array;
 }
 
 export function finiteArray(
@@ -66,7 +80,8 @@ export function finiteArray(
   path: string,
   fail: ValidationFailInternal,
 ): void {
-  for (let index = 0; index < value.length; index += 1) {
+  const length = typedArrayLengthInternal(value);
+  for (let index = 0; index < length; index += 1) {
     if (!Number.isFinite(value[index])) {
       fail('number.non-finite', `${path}[${String(index)}]`, 'Expected a finite number.');
     }

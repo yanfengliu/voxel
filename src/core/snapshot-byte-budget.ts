@@ -1,3 +1,12 @@
+import { copyTypedArrayInternal } from './typed-array-copy.js';
+import {
+  baseTypedArrayViewInternal,
+  isSharedArrayBufferInternal,
+  supportedTypedArrayKindInternal,
+  typedArrayViewMetadataInternal,
+  type SupportedTypedArrayInternal,
+} from './typed-array-intrinsics.js';
+
 export class ValidationFailureInternal extends Error {
   constructor(
     readonly code: string,
@@ -32,18 +41,32 @@ export class SnapshotByteBudgetInternal {
   ) {}
 
   retain<T extends ArrayBufferView & { slice(): T }>(value: T, path: string): T {
-    if (this.metrics) this.metrics.inputTypedArrayBytes += value.byteLength;
-    if (
-      typeof SharedArrayBuffer !== 'undefined'
-      && value.buffer instanceof SharedArrayBuffer
-    ) {
+    const kind = supportedTypedArrayKindInternal(value);
+    if (kind === undefined) {
+      return failValidationInternal('type.typed-array', path, 'Expected a typed-array input.');
+    }
+    let metadata;
+    try {
+      metadata = typedArrayViewMetadataInternal(
+        value as unknown as SupportedTypedArrayInternal,
+      );
+    } catch {
+      return failValidationInternal(
+        'buffer.detached',
+        path,
+        'Detached typed-array inputs are not accepted.',
+      );
+    }
+    const byteLength = metadata.byteLength;
+    if (this.metrics) this.metrics.inputTypedArrayBytes += byteLength;
+    if (isSharedArrayBufferInternal(metadata.buffer)) {
       failValidationInternal(
         'buffer.shared',
         path,
         'SharedArrayBuffer-backed inputs are not accepted.',
       );
     }
-    if (this.used + value.byteLength > this.maximum) {
+    if (this.used + byteLength > this.maximum) {
       failValidationInternal(
         'limit.total-bytes',
         '$',
@@ -53,7 +76,9 @@ export class SnapshotByteBudgetInternal {
     let copy: T;
     if (this.copyArrays) {
       try {
-        copy = value.slice();
+        copy = copyTypedArrayInternal(
+          value as unknown as SupportedTypedArrayInternal,
+        ) as unknown as T;
       } catch {
         return failValidationInternal(
           'buffer.detached',
@@ -62,11 +87,19 @@ export class SnapshotByteBudgetInternal {
         );
       }
     } else {
-      copy = value;
+      try {
+        copy = baseTypedArrayViewInternal(kind, metadata) as unknown as T;
+      } catch {
+        return failValidationInternal(
+          'buffer.detached',
+          path,
+          'Detached typed-array inputs are not accepted.',
+        );
+      }
     }
-    this.used += value.byteLength;
+    this.used += byteLength;
     if (this.metrics && this.copyArrays) {
-      this.metrics.copiedTypedArrayBytes += value.byteLength;
+      this.metrics.copiedTypedArrayBytes += byteLength;
       this.metrics.copyOperations += 1;
     }
     return copy;

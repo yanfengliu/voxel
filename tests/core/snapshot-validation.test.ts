@@ -116,6 +116,87 @@ describe('validateAndCopySnapshotV1', () => {
     }
   });
 
+  it('rejects Proxy-wrapped typed arrays with the typed lane path', () => {
+    const input = validSnapshot();
+    const geometry = geometryOf(input);
+    (geometry as { positions: Float32Array }).positions = new Proxy(geometry.positions, {});
+
+    expect(() => validateAndCopySnapshotV1(input)).not.toThrow();
+    expect(validateAndCopySnapshotV1(input)).toMatchObject({
+      ok: false,
+      issue: {
+        code: 'type.float32-array',
+        path: 'resources[2].positions',
+      },
+    });
+  });
+
+  it('normalizes typed-array subclasses without invoking their hooks', () => {
+    const input = validSnapshot();
+    const geometry = geometryOf(input);
+    const source = geometry.positions;
+    class AdversarialFloat32Array extends Float32Array {}
+    const hostile = new AdversarialFloat32Array(source.length);
+    Float32Array.prototype.set.call(hostile, source);
+    let hookCalls = 0;
+    const forbiddenHook = () => {
+      hookCalls += 1;
+      input.revision = 999;
+      void validateAndCopySnapshotV1(validSnapshot());
+      throw new Error('untrusted typed-array hook was invoked');
+    };
+    Object.defineProperties(AdversarialFloat32Array.prototype, {
+      buffer: { configurable: true, get: forbiddenHook },
+      byteOffset: { configurable: true, get: forbiddenHook },
+      byteLength: { configurable: true, get: forbiddenHook },
+      length: { configurable: true, get: forbiddenHook },
+      set: { configurable: true, value: forbiddenHook },
+      slice: { configurable: true, value: forbiddenHook },
+      subarray: { configurable: true, value: forbiddenHook },
+    });
+    (geometry as { positions: Float32Array }).positions = hostile;
+
+    const ordinary = validateAndCopySnapshotV1WithMetrics(validSnapshot());
+    const result = validateAndCopySnapshotV1WithMetrics(input);
+
+    expect(result.result).toMatchObject({ ok: true });
+    expect(result.metrics).toEqual(ordinary.metrics);
+    expect(hookCalls).toBe(0);
+    expect(input.revision).toBe(1);
+    if (result.result.ok) {
+      expect(geometryOf(result.result.value).positions).toEqual(source);
+      expect(geometryOf(result.result.value).positions).not.toBe(hostile);
+    }
+  });
+
+  it('revalidates normalized lanes when a later getter mutates an earlier typed array', () => {
+    const input = validSnapshot();
+    const geometry = geometryOf(input);
+    const bounds = geometry.bounds;
+    Object.defineProperty(geometry, 'bounds', {
+      configurable: true,
+      enumerable: true,
+      get() {
+        geometry.positions[0] = Number.NaN;
+        return bounds;
+      },
+    });
+
+    expect(validateAndCopySnapshotV1WithMetrics(input)).toMatchObject({
+      result: {
+        ok: false,
+        issue: {
+          code: 'number.non-finite',
+          path: 'resources[2].positions[0]',
+        },
+      },
+      metrics: {
+        copiedTypedArrayBytes: 0,
+        copyOperations: 0,
+      },
+    });
+  });
+
   it('accepts a bounded, cross-reference-complete snapshot and owns every retained array', () => {
     const input = validSnapshot();
     const transactionLimits = {

@@ -966,10 +966,14 @@ export function validateAndCopySnapshotV1WithMetrics(
   try {
     return {
       result: (() => {
-        const validated = parseSnapshot(value, metrics, false);
-        const owned = copyRenderSnapshotV1(validated);
-        metrics.copiedTypedArrayBytes = renderSnapshotCopyBytes(validated);
-        metrics.copyOperations = renderSnapshotCopyOperations(validated);
+        const parsed = parseSnapshot(value, metrics, false);
+        // Revalidate the normalized, getter-free graph before copying. A later
+        // accessor in the original input may have mutated an earlier borrowed
+        // typed lane during the first parse.
+        const normalized = parseSnapshot(parsed, undefined, false);
+        const owned = copyRenderSnapshotV1(normalized);
+        metrics.copiedTypedArrayBytes = renderSnapshotCopyBytes(normalized);
+        metrics.copyOperations = renderSnapshotCopyOperations(normalized);
         return { ok: true as const, value: owned };
       })(),
       metrics,

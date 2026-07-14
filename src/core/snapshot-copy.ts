@@ -7,6 +7,7 @@ import type {
   VoxelChunkV1,
   WorldDescriptorV1,
 } from './contracts.js';
+import { copyTypedArrayInternal } from './typed-array-copy.js';
 
 function retainedViews(snapshot: RenderSnapshotV1): ArrayBufferView[] {
   const views: ArrayBufferView[] = [];
@@ -62,11 +63,11 @@ export function renderSnapshotRetainedBytes(
 function copyGeometry(resource: GeometryResourceV1): GeometryResourceV1 {
   return {
     ...resource,
-    positions: resource.positions.slice(),
-    normals: resource.normals.slice(),
-    ...(resource.uvs ? { uvs: resource.uvs.slice() } : {}),
-    ...(resource.colors ? { colors: resource.colors.slice() } : {}),
-    indices: resource.indices.slice(),
+    positions: copyTypedArrayInternal(resource.positions),
+    normals: copyTypedArrayInternal(resource.normals),
+    ...(resource.uvs ? { uvs: copyTypedArrayInternal(resource.uvs) } : {}),
+    ...(resource.colors ? { colors: copyTypedArrayInternal(resource.colors) } : {}),
+    indices: copyTypedArrayInternal(resource.indices),
     groups: resource.groups.map((group) => ({ ...group })),
     bounds: {
       min: { ...resource.bounds.min },
@@ -95,7 +96,7 @@ export function copyVoxelChunkV1Internal(chunk: VoxelChunkV1): VoxelChunkV1 {
     ...chunk,
     origin: { ...chunk.origin },
     size: { ...chunk.size },
-    voxels: chunk.voxels.slice(),
+    voxels: copyTypedArrayInternal(chunk.voxels),
   };
 }
 
@@ -103,16 +104,18 @@ export function copyInstanceBatchV1Internal(batch: InstanceBatchV1): InstanceBat
   return {
     ...batch,
     instanceKeys: [...batch.instanceKeys],
-    matrices: batch.matrices.slice(),
-    ...(batch.colors ? { colors: batch.colors.slice() } : {}),
+    matrices: copyTypedArrayInternal(batch.matrices),
+    ...(batch.colors ? { colors: copyTypedArrayInternal(batch.colors) } : {}),
     ...(batch.animation ? {
       animation: {
         ...batch.animation,
-        periodsMs: batch.animation.periodsMs.slice(),
-        phasesRadians: batch.animation.phasesRadians.slice(),
-        translationAmplitudes: batch.animation.translationAmplitudes.slice(),
-        rotationAmplitudesRadians: batch.animation.rotationAmplitudesRadians.slice(),
-        scaleAmplitudes: batch.animation.scaleAmplitudes.slice(),
+        periodsMs: copyTypedArrayInternal(batch.animation.periodsMs),
+        phasesRadians: copyTypedArrayInternal(batch.animation.phasesRadians),
+        translationAmplitudes: copyTypedArrayInternal(batch.animation.translationAmplitudes),
+        rotationAmplitudesRadians: copyTypedArrayInternal(
+          batch.animation.rotationAmplitudesRadians,
+        ),
+        scaleAmplitudes: copyTypedArrayInternal(batch.animation.scaleAmplitudes),
       },
     } : {}),
     ...(batch.presentation ? { presentation: { ...batch.presentation } } : {}),
