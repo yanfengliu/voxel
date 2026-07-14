@@ -1,0 +1,193 @@
+{
+  "schemaVersion": "voxel.mesher-benchmark/1",
+  "scope": "pure-algorithm-baseline-not-end-to-end-presentation",
+  "generatedAt": "2026-07-14T21:15:29.298Z",
+  "source": {
+    "commit": "184ced8c3f9b561ff1fdd4e1111dd42bb2f5661f",
+    "tree": "c13bfcb603bb75e24daa95a813de1ca6f1ce399c",
+    "workingTreeDirty": false,
+    "dirtyRunAuthorized": false,
+    "sourceHashMode": "canonical-git-blobs",
+    "lockfileSha256": "fc30500fe2344b69856bb999713a6cdd525c8649e658dc9cfb40a86ba21cdaad",
+    "benchmarkSourceSha256": "fbd681c9f38f8d50922f3c7d8486550e0cef71eb36fd27aea406372ac2ccfa44",
+    "corpusSourceSha256": "08757f4d0208674e2dbd85ee0fdd0076127370c71a18815b414d5d006f403108",
+    "contractSourceSha256": "d21d6f8346abb4254a19d3e694d68cb733038d046f5d0c4ca3c850caa9bda991",
+    "resultValidationSourceSha256": "f050a3002835462e081f2cf922464396c609c0484f4269c1830a50e50557c45a",
+    "oracleSourceSha256": "99e3f8df175fd9ed946bcd615a404f7fd46a7c9af99142e8a553302b32a306ed",
+    "greedySourceSha256": "8764ecd52d2940ffe09de093448aae62b1171ec777605044c069fbc87c8c9806",
+    "builtModuleTreeSha256": "fa18780db20d358b48740481cbc2d2dbf220c048cce97bfa74330e9cb560d75c"
+  },
+  "environment": {
+    "node": "v24.12.0",
+    "v8": "13.6.233.17-node.37",
+    "platform": "win32",
+    "release": "10.0.26100",
+    "architecture": "x64",
+    "cpuModel": "13th Gen Intel(R) Core(TM) i9-13900KF",
+    "logicalCpuCount": 32,
+    "totalMemoryBytes": 68423581696
+  },
+  "protocol": {
+    "scenes": [
+      "aoe-like",
+      "city-like",
+      "worst-output"
+    ],
+    "correctnessCorpus": [
+      "empty",
+      "solid",
+      "hollow",
+      "checkerboard",
+      "staircase",
+      "stripes",
+      "negative-coordinate",
+      "all-neighbor",
+      "seeded-random",
+      "aoe-like",
+      "city-like",
+      "column",
+      "worst-output"
+    ],
+    "warmupIterations": 250,
+    "samples": 40,
+    "iterationsPerSample": 50,
+    "candidateOrder": "alternating-per-sample-after-independent-warmup"
+  },
+  "scenes": [
+    {
+      "name": "aoe-like",
+      "description": "Stepped strategy terrain with palette-coded elevation bands.",
+      "seed": null,
+      "sourceSize": {
+        "x": 8,
+        "y": 5,
+        "z": 8
+      },
+      "expectedSourceVoxelCount": 96,
+      "expectedExposedUnitFaceCount": 288,
+      "checksum": 114576000,
+      "oracle": {
+        "outputHash": "2c931bf2d0c2a5d91d9ea9373d33eeebd528d7b1f7c87be22179e2050ff151ed",
+        "outputBytes": 36864,
+        "vertexCount": 1152,
+        "triangleCount": 576,
+        "workElements": 1792,
+        "timing": {
+          "p50Milliseconds": 0.05803000000000111,
+          "p95Milliseconds": 0.08210600000000114,
+          "maxMilliseconds": 0.09184400000000097,
+          "meanMilliseconds": 0.06020755000000018
+        }
+      },
+      "greedy": {
+        "outputHash": "2bf26e80ab8fd3c4f0714cf927468c77d705cb85d93cb5b9a941cc13b2e60a65",
+        "outputBytes": 18688,
+        "vertexCount": 584,
+        "triangleCount": 292,
+        "workElements": 3036,
+        "timing": {
+          "p50Milliseconds": 0.05729600000000005,
+          "p95Milliseconds": 0.07436799999999949,
+          "maxMilliseconds": 0.11696799999999939,
+          "meanMilliseconds": 0.060021449999999955
+        }
+      },
+      "changePercent": {
+        "p50AlgorithmTime": 1.264863001897374,
+        "p95AlgorithmTime": 9.424402601516988,
+        "outputBytes": 49.30555555555556,
+        "triangles": 49.30555555555556
+      }
+    },
+    {
+      "name": "city-like",
+      "description": "Ground slab and separated block towers at varied heights.",
+      "seed": null,
+      "sourceSize": {
+        "x": 8,
+        "y": 8,
+        "z": 8
+      },
+      "expectedSourceVoxelCount": 196,
+      "expectedExposedUnitFaceCount": 424,
+      "checksum": 143880000,
+      "oracle": {
+        "outputHash": "10dadf45f6e7c481140f276b48f1889952afcc45581aafa0d7bcfdbd3790c627",
+        "outputBytes": 54272,
+        "vertexCount": 1696,
+        "triangleCount": 848,
+        "workElements": 3376,
+        "timing": {
+          "p50Milliseconds": 0.10804000000000087,
+          "p95Milliseconds": 0.11610799999999927,
+          "maxMilliseconds": 0.12265999999999849,
+          "meanMilliseconds": 0.10959695
+        }
+      },
+      "greedy": {
+        "outputHash": "0dd28578efc813aa8cdaf00b8e8649722ff0b2df289da838deef6ae61aa5d407",
+        "outputBytes": 15488,
+        "vertexCount": 484,
+        "triangleCount": 242,
+        "workElements": 4676,
+        "timing": {
+          "p50Milliseconds": 0.06440000000000054,
+          "p95Milliseconds": 0.06920600000000149,
+          "maxMilliseconds": 0.07029800000000024,
+          "meanMilliseconds": 0.06453955000000014
+        }
+      },
+      "changePercent": {
+        "p50AlgorithmTime": 40.39244724176229,
+        "p95AlgorithmTime": 40.395149343712816,
+        "outputBytes": 71.4622641509434,
+        "triangles": 71.4622641509434
+      }
+    },
+    {
+      "name": "worst-output",
+      "description": "Large checkerboard where every occupied cell exposes all six faces.",
+      "seed": null,
+      "sourceSize": {
+        "x": 8,
+        "y": 8,
+        "z": 8
+      },
+      "expectedSourceVoxelCount": 256,
+      "expectedExposedUnitFaceCount": 1536,
+      "checksum": 811008000,
+      "oracle": {
+        "outputHash": "b49cd79d1769613701cefc987122861c66f68c7688dfc557c3378d0ddfa19845",
+        "outputBytes": 196608,
+        "vertexCount": 6144,
+        "triangleCount": 3072,
+        "workElements": 4096,
+        "timing": {
+          "p50Milliseconds": 0.43221599999999855,
+          "p95Milliseconds": 0.4920719999999983,
+          "maxMilliseconds": 0.6190779999999996,
+          "meanMilliseconds": 0.4424968500000001
+        }
+      },
+      "greedy": {
+        "outputHash": "8d6e89cfd6303aad57c84f4ef431e69347616f2096832b578760e039bcf7e7fc",
+        "outputBytes": 196608,
+        "vertexCount": 6144,
+        "triangleCount": 3072,
+        "workElements": 6848,
+        "timing": {
+          "p50Milliseconds": 0.3578899999999976,
+          "p95Milliseconds": 0.37913600000000314,
+          "maxMilliseconds": 0.393141999999998,
+          "meanMilliseconds": 0.3589548999999997
+        }
+      },
+      "changePercent": {
+        "p50AlgorithmTime": 17.19649434542016,
+        "p95AlgorithmTime": 22.95111284527377,
+        "outputBytes": 0,
+        "triangles": 0
+      }
+    }
+  ]
+}
