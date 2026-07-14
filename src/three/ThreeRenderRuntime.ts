@@ -10,15 +10,15 @@ import {
   type RenderSnapshotV1,
 } from '../core/index.js';
 import {
-  acceptOwnedSnapshotIntoRenderWorld,
   commitPreparedDeltaIntoRenderWorld,
+  commitPreparedSnapshotIntoRenderWorld,
   markPreparedCanonicalStatePresentedInternal,
   pendingCanonicalStateForPresentationInternal,
   presentedCanonicalStateForPresentationInternal,
   prepareDeltaForRenderWorldInternal,
+  prepareSnapshotForRenderWorldInternal,
   setRenderWorldPresentationAvailabilityInternal,
 } from '../core/render-world.js';
-import { validateAndCopySnapshotV1WithMetrics } from '../core/snapshot-validation.js';
 import type { ChunkPresenter } from './chunkPresenter.js';
 import {
   getThreeRuntimeCapabilitiesV1,
@@ -63,7 +63,6 @@ import { initializeRuntimeInternal } from './runtimeInitialization.js';
 import { resizeRuntimeInternal } from './runtimeResize.js';
 import {
   initializeRuntimeSnapshotMetricsInternal,
-  mutableSnapshotIngestMetricsInternal,
   recordSnapshotCopyAttemptInternal,
 } from './runtimeSnapshotMetrics.js';
 import {
@@ -88,6 +87,31 @@ export {
 type CanonicalPresentationStateInternal = NonNullable<
   ReturnType<typeof pendingCanonicalStateForPresentationInternal>
 >;
+const RUNTIME_PRESENTATIONS_BY_STATE_INTERNAL = new WeakMap<
+  ThreeRenderRuntime,
+  WeakMap<CanonicalPresentationStateInternal, ThreePresentationSnapshot>
+>();
+
+function rememberPresentationForCanonicalStateInternal(
+  runtime: ThreeRenderRuntime,
+  state: CanonicalPresentationStateInternal,
+  presentation: ThreePresentationSnapshot,
+): void {
+  let presentations = RUNTIME_PRESENTATIONS_BY_STATE_INTERNAL.get(runtime);
+  if (!presentations) {
+    presentations = new WeakMap();
+    RUNTIME_PRESENTATIONS_BY_STATE_INTERNAL.set(runtime, presentations);
+  }
+  presentations.set(state, presentation);
+}
+
+function presentationForCanonicalStateInternal(
+  runtime: ThreeRenderRuntime,
+  state: CanonicalPresentationStateInternal,
+): ThreePresentationSnapshot | undefined {
+  return RUNTIME_PRESENTATIONS_BY_STATE_INTERNAL.get(runtime)?.get(state);
+}
+
 interface PreparedHostFrameInternal {
   readonly context: Readonly<ThreeFrameContext>;
   readonly pending: CanonicalPresentationStateInternal | null;
@@ -201,41 +225,45 @@ export class ThreeRenderRuntime {
 
   acceptSnapshot(snapshot: RenderSnapshotV1): ApplyResultV1 {
     this.assertAccepting();
-    const validated = validateAndCopySnapshotV1WithMetrics(snapshot);
-    const ingestMetrics = recordSnapshotCopyAttemptInternal(this, validated.metrics);
-    if (!validated.result.ok) {
-      return { status: 'rejected', ...validated.result.issue };
+    const prepared = prepareSnapshotForRenderWorldInternal(this.world, snapshot);
+    const attemptMetrics = prepared.status === 'prepared'
+      ? prepared.prepared.metrics
+      : prepared.metrics;
+    const ingestMetrics = recordSnapshotCopyAttemptInternal(this, attemptMetrics);
+    // Validation walks untrusted object properties. A getter may reenter the
+    // runtime and end it, so fence terminal lifecycle before projection/commit.
+    this.assertAccepting();
+    if (prepared.status === 'rejected') {
+      return { status: 'rejected', ...prepared.issue };
     }
-    let presentation: ThreePresentationSnapshot | null = null;
-    const applied = acceptOwnedSnapshotIntoRenderWorld(
-      this.world,
-      validated.result.value,
-      validated.metrics,
-      (candidate) => {
-        try {
-          const next = canonicalStateToThreePresentationInternal(candidate);
-          validateThreePresentationInternal(next);
-          presentation = next;
-          return null;
-        } catch (error) {
-          return {
-            code: 'three.unsupported-snapshot',
-            path: '$',
-            message: error instanceof Error ? error.message : String(error),
-          };
-        }
-      },
+    let presentation: ThreePresentationSnapshot;
+    try {
+      presentation = canonicalStateToThreePresentationInternal(prepared.prepared.candidate);
+      validateThreePresentationInternal(presentation);
+    } catch (error) {
+      return {
+        status: 'rejected',
+        code: 'three.unsupported-snapshot',
+        path: '$',
+        message: error instanceof Error ? error.message : String(error),
+      };
+    }
+    rememberPresentationForCanonicalStateInternal(
+      this,
+      prepared.prepared.candidate,
+      presentation,
     );
+    const applied = commitPreparedSnapshotIntoRenderWorld(this.world, prepared.prepared);
     if (applied.status === 'accepted') {
       ingestMetrics.accepted += 1;
-      if (
-        this.world.epoch === applied.epoch
-        && this.world.acceptedRevision === applied.revision
-      ) {
-        const pending = pendingCanonicalStateForPresentationInternal(this.world);
-        if (pending?.epoch === applied.epoch && pending.revision === applied.revision) {
-          this.pendingPresentation = presentation;
-        }
+      const candidate = prepared.prepared.candidate;
+      if (presentedCanonicalStateForPresentationInternal(this.world) === candidate) {
+        // A waiter cleanup callback may have synchronously framed this exact
+        // candidate while the core commit was still settling the old epoch.
+        this.presentedPresentation = presentation;
+        this.pendingPresentation = null;
+      } else if (pendingCanonicalStateForPresentationInternal(this.world) === candidate) {
+        this.pendingPresentation = presentation;
       }
     }
     return applied;
@@ -244,6 +272,8 @@ export class ThreeRenderRuntime {
   acceptDelta(delta: RenderDeltaV1): DeltaApplyResultV1 {
     this.assertAccepting();
     const result = prepareDeltaForRenderWorldInternal(this.world, delta);
+    // Delta parsing has the same structural-getter reentrancy boundary.
+    this.assertAccepting();
     if (result.status === 'resync-required') return result;
     if (result.status === 'rejected') return { status: 'rejected', ...result.issue };
     let presentation: ThreePresentationSnapshot;
@@ -258,6 +288,7 @@ export class ThreeRenderRuntime {
         message: error instanceof Error ? error.message : String(error),
       };
     }
+    rememberPresentationForCanonicalStateInternal(this, result.prepared.candidate, presentation);
     const applied = commitPreparedDeltaIntoRenderWorld(this.world, result.prepared, {
       deferAutomaticPresentation: this.hostKind === 'embedded',
     });
@@ -459,7 +490,6 @@ export class ThreeRenderRuntime {
       renderInfo: this.renderInfo,
       contextLosses: this.contextLosses,
       contextRestorations: this.contextRestorations,
-      ingest: mutableSnapshotIngestMetricsInternal(this),
     });
   }
   dispose(): void {
@@ -503,7 +533,10 @@ export class ThreeRenderRuntime {
     const generation = this.deviceGeneration;
     const pending = pendingCanonicalStateForPresentationInternal(this.world);
     const target = pending ?? presentedCanonicalStateForPresentationInternal(this.world);
-    const presentation = pending ? this.pendingPresentation : this.presentedPresentation;
+    const presentation = target
+      ? presentationForCanonicalStateInternal(this, target)
+        ?? (pending ? this.pendingPresentation : this.presentedPresentation)
+      : null;
     const previousPresentation = this.presentedPresentation;
     const previousContext = this.lastPresentedFrameContext;
     let phase: ThreeRuntimeFailurePhaseV1 = 'prepare';

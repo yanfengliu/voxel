@@ -91,7 +91,7 @@
       ]
     },
     "dist/core/render-world.d.ts": {
-      "sha256": "feb11d87d2f1ff2e891e17fce5dc4fa0483681062357c18cd8782af67602469a",
+      "sha256": "a7666a1afc67eef90eca0fd07c486e6da9e736a7df66cff2fde6c4dbc335d382",
       "reachableFrom": [
         "./core",
         "./testing",
@@ -359,7 +359,7 @@
       ]
     },
     "dist/three/runtimeTypes.d.ts": {
-      "sha256": "49bdc6466cce58966770c5ecaeaf77fd4bdb55cd3eb4f8cb663b5b85477003e6",
+      "sha256": "f20500e8aef50567df42561c10e82189be789d718868b959b8cd65be23a438c4",
       "reachableFrom": [
         "./three"
       ]

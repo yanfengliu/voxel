@@ -117,16 +117,27 @@ export interface ThreeRenderMetrics {
   readonly rendererTextures: number;
   readonly contextLosses: number;
   readonly contextRestorations: number;
+  /** Validated snapshot lane bytes; repeated views count once per lane occurrence. */
   readonly snapshotInputTypedArrayBytes: number;
+  /** Logical bytes written into canonical snapshot candidates, accepted or rejected. */
   readonly snapshotCopiedTypedArrayBytes: number;
+  /** Canonical destination typed arrays initialized while preparing snapshots. */
   readonly snapshotCopyOperations: number;
+  /** Validated delta lane bytes after the delta header matches accepted state. */
   readonly deltaInputTypedArrayBytes: number;
+  /** Canonical copy-on-write and payload-write traffic while preparing deltas. */
   readonly deltaCopiedTypedArrayBytes: number;
+  /** Canonical destination typed arrays allocated or cloned for delta work. */
   readonly deltaCopyOperations: number;
+  /** Logical bytes copied by public defensive snapshot reads. */
   readonly defensiveSnapshotCopyBytes: number;
+  /** Unique canonical typed-array capacity retained by live world revisions. */
   readonly retainedTypedArrayBytes: number;
+  /** High-water mark of retained canonical typed-array capacity. */
   readonly peakRetainedTypedArrayBytes: number;
+  /** Additional typed-array bytes held only by an uncommitted presentation. */
   readonly presentationStagingBytes: number;
+  /** High-water mark of additional uncommitted presentation storage. */
   readonly peakPresentationStagingBytes: number;
 }
 

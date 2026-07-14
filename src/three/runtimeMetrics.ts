@@ -5,7 +5,6 @@ import type { GeometryPresenter } from './geometryPresenter.js';
 import type { InstanceBatchPresenter } from './instanceBatchPresenter.js';
 import type { MaterialPresenter } from './materialPresenter.js';
 import type { RenderInfoSnapshotInternal } from './runtimeRenderInfo.js';
-import type { MutableSnapshotIngestMetricsInternal } from './runtimeSnapshotMetrics.js';
 import type { ThreeRenderMetrics } from './runtimeTypes.js';
 
 export interface RuntimeMetricsInputInternal {
@@ -19,7 +18,6 @@ export interface RuntimeMetricsInputInternal {
   readonly renderInfo: RenderInfoSnapshotInternal;
   readonly contextLosses: number;
   readonly contextRestorations: number;
-  readonly ingest: MutableSnapshotIngestMetricsInternal;
 }
 
 export function collectRuntimeMetricsInternal(
@@ -54,9 +52,9 @@ export function collectRuntimeMetricsInternal(
     rendererTextures: input.renderInfo.textures,
     contextLosses: input.contextLosses,
     contextRestorations: input.contextRestorations,
-    snapshotInputTypedArrayBytes: input.ingest.inputTypedArrayBytes,
-    snapshotCopiedTypedArrayBytes: input.ingest.copiedTypedArrayBytes,
-    snapshotCopyOperations: input.ingest.copyOperations,
+    snapshotInputTypedArrayBytes: ownership.snapshotInputTypedArrayBytes,
+    snapshotCopiedTypedArrayBytes: ownership.snapshotCopiedTypedArrayBytes,
+    snapshotCopyOperations: ownership.snapshotCopyOperations,
     deltaInputTypedArrayBytes: ownership.deltaInputTypedArrayBytes,
     deltaCopiedTypedArrayBytes: ownership.deltaCopiedTypedArrayBytes,
     deltaCopyOperations: ownership.deltaCopyOperations,
