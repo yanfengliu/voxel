@@ -3,7 +3,6 @@ import type {
   ValidatedMeshWorkerResultV1,
 } from './mesh-worker-contract.js';
 import type {
-  MeshSchedulerConfigV1,
   MeshSchedulerGroupOutcomeV1,
   MeshSchedulerMetricsV1,
   MeshSchedulerPreparedGroupV1,
@@ -14,6 +13,7 @@ import {
   assertMeshSchedulerLogicalTickV1Internal,
   assertMeshSchedulerWorkerPortV1Internal,
   type NormalizedMeshSchedulerJobV1,
+  type ValidatedMeshSchedulerConfigV1Internal,
 } from './voxel-mesh-scheduler-validation.js';
 
 export type MeshSchedulerJobStateInternal =
@@ -57,7 +57,15 @@ export interface MeshSchedulerWorkerSlotInternal {
   port: MeshSchedulerWorkerPortV1 | undefined;
   active: MeshSchedulerJobRecordInternal | undefined;
   retry: MeshSchedulerJobRecordInternal | undefined;
+  generationProven: boolean;
+  consecutiveUnprovenFailures: number;
+  startupCircuit: 'closed' | 'half-open' | 'open';
 }
+
+export type MeshSchedulerPortRefreshResultInternal =
+  | { readonly status: 'started' }
+  | { readonly status: 'startup-failed' }
+  | { readonly status: 'circuit-open' };
 
 export interface MutableMeshSchedulerMetricsInternal {
   lifecycle: 'active' | 'disposed';
@@ -77,8 +85,11 @@ export interface MutableMeshSchedulerMetricsInternal {
   logicalCancellations: number;
   cooperativeCancellationRequests: number;
   workerCrashes: number;
+  unprovenWorkerCrashes: number;
   crashRetries: number;
   workerStartupFailures: number;
+  workerStartupCircuitTrips: number;
+  startupCircuitOpenWorkers: number;
   workerTerminationFailures: number;
   deterministicFailures: number;
   staleResults: number;
@@ -114,8 +125,11 @@ export function createMeshSchedulerMetricsInternal(
     logicalCancellations: 0,
     cooperativeCancellationRequests: 0,
     workerCrashes: 0,
+    unprovenWorkerCrashes: 0,
     crashRetries: 0,
     workerStartupFailures: 0,
+    workerStartupCircuitTrips: 0,
+    startupCircuitOpenWorkers: 0,
     workerTerminationFailures: 0,
     deterministicFailures: 0,
     staleResults: 0,
@@ -195,7 +209,7 @@ export class BoundedSettledJobIdsInternal {
 }
 
 export class MeshSchedulerStateInternal {
-  readonly config: Readonly<MeshSchedulerConfigV1>;
+  readonly config: ValidatedMeshSchedulerConfigV1Internal;
   readonly workerFactory: MeshSchedulerWorkerFactoryV1;
   readonly slots: MeshSchedulerWorkerSlotInternal[] = [];
   readonly groups = new Map<string, MeshSchedulerGroupRecordInternal>();
@@ -213,7 +227,7 @@ export class MeshSchedulerStateInternal {
   nextJobSequence = 1;
 
   constructor(
-    config: Readonly<MeshSchedulerConfigV1>,
+    config: ValidatedMeshSchedulerConfigV1Internal,
     workerFactory: MeshSchedulerWorkerFactoryV1,
   ) {
     this.config = config;
@@ -230,12 +244,15 @@ export class MeshSchedulerStateInternal {
         port: undefined,
         active: undefined,
         retry: undefined,
+        generationProven: false,
+        consecutiveUnprovenFailures: 0,
+        startupCircuit: 'closed',
       };
       this.slots.push(slot);
       try {
         slot.port = this.createPort(slot);
       } catch {
-        incrementMeshSchedulerMetricInternal(this.metrics, 'workerStartupFailures');
+        this.recordWorkerStartupFailure(slot);
       }
     }
     this.recountWorkers();
@@ -274,31 +291,95 @@ export class MeshSchedulerStateInternal {
     return port;
   }
 
-  refreshPort(slot: MeshSchedulerWorkerSlotInternal): boolean {
+  refreshPort(slot: MeshSchedulerWorkerSlotInternal): MeshSchedulerPortRefreshResultInternal {
     this.retryPendingTerminations();
     this.retirePort(slot.port);
     slot.port = undefined;
-    if (this.pendingTerminationPorts.length >= this.config.workerCount * 2) {
-      incrementMeshSchedulerMetricInternal(this.metrics, 'workerStartupFailures');
+    slot.generationProven = false;
+    if (slot.startupCircuit === 'open') {
       this.recountWorkers();
-      return false;
+      return { status: 'circuit-open' };
+    }
+    if (this.pendingTerminationPorts.length >= this.config.workerCount * 2) {
+      this.recordWorkerStartupFailure(slot);
+      this.recountWorkers();
+      return this.startupFailureResult(slot);
     }
     if (slot.generation >= Number.MAX_SAFE_INTEGER) {
-      incrementMeshSchedulerMetricInternal(this.metrics, 'workerStartupFailures');
+      this.recordWorkerStartupFailure(slot);
       this.recountWorkers();
-      return false;
+      return this.startupFailureResult(slot);
     }
     slot.generation += 1;
     slot.workerId = this.workerId(slot.slotIndex, slot.generation);
     try {
       slot.port = this.createPort(slot);
       this.recountWorkers();
-      return true;
+      return { status: 'started' };
     } catch {
-      incrementMeshSchedulerMetricInternal(this.metrics, 'workerStartupFailures');
+      this.recordWorkerStartupFailure(slot);
       this.recountWorkers();
+      return this.startupFailureResult(slot);
+    }
+  }
+
+  recordWorkerCrash(slot: MeshSchedulerWorkerSlotInternal): boolean {
+    if (slot.generationProven) {
+      slot.consecutiveUnprovenFailures = 0;
       return false;
     }
+    incrementMeshSchedulerMetricInternal(this.metrics, 'unprovenWorkerCrashes');
+    return this.incrementUnprovenFailures(slot);
+  }
+
+  enterHalfOpenStartupCircuit(slot: MeshSchedulerWorkerSlotInternal): void {
+    this.transitionStartupCircuit(slot, 'half-open');
+  }
+
+  openStartupCircuit(slot: MeshSchedulerWorkerSlotInternal): void {
+    this.transitionStartupCircuit(slot, 'open');
+  }
+
+  proveWorkerGeneration(slot: MeshSchedulerWorkerSlotInternal): void {
+    slot.generationProven = true;
+    slot.consecutiveUnprovenFailures = 0;
+    slot.startupCircuit = 'closed';
+    this.recountWorkers();
+  }
+
+  private recordWorkerStartupFailure(slot: MeshSchedulerWorkerSlotInternal): void {
+    incrementMeshSchedulerMetricInternal(this.metrics, 'workerStartupFailures');
+    const limitReached = this.incrementUnprovenFailures(slot);
+    if (slot.startupCircuit === 'half-open' || limitReached) {
+      this.openStartupCircuit(slot);
+    }
+  }
+
+  private incrementUnprovenFailures(slot: MeshSchedulerWorkerSlotInternal): boolean {
+    if (slot.consecutiveUnprovenFailures < Number.MAX_SAFE_INTEGER) {
+      slot.consecutiveUnprovenFailures += 1;
+    }
+    return slot.consecutiveUnprovenFailures
+      >= this.config.maxConsecutiveUnprovenWorkerFailures;
+  }
+
+  private transitionStartupCircuit(
+    slot: MeshSchedulerWorkerSlotInternal,
+    next: 'half-open' | 'open',
+  ): void {
+    if (slot.startupCircuit === 'closed') {
+      incrementMeshSchedulerMetricInternal(this.metrics, 'workerStartupCircuitTrips');
+    }
+    slot.startupCircuit = next;
+    this.recountWorkers();
+  }
+
+  private startupFailureResult(
+    slot: MeshSchedulerWorkerSlotInternal,
+  ): MeshSchedulerPortRefreshResultInternal {
+    return slot.startupCircuit === 'open'
+      ? { status: 'circuit-open' }
+      : { status: 'startup-failed' };
   }
 
   retirePort(port: MeshSchedulerWorkerPortV1 | undefined): boolean {
@@ -345,12 +426,15 @@ export class MeshSchedulerStateInternal {
   recountWorkers(): void {
     let available = 0;
     let busy = 0;
+    let startupCircuitOpenWorkers = 0;
     for (const slot of this.slots) {
       if (slot.active) busy += 1;
       else if (slot.port) available += 1;
+      if (slot.startupCircuit === 'open') startupCircuitOpenWorkers += 1;
     }
     this.metrics.availableWorkers = available;
     this.metrics.busyWorkers = busy;
+    this.metrics.startupCircuitOpenWorkers = startupCircuitOpenWorkers;
     updateMeshSchedulerHighWaterInternal(this.metrics);
   }
 

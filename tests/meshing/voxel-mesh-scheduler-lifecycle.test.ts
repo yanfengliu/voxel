@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import type { MeshSchedulerEligibilityV1 } from '../../src/meshing/index.js';
 import {
@@ -120,9 +120,10 @@ describe('VoxelMeshSchedulerV1 worker and cancellation lifecycle', () => {
   });
 
   it('terminates a group on initial or replacement worker startup failure', () => {
+    const failEveryFactory = vi.fn(() => true);
     const unavailable = createSchedulerHarness(
       { ...SCHEDULER_TEST_CONFIG, workerCount: 1 },
-      { failFactory: () => true },
+      { failFactory: failEveryFactory },
     );
     unavailable.scheduler.enqueue(schedulerGroup('no-worker', 1, [{ coordinateX: 0 }]), 0);
     expect(unavailable.scheduler.pump(1, unavailable.allocator).dispatches).toEqual([]);
@@ -133,9 +134,13 @@ describe('VoxelMeshSchedulerV1 worker and cancellation lifecycle', () => {
     expect(unavailable.scheduler.getMetrics()).toMatchObject({
       availableWorkers: 0,
       workerStartupFailures: 2,
+      workerStartupCircuitTrips: 1,
+      startupCircuitOpenWorkers: 1,
       queuedJobs: 0,
     });
-    unavailable.scheduler.dispose(3);
+    unavailable.scheduler.pump(3, unavailable.allocator);
+    expect(failEveryFactory).toHaveBeenCalledTimes(2);
+    unavailable.scheduler.dispose(4);
 
     const replacement = createSchedulerHarness(
       { ...SCHEDULER_TEST_CONFIG, workerCount: 1 },

@@ -317,6 +317,24 @@ describe('revision-atomic worker target coordination', () => {
     harness.coordinator.disposeInternal();
   });
 
+  it('reports an idle worker whose startup circuit opens', () => {
+    const harness = createCoordinatorHarnessInternal(1, {
+      maxConsecutiveUnprovenWorkerFailures: 1,
+    });
+    const worker = harness.workers.workersInternal[0]!;
+
+    expect(harness.coordinator.workerCrashedInternal(worker.context.workerId)).toEqual({
+      status: 'worker-unavailable',
+      schedulerInternal: {
+        status: 'worker-unavailable',
+        reason: 'startup-circuit-open',
+      },
+    });
+    expect(worker.terminateCalls).toBe(1);
+    expect(harness.workers.workersInternal).toHaveLength(1);
+    harness.coordinator.disposeInternal();
+  });
+
   it('ignores a terminal crash outcome from superseded work and dispatches the current target', () => {
     const harness = createCoordinatorHarnessInternal(1);
     const superseded = coordinatorTargetPlanInternal(1, [0]);

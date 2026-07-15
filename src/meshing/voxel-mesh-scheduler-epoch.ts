@@ -37,7 +37,7 @@ export function replaceMeshSchedulerEpochV1Internal(
         if (group !== undefined) removeTerminalGroupWhenIdleV1Internal(state, group);
       }
     }
-    if (!state.refreshPort(slot) && slot.retry !== undefined) {
+    if (state.refreshPort(slot).status !== 'started' && slot.retry !== undefined) {
       const retry = slot.retry;
       slot.retry = undefined;
       retry.state = 'terminal';

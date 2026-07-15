@@ -6,8 +6,10 @@ import {
 } from './mesher-contract.js';
 import { MAX_MESH_WORKER_ID_LENGTH_V1 } from './mesh-worker-contract.js';
 import {
+  DEFAULT_MESH_SCHEDULER_UNPROVEN_FAILURE_LIMIT_V1,
   MAX_MESH_SCHEDULER_RUNTIME_ID_LENGTH_V1,
   MAX_MESH_SCHEDULER_QUEUED_JOBS_V1,
+  MAX_MESH_SCHEDULER_UNPROVEN_FAILURE_LIMIT_V1,
   MAX_MESH_SCHEDULER_WORKERS_V1,
   type MeshSchedulerConfigV1,
   type MeshSchedulerEligibilityV1,
@@ -15,6 +17,12 @@ import {
   type MeshSchedulerPriorityV1,
   type MeshSchedulerWorkerPortV1,
 } from './voxel-mesh-scheduler-contract.js';
+
+export type ValidatedMeshSchedulerConfigV1Internal = Readonly<
+  Omit<MeshSchedulerConfigV1, 'maxConsecutiveUnprovenWorkerFailures'> & {
+    readonly maxConsecutiveUnprovenWorkerFailures: number;
+  }
+>;
 
 export interface NormalizedMeshSchedulerJobV1 {
   readonly eligibility: MeshSchedulerEligibilityV1;
@@ -84,7 +92,7 @@ function copySource(source: MesherSourceTokenV1): MesherSourceTokenV1 {
 
 export function validateMeshSchedulerConfigV1Internal(
   config: MeshSchedulerConfigV1,
-): Readonly<MeshSchedulerConfigV1> {
+): ValidatedMeshSchedulerConfigV1Internal {
   return Object.freeze({
     runtimeId: boundedString(
       config.runtimeId,
@@ -106,6 +114,12 @@ export function validateMeshSchedulerConfigV1Internal(
     starvationPromotionDispatches: positiveInteger(
       config.starvationPromotionDispatches,
       'starvationPromotionDispatches',
+    ),
+    maxConsecutiveUnprovenWorkerFailures: positiveIntegerAtMost(
+      config.maxConsecutiveUnprovenWorkerFailures
+        ?? DEFAULT_MESH_SCHEDULER_UNPROVEN_FAILURE_LIMIT_V1,
+      'maxConsecutiveUnprovenWorkerFailures',
+      MAX_MESH_SCHEDULER_UNPROVEN_FAILURE_LIMIT_V1,
     ),
   });
 }

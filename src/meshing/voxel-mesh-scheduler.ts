@@ -143,7 +143,8 @@ export class VoxelMeshSchedulerV1 {
       let startupUnavailable = false;
       for (const slot of this.#state.slots) {
         if (slot.active !== undefined) continue;
-        if (slot.port === undefined && !this.#state.refreshPort(slot)) {
+        if (slot.port === undefined
+          && this.#state.refreshPort(slot).status !== 'started') {
           startupUnavailable = true;
           const blocked = slot.retry;
           if (blocked !== undefined) {

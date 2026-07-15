@@ -110,6 +110,13 @@ export type RevisionAtomicTargetCrashResultInternal =
       >;
     }
   | {
+      readonly status: 'worker-unavailable';
+      readonly schedulerInternal: Extract<
+        MeshSchedulerCrashResultV1,
+        { readonly status: 'worker-unavailable' }
+      >;
+    }
+  | {
       readonly status: 'ignored';
       readonly reason: 'stale-worker' | 'non-current';
       readonly schedulerInternal: Exclude<

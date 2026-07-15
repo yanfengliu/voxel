@@ -92,8 +92,10 @@ export function receiveMeshSchedulerResultV1Internal(
     discardUntrusted(state, value);
     return { status: 'stale-result' };
   }
+  const validation = validateMeshWorkerResultV1(value, job.expectation);
   const group = state.groups.get(job.normalized.eligibility.groupId);
   if (group === undefined || group.state === 'terminal' || job.logicallyCancelled) {
+    if (validation.ok) state.proveWorkerGeneration(slot);
     incrementMeshSchedulerMetricInternal(state.metrics, 'staleResults');
     discardUntrusted(state, value);
     settleAsTerminal(state, slot, job);
@@ -102,7 +104,6 @@ export function receiveMeshSchedulerResultV1Internal(
     }
     return { status: 'stale-result' };
   }
-  const validation = validateMeshWorkerResultV1(value, job.expectation);
   if (!validation.ok) {
     incrementMeshSchedulerMetricInternal(state.metrics, 'invalidResults');
     discardUntrusted(state, value);
@@ -117,6 +118,7 @@ export function receiveMeshSchedulerResultV1Internal(
       ),
     };
   }
+  state.proveWorkerGeneration(slot);
   if (!meshSchedulerEligibilityIsCurrentV1Internal(
     job.normalized.eligibility,
     resolver,

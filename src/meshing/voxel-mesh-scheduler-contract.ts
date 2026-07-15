@@ -10,6 +10,8 @@ import type {
 export const MAX_MESH_SCHEDULER_RUNTIME_ID_LENGTH_V1 = 128;
 export const MAX_MESH_SCHEDULER_WORKERS_V1 = 64;
 export const MAX_MESH_SCHEDULER_QUEUED_JOBS_V1 = 1_000_000;
+export const DEFAULT_MESH_SCHEDULER_UNPROVEN_FAILURE_LIMIT_V1 = 2;
+export const MAX_MESH_SCHEDULER_UNPROVEN_FAILURE_LIMIT_V1 = 64;
 
 export type MeshSchedulerPriorityClassV1 =
   | 'current-frustum'
@@ -77,6 +79,8 @@ export interface MeshSchedulerConfigV1 {
   readonly maxStagingBytes: number;
   /** Dispatch attempts before one deterministic priority promotion. */
   readonly starvationPromotionDispatches: number;
+  /** Consecutive unproven generations before the slot's startup circuit opens. */
+  readonly maxConsecutiveUnprovenWorkerFailures?: number;
 }
 
 export interface MeshSchedulerWorkerContextV1 {
@@ -261,6 +265,10 @@ export type MeshSchedulerCrashResultV1 =
     }
   | { readonly status: 'terminal'; readonly outcome: MeshSchedulerGroupOutcomeV1 }
   | { readonly status: 'worker-replaced' }
+  | {
+      readonly status: 'worker-unavailable';
+      readonly reason: 'startup-circuit-open' | 'startup-failed';
+    }
   | { readonly status: 'stale-worker' }
   | { readonly status: 'disposed' };
 
@@ -304,8 +312,11 @@ export interface MeshSchedulerMetricsV1 {
   readonly logicalCancellations: number;
   readonly cooperativeCancellationRequests: number;
   readonly workerCrashes: number;
+  readonly unprovenWorkerCrashes: number;
   readonly crashRetries: number;
   readonly workerStartupFailures: number;
+  readonly workerStartupCircuitTrips: number;
+  readonly startupCircuitOpenWorkers: number;
   readonly workerTerminationFailures: number;
   readonly deterministicFailures: number;
   readonly staleResults: number;

@@ -288,6 +288,9 @@ export class RevisionAtomicTargetCoordinatorInternal {
       if (schedulerInternal.status === 'worker-replaced') {
         return Object.freeze({ status: 'worker-replaced', schedulerInternal });
       }
+      if (schedulerInternal.status === 'worker-unavailable') {
+        return Object.freeze({ status: 'worker-unavailable', schedulerInternal });
+      }
       if (schedulerInternal.status === 'stale-worker') {
         return Object.freeze({
           status: 'ignored',

@@ -155,8 +155,10 @@ export {
 } from './mesh-worker-module.js';
 export { VoxelMeshSchedulerV1 } from './voxel-mesh-scheduler.js';
 export {
+  DEFAULT_MESH_SCHEDULER_UNPROVEN_FAILURE_LIMIT_V1,
   MAX_MESH_SCHEDULER_QUEUED_JOBS_V1,
   MAX_MESH_SCHEDULER_RUNTIME_ID_LENGTH_V1,
+  MAX_MESH_SCHEDULER_UNPROVEN_FAILURE_LIMIT_V1,
   MAX_MESH_SCHEDULER_WORKERS_V1,
   type MeshSchedulerCancellationReasonV1,
   type MeshSchedulerCancelResultV1,

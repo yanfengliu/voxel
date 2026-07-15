@@ -270,7 +270,9 @@ describe('runtime mesh worker driver', () => {
     expect(harness.coordinator.activeTargetInternal).toEqual(plan.target);
     expect(harness.scheduler.getMetrics()).toMatchObject({
       workerCrashes: 1,
+      unprovenWorkerCrashes: 0,
       crashRetries: 0,
+      workerStartupCircuitTrips: 0,
     });
     expect(completed.terminate).toHaveBeenCalledTimes(1);
     expect(harness.pool.handlesInternal).toHaveLength(2);

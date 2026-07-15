@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 
 import {
+  MAX_MESH_SCHEDULER_UNPROVEN_FAILURE_LIMIT_V1,
   MAX_MESH_SCHEDULER_WORKERS_V1,
   VoxelMeshSchedulerV1,
   type MeshSchedulerDispatchV1,
@@ -54,6 +55,17 @@ describe('VoxelMeshSchedulerV1 deterministic bounded dispatch', () => {
       runtimeId: '',
     }, () => ({ post: () => undefined, terminate: () => undefined })))
       .toThrow(/runtimeId must be non-empty/);
+    expect(() => new VoxelMeshSchedulerV1({
+      ...SCHEDULER_TEST_CONFIG,
+      maxConsecutiveUnprovenWorkerFailures: 0,
+    }, () => ({ post: () => undefined, terminate: () => undefined })))
+      .toThrow(/maxConsecutiveUnprovenWorkerFailures must be positive/);
+    expect(() => new VoxelMeshSchedulerV1({
+      ...SCHEDULER_TEST_CONFIG,
+      maxConsecutiveUnprovenWorkerFailures:
+        MAX_MESH_SCHEDULER_UNPROVEN_FAILURE_LIMIT_V1 + 1,
+    }, () => ({ post: () => undefined, terminate: () => undefined })))
+      .toThrow(/maxConsecutiveUnprovenWorkerFailures exceeds/);
 
     const shared = { post: () => undefined, terminate: () => undefined };
     const scheduler = new VoxelMeshSchedulerV1(
