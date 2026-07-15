@@ -14,7 +14,9 @@
         resolveMeshWorkerModuleUrlV1,
         startMeshWorkerV1,
         validateMeshWorkerResultV1,
+        VoxelMeshSchedulerV1,
       } from '/dist/meshing/index.js';
+      import { RuntimeMeshWorkerDriverInternal } from '/dist/three/runtimeMeshWorkerDriver.js';
 
       const createInput = (canonicalSample) => ({
         schemaVersion: MESHER_INPUT_SCHEMA_V1,
@@ -99,6 +101,226 @@
           worker.terminate();
           terminated = true;
           window.__meshWorkerStartupFailureTerminated = terminated;
+        }
+      };
+
+      const withTimeout = (promise, message) => new Promise((resolve, reject) => {
+        const timeout = setTimeout(() => reject(new Error(message)), 10_000);
+        promise.then(
+          (value) => {
+            clearTimeout(timeout);
+            resolve(value);
+          },
+          (error) => {
+            clearTimeout(timeout);
+            reject(error);
+          },
+        );
+      });
+
+      window.runMeshWorkerStartupCircuitEvidence = async () => {
+        const records = [];
+        let logicalTick = 0;
+        let scheduler;
+        let driver;
+        let terminal;
+        let thirdAdvance;
+        let schedulerDisposal;
+        let driverDisposal;
+        const current = (eligibility) => eligibility;
+        const allocator = (dispatch) => {
+          const samples = new Uint16Array(27);
+          samples[13] = 1;
+          const input = createInput(samples);
+          return prepareMeshWorkerRequestV1({
+            jobId: dispatch.jobId,
+            groupId: dispatch.eligibility.groupId,
+            worldId: dispatch.eligibility.worldId,
+            epoch: dispatch.eligibility.epoch,
+            targetRevision: dispatch.eligibility.targetRevision,
+            pipelineGeneration: dispatch.eligibility.pipelineGeneration,
+            descriptor: GREEDY_OPAQUE_MESHER_DESCRIPTOR_V1,
+            input: {
+              ...input,
+              dependencySignature: dispatch.eligibility.dependencySignature,
+              source: dispatch.eligibility.source,
+            },
+          });
+        };
+        const startWorker = (context) => {
+          const worker = new Worker('/__voxel_worker_startup_failure__.js', {
+            type: 'module',
+            name: `voxel-worker-circuit-${String(context.generation)}`,
+          });
+          let resolveError;
+          let errorObserver;
+          const listeners = new Map();
+          const record = {
+            context,
+            constructorReturned: true,
+            posts: 0,
+            listenerAdds: 0,
+            listenerRemovals: 0,
+            terminateCalls: 0,
+            emergencyTerminations: 0,
+            error: null,
+            errorPromise: new Promise((resolve) => { resolveError = resolve; }),
+            listenerCount: () => [...listeners.values()].reduce(
+              (total, set) => total + set.size,
+              0,
+            ),
+            emergencyTerminate: () => {
+              record.emergencyTerminations += 1;
+              worker.terminate();
+            },
+          };
+          const handle = {
+            postMessage: (value, transfer) => {
+              record.posts += 1;
+              worker.postMessage(value, transfer);
+            },
+            addEventListener: (type, listener) => {
+              const set = listeners.get(type) ?? new Set();
+              set.add(listener);
+              listeners.set(type, set);
+              record.listenerAdds += 1;
+              worker.addEventListener(type, listener);
+              if (type === 'error' && !errorObserver) {
+                errorObserver = (event) => {
+                  record.error = {
+                    message: event.message,
+                    filename: new URL(event.filename).pathname,
+                    defaultPrevented: event.defaultPrevented,
+                    constructorReturned: record.constructorReturned,
+                  };
+                  resolveError(record.error);
+                };
+                worker.addEventListener('error', errorObserver);
+              }
+            },
+            removeEventListener: (type, listener) => {
+              listeners.get(type)?.delete(listener);
+              record.listenerRemovals += 1;
+              worker.removeEventListener(type, listener);
+            },
+            terminate: () => {
+              record.terminateCalls += 1;
+              if (errorObserver) worker.removeEventListener('error', errorObserver);
+              worker.terminate();
+            },
+          };
+          records.push(record);
+          return { status: 'started', handle };
+        };
+
+        try {
+          driver = new RuntimeMeshWorkerDriverInternal({
+            startWorkerInternal: startWorker,
+            maxQueuedEventsInternal: 4,
+          });
+          scheduler = new VoxelMeshSchedulerV1({
+            runtimeId: 'browser-worker-circuit',
+            workerCount: 1,
+            maxQueuedJobs: 4,
+            maxQueuedBytes: 40_000_000,
+            maxStagingBytes: 40_000_000,
+            starvationPromotionDispatches: 2,
+            maxConsecutiveUnprovenWorkerFailures: 1,
+          }, driver.workerFactoryInternal);
+          driver.bindInternal({
+            receiveInternal: (workerId, value) => scheduler.receive(
+              workerId,
+              value,
+              ++logicalTick,
+              current,
+            ),
+            workerCrashedInternal: (workerId) => scheduler.workerCrashed(
+              workerId,
+              ++logicalTick,
+            ),
+            pumpInternal: () => {
+              const result = scheduler.pump(++logicalTick, allocator);
+              return {
+                status: result.status === 'disposed'
+                  ? 'disposed'
+                  : result.dispatches.length > 0 ? 'pending' : 'idle',
+                dispatches: result.dispatches,
+                schedulerInternal: result,
+              };
+            },
+          });
+          const samples = new Uint16Array(27);
+          samples[13] = 1;
+          const input = createInput(samples);
+          scheduler.enqueue({
+            groupId: 'browser-worker-circuit-group',
+            jobs: [{
+              worldId: 'browser-worker-world',
+              epoch: 'browser-worker-circuit-epoch',
+              targetRevision: 1,
+              pipelineGeneration: 1,
+              mesherId: input.mesherId,
+              mesherVersion: input.mesherVersion,
+              materialPolicyVersion: 'opaque/1',
+              dependencySignature: input.dependencySignature,
+              source: input.source,
+              priority: { visibility: 'current-frustum', distance: 0 },
+              inputBytes: input.sampleVolume.byteLength,
+              maxOutputBytes: input.outputBudget.maxTotalBytes,
+            }],
+          }, ++logicalTick);
+          const initialPump = scheduler.pump(++logicalTick, allocator);
+          if (initialPump.dispatches.length !== 1) {
+            throw new Error('startup-circuit fixture did not dispatch the initial job');
+          }
+          await withTimeout(
+            records[0].errorPromise,
+            'first startup-circuit worker did not fail asynchronously',
+          );
+          const firstAdvance = driver.advanceInternal();
+          if (firstAdvance.pumpInternal.dispatches.length !== 1) {
+            throw new Error('startup-circuit fixture did not dispatch the half-open retry');
+          }
+          await withTimeout(
+            records[1].errorPromise,
+            'half-open startup-circuit worker did not fail asynchronously',
+          );
+          const secondAdvance = driver.advanceInternal();
+          terminal = scheduler.completeGroup(
+            'browser-worker-circuit-group',
+            ++logicalTick,
+            current,
+          );
+          thirdAdvance = driver.advanceInternal();
+          return {
+            firstAdvance,
+            secondAdvance,
+            terminal,
+            thirdAdvance,
+            metrics: scheduler.getMetrics(),
+          };
+        } finally {
+          if (scheduler) schedulerDisposal = scheduler.dispose(++logicalTick);
+          if (driver) driverDisposal = driver.disposeInternal();
+          for (const record of records) {
+            if (record.terminateCalls === 0) record.emergencyTerminate();
+          }
+          window.__meshWorkerStartupCircuitCleanup = {
+            schedulerDisposal,
+            driverDisposal,
+            records: records.map((record) => ({
+              context: record.context,
+              constructorReturned: record.constructorReturned,
+              posts: record.posts,
+              listenerAdds: record.listenerAdds,
+              listenerRemovals: record.listenerRemovals,
+              remainingListeners: record.listenerCount(),
+              terminateCalls: record.terminateCalls,
+              emergencyTerminations: record.emergencyTerminations,
+              error: record.error,
+            })),
+            driverMetrics: driver?.metricsInternal(),
+          };
         }
       };
 

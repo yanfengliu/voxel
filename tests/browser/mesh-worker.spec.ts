@@ -30,10 +30,76 @@ interface MeshWorkerBrowserEvidence {
   readonly startupFailureTerminated: boolean;
 }
 
+interface MeshWorkerStartupCircuitCleanup {
+  readonly schedulerDisposal: {
+    readonly status: 'disposed' | 'already-disposed';
+    readonly pendingWorkerTerminations: number;
+  };
+  readonly driverDisposal: {
+    readonly status: 'disposing' | 'disposed' | 'already-disposed';
+    readonly pendingWorkerTerminations: number;
+  };
+  readonly records: readonly {
+    readonly context: {
+      readonly workerId: string;
+      readonly slotIndex: number;
+      readonly generation: number;
+    };
+    readonly constructorReturned: boolean;
+    readonly posts: number;
+    readonly listenerAdds: number;
+    readonly listenerRemovals: number;
+    readonly remainingListeners: number;
+    readonly terminateCalls: number;
+    readonly emergencyTerminations: number;
+    readonly error: {
+      readonly message: string;
+      readonly filename: string;
+      readonly defaultPrevented: boolean;
+      readonly constructorReturned: boolean;
+    };
+  }[];
+  readonly driverMetrics: {
+    readonly lifecycle: 'disposed';
+    readonly ownedWorkers: number;
+    readonly liveWorkers: number;
+    readonly queuedEvents: number;
+  };
+}
+
+interface MeshWorkerStartupCircuitEvidence {
+  readonly firstAdvance: {
+    readonly processedEvents: number;
+    readonly pumpInternal: { readonly dispatches: readonly { readonly attempt: number }[] };
+  };
+  readonly secondAdvance: {
+    readonly processedEvents: number;
+    readonly pumpInternal: { readonly dispatches: readonly unknown[] };
+  };
+  readonly terminal: {
+    readonly status: string;
+    readonly outcome?: { readonly status: string; readonly code: string };
+  };
+  readonly thirdAdvance: {
+    readonly processedEvents: number;
+    readonly pumpInternal: { readonly dispatches: readonly unknown[] };
+  };
+  readonly metrics: {
+    readonly workerStartupFailures: number;
+    readonly workerCrashes: number;
+    readonly unprovenWorkerCrashes: number;
+    readonly crashRetries: number;
+    readonly workerStartupCircuitTrips: number;
+    readonly startupCircuitOpenWorkers: number;
+  };
+}
+
 declare global {
   interface Window {
     runMeshWorkerBrowserEvidence?: () => Promise<MeshWorkerBrowserEvidence>;
+    runMeshWorkerStartupCircuitEvidence?: () => Promise<MeshWorkerStartupCircuitEvidence>;
     __meshWorkerStartupFailureTerminated?: boolean;
+    __meshWorkerStartupCircuitCleanup?: MeshWorkerStartupCircuitCleanup;
   }
 }
 
@@ -167,6 +233,98 @@ test('packed module worker transfers owned samples and returns validated geometr
     '/dist/meshing/mesh-worker-entry.js',
     STARTUP_FAILURE_PATH,
   ]));
+  expect(consoleErrors, 'console errors').toEqual([]);
+  expect(pageErrors, 'uncaught page errors').toEqual([]);
+  expect(failedRequests, 'failed browser requests').toEqual([]);
+});
+
+test('asynchronous module failures trip the bounded worker startup circuit', async ({ page }) => {
+  const consoleErrors: string[] = [];
+  const pageErrors: string[] = [];
+  const failedRequests: string[] = [];
+  const requestedPaths: string[] = [];
+  page.on('console', (message) => {
+    if (message.type() === 'error') consoleErrors.push(message.text());
+  });
+  page.on('pageerror', (error) => pageErrors.push(error.message));
+  page.on('requestfailed', (request) => failedRequests.push(
+    `${request.method()} ${request.url()}: ${request.failure()?.errorText ?? 'unknown error'}`,
+  ));
+  page.on('response', (response) => requestedPaths.push(new URL(response.url()).pathname));
+
+  if (!fixtureUrl) throw new Error('The mesh-worker browser server is not running.');
+  const navigation = await page.goto(fixtureUrl, { waitUntil: 'load' });
+  expect(navigation?.ok()).toBe(true);
+  await page.waitForFunction(
+    () => typeof window.runMeshWorkerStartupCircuitEvidence === 'function',
+  );
+  const result = await page.evaluate(async () => {
+    const run = window.runMeshWorkerStartupCircuitEvidence;
+    if (!run) throw new Error('Mesh-worker startup-circuit fixture API is unavailable.');
+    const evidence = await run();
+    const cleanup = window.__meshWorkerStartupCircuitCleanup;
+    if (!cleanup) throw new Error('Mesh-worker startup-circuit cleanup evidence is unavailable.');
+    return { evidence, cleanup };
+  });
+
+  expect(result.evidence.firstAdvance).toMatchObject({
+    processedEvents: 1,
+    pumpInternal: { dispatches: [{ attempt: 1 }] },
+  });
+  expect(result.evidence.secondAdvance).toMatchObject({
+    processedEvents: 1,
+    pumpInternal: { dispatches: [] },
+  });
+  expect(result.evidence.terminal).toMatchObject({
+    status: 'terminal',
+    outcome: { status: 'failed', code: 'worker-crash' },
+  });
+  expect(result.evidence.thirdAdvance).toMatchObject({
+    processedEvents: 0,
+    pumpInternal: { dispatches: [] },
+  });
+  expect(result.evidence.metrics).toMatchObject({
+    workerStartupFailures: 0,
+    workerCrashes: 2,
+    unprovenWorkerCrashes: 2,
+    crashRetries: 1,
+    workerStartupCircuitTrips: 1,
+    startupCircuitOpenWorkers: 1,
+  });
+  expect(result.cleanup.schedulerDisposal).toMatchObject({
+    status: 'disposed',
+    pendingWorkerTerminations: 0,
+  });
+  expect(result.cleanup.driverDisposal).toEqual({
+    status: 'disposed',
+    pendingWorkerTerminations: 0,
+  });
+  expect(result.cleanup.driverMetrics).toMatchObject({
+    lifecycle: 'disposed',
+    ownedWorkers: 0,
+    liveWorkers: 0,
+    queuedEvents: 0,
+  });
+  expect(result.cleanup.records.map((record) => record.context)).toEqual([
+    { workerId: 'browser-worker-circuit:worker:0:1', slotIndex: 0, generation: 1 },
+    { workerId: 'browser-worker-circuit:worker:0:2', slotIndex: 0, generation: 2 },
+  ]);
+  for (const record of result.cleanup.records) {
+    expect(record.constructorReturned).toBe(true);
+    expect(record.posts).toBe(1);
+    expect(record.listenerAdds).toBe(3);
+    expect(record.listenerRemovals).toBe(3);
+    expect(record.remainingListeners).toBe(0);
+    expect(record.terminateCalls).toBe(1);
+    expect(record.emergencyTerminations).toBe(0);
+    expect(record.error).toMatchObject({
+      message: expect.stringContaining('deterministic mesh worker startup failure'),
+      filename: STARTUP_FAILURE_PATH,
+      defaultPrevented: true,
+      constructorReturned: true,
+    });
+  }
+  expect(requestedPaths.filter((path) => path === STARTUP_FAILURE_PATH)).toHaveLength(2);
   expect(consoleErrors, 'console errors').toEqual([]);
   expect(pageErrors, 'uncaught page errors').toEqual([]);
   expect(failedRequests, 'failed browser requests').toEqual([]);
