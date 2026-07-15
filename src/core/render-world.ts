@@ -25,6 +25,19 @@ import {
   PresentationLedgerInternal,
   type PresentationAvailabilityInternal,
 } from './presentation-ledger.js';
+import {
+  abortPreparedCanonicalPresentationInternal,
+  finalizePreparedCanonicalPresentationInternal,
+  publishPreparedCanonicalPresentationInternal,
+} from './prepared-canonical-presentation.js';
+import type { PreparedCanonicalPresentationInternal } from './prepared-canonical-presentation.js';
+import {
+  abortActiveRenderWorldPresentationInternal,
+  markRenderWorldCanonicalPresentedInternal,
+  prepareRenderWorldCanonicalPresentationInternal,
+} from './render-world-presentation.js';
+import type { RenderWorldPresentationTransactionInternal } from './render-world-presentation.js';
+import type { PresentationMembershipInternal } from './presentation-ledger.js';
 
 export type RenderWorldLifecycle = 'active' | 'disposed';
 
@@ -32,6 +45,9 @@ interface RenderWorldState {
   accepted: CanonicalRenderStateV1 | null;
   pending: CanonicalRenderStateV1 | null;
   presented: CanonicalRenderStateV1 | null;
+  readonly canonicalMemberships: WeakMap<CanonicalRenderStateV1, PresentationMembershipInternal>;
+  activePresentationTransaction: RenderWorldPresentationTransactionInternal | null;
+  readonly finalizingPresentationTransactions: Set<RenderWorldPresentationTransactionInternal>;
   lifecycle: RenderWorldLifecycle;
   presentation: PresentationLedgerInternal;
   ownership: MutableRenderWorldOwnershipMetricsInternal;
@@ -70,10 +86,15 @@ function stateOf(world: RenderWorld): RenderWorldState {
 }
 
 function updateRetainedBytes(state: RenderWorldState): void {
+  const transactionStates = [
+    ...(state.activePresentationTransaction?.retainedStates ?? []),
+    ...[...state.finalizingPresentationTransactions].flatMap((record) => record.retainedStates),
+  ];
   const stores = [...new Set([
     state.accepted,
     state.pending,
     state.presented,
+    ...transactionStates,
   ].filter((store): store is CanonicalRenderStateV1 => store !== null))];
   state.ownership.retainedTypedArrayBytes = canonicalStatesRetainedTypedArrayBytesInternal(
     stores,
@@ -102,83 +123,32 @@ function recordDeltaCopyMetrics(
   state.ownership.deltaCopyOperations += metrics.copyOperations;
 }
 
-function rollbackPresentedStateIfUnchanged(
-  state: RenderWorldState,
-  rendered: CanonicalRenderStateV1,
-  previousPresented: CanonicalRenderStateV1 | null,
-): void {
-  if (
-    state.lifecycle === 'active'
-    && state.presented === rendered
-    && state.pending === null
-    && state.accepted === rendered
-  ) {
-    state.presented = previousPresented;
-    state.pending = rendered;
-    updateRetainedBytes(state);
-  }
-}
-
 function markCanonicalPresented(
   state: RenderWorldState,
   rendered: CanonicalRenderStateV1,
 ): boolean {
-  if (state.lifecycle === 'disposed' || state.pending !== rendered) return false;
-  const previousPresented = state.presented;
-  state.presented = rendered;
-  state.pending = null;
-  updateRetainedBytes(state);
-  const marked = state.presentation.markPresented({
-    revision: rendered.revision,
-    epoch: rendered.epoch,
-    worldId: rendered.worldId,
-  });
-  if (marked) return true;
-
-  // A failed ledger transition has no waiter callbacks. Roll back only if no
-  // other synchronous action changed the exact optimistic state.
-  rollbackPresentedStateIfUnchanged(state, rendered, previousPresented);
-  return false;
-}
-
-function isRenderWorldActiveAfterCallbacks(state: RenderWorldState): boolean {
-  return state.lifecycle === 'active';
+  return markRenderWorldCanonicalPresentedInternal(
+    state,
+    rendered,
+    true,
+    () => updateRetainedBytes(state),
+  );
 }
 
 function markPreparedCanonicalPresented(
   state: RenderWorldState,
   rendered: CanonicalRenderStateV1,
 ): boolean {
-  const accepted = state.accepted;
-  if (
-    state.lifecycle === 'disposed'
-    || accepted?.worldId !== rendered.worldId
-    || accepted.epoch !== rendered.epoch
-    || rendered.revision > accepted.revision
-  ) return false;
-  const previousPresented = state.presented;
-  const previousPending = state.pending;
-  state.presented = rendered;
-  if (previousPending === rendered) state.pending = null;
-  updateRetainedBytes(state);
-  const marked = state.presentation.markPresented({
-    revision: rendered.revision,
-    epoch: rendered.epoch,
-    worldId: rendered.worldId,
-  });
-  if (marked) return true;
+  return markRenderWorldCanonicalPresentedInternal(
+    state,
+    rendered,
+    false,
+    () => updateRetainedBytes(state),
+  );
+}
 
-  if (
-    isRenderWorldActiveAfterCallbacks(state)
-    && state.accepted === accepted
-    && state.presented === rendered
-    && state.pending === (previousPending === rendered ? null : previousPending)
-  ) {
-    state.presented = previousPresented;
-    state.pending = previousPending;
-    updateRetainedBytes(state);
-  }
-  return false;
+function isRenderWorldActiveAfterCallbacks(state: RenderWorldState): boolean {
+  return state.lifecycle === 'active';
 }
 
 export class RenderWorld {
@@ -187,6 +157,9 @@ export class RenderWorld {
       accepted: null,
       pending: null,
       presented: null,
+      canonicalMemberships: new WeakMap(),
+      activePresentationTransaction: null,
+      finalizingPresentationTransactions: new Set(),
       lifecycle: 'active',
       presentation: new PresentationLedgerInternal(),
       ownership: {
@@ -307,6 +280,7 @@ export class RenderWorld {
   dispose(): void {
     const state = stateOf(this);
     if (state.lifecycle === 'disposed') return;
+    abortActiveRenderWorldPresentationInternal(state);
     state.lifecycle = 'disposed';
     state.accepted = null;
     state.pending = null;
@@ -574,6 +548,7 @@ export function commitPreparedSnapshotIntoRenderWorld(
     };
   }
   CONSUMED_PREPARED_RENDER_SNAPSHOTS_INTERNAL.add(preparedObject);
+  abortActiveRenderWorldPresentationInternal(state);
   state.accepted = preparedState.candidate;
   state.pending = preparedState.candidate;
   // Publish the candidate's retained ownership before the ledger settles old
@@ -581,7 +556,11 @@ export function commitPreparedSnapshotIntoRenderWorld(
   // code from removeEventListener, so callbacks must observe a self-consistent
   // accepted state and ownership snapshot.
   updateRetainedBytes(state);
-  state.presentation.accept(preparedState.target, preparedState.maxPresentationWaiters);
+  state.presentation.accept(
+    preparedState.target,
+    preparedState.maxPresentationWaiters,
+    (membership) => { state.canonicalMemberships.set(preparedState.candidate, membership); },
+  );
   if (!isRenderWorldActiveAfterCallbacks(state)) {
     return {
       status: 'rejected',
@@ -620,6 +599,43 @@ export function presentedCanonicalStateForPresentationInternal(
   world: RenderWorld,
 ): CanonicalRenderStateV1 | null {
   return stateOf(world).presented;
+}
+
+/** Package-internal reversible publication ticket for a rendered canonical state. */
+export function prepareCanonicalPresentationInternal(
+  world: RenderWorld,
+  rendered: CanonicalRenderStateV1,
+): PreparedCanonicalPresentationInternal | null {
+  const state = stateOf(world);
+  return prepareRenderWorldCanonicalPresentationInternal(
+    state,
+    rendered,
+    false,
+    () => updateRetainedBytes(state),
+  );
+}
+
+export function publishCanonicalPresentationInternal(
+  ticket: PreparedCanonicalPresentationInternal,
+): boolean {
+  return publishPreparedCanonicalPresentationInternal(ticket);
+}
+
+export function abortCanonicalPresentationInternal(
+  ticket: PreparedCanonicalPresentationInternal,
+): void {
+  abortPreparedCanonicalPresentationInternal(ticket);
+}
+
+/**
+ * Returns true once the ledger commit is irrevocable. Waiter callbacks run
+ * before return and may dispose, lose, or supersede the world; those outcomes
+ * cannot make an already-delivered ready result rollback-safe.
+ */
+export function finalizeCanonicalPresentationInternal(
+  ticket: PreparedCanonicalPresentationInternal,
+): boolean {
+  return finalizePreparedCanonicalPresentationInternal(ticket);
 }
 
 /**
@@ -702,7 +718,6 @@ export function commitPreparedDeltaIntoRenderWorld(
     || changes.batchPuts.length > 0
     || changes.batchPatches.length > 0
     || changes.batchRemovals.length > 0;
-  const baseWasPresented = state.presented === prepared.base;
   const target = {
     worldId: prepared.candidate.worldId,
     epoch: prepared.candidate.epoch,
@@ -716,12 +731,15 @@ export function commitPreparedDeltaIntoRenderWorld(
       message: 'Accepted revisions have exceeded the bounded presentation backlog.',
     };
   }
+  abortActiveRenderWorldPresentationInternal(state);
+  const baseWasPresented = state.presented === prepared.base;
   state.accepted = prepared.candidate;
   state.pending = prepared.candidate;
   state.presentation.accept(
     target,
     prepared.candidate.descriptorViewInternal().transactionLimits?.maxPresentationWaiters
       ?? DEFAULT_RENDER_TRANSACTION_LIMITS_V1.maxPresentationWaiters,
+    (membership) => { state.canonicalMemberships.set(prepared.candidate, membership); },
   );
   if (
     !hasVisualChanges

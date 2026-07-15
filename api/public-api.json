@@ -82,8 +82,16 @@
         "./three"
       ]
     },
+    "dist/core/prepared-canonical-presentation.d.ts": {
+      "sha256": "161e5e13715026f7cfae64c2403074e3e23ec60d581f0ec1527314cedf600f41",
+      "reachableFrom": [
+        "./core",
+        "./testing",
+        "./three"
+      ]
+    },
     "dist/core/presentation-ledger.d.ts": {
-      "sha256": "8282387dfd2fb3f5a01e6cd1039884afda44855ad5f5d046c5e77917f762af7b",
+      "sha256": "aff5d5bd30cd7c0733eae55343c1e5784921d08d0f8bd5a2a3ac4bcd487b757e",
       "reachableFrom": [
         "./core",
         "./testing",
@@ -91,7 +99,7 @@
       ]
     },
     "dist/core/render-world.d.ts": {
-      "sha256": "a7666a1afc67eef90eca0fd07c486e6da9e736a7df66cff2fde6c4dbc335d382",
+      "sha256": "462ecee85fea1ec2f70d6e0754ce8789cf92a2c7d97c6430b1260e9a94a3d0af",
       "reachableFrom": [
         "./core",
         "./testing",

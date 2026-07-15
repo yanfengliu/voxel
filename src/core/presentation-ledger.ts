@@ -24,6 +24,10 @@ interface PresentationWaiterSettlementInternal {
   readonly result: PresentationReadinessV1;
 }
 
+export interface PresentationMembershipInternal {
+  readonly target: RenderRevisionRefV1;
+}
+
 /**
  * Retains enough exact recent membership for the largest legal waiter cohort.
  * Older unpinned revisions may be forgotten only after a complete later
@@ -92,6 +96,7 @@ function asError(reason: unknown, message: string): Error {
 export class PresentationLedgerInternal {
   private accepted: RenderRevisionRefV1 | null = null;
   private acceptedOrdinals = new Map<number, number>();
+  private acceptedMemberships = new Map<number, PresentationMembershipInternal>();
   private nextAcceptedOrdinal = 0;
   private completedRetainedCount = 0;
   private presentedThroughRevision: number | null = null;
@@ -110,7 +115,11 @@ export class PresentationLedgerInternal {
     return unpresentedCount < MAX_PRESENTATION_REVISION_HISTORY_INTERNAL;
   }
 
-  accept(targetValue: RenderRevisionRefV1, maxWaiters: number): void {
+  accept(
+    targetValue: RenderRevisionRefV1,
+    maxWaiters: number,
+    onAccepted?: (membership: PresentationMembershipInternal) => void,
+  ): PresentationMembershipInternal {
     const target = revisionRef(targetValue);
     if (!this.canAccept(target)) {
       throw new RangeError('Presentation backlog has reached its hard limit.');
@@ -120,6 +129,7 @@ export class PresentationLedgerInternal {
     if (previous !== null && !sameChain(previous, target)) {
       settlements = this.detachAllUnavailable('epoch-replaced');
       this.acceptedOrdinals = new Map<number, number>();
+      this.acceptedMemberships = new Map<number, PresentationMembershipInternal>();
       this.nextAcceptedOrdinal = 0;
       this.completedRetainedCount = 0;
       this.presentedThroughRevision = null;
@@ -127,26 +137,29 @@ export class PresentationLedgerInternal {
     }
     this.accepted = target;
     this.acceptedOrdinals.set(target.revision, this.nextAcceptedOrdinal++);
+    const membership = Object.freeze({ target });
+    this.acceptedMemberships.set(target.revision, membership);
     this.maxWaiters = maxWaiters;
     this.pruneHistory();
+    onAccepted?.(membership);
     this.resolveSettlements(settlements);
+    return membership;
   }
 
-  markPresented(targetValue: RenderRevisionRefV1): boolean {
-    const target = revisionRef(targetValue);
-    if (
-      this.disposed
-      || this.availability !== 'available'
-      || this.accepted === null
-      || !sameChain(this.accepted, target)
-      || !this.acceptedOrdinals.has(target.revision)
-    ) return false;
+  canMarkPresented(
+    targetValue: RenderRevisionRefV1,
+    membership?: PresentationMembershipInternal,
+  ): boolean {
+    return this.canMarkPresentedTarget(revisionRef(targetValue), membership);
+  }
 
+  markPresented(
+    targetValue: RenderRevisionRefV1,
+    membership?: PresentationMembershipInternal,
+  ): boolean {
+    const target = revisionRef(targetValue);
+    if (!this.canMarkPresentedTarget(target, membership)) return false;
     const targetOrdinal = this.acceptedOrdinals.get(target.revision)!;
-    if (
-      this.presentedThroughOrdinal !== null
-      && targetOrdinal < this.presentedThroughOrdinal
-    ) return false;
     const previousOrdinal = this.presentedThroughOrdinal ?? -1;
     this.completedRetainedCount += targetOrdinal - previousOrdinal;
     this.presentedThroughRevision = target.revision;
@@ -276,6 +289,7 @@ export class PresentationLedgerInternal {
     const settlements = this.detachAllUnavailable('disposed');
     this.accepted = null;
     this.acceptedOrdinals.clear();
+    this.acceptedMemberships.clear();
     this.completedRetainedCount = 0;
     this.presentedThroughRevision = null;
     this.presentedThroughOrdinal = null;
@@ -288,6 +302,22 @@ export class PresentationLedgerInternal {
 
   get revisionHistoryCount(): number {
     return this.acceptedOrdinals.size;
+  }
+
+  private canMarkPresentedTarget(
+    target: RenderRevisionRefV1,
+    membership?: PresentationMembershipInternal,
+  ): boolean {
+    if (
+      this.disposed
+      || this.availability !== 'available'
+      || this.accepted === null
+      || !sameChain(this.accepted, target)
+      || !this.acceptedOrdinals.has(target.revision)
+    ) return false;
+    if (membership && this.acceptedMemberships.get(target.revision) !== membership) return false;
+    const targetOrdinal = this.acceptedOrdinals.get(target.revision)!;
+    return this.presentedThroughOrdinal === null || targetOrdinal >= this.presentedThroughOrdinal;
   }
 
   private presentedThrough(): RenderRevisionRefV1 | null {
@@ -383,6 +413,7 @@ export class PresentationLedgerInternal {
       if (this.presentedThroughOrdinal === null || ordinal > this.presentedThroughOrdinal) continue;
       if (!pinned.has(revision)) {
         this.acceptedOrdinals.delete(revision);
+        this.acceptedMemberships.delete(revision);
         this.completedRetainedCount -= 1;
       }
     }
