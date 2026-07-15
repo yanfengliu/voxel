@@ -6,6 +6,7 @@ import {
   type MeshSchedulerConfigV1,
   type MeshSchedulerWorkerContextV1,
 } from '../meshing/index.js';
+import { CommittedPresentedQueryAuthorityInternal } from './committedPresentedQueryAuthority.js';
 import type { ProfiledWorkerTargetLimitsInternal } from './profiledWorkerTargetPlan.js';
 import { RevisionAtomicPresentationStagerInternal } from './revisionAtomicStaging.js';
 import { RuntimeAtomicPipelineInternal } from './runtimeAtomicPipeline.js';
@@ -38,6 +39,7 @@ export interface ThreeRuntimeVoxelWorkersOptionsInternal {
 export interface RuntimeAtomicSetupInternal {
   readonly pipeline: RuntimeAtomicPipelineInternal;
   readonly driver: RuntimeMeshWorkerDriverInternal;
+  readonly queries: CommittedPresentedQueryAuthorityInternal;
   readonly root: Group;
 }
 
@@ -110,7 +112,12 @@ export function createRuntimeAtomicSetupInternal(
     });
     driver.bindInternal(pipeline);
     scene.add(root);
-    return Object.freeze({ pipeline, driver, root });
+    return Object.freeze({
+      pipeline,
+      driver,
+      queries: new CommittedPresentedQueryAuthorityInternal(),
+      root,
+    });
   } catch (error) {
     const cleanup: unknown[] = [];
     try { driver.disposeInternal(); } catch (caught) { cleanup.push(caught); }
@@ -142,6 +149,8 @@ export function disposeRuntimeAtomicSetupInternal(
 ): void {
   const errors: unknown[] = [];
   try { setup.driver.disposeInternal(); } catch (error) { errors.push(error); }
+  // Query snapshots retire before the scene bundles whose meshes they read.
+  try { setup.queries.dispose(); } catch (error) { errors.push(error); }
   try { setup.pipeline.disposeInternal(); } catch (error) { errors.push(error); }
   try { scene.remove(setup.root); } catch (error) { errors.push(error); }
   if (errors.length > 0) {

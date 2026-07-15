@@ -197,6 +197,71 @@ describe('ThreeRenderRuntime atomic voxel pipeline', () => {
     runtime.dispose();
   });
 
+  it('picks the committed frame and never an accepted-but-unpresented revision', () => {
+    const { runtime } = createAtomicRuntime();
+    const downwardRay = {
+      origin: { x: 0.5, y: 5, z: 0.5 },
+      direction: { x: 0, y: -1, z: 0 },
+      maxDistance: 20,
+      maxHits: 4,
+      maxWork: { voxelSteps: 64, instanceCandidates: 16, instancePrimitiveTests: 16 },
+    };
+
+    // Before any frame there is no committed frame to query.
+    expect(runtime.acceptSnapshot(profiledSnapshot(1)).status).toBe('accepted');
+    expect(runtime.pickPresented(downwardRay)).toEqual({
+      status: 'unavailable',
+      reason: 'no-presented-frame',
+    });
+
+    const next = frameUntilPresented(runtime, 1, 0);
+    const presented = runtime.pickPresented(downwardRay);
+    expect(presented).toMatchObject({ status: 'hits' });
+    if (presented.status !== 'hits') throw new Error('Expected committed hits.');
+    expect(presented.hits.length).toBe(1);
+    expect(presented.hits[0]).toMatchObject({
+      lane: 'voxel',
+      presentedRevision: 1,
+      chunk: { key: 'chunk:0', revision: 1 },
+    });
+
+    // Accepting a revision that deletes the voxel must not change picking
+    // until that revision is actually drawn.
+    const emptied = profiledSnapshot(2, [2]);
+    emptied.chunks[0] = {
+      ...emptied.chunks[0]!,
+      voxels: new Uint16Array(emptied.chunks[0]!.voxels.length),
+    };
+    expect(runtime.acceptSnapshot(emptied).status).toBe('accepted');
+    const stillOld = runtime.pickPresented(downwardRay);
+    expect(stillOld).toMatchObject({ status: 'hits' });
+    if (stillOld.status !== 'hits') throw new Error('Expected retained hits.');
+    expect(stillOld.hits[0]).toMatchObject({ presentedRevision: 1 });
+
+    // After the emptied revision presents, the same ray misses.
+    frameUntilPresented(runtime, 2, next);
+    expect(runtime.pickPresented(downwardRay)).toMatchObject({ status: 'hits', hits: [] });
+
+    runtime.dispose();
+    expect(runtime.pickPresented(downwardRay)).toEqual({
+      status: 'unavailable',
+      reason: 'disposed',
+    });
+  });
+
+  it('reports no committed frame for runtimes without the voxel pipeline', () => {
+    const renderer = new FakeRenderer();
+    const runtime = new ThreeRenderRuntime({ renderer, width: 320, height: 200 });
+    expect(runtime.pickPresented({
+      origin: { x: 0, y: 5, z: 0 },
+      direction: { x: 0, y: -1, z: 0 },
+      maxDistance: 10,
+      maxHits: 1,
+      maxWork: { voxelSteps: 8, instanceCandidates: 8, instancePrimitiveTests: 8 },
+    })).toEqual({ status: 'unavailable', reason: 'no-presented-frame' });
+    runtime.dispose();
+  });
+
   it('rejects embedded hosts until the atomic frame-ticket path exists', () => {
     const pool = new ManualWorkerPoolInternal();
     const renderer = new FakeRenderer();

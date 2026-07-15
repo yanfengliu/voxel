@@ -5,8 +5,10 @@ import {
   prepareCanonicalPresentationInternal,
   presentedCanonicalStateForPresentationInternal,
 } from '../core/render-world.js';
+import type { PreparedPresentedPickCandidateInternal } from './committedPresentedPickSnapshot.js';
 import type { ThreeFrameContext, ThreePresentedManifestV1 } from './hostFrameProtocol.js';
 import { RevisionAtomicFrameCommitInternal } from './revisionAtomicFrameCommit.js';
+import { prepareRuntimeCommittedPickCandidateInternal } from './runtimeCommittedPick.js';
 import type { RevisionAtomicPresentationLeaseInternal } from './revisionAtomicStaging.js';
 import type { RevisionAtomicPresentationTargetInternal } from './revisionAtomicStagingTypes.js';
 import type { RevisionAtomicAdmissionReservationHandleInternal } from './revisionAtomicTargetCoordinatorTypes.js';
@@ -350,9 +352,36 @@ export class RuntimeAtomicFrameCoordinatorInternal {
       }
       throw error;
     }
+    // The committed query candidate can only exist after the draw, because its
+    // manifest pins the exact frame that was rendered. Building it here keeps
+    // public queries reading the same revision the canvas shows.
+    let candidate: PreparedPresentedPickCandidateInternal;
+    try {
+      candidate = prepareRuntimeCommittedPickCandidateInternal(
+        pending,
+        lease.bundleInternal,
+        manifest,
+      );
+    } catch (error) {
+      rollbackCounters();
+      const cleanup: unknown[] = [];
+      try {
+        frameCommit.abortInternal();
+      } catch (caught) {
+        cleanup.push(caught);
+      }
+      cleanup.push(...this.settleLeaseInternal(lease));
+      if (this.ops.isRunningAttempt(generation)) {
+        this.ops.transitionToFailed('commit', combineAtomicFrameErrors(error, cleanup));
+      }
+      throw error;
+    }
     let outcome;
     try {
-      outcome = frameCommit.commitInternal();
+      outcome = frameCommit.commitInternal({
+        authority: this.setup.queries,
+        candidate,
+      });
     } catch (error) {
       const cleanup = this.settleLeaseInternal(lease);
       if (frameCommit.phaseInternal === 'committed') {

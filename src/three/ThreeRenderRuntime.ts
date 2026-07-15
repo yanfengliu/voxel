@@ -45,6 +45,8 @@ import {
   requireDimensionInternal,
 } from './runtimeInputValidation.js';
 import { validateThreePresentationInternal } from './presentationValidation.js';
+import { pickCommittedPresentedRayForLifecycleInternal } from './committedPresentedPickSnapshot.js';
+import type { PickPresentedResultV1, PickQueryV1 } from './pickingContracts.js';
 import type { RendererLike } from './rendererTypes.js';
 import {
   EMPTY_RENDER_INFO_INTERNAL,
@@ -397,6 +399,19 @@ export class ThreeRenderRuntime {
     options?: { readonly signal?: PresentationAbortSignalV1 },
   ): Promise<PresentationReadinessV1> {
     return this.world.awaitPresented(target, options);
+  }
+  /**
+   * Queries the exact frame the canvas last presented. The result reads only
+   * committed state: never accepted-but-unpresented revisions, pending edits,
+   * the mutable camera, or live presenter objects. Runtimes without the voxel
+   * worker pipeline report `no-presented-frame`.
+   */
+  pickPresented(query: PickQueryV1): PickPresentedResultV1 {
+    return pickCommittedPresentedRayForLifecycleInternal(
+      this.atomic?.queries.currentInternal ?? null,
+      this.lifecycleState,
+      query,
+    );
   }
   runtimeStatus(): ThreeRuntimeStatusV1 {
     if (this.lifecycleState === 'failed') {
