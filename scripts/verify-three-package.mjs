@@ -1,7 +1,7 @@
 import { spawn } from 'node:child_process';
-import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
+import { cp, mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { delimiter, dirname, join, resolve as resolvePath } from 'node:path';
+import { basename, delimiter, dirname, join, resolve as resolvePath } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const LOG_PREFIX = '[three-package]';
@@ -179,11 +179,48 @@ function parseDependencyTree(stdout) {
   }
 }
 
-async function packPackage(packageRoot, packDirectory, npmEnvironment, description) {
+// npm runs `prepare`/`prepack` when packing a local directory even with
+// `--ignore-scripts` (npm 10.x directory-pack behavior). Some of Three.js's
+// transitive dependencies (@tweenjs/tween.js, fflate) carry such scripts that
+// rebuild from source and fail in this consumer environment. We only need their
+// already-built published files, so pack a sanitized copy with scripts removed.
+const PACK_LIFECYCLE_SCRIPTS = Object.freeze(['prepare', 'prepack']);
+
+async function hasPackLifecycleScript(packageRoot) {
+  const manifest = JSON.parse(await readFile(join(packageRoot, 'package.json'), 'utf8'));
+  const scripts = manifest.scripts;
+  if (!scripts || typeof scripts !== 'object') {
+    return false;
+  }
+  return PACK_LIFECYCLE_SCRIPTS.some(
+    (name) => typeof scripts[name] === 'string' && scripts[name].length > 0,
+  );
+}
+
+async function stageWithoutLifecycleScripts(packageRoot, stagingRoot) {
+  const stagingDirectory = await mkdtemp(join(stagingRoot, 'pkg-'));
+  await cp(packageRoot, stagingDirectory, {
+    recursive: true,
+    filter: (source) => {
+      const base = basename(source);
+      return base !== 'node_modules' && base !== '.git';
+    },
+  });
+  const manifestPath = join(stagingDirectory, 'package.json');
+  const manifest = JSON.parse(await readFile(manifestPath, 'utf8'));
+  delete manifest.scripts;
+  await writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
+  return stagingDirectory;
+}
+
+async function packPackage(packageRoot, packDirectory, npmEnvironment, description, stagingRoot) {
+  const sourceRoot = (await hasPackLifecycleScript(packageRoot))
+    ? await stageWithoutLifecycleScripts(packageRoot, stagingRoot)
+    : packageRoot;
   const result = await runNpm(
     [
       'pack',
-      packageRoot,
+      sourceRoot,
       '--json',
       '--ignore-scripts',
       '--no-audit',
@@ -201,6 +238,7 @@ async function packPackage(packageRoot, packDirectory, npmEnvironment, descripti
 
 async function verifyThreePackage(temporaryRoot) {
   const packDirectory = join(temporaryRoot, 'pack');
+  const stagingDirectory = join(temporaryRoot, 'stage');
   const consumerDirectory = join(temporaryRoot, 'consumer');
   const npmCacheDirectory = join(temporaryRoot, 'npm-cache');
   const npmEnvironment = {
@@ -208,6 +246,7 @@ async function verifyThreePackage(temporaryRoot) {
     npm_config_cache: npmCacheDirectory,
   };
   await mkdir(packDirectory);
+  await mkdir(stagingDirectory);
   await mkdir(consumerDirectory);
   await mkdir(npmCacheDirectory);
 
@@ -216,18 +255,21 @@ async function verifyThreePackage(temporaryRoot) {
     packDirectory,
     npmEnvironment,
     'voxel',
+    stagingDirectory,
   );
   const threeTarballPath = await packPackage(
     THREE_PACKAGE_ROOT,
     packDirectory,
     npmEnvironment,
     'Three.js',
+    stagingDirectory,
   );
   const threeTypesTarballPath = await packPackage(
     THREE_TYPES_PACKAGE_ROOT,
     packDirectory,
     npmEnvironment,
     'Three.js declarations',
+    stagingDirectory,
   );
   const threeTypesDependencyTarballs = [];
   for (const [description, packageRoot] of THREE_TYPES_DEPENDENCY_ROOTS) {
@@ -236,6 +278,7 @@ async function verifyThreePackage(temporaryRoot) {
       packDirectory,
       npmEnvironment,
       description,
+      stagingDirectory,
     ));
   }
 
