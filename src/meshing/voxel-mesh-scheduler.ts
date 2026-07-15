@@ -12,13 +12,17 @@ import type {
   MeshSchedulerEpochReplacementResultV1,
   MeshSchedulerGroupV1,
   MeshSchedulerMetricsV1,
+  MeshSchedulerPreflightTargetResultV1,
   MeshSchedulerPreparedGroupV1,
   MeshSchedulerPumpResultV1,
   MeshSchedulerReceiveResultV1,
   MeshSchedulerRequestAllocatorV1,
   MeshSchedulerWorkerFactoryV1,
 } from './voxel-mesh-scheduler-contract.js';
-import { enqueueMeshSchedulerTargetV1Internal } from './voxel-mesh-scheduler-admission.js';
+import {
+  enqueueMeshSchedulerTargetV1Internal,
+  preflightMeshSchedulerTargetV1Internal,
+} from './voxel-mesh-scheduler-admission.js';
 import { commitMeshSchedulerGroupV1Internal, completeMeshSchedulerGroupV1Internal } from './voxel-mesh-scheduler-completion.js';
 import { crashMeshSchedulerWorkerV1Internal } from './voxel-mesh-scheduler-crash.js';
 import {
@@ -128,6 +132,45 @@ export class VoxelMeshSchedulerV1 {
         logicalTick,
         true,
       );
+    });
+  }
+
+  /** Validates same-epoch target admission without mutating admission state. */
+  preflightTarget(
+    groups: readonly MeshSchedulerGroupV1[],
+    logicalTick: number,
+  ): MeshSchedulerPreflightTargetResultV1 {
+    return this.#preflight(groups, logicalTick, false);
+  }
+
+  /** Validates epoch-replacing target admission without cancelling prior work. */
+  preflightReplacingEpochTarget(
+    groups: readonly MeshSchedulerGroupV1[],
+    logicalTick: number,
+  ): MeshSchedulerPreflightTargetResultV1 {
+    return this.#preflight(groups, logicalTick, true);
+  }
+
+  #preflight(
+    groups: readonly MeshSchedulerGroupV1[],
+    logicalTick: number,
+    replaceEpoch: boolean,
+  ): MeshSchedulerPreflightTargetResultV1 {
+    return this.#operate(() => {
+      this.#state.tick(logicalTick);
+      const result = preflightMeshSchedulerTargetV1Internal(
+        this.#state,
+        groups,
+        replaceEpoch,
+      );
+      if (result.status !== 'admissible') return result;
+      return Object.freeze({
+        status: 'admissible',
+        coalescedGroups: Object.freeze(
+          result.plan.orderedCoalesced.map((group) => group.groupId),
+        ),
+        replacesEpoch: result.plan.replacesEpoch,
+      });
     });
   }
 

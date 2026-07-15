@@ -172,7 +172,7 @@
       ]
     },
     "dist/meshing/index.d.ts": {
-      "sha256": "c38950bb08a22735573848e7bdb25f1df235555d1981e722a0b0815212e27988",
+      "sha256": "e488df809359a7973d1dde1af9041d5b14da983ec1b9d09a9cfc50656ba7a4c5",
       "reachableFrom": [
         "./meshing",
         "./three"
@@ -257,14 +257,14 @@
       ]
     },
     "dist/meshing/voxel-mesh-scheduler-contract.d.ts": {
-      "sha256": "1095a4e696eb8f2c94eeec200d54176d2fbafc1f73b13452d519baca9c4c8173",
+      "sha256": "9491ff15f3b5e7a17702d2a604a3e60235c4117090f8d610039f2fe221148756",
       "reachableFrom": [
         "./meshing",
         "./three"
       ]
     },
     "dist/meshing/voxel-mesh-scheduler.d.ts": {
-      "sha256": "7511e98db0a6b1cc31fff33f02ceae01cec81712b193f805010a556a784cab0c",
+      "sha256": "cfc6b3b12606f9fa52e44a9b1c9309bba9e1b20136a49e645ddad78e7ca9a66d",
       "reachableFrom": [
         "./meshing",
         "./three"

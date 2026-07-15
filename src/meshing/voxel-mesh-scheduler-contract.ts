@@ -192,6 +192,29 @@ export type MeshSchedulerEnqueueTargetResultV1 =
     }
   | { readonly status: 'disposed' };
 
+/**
+ * Nonmutating admission verdict for one complete target. An `admissible`
+ * verdict is a reservation-grade prediction, not an admission: it stays
+ * truthful only until scheduler state next changes, so activation must still
+ * run the real preflighted enqueue and honor its result.
+ */
+export type MeshSchedulerPreflightTargetResultV1 =
+  | {
+      readonly status: 'admissible';
+      readonly coalescedGroups: readonly string[];
+      readonly replacesEpoch: boolean;
+    }
+  | { readonly status: 'duplicate'; readonly groupId: string }
+  | {
+      readonly status: 'rejected';
+      readonly reason:
+        | 'stale-target'
+        | 'queue-jobs-budget'
+        | 'queue-bytes-budget'
+        | 'staging-budget';
+    }
+  | { readonly status: 'disposed' };
+
 export interface MeshSchedulerPumpResultV1 {
   readonly status: 'active' | 'disposed';
   readonly dispatches: readonly MeshSchedulerDispatchV1[];

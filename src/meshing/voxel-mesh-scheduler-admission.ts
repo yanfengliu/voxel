@@ -25,6 +25,21 @@ interface NormalizedGroupAdmissionInternal {
   readonly peakStagingBytes: number;
 }
 
+/** Everything a validated admission needs to mutate scheduler state. */
+interface MeshSchedulerTargetAdmissionPlanInternal {
+  readonly first: NormalizedMeshSchedulerJobV1['eligibility'];
+  readonly normalized: readonly NormalizedGroupAdmissionInternal[];
+  readonly conflictCount: number;
+  readonly orderedCoalesced: readonly MeshSchedulerGroupRecordInternal[];
+  readonly replacesEpoch: boolean;
+  readonly targetKey: string;
+  readonly latestTarget: number | undefined;
+}
+
+export type MeshSchedulerTargetPreflightInternal =
+  | { readonly status: 'admissible'; readonly plan: MeshSchedulerTargetAdmissionPlanInternal }
+  | Exclude<MeshSchedulerEnqueueTargetResultV1, { status: 'accepted' }>;
+
 function checkedSum(values: readonly number[], name: string): number {
   let total = 0;
   for (const value of values) {
@@ -54,17 +69,21 @@ function queuedBudgetRemovedByGroups(
 
 function rejected(
   reason: Extract<MeshSchedulerEnqueueTargetResultV1, { status: 'rejected' }>['reason'],
-): MeshSchedulerEnqueueTargetResultV1 {
+): Extract<MeshSchedulerEnqueueTargetResultV1, { status: 'rejected' }> {
   return Object.freeze({ status: 'rejected', reason });
 }
 
-/** Preflights a complete target before making its first target-state mutation. */
-export function enqueueMeshSchedulerTargetV1Internal(
+/**
+ * Validates a complete target without mutating any admission state. The
+ * returned plan stays valid only while scheduler state is unchanged, so
+ * callers either apply it in the same synchronous operation or use the
+ * verdict as a reservation and revalidate at activation.
+ */
+export function preflightMeshSchedulerTargetV1Internal(
   state: MeshSchedulerStateInternal,
   groups: readonly MeshSchedulerGroupV1[],
-  logicalTick: number,
   replaceEpoch = false,
-): MeshSchedulerEnqueueTargetResultV1 {
+): MeshSchedulerTargetPreflightInternal {
   if (groups.length === 0) {
     throw new RangeError('A scheduler target must contain at least one group.');
   }
@@ -188,6 +207,31 @@ export function enqueueMeshSchedulerTargetV1Internal(
   const orderedCoalesced = [...coalescedGroups].sort(
     (left, right) => left.groupId < right.groupId ? -1 : left.groupId > right.groupId ? 1 : 0,
   );
+  return Object.freeze({
+    status: 'admissible',
+    plan: Object.freeze({
+      first,
+      normalized: Object.freeze(normalized),
+      conflictCount: conflicts.size,
+      orderedCoalesced: Object.freeze(orderedCoalesced),
+      replacesEpoch,
+      targetKey,
+      latestTarget,
+    }),
+  });
+}
+
+/** Preflights a complete target before making its first target-state mutation. */
+export function enqueueMeshSchedulerTargetV1Internal(
+  state: MeshSchedulerStateInternal,
+  groups: readonly MeshSchedulerGroupV1[],
+  logicalTick: number,
+  replaceEpoch = false,
+): MeshSchedulerEnqueueTargetResultV1 {
+  const preflight = preflightMeshSchedulerTargetV1Internal(state, groups, replaceEpoch);
+  if (preflight.status !== 'admissible') return preflight;
+  const { first, normalized, conflictCount, orderedCoalesced, replacesEpoch, targetKey, latestTarget } =
+    preflight.plan;
   if (replacesEpoch) {
     replaceMeshSchedulerEpochV1Internal(
       state,
@@ -199,7 +243,7 @@ export function enqueueMeshSchedulerTargetV1Internal(
   for (const priorGroup of orderedCoalesced) {
     failMeshSchedulerGroupV1Internal(state, priorGroup, 'superseded', logicalTick);
   }
-  incrementMeshSchedulerMetricInternal(state.metrics, 'coalescedJobs', conflicts.size);
+  incrementMeshSchedulerMetricInternal(state.metrics, 'coalescedJobs', conflictCount);
 
   const admitted = normalized.map((group) => {
     const jobs: MeshSchedulerJobRecordInternal[] = group.jobs.map((job) => ({

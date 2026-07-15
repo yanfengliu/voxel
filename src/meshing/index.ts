@@ -178,6 +178,7 @@ export {
   type MeshSchedulerGroupV1,
   type MeshSchedulerJobV1,
   type MeshSchedulerMetricsV1,
+  type MeshSchedulerPreflightTargetResultV1,
   type MeshSchedulerPreparedGroupV1,
   type MeshSchedulerPreparedOutputV1,
   type MeshSchedulerPriorityClassV1,

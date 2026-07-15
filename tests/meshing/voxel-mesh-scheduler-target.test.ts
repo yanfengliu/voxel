@@ -284,4 +284,102 @@ describe('VoxelMeshSchedulerV1 atomic target admission', () => {
     expect(harness.scheduler.getMetrics().queuedJobs).toBe(0);
     harness.scheduler.dispose(1);
   });
+
+  it('preflights an admissible target without mutating admission state', () => {
+    const harness = createSchedulerHarness({
+      ...SCHEDULER_TEST_CONFIG,
+      workerCount: 2,
+    });
+    const groups = [
+      schedulerGroup('preflight:g0', 2, [{ coordinateX: 0 }]),
+      schedulerGroup('preflight:g1', 2, [{ coordinateX: 1 }]),
+    ];
+
+    const preflight = harness.scheduler.preflightTarget(groups, 0);
+    expect(preflight).toEqual({
+      status: 'admissible',
+      coalescedGroups: [],
+      replacesEpoch: false,
+    });
+    expect(Object.isFrozen(preflight)).toBe(true);
+    expect(harness.scheduler.getMetrics()).toMatchObject({
+      queuedJobs: 0,
+      queuedBytes: 0,
+      coalescedJobs: 0,
+    });
+
+    // A repeated preflight is idempotent, and the real admission afterwards
+    // behaves exactly as if no preflight had run.
+    expect(harness.scheduler.preflightTarget(groups, 1)).toMatchObject({
+      status: 'admissible',
+    });
+    expect(harness.scheduler.enqueueTarget(groups, 2)).toEqual({
+      status: 'accepted',
+      groups: [
+        { groupId: 'preflight:g0', registrationIds: [1] },
+        { groupId: 'preflight:g1', registrationIds: [2] },
+      ],
+      coalescedGroups: [],
+    });
+    harness.scheduler.dispose(3);
+  });
+
+  it('preflight rejections mirror enqueue rejections without side effects', () => {
+    const input = schedulerInput(0, 1);
+    const oneGroupPeak = input.sampleVolume.byteLength + input.outputBudget.maxTotalBytes;
+    const harness = createSchedulerHarness({
+      ...SCHEDULER_TEST_CONFIG,
+      workerCount: 1,
+      maxStagingBytes: oneGroupPeak,
+    });
+
+    expect(harness.scheduler.preflightTarget([
+      schedulerGroup('preflight-lease:g0', 1, [{ coordinateX: 0 }]),
+      schedulerGroup('preflight-lease:g1', 1, [{ coordinateX: 1 }]),
+    ], 0)).toEqual({
+      status: 'rejected',
+      reason: 'staging-budget',
+    });
+
+    expect(harness.scheduler.enqueueTarget([
+      schedulerGroup('preflight-dup', 1, [{ coordinateX: 0 }]),
+    ], 1)).toMatchObject({ status: 'accepted' });
+    expect(harness.scheduler.preflightTarget([
+      schedulerGroup('preflight-dup', 1, [{ coordinateX: 1 }]),
+    ], 2)).toEqual({ status: 'duplicate', groupId: 'preflight-dup' });
+    expect(harness.scheduler.preflightTarget([
+      schedulerGroup('preflight-stale', 1, [{ coordinateX: 0 }]),
+    ], 3)).toEqual({ status: 'rejected', reason: 'stale-target' });
+    expect(harness.scheduler.getMetrics().queuedJobs).toBe(1);
+
+    harness.scheduler.dispose(4);
+    expect(harness.scheduler.preflightTarget([
+      schedulerGroup('preflight-late', 1, [{ coordinateX: 0 }]),
+    ], 5)).toEqual({ status: 'disposed' });
+  });
+
+  it('preflighting an epoch replacement leaves the prior epoch running', () => {
+    const harness = createSchedulerHarness({
+      ...SCHEDULER_TEST_CONFIG,
+      workerCount: 1,
+    });
+    expect(harness.scheduler.enqueueTarget([
+      schedulerGroup('old-epoch', 1, [{ coordinateX: 0 }]),
+    ], 0)).toMatchObject({ status: 'accepted' });
+
+    const preflight = harness.scheduler.preflightReplacingEpochTarget([
+      schedulerGroup('new-epoch', 1, [{ coordinateX: 0 }], 'epoch:two'),
+    ], 1);
+    expect(preflight).toEqual({
+      status: 'admissible',
+      coalescedGroups: [],
+      replacesEpoch: true,
+    });
+
+    // The old epoch's work is untouched by the preflight.
+    expect(harness.scheduler.getMetrics().queuedJobs).toBe(1);
+    const dispatched = harness.scheduler.pump(2, harness.allocator).dispatches;
+    expect(dispatched.map((value) => value.groupId)).toEqual(['old-epoch']);
+    harness.scheduler.dispose(3);
+  });
 });
