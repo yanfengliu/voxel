@@ -55,6 +55,11 @@ import { collectRuntimeMetricsInternal } from './runtimeMetrics.js';
 import type { PresentationStagingHoldInternal } from './presentationStagingMetrics.js';
 import { RuntimePresentationRetentionInternal } from './runtimePresentationRetention.js';
 import type { ContextEventCanvasInternal } from './runtimeRendererSetup.js';
+import {
+  disposeRuntimeAtomicSetupInternal,
+  type RuntimeAtomicSetupInternal,
+} from './runtimeAtomicSetup.js';
+import { RuntimeAtomicFrameCoordinatorInternal } from './runtimeAtomicFrame.js';
 import { runRuntimeDisposalInternal } from './runtimeDisposal.js';
 import { captureRuntimeCanvasInternal } from './runtimeCapture.js';
 import { initializeRuntimeInternal } from './runtimeInitialization.js';
@@ -96,6 +101,7 @@ interface PreparedHostFrameInternal {
   readonly previousContext: ThreeFrameContext | null;
   readonly restoration: boolean;
 }
+
 export class ThreeRenderRuntime {
   private readonly scene!: Scene;
   private readonly camera!: Camera;
@@ -106,6 +112,8 @@ export class ThreeRenderRuntime {
   private readonly viewportOwnership!: 'runtime' | 'host';
   private readonly hostKind!: 'runtime-rendered' | 'embedded';
   private readonly daylightRig!: DaylightRig | null;
+  private readonly atomic!: RuntimeAtomicSetupInternal | null;
+  private readonly atomicFrames!: RuntimeAtomicFrameCoordinatorInternal | null;
   private readonly world = new RenderWorld();
   private readonly contextCanvas!: ContextEventCanvasInternal | null;
   private readonly presentations = new RuntimePresentationRetentionInternal(
@@ -169,6 +177,38 @@ export class ThreeRenderRuntime {
     this.cameraStrategy = initialized.cameraStrategy;
     this.presentationSurface = initialized.presentationSurface;
     this.daylightRig = initialized.daylightRig;
+    this.atomic = initialized.atomic;
+    this.atomicFrames = initialized.atomic
+      ? new RuntimeAtomicFrameCoordinatorInternal(initialized.atomic, this.world, {
+          isRunning: () => this.lifecycleState === 'running',
+          deviceGeneration: () => this.deviceGeneration,
+          isRunningAttempt: (generation) => this.isRunningAttempt(generation),
+          hasRuntimeEndedAfterCallbacks: () => this.hasRuntimeEndedAfterCallbacks(),
+          renderCurrent: () => { this.renderCurrent(); },
+          transitionToFailed: (phase, reason) => { this.transitionToFailed(phase, reason); },
+          frames: () => this.frames,
+          setFrames: (value) => { this.frames = value; },
+          cameraGeneration: () => this.cameraGeneration,
+          setCameraGeneration: (value) => { this.cameraGeneration = value; },
+          presentedManifest: (context) => this.createManifestForCurrentState(context),
+          manifestForTarget: (target, context, deviceGeneration, cameraGeneration) =>
+            createPresentedManifestInternal({
+              target,
+              context,
+              width: this.width,
+              height: this.height,
+              pixelRatio: this.pixelRatio,
+              deviceGeneration,
+              cameraGeneration,
+              camera: this.camera,
+            }),
+          snapshotRenderInfo: () => snapshotRenderInfoInternal(this.renderer),
+          commitPresentedPointers: (context, renderInfo) => {
+            this.lastPresentedFrameContext = context;
+            if (renderInfo) this.renderInfo = renderInfo;
+          },
+        })
+      : null;
     this.contextCanvas = initialized.contextCanvas;
     this.width = initialized.width;
     this.height = initialized.height;
@@ -204,6 +244,34 @@ export class ThreeRenderRuntime {
     this.assertAccepting();
     if (prepared.status === 'rejected') {
       return { status: 'rejected', ...prepared.issue };
+    }
+    if (this.atomicFrames) {
+      // One runtime keeps one presentation owner: the atomic pipeline never
+      // mixes with legacy reconciliation across epochs of the same runtime.
+      if (!this.atomicOwnsCandidateInternal(prepared.prepared.candidate)) {
+        return {
+          status: 'rejected',
+          code: 'three.voxel-profile-required',
+          path: 'descriptor.chunkProfile',
+          message: 'The atomic voxel worker runtime requires a uniform chunk profile.',
+        };
+      }
+      const reserved = this.atomicFrames.reserveAdmissionInternal(prepared.prepared.candidate);
+      if ('rejection' in reserved) return { status: 'rejected', ...reserved.rejection };
+      const applied = commitPreparedSnapshotIntoRenderWorld(this.world, prepared.prepared);
+      if (applied.status === 'accepted') ingestMetrics.accepted += 1;
+      if (
+        applied.status === 'accepted'
+        && this.world.epoch === applied.epoch
+        && this.world.acceptedRevision === applied.revision
+      ) {
+        this.atomicFrames.activateAdmissionInternal(reserved.handle);
+      } else {
+        // The commit failed or a reentrant settlement superseded it; the
+        // reservation is released and any newer acceptance owns admission.
+        this.atomicFrames.cancelAdmissionInternal(reserved.handle);
+      }
+      return applied;
     }
     let presentation: ThreePresentationSnapshot;
     let candidateHold: PresentationStagingHoldInternal | null = null;
@@ -252,6 +320,34 @@ export class ThreeRenderRuntime {
     this.assertAccepting();
     if (result.status === 'resync-required') return result;
     if (result.status === 'rejected') return { status: 'rejected', ...result.issue };
+    if (this.atomicFrames) {
+      if (!this.atomicOwnsCandidateInternal(result.prepared.candidate)) {
+        return {
+          status: 'rejected',
+          code: 'three.voxel-profile-required',
+          path: 'descriptor.chunkProfile',
+          message: 'The atomic voxel worker runtime requires a uniform chunk profile.',
+        };
+      }
+      const reserved = this.atomicFrames.reserveAdmissionInternal(
+        result.prepared.candidate,
+        result.prepared,
+      );
+      if ('rejection' in reserved) return { status: 'rejected', ...reserved.rejection };
+      const applied = commitPreparedDeltaIntoRenderWorld(this.world, result.prepared, {
+        deferAutomaticPresentation: true,
+      });
+      if (
+        applied.status === 'accepted'
+        && this.world.epoch === applied.epoch
+        && this.world.acceptedRevision === applied.revision
+      ) {
+        this.atomicFrames.activateAdmissionInternal(reserved.handle);
+      } else {
+        this.atomicFrames.cancelAdmissionInternal(reserved.handle);
+      }
+      return applied;
+    }
     let presentation: ThreePresentationSnapshot;
     let candidateHold: PresentationStagingHoldInternal | null = null;
     try {
@@ -360,6 +456,10 @@ export class ThreeRenderRuntime {
         throw error;
       }
       return undefined;
+    }
+    if (this.atomicFrames) {
+      const atomicOutcome = this.atomicFrames.standaloneFrameInternal(frozenContext);
+      if (atomicOutcome !== 'no-atomic-target') return atomicOutcome;
     }
     const prepared = this.prepareFrameInternal(frozenContext);
     if (prepared.status === 'unavailable') return undefined;
@@ -489,6 +589,9 @@ export class ThreeRenderRuntime {
         () => this.contextCanvas?.removeEventListener('webglcontextlost', this.handleContextLost),
         () => this.contextCanvas?.removeEventListener('webglcontextrestored', this.handleContextRestored),
         () => this.world.dispose(),
+        () => {
+          if (this.atomic) disposeRuntimeAtomicSetupInternal(this.atomic, this.scene);
+        },
         () => this.presentationSurface.disposeInternal(),
         () => this.daylightRig?.dispose(this.scene),
         () => this.scene.remove(this.presentationSurface.rootInternal),
@@ -507,6 +610,12 @@ export class ThreeRenderRuntime {
     if (firstError !== undefined) throw new Error('Runtime disposal failed.', { cause: firstError });
   }
 
+  private atomicOwnsCandidateInternal(
+    candidate: CanonicalPresentationStateInternal,
+  ): boolean {
+    return this.atomicFrames?.ownsCandidateInternal(candidate) ?? false;
+  }
+
   private prepareFrameInternal(
     context: Readonly<ThreeFrameContext>,
   ): ThreePrepareFrameResult {
@@ -516,7 +625,12 @@ export class ThreeRenderRuntime {
     }
     this.hostFrames.beginPreparation();
     const generation = this.deviceGeneration;
-    const pending = pendingCanonicalStateForPresentationInternal(this.world);
+    // Atomic-owned pendings present only through the worker frame transaction;
+    // the legacy reconcile path must never stage the same revision.
+    const rawPending = pendingCanonicalStateForPresentationInternal(this.world);
+    const pending = rawPending && this.atomicOwnsCandidateInternal(rawPending)
+      ? null
+      : rawPending;
     const target = pending ?? presentedCanonicalStateForPresentationInternal(this.world);
     const presentation = target
       ? this.presentations.resolveInternal(target, pending ? 'pending' : 'presented')

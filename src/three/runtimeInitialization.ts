@@ -25,7 +25,22 @@ import {
   type ContextEventCanvasInternal,
 } from './runtimeRendererSetup.js';
 import { LegacyRuntimePresentationSurfaceInternal } from './runtimePresentationSurface.js';
+import {
+  createRuntimeAtomicSetupInternal,
+  disposeRuntimeAtomicSetupInternal,
+  type RuntimeAtomicSetupInternal,
+  type ThreeRuntimeVoxelWorkersOptionsInternal,
+} from './runtimeAtomicSetup.js';
 import type { ThreeRenderRuntimeOptions } from './runtimeTypes.js';
+
+/**
+ * Package-internal construction extension. The atomic voxel worker pipeline
+ * stays off the public options type until its runtime path has end-to-end
+ * browser evidence.
+ */
+export interface ThreeRenderRuntimeInternalOptions extends ThreeRenderRuntimeOptions {
+  readonly voxelWorkersInternal?: ThreeRuntimeVoxelWorkersOptionsInternal;
+}
 
 export interface RuntimeInitializationHooksInternal {
   readonly handleContextLost: (event: Event) => void;
@@ -49,6 +64,7 @@ export interface RuntimeInitializationInternal {
   readonly pixelRatio: number;
   readonly center: IsometricViewCenter;
   readonly zoom: number;
+  readonly atomic: RuntimeAtomicSetupInternal | null;
   /** Used only if constructor finalization fails after allocation returned. */
   readonly rollbackInitializationInternal: () => void;
 }
@@ -74,6 +90,15 @@ export function initializeRuntimeInternal(
   const resolvedHost = resolveRuntimeHostInternal(options);
   if (options.renderer && options.rendererFactory) {
     throw new Error('Provide either renderer or rendererFactory, not both.');
+  }
+  if (
+    (options as ThreeRenderRuntimeInternalOptions).voxelWorkersInternal
+    && resolvedHost.kind === 'embedded'
+  ) {
+    throw new Error(
+      'The atomic voxel worker pipeline does not support embedded hosts yet; '
+      + 'its frame-ticket integration is a separate delivery.',
+    );
   }
   if (resolvedHost.view && options.camera) {
     throw new Error('Provide either the additive view policy or the legacy camera, not both.');
@@ -115,6 +140,7 @@ export function initializeRuntimeInternal(
   let scene: Scene | undefined;
   let presentationSurface: LegacyRuntimePresentationSurfaceInternal | undefined;
   let daylightRig: DaylightRig | null = null;
+  let atomic: RuntimeAtomicSetupInternal | null = null;
   let rollbackBorrowedCamera: (() => void) | undefined;
   let borrowedRendererViewport: RendererViewportSnapshotInternal | undefined;
   const rollbackInitializationInternal = (): void => {
@@ -124,6 +150,9 @@ export function initializeRuntimeInternal(
     ]) {
       try { removeListener(); } catch { /* Preserve the initialization failure. */ }
     }
+    try {
+      if (scene && atomic) disposeRuntimeAtomicSetupInternal(atomic, scene);
+    } catch { /* Preserve the initialization failure. */ }
     try { presentationSurface?.disposeInternal(); } catch { /* Preserve the initialization failure. */ }
     try { if (scene) daylightRig?.dispose(scene); } catch { /* Best effort. */ }
     try {
@@ -162,6 +191,8 @@ export function initializeRuntimeInternal(
     scene = resolvedHost.scene ?? new Scene();
     presentationSurface = new LegacyRuntimePresentationSurfaceInternal();
     scene.add(presentationSurface.rootInternal);
+    const voxelWorkers = (options as ThreeRenderRuntimeInternalOptions).voxelWorkersInternal;
+    atomic = voxelWorkers ? createRuntimeAtomicSetupInternal(voxelWorkers, scene) : null;
     daylightRig = daylightOptions ? new DaylightRig(daylightOptions, center) : null;
     if (daylightRig) scene.add(daylightRig.root);
     contextCanvas?.addEventListener('webglcontextlost', hooks.handleContextLost);
@@ -186,6 +217,7 @@ export function initializeRuntimeInternal(
       pixelRatio,
       center,
       zoom,
+      atomic,
       rollbackInitializationInternal,
     };
   } catch (error) {

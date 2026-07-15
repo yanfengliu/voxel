@@ -125,7 +125,7 @@ export class RevisionAtomicTargetCoordinatorInternal {
     return this.#operate(() => {
       if (this.#lifecycle !== 'active') return Object.freeze({ status: 'disposed' });
       const reservation = this.#reservation;
-      if (!reservation || reservation.handle !== handle) {
+      if (reservation?.handle !== handle) {
         return Object.freeze({ status: 'already-settled' });
       }
       this.#reservation = null;
@@ -200,7 +200,7 @@ export class RevisionAtomicTargetCoordinatorInternal {
   ): RevisionAtomicTargetAdmissionResultInternal {
     if (this.#lifecycle !== 'active') return Object.freeze({ status: 'disposed' });
     const reservation = this.#reservation;
-    if (!reservation || reservation.handle !== handle) {
+    if (reservation?.handle !== handle) {
       return Object.freeze({
         status: 'rejected',
         target: handle.targetInternal,
