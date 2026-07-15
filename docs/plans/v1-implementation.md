@@ -438,10 +438,25 @@ Current status after the lifecycle/camera slice:
 - [x] H-02 isometric, owned-perspective, and borrowed-camera strategies; explicit projection/viewport ownership; finite-safe projection and ray helpers; legacy compatibility.
 - [x] H-03 host-managed frame tickets, standalone protocol reuse, rollback, generation/reentrancy fences, immutable manifests, and an adversarial borrowed-renderer reentrancy regression are implemented and independently reviewed.
 - [x] H-04 revision-aware capture is published. The runtime retains the manifest of the frame it last presented and adapts it to the capture port, so `captureWithManifest` describes the frame the canvas currently shows and `captureWhenPresented` resolves only once the requested revision has actually been drawn; an accepted-but-undrawn revision is never captured as ready. Runtime-owned capture issues one readback fenced to the committed manifest and its device generation; embedded hosts retain capture ownership; manifests enumerate only presented canonical state. Fixed-camera visual baselines remain E-03 work.
-- [ ] H-05 has a bounded internal checkpoint/retry/resource-ownership prototype with focused
-  contract and lifecycle tests. It is not wired to `ThreeRenderRuntime` or real WebGL recovery,
-  and its synchronous internal draw/commit seam must be replaced by V-08 preparation plus an
-  explicit standalone/embedded draw acknowledgement before production integration.
+- [ ] H-05 context restoration works in every host mode and is proven, but its named endurance
+  and failure evidence is outstanding. Standalone hosts restore through `frame()`; embedded
+  hosts now restore through the frame-ticket protocol they already own, because they may never
+  call `frame()` and previously stayed `restoring` for the rest of the session. The atomic
+  worker path is proven to keep its displayed revision across a loss: the staged bundles are
+  CPU-side Three objects the renderer re-uploads. Repeated loss/restore cycles are pinned for
+  drift.
+
+  The bounded checkpoint/retry/resource-ownership prototype was retired rather than wired
+  (removed 2026-07-15; preserved at `5d2ffea`). It predated V-08, and the design it modelled —
+  prepare, then an explicit draw acknowledgement, then commit — is now realised in the runtime
+  itself through the host frame ticket, which is the acknowledgement the prototype lacked. It
+  imported nothing, was reachable from no export, and shipped 32,865 dead bytes while its 28
+  green tests made reconstruction look implemented where it was not. Its remaining unmodelled
+  idea is retry beyond a single attempt; the runtime instead treats a reconstruction error as
+  terminal, and a real transient-failure case should motivate any retry policy.
+
+  Outstanding: a failed-reconstruction terminal path exercised end to end, loss during worker
+  upload/capture, and repeated loss/restore with measured resource plateaus (E-04).
 
 ### H-01: Runtime lifecycle state machine
 
