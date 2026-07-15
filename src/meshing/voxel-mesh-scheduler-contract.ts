@@ -162,6 +162,32 @@ export type MeshSchedulerEnqueueResultV1 =
     }
   | { readonly status: 'disposed'; readonly groupId: string };
 
+export interface MeshSchedulerTargetGroupAdmissionV1 {
+  readonly groupId: string;
+  readonly registrationIds: readonly number[];
+}
+
+/**
+ * Result of admitting every dependency group for one world/epoch/revision.
+ * Rejection and disposal leave the complete group set unregistered.
+ */
+export type MeshSchedulerEnqueueTargetResultV1 =
+  | {
+      readonly status: 'accepted';
+      readonly groups: readonly MeshSchedulerTargetGroupAdmissionV1[];
+      readonly coalescedGroups: readonly string[];
+    }
+  | { readonly status: 'duplicate'; readonly groupId: string }
+  | {
+      readonly status: 'rejected';
+      readonly reason:
+        | 'stale-target'
+        | 'queue-jobs-budget'
+        | 'queue-bytes-budget'
+        | 'staging-budget';
+    }
+  | { readonly status: 'disposed' };
+
 export interface MeshSchedulerPumpResultV1 {
   readonly status: 'active' | 'disposed';
   readonly dispatches: readonly MeshSchedulerDispatchV1[];

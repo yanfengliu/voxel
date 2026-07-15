@@ -263,7 +263,7 @@ Current status after the indexed-oracle slice:
 - [x] V-05 indexed copied-halo synchronous oracle, local-space geometry, aggregate work budgets, and profiled-world Three integration.
 - [x] V-06 packaged Three-free module worker, copied transfer ownership, hard result protocol, offline/CSP path, startup failure, and real headless-browser evidence.
 - [x] V-07 bounded deterministic scheduler, group leases, coalescing/cancellation, one-crash retry, three eligibility firewalls, lifecycle accounting, and 39 focused tests.
-- [ ] V-08 revision-atomic staging is in progress.
+- [ ] V-08 revision-atomic staging is in progress; whole-target scheduler admission is atomic, while multi-group ownership transfer and runtime frame integration remain open.
 - [ ] V-09 has a corpus-correct in-repo greedy candidate, packaged-worker proof, reproducible benchmark harness/baseline, external feasibility audit, and [provisional selection ADR](../architecture/mesher-selection.md); final production acceptance waits for V-08 end-to-end evidence.
 - [ ] V-10 remains planned behind V-08/V-09.
 

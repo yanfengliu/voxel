@@ -326,7 +326,7 @@ Scheduler policy:
 - replace queued work for a coordinate with the newest dependency signature;
 - supersede an older target when a newer transaction changes any source or dependency;
 - reuse a completed CPU mesh only on an exact dependency signature;
-- preflight closure, queue, input, output, atomic-chunk, and staging budgets before accepting a schedulable transaction.
+- preflight the complete target's closure, groups, queue, input, output, atomic-chunk, and simultaneous staging-lease budgets before making the first target-state mutation.
 
 Queued cancellation removes work immediately. Running cancellation is logical and may send a cooperative message, but synchronous WASM is allowed to finish; its result is then ineligible. Worker crash receives at most one fresh-worker retry. Deterministic mesher failures are terminal. Epoch replacement and disposal terminate owned workers.
 

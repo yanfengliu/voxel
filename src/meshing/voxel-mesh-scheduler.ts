@@ -8,6 +8,7 @@ import type {
   MeshSchedulerDisposeResultV1,
   MeshSchedulerEligibilityResolverV1,
   MeshSchedulerEnqueueResultV1,
+  MeshSchedulerEnqueueTargetResultV1,
   MeshSchedulerEpochReplacementResultV1,
   MeshSchedulerGroupV1,
   MeshSchedulerMetricsV1,
@@ -17,6 +18,7 @@ import type {
   MeshSchedulerRequestAllocatorV1,
   MeshSchedulerWorkerFactoryV1,
 } from './voxel-mesh-scheduler-contract.js';
+import { enqueueMeshSchedulerTargetV1Internal } from './voxel-mesh-scheduler-admission.js';
 import { commitMeshSchedulerGroupV1Internal, completeMeshSchedulerGroupV1Internal } from './voxel-mesh-scheduler-completion.js';
 import { crashMeshSchedulerWorkerV1Internal } from './voxel-mesh-scheduler-crash.js';
 import {
@@ -24,52 +26,19 @@ import {
   dispatchMeshSchedulerJobV1Internal,
 } from './voxel-mesh-scheduler-dispatch.js';
 import {
-  addQueuedJobV1Internal,
   failMeshSchedulerGroupV1Internal,
   removeTerminalGroupWhenIdleV1Internal,
   settleWorkerJobV1Internal,
 } from './voxel-mesh-scheduler-lifecycle.js';
 import { receiveMeshSchedulerResultV1Internal } from './voxel-mesh-scheduler-receipt.js';
 import {
-  incrementMeshSchedulerMetricInternal,
   snapshotMeshSchedulerMetricsInternal,
-  type MeshSchedulerGroupRecordInternal,
-  type MeshSchedulerJobRecordInternal,
   MeshSchedulerStateInternal,
 } from './voxel-mesh-scheduler-state.js';
 import {
-  meshSchedulerGroupPeakStagingBytesV1Internal,
-  normalizeMeshSchedulerGroupV1Internal,
   validateMeshSchedulerConfigV1Internal,
   validateMeshSchedulerEpochIdentityV1Internal,
 } from './voxel-mesh-scheduler-validation.js';
-
-function checkedSum(values: readonly number[], name: string): number {
-  let total = 0;
-  for (const value of values) {
-    total += value;
-    if (!Number.isSafeInteger(total)) throw new RangeError(`${name} exceeds the safe range.`);
-  }
-  return total;
-}
-
-function queuedBudgetRemovedByGroups(
-  groups: ReadonlySet<MeshSchedulerGroupRecordInternal>,
-): { readonly jobs: number; readonly bytes: number } {
-  let jobs = 0;
-  let bytes = 0;
-  for (const group of groups) {
-    for (const job of group.jobs) {
-      if (job.state !== 'queued') continue;
-      jobs += 1;
-      bytes += job.normalized.queueBytes;
-      if (!Number.isSafeInteger(bytes)) {
-        throw new RangeError('Coalesced queue bytes exceed the safe range.');
-      }
-    }
-  }
-  return Object.freeze({ jobs, bytes });
-}
 
 /**
  * Deterministic, Three-free scheduling and identity-firewall core. Worker event
@@ -107,125 +76,42 @@ export class VoxelMeshSchedulerV1 {
   enqueue(group: MeshSchedulerGroupV1, logicalTick: number): MeshSchedulerEnqueueResultV1 {
     return this.#operate(() => {
       this.#state.tick(logicalTick);
-      if (!this.#state.active) return { status: 'disposed', groupId: group.groupId };
-      if (this.#state.groups.has(group.groupId)
-        || this.#state.terminalGroups.has(group.groupId)) {
-        return { status: 'duplicate', groupId: group.groupId };
-      }
-      if (group.jobs.length > this.#state.config.maxQueuedJobs) {
-        return { status: 'rejected', groupId: group.groupId, reason: 'queue-jobs-budget' };
-      }
-      const normalized = normalizeMeshSchedulerGroupV1Internal(group);
-      const first = normalized[0]!;
-      const { worldId, epoch, targetRevision } = first.eligibility;
-      const knownEpoch = this.#state.worldEpochs.get(worldId);
-      if (knownEpoch === undefined
-        && this.#state.worldEpochs.size >= this.#state.config.maxQueuedJobs) {
-        return { status: 'rejected', groupId: group.groupId, reason: 'queue-jobs-budget' };
-      }
-      const latestTarget = this.#state.latestTargets.get(
-        this.#state.worldEpochKey(worldId, epoch),
+      const result = enqueueMeshSchedulerTargetV1Internal(
+        this.#state,
+        Object.freeze([group]),
+        logicalTick,
       );
-      if ((knownEpoch !== undefined && knownEpoch !== epoch)
-        || (latestTarget !== undefined && targetRevision < latestTarget)) {
-        return { status: 'rejected', groupId: group.groupId, reason: 'stale-target' };
+      if (result.status === 'accepted') {
+        const admitted = result.groups[0]!;
+        return Object.freeze({
+          status: 'accepted',
+          groupId: admitted.groupId,
+          registrationIds: admitted.registrationIds,
+          coalescedGroups: result.coalescedGroups,
+        });
       }
+      if (result.status === 'rejected') {
+        return Object.freeze({ status: 'rejected', groupId: group.groupId, reason: result.reason });
+      }
+      if (result.status === 'disposed') {
+        return Object.freeze({ status: 'disposed', groupId: group.groupId });
+      }
+      return result;
+    });
+  }
 
-      const conflicts = new Set<MeshSchedulerJobRecordInternal>();
-      const coalescedGroups = new Set<MeshSchedulerGroupRecordInternal>();
-      for (const candidate of normalized) {
-        const prior = this.#state.jobsByCoordinate.get(candidate.registrationKey);
-        if (prior === undefined) continue;
-        if (prior.normalized.eligibility.targetRevision >= targetRevision) {
-          return { status: 'rejected', groupId: group.groupId, reason: 'stale-target' };
-        }
-        conflicts.add(prior);
-        const priorGroup = this.#state.groups.get(prior.normalized.eligibility.groupId);
-        if (priorGroup !== undefined) coalescedGroups.add(priorGroup);
-      }
-
-      const peakStagingBytes = meshSchedulerGroupPeakStagingBytesV1Internal(
-        normalized,
-        this.#state.config.workerCount,
+  /** Admits every dependency group for one target in one preflighted mutation. */
+  enqueueTarget(
+    groups: readonly MeshSchedulerGroupV1[],
+    logicalTick: number,
+  ): MeshSchedulerEnqueueTargetResultV1 {
+    return this.#operate(() => {
+      this.#state.tick(logicalTick);
+      return enqueueMeshSchedulerTargetV1Internal(
+        this.#state,
+        groups,
+        logicalTick,
       );
-      if (peakStagingBytes > this.#state.config.maxStagingBytes) {
-        return { status: 'rejected', groupId: group.groupId, reason: 'staging-budget' };
-      }
-      const removed = queuedBudgetRemovedByGroups(coalescedGroups);
-      const newQueueBytes = checkedSum(
-        normalized.map((job) => job.queueBytes),
-        'Scheduler group queue bytes',
-      );
-      const projectedJobs = this.#state.metrics.queuedJobs - removed.jobs + normalized.length;
-      const projectedBytes = this.#state.metrics.queuedBytes - removed.bytes + newQueueBytes;
-      if (projectedJobs > this.#state.config.maxQueuedJobs) {
-        return { status: 'rejected', groupId: group.groupId, reason: 'queue-jobs-budget' };
-      }
-      if (projectedBytes > this.#state.config.maxQueuedBytes) {
-        return { status: 'rejected', groupId: group.groupId, reason: 'queue-bytes-budget' };
-      }
-      if (normalized.length >= Number.MAX_SAFE_INTEGER - this.#state.nextRegistrationId) {
-        throw new RangeError('Mesh scheduler registration identity is exhausted.');
-      }
-
-      const orderedCoalesced = [...coalescedGroups].sort(
-        (left, right) => left.groupId < right.groupId ? -1 : left.groupId > right.groupId ? 1 : 0,
-      );
-      for (const priorGroup of orderedCoalesced) {
-        failMeshSchedulerGroupV1Internal(
-          this.#state,
-          priorGroup,
-          'superseded',
-          logicalTick,
-        );
-      }
-      incrementMeshSchedulerMetricInternal(
-        this.#state.metrics,
-        'coalescedJobs',
-        conflicts.size,
-      );
-
-      const jobs: MeshSchedulerJobRecordInternal[] = normalized.map((job) => ({
-        registrationId: this.#state.allocateRegistrationId(),
-        normalized: job,
-        enqueuedDispatch: this.#state.metrics.dispatchAttempts,
-        state: 'queued',
-        nextAttempt: 0,
-        activeJobId: undefined,
-        activeWorkerId: undefined,
-        expectation: undefined,
-        stagedResult: undefined,
-        stagedBytes: 0,
-        logicallyCancelled: false,
-      }));
-      const record: MeshSchedulerGroupRecordInternal = {
-        groupId: group.groupId,
-        worldId,
-        epoch,
-        targetRevision,
-        jobs: Object.freeze(jobs),
-        peakStagingBytes,
-        hasStagingLease: false,
-        state: 'active',
-        prepared: undefined,
-        outcome: undefined,
-      };
-      this.#state.groups.set(group.groupId, record);
-      this.#state.worldEpochs.set(worldId, epoch);
-      this.#state.latestTargets.set(
-        this.#state.worldEpochKey(worldId, epoch),
-        Math.max(latestTarget ?? 0, targetRevision),
-      );
-      for (const job of jobs) {
-        this.#state.jobsByCoordinate.set(job.normalized.registrationKey, job);
-        addQueuedJobV1Internal(this.#state, job);
-      }
-      return Object.freeze({
-        status: 'accepted',
-        groupId: group.groupId,
-        registrationIds: Object.freeze(jobs.map((job) => job.registrationId)),
-        coalescedGroups: Object.freeze(orderedCoalesced.map((prior) => prior.groupId)),
-      });
     });
   }
 
