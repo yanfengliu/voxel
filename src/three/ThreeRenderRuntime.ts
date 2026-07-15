@@ -56,10 +56,8 @@ import {
   type RenderInfoSnapshotInternal,
 } from './runtimeRenderInfo.js';
 import { collectRuntimeMetricsInternal } from './runtimeMetrics.js';
-import {
-  PresentationStagingTrackerInternal,
-  type PresentationStagingHoldInternal,
-} from './presentationStagingMetrics.js';
+import type { PresentationStagingHoldInternal } from './presentationStagingMetrics.js';
+import { RuntimePresentationRetentionInternal } from './runtimePresentationRetention.js';
 import type { ContextEventCanvasInternal } from './runtimeRendererSetup.js';
 import { runRuntimeDisposalInternal } from './runtimeDisposal.js';
 import { captureRuntimeCanvasInternal } from './runtimeCapture.js';
@@ -91,30 +89,6 @@ export {
 type CanonicalPresentationStateInternal = NonNullable<
   ReturnType<typeof pendingCanonicalStateForPresentationInternal>
 >;
-const RUNTIME_PRESENTATIONS_BY_STATE_INTERNAL = new WeakMap<
-  ThreeRenderRuntime,
-  WeakMap<CanonicalPresentationStateInternal, ThreePresentationSnapshot>
->();
-
-function rememberPresentationForCanonicalStateInternal(
-  runtime: ThreeRenderRuntime,
-  state: CanonicalPresentationStateInternal,
-  presentation: ThreePresentationSnapshot,
-): void {
-  let presentations = RUNTIME_PRESENTATIONS_BY_STATE_INTERNAL.get(runtime);
-  if (!presentations) {
-    presentations = new WeakMap();
-    RUNTIME_PRESENTATIONS_BY_STATE_INTERNAL.set(runtime, presentations);
-  }
-  presentations.set(state, presentation);
-}
-
-function presentationForCanonicalStateInternal(
-  runtime: ThreeRenderRuntime,
-  state: CanonicalPresentationStateInternal,
-): ThreePresentationSnapshot | undefined {
-  return RUNTIME_PRESENTATIONS_BY_STATE_INTERNAL.get(runtime)?.get(state);
-}
 
 interface PreparedHostFrameInternal {
   readonly context: Readonly<ThreeFrameContext>;
@@ -141,20 +115,9 @@ export class ThreeRenderRuntime {
   private readonly instancePresenter!: InstanceBatchPresenter;
   private readonly world = new RenderWorld();
   private readonly contextCanvas!: ContextEventCanvasInternal | null;
-  private pendingPresentation: ThreePresentationSnapshot | null = null;
-  private presentedPresentation: ThreePresentationSnapshot | null = null;
-  private pendingPresentationHold: PresentationStagingHoldInternal | null = null;
-  private readonly retainedHostFrames = new Map<
-    HostFrameTicketRecordInternal<PreparedHostFrameInternal>,
-    PresentationStagingHoldInternal | null
-  >();
-  private readonly presentationStaging = new PresentationStagingTrackerInternal(() => {
-    const presentedState = presentedCanonicalStateForPresentationInternal(this.world);
-    return [
-      this.presentedPresentation,
-      presentedState ? presentationForCanonicalStateInternal(this, presentedState) : null,
-    ];
-  });
+  private readonly presentations = new RuntimePresentationRetentionInternal(
+    () => presentedCanonicalStateForPresentationInternal(this.world),
+  );
   private lifecycleState: ThreeRuntimeLifecycleV1 = 'initializing';
   private failure: ThreeRuntimeFailureV1 | null = null;
   private deviceGeneration = 1;
@@ -180,7 +143,7 @@ export class ThreeRenderRuntime {
       || this.lifecycleState === 'lost'
     ) return;
     const invalidated = this.hostFrames.invalidateForDeviceTransition();
-    if (invalidated) this.releaseRetainedHostFrameInternal(invalidated);
+    if (invalidated) this.presentations.releaseHostFrameInternal(invalidated);
     this.lifecycleState = 'lost';
     setRenderWorldPresentationAvailabilityInternal(this.world, 'context-lost');
     this.contextLosses++;
@@ -257,7 +220,7 @@ export class ThreeRenderRuntime {
     let candidateHold: PresentationStagingHoldInternal | null = null;
     try {
       presentation = canonicalStateToThreePresentationInternal(prepared.prepared.candidate);
-      candidateHold = this.presentationStaging.retainInternal(presentation);
+      candidateHold = this.presentations.retainCandidateInternal(presentation);
       validateThreePresentationInternal(presentation);
     } catch (error) {
       candidateHold?.releaseInternal();
@@ -269,8 +232,7 @@ export class ThreeRenderRuntime {
       };
     }
     try {
-      rememberPresentationForCanonicalStateInternal(
-        this,
+      this.presentations.rememberInternal(
         prepared.prepared.candidate,
         presentation,
       );
@@ -281,10 +243,11 @@ export class ThreeRenderRuntime {
         if (presentedCanonicalStateForPresentationInternal(this.world) === candidate) {
           // A waiter cleanup callback may have synchronously framed this exact
           // candidate while the core commit was still settling the old epoch.
-          this.setPresentedPresentationInternal(presentation);
-          this.setPendingPresentationInternal(null);
+          this.presentations.markCommittedInternal(presentation);
+          this.presentations.setPresentedInternal(presentation);
+          this.presentations.setPendingInternal(null);
         } else if (pendingCanonicalStateForPresentationInternal(this.world) === candidate) {
-          this.setPendingPresentationInternal(presentation);
+          this.presentations.setPendingInternal(presentation);
         }
       }
       return applied;
@@ -304,7 +267,7 @@ export class ThreeRenderRuntime {
     let candidateHold: PresentationStagingHoldInternal | null = null;
     try {
       presentation = preparedDeltaToThreePresentationInternal(result.prepared);
-      candidateHold = this.presentationStaging.retainInternal(presentation);
+      candidateHold = this.presentations.retainCandidateInternal(presentation);
       validateThreePresentationInternal(presentation);
     } catch (error) {
       candidateHold?.releaseInternal();
@@ -316,7 +279,7 @@ export class ThreeRenderRuntime {
       };
     }
     try {
-      rememberPresentationForCanonicalStateInternal(this, result.prepared.candidate, presentation);
+      this.presentations.rememberInternal(result.prepared.candidate, presentation);
       const applied = commitPreparedDeltaIntoRenderWorld(this.world, result.prepared, {
         deferAutomaticPresentation: this.hostKind === 'embedded',
       });
@@ -326,12 +289,13 @@ export class ThreeRenderRuntime {
         && this.world.acceptedRevision === applied.revision
       ) {
         if (pendingCanonicalStateForPresentationInternal(this.world)) {
-          this.setPendingPresentationInternal(presentation);
+          this.presentations.setPendingInternal(presentation);
         } else {
           // An empty atomic delta may advance the presented watermark without a
           // draw. Its scene is byte-for-byte the currently displayed scene.
-          this.setPresentedPresentationInternal(presentation);
-          this.setPendingPresentationInternal(null);
+          this.presentations.markCommittedInternal(presentation);
+          this.presentations.setPresentedInternal(presentation);
+          this.presentations.setPendingInternal(null);
         }
       }
       return applied;
@@ -388,7 +352,7 @@ export class ThreeRenderRuntime {
         this.updateCamera();
         if (!this.isRestoreAttempt(restoreGeneration)) return;
         if (!this.reconcilePresentation(
-          this.presentedPresentation,
+          this.presentations.presentedInternal,
           () => this.isRestoreAttempt(restoreGeneration),
         )) return;
         this.renderCurrent();
@@ -449,7 +413,7 @@ export class ThreeRenderRuntime {
     try {
       this.restoreAbortedHostFrame(record);
     } finally {
-      this.releaseRetainedHostFrameInternal(record);
+      this.presentations.releaseHostFrameInternal(record);
     }
   }
   setView(center: IsometricViewCenter, zoom = this.zoom): void {
@@ -514,7 +478,7 @@ export class ThreeRenderRuntime {
   }
 
   metrics(): ThreeRenderMetrics {
-    const presentationStaging = this.presentationStaging.metricsInternal();
+    const presentationStaging = this.presentations.metricsInternal();
     return collectRuntimeMetricsInternal({
       state: this.legacyState(),
       world: this.world,
@@ -533,7 +497,7 @@ export class ThreeRenderRuntime {
   dispose(): void {
     if (this.lifecycleState !== 'disposed') {
       const invalidated = this.hostFrames.dispose();
-      if (invalidated) this.releaseRetainedHostFrameInternal(invalidated);
+      if (invalidated) this.presentations.releaseHostFrameInternal(invalidated);
       this.lifecycleState = 'disposed';
       this.disposalActions = [
         () => this.contextCanvas?.removeEventListener('webglcontextlost', this.handleContextLost),
@@ -547,13 +511,7 @@ export class ThreeRenderRuntime {
         () => this.scene.remove(this.root),
         () => { if (this.rendererOwnership === 'owned') this.renderer.dispose(); },
       ];
-      this.pendingPresentationHold?.releaseInternal();
-      this.pendingPresentationHold = null;
-      for (const hold of this.retainedHostFrames.values()) hold?.releaseInternal();
-      this.retainedHostFrames.clear();
-      this.presentationStaging.disposeInternal();
-      this.pendingPresentation = null;
-      this.presentedPresentation = null;
+      this.presentations.disposeInternal();
       this.lastPresentedFrameContext = null;
       this.renderInfo = EMPTY_RENDER_INFO_INTERNAL;
     }
@@ -578,10 +536,9 @@ export class ThreeRenderRuntime {
     const pending = pendingCanonicalStateForPresentationInternal(this.world);
     const target = pending ?? presentedCanonicalStateForPresentationInternal(this.world);
     const presentation = target
-      ? presentationForCanonicalStateInternal(this, target)
-        ?? (pending ? this.pendingPresentation : this.presentedPresentation)
+      ? this.presentations.resolveInternal(target, pending ? 'pending' : 'presented')
       : null;
-    const previousPresentation = this.presentedPresentation;
+    const previousPresentation = this.presentations.presentedInternal;
     const previousContext = this.lastPresentedFrameContext;
     let phase: ThreeRuntimeFailurePhaseV1 = 'prepare';
     let mayNeedRollback = false;
@@ -617,7 +574,7 @@ export class ThreeRenderRuntime {
         previousContext,
         restoration: false,
       }, generation);
-      this.retainHostFrameInternal(record);
+      this.presentations.retainHostFrameInternal(record, presentation);
       return Object.freeze({
         status: 'prepared',
         ticket: record.ticket,
@@ -655,7 +612,7 @@ export class ThreeRenderRuntime {
     try {
       return this.commitConsumedFrameTicketInternal(record);
     } finally {
-      this.releaseRetainedHostFrameInternal(record);
+      this.presentations.releaseHostFrameInternal(record);
     }
   }
   private commitConsumedFrameTicketInternal(
@@ -714,7 +671,7 @@ export class ThreeRenderRuntime {
         );
       }
       if (marked && prepared.presentation) {
-        this.presentationStaging.markCommittedInternal(prepared.presentation);
+        this.presentations.markCommittedInternal(prepared.presentation);
       }
     }
     const exactPresented = presentedCanonicalStateForPresentationInternal(this.world)
@@ -723,9 +680,9 @@ export class ThreeRenderRuntime {
       exactPresented
       && !this.hasRuntimeEndedAfterCallbacks()
     ) {
-      this.setPresentedPresentationInternal(prepared.presentation);
-      if (this.pendingPresentation === prepared.presentation) {
-        this.setPendingPresentationInternal(null);
+      this.presentations.setPresentedInternal(prepared.presentation);
+      if (this.presentations.pendingInternal === prepared.presentation) {
+        this.presentations.setPendingInternal(null);
       }
       this.lastPresentedFrameContext = prepared.context;
       this.renderInfo = committedRenderInfo;
@@ -805,7 +762,7 @@ export class ThreeRenderRuntime {
             generation,
           );
         } finally {
-          this.releaseRetainedHostFrameInternal(record);
+          this.presentations.releaseHostFrameInternal(record);
         }
       } catch (rollbackError) {
         if (this.isRunningAttempt(generation)) {
@@ -884,48 +841,6 @@ export class ThreeRenderRuntime {
     return isCurrentAttempt();
   }
 
-  private setPendingPresentationInternal(
-    presentation: ThreePresentationSnapshot | null,
-  ): void {
-    if (this.pendingPresentation === presentation) return;
-    const nextHold = presentation
-      ? this.presentationStaging.retainInternal(presentation)
-      : null;
-    const previousHold = this.pendingPresentationHold;
-    this.pendingPresentation = presentation;
-    this.pendingPresentationHold = nextHold;
-    previousHold?.releaseInternal();
-  }
-
-  private setPresentedPresentationInternal(
-    presentation: ThreePresentationSnapshot | null,
-  ): void {
-    if (presentation) this.presentationStaging.markCommittedInternal(presentation);
-    this.presentedPresentation = presentation;
-  }
-
-  private retainHostFrameInternal(
-    record: HostFrameTicketRecordInternal<PreparedHostFrameInternal>,
-  ): void {
-    if (this.retainedHostFrames.has(record)) {
-      throw new Error('The host presentation is already retained.');
-    }
-    this.retainedHostFrames.set(
-      record,
-      record.payload.presentation
-        ? this.presentationStaging.retainInternal(record.payload.presentation)
-        : null,
-    );
-  }
-
-  private releaseRetainedHostFrameInternal(
-    record: HostFrameTicketRecordInternal<PreparedHostFrameInternal>,
-  ): void {
-    if (!this.retainedHostFrames.has(record)) return;
-    this.retainedHostFrames.get(record)?.releaseInternal();
-    this.retainedHostFrames.delete(record);
-  }
-
   private commitViewportState(width: number, height: number, pixelRatio: number): void {
     this.width = width;
     this.height = height;
@@ -945,7 +860,7 @@ export class ThreeRenderRuntime {
       message: error.message,
     });
     const invalidated = this.hostFrames.dispose();
-    if (invalidated) this.releaseRetainedHostFrameInternal(invalidated);
+    if (invalidated) this.presentations.releaseHostFrameInternal(invalidated);
     this.lifecycleState = 'failed';
     setRenderWorldPresentationAvailabilityInternal(this.world, 'failed');
   }

@@ -214,8 +214,9 @@ describe('ThreeRenderRuntime snapshot reentrancy', () => {
       presentedRevision: 0,
       frames: 1,
     });
-    expect((runtime as unknown as { pendingPresentation: unknown }).pendingPresentation)
-      .toBeNull();
+    expect((runtime as unknown as {
+      presentations: { readonly pendingInternal: unknown };
+    }).presentations.pendingInternal).toBeNull();
     runtime.dispose();
   });
 
