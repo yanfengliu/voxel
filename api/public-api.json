@@ -256,7 +256,7 @@
       ]
     },
     "dist/meshing/voxel-mesh-scheduler.d.ts": {
-      "sha256": "c4e12ceb60bdbaebcf7a553197b8c7eeab1344779d131afb998a45f8a8ae269a",
+      "sha256": "7511e98db0a6b1cc31fff33f02ceae01cec81712b193f805010a556a784cab0c",
       "reachableFrom": [
         "./meshing",
         "./three"

@@ -95,6 +95,72 @@ describe('VoxelMeshSchedulerV1 atomic target admission', () => {
     harness.scheduler.dispose(3);
   });
 
+  it('rejects epoch replacement before mutating current work or workers', () => {
+    const harness = createSchedulerHarness({
+      ...SCHEDULER_TEST_CONFIG,
+      workerCount: 1,
+      maxQueuedJobs: 1,
+    });
+    expect(harness.scheduler.enqueue(
+      schedulerGroup('epoch:current', 9, [{ coordinateX: 0 }]),
+      0,
+    ).status).toBe('accepted');
+    expect(harness.scheduler.pump(1, harness.allocator).dispatches).toHaveLength(1);
+    const currentPort = harness.ports[0]!;
+    const before = harness.scheduler.getMetrics();
+
+    expect(harness.scheduler.enqueueReplacingEpochTarget([
+      schedulerGroup('epoch:replacement:a', 1, [{ coordinateX: 0 }], 'epoch:two'),
+      schedulerGroup('epoch:replacement:b', 1, [{ coordinateX: 1 }], 'epoch:two'),
+    ], 2)).toEqual({ status: 'rejected', reason: 'queue-jobs-budget' });
+    expect(harness.scheduler.getMetrics()).toEqual(before);
+    expect(currentPort.terminateCalls).toBe(0);
+
+    const activeJobId = currentPort.posts[0]!.request.jobId;
+    expect(harness.scheduler.receive(
+      currentPort.context.workerId,
+      harness.completed(activeJobId),
+      3,
+      (eligibility) => eligibility,
+    )).toMatchObject({ status: 'staged', groupReady: true });
+    harness.scheduler.dispose(4);
+  });
+
+  it('admits a preflighted new epoch while retiring old work and refreshing workers', () => {
+    const harness = createSchedulerHarness({
+      ...SCHEDULER_TEST_CONFIG,
+      workerCount: 1,
+    });
+    expect(harness.scheduler.enqueue(
+      schedulerGroup('epoch:old', 9, [{ coordinateX: 0 }]),
+      0,
+    ).status).toBe('accepted');
+    harness.scheduler.pump(1, harness.allocator);
+    const oldPort = harness.ports[0]!;
+
+    expect(harness.scheduler.enqueueReplacingEpochTarget([
+      schedulerGroup('epoch:new', 1, [{ coordinateX: 0 }], 'epoch:two'),
+    ], 2)).toEqual({
+      status: 'accepted',
+      groups: [{ groupId: 'epoch:new', registrationIds: [2] }],
+      coalescedGroups: [],
+    });
+    expect(oldPort.terminateCalls).toBe(1);
+    expect(harness.scheduler.getMetrics()).toMatchObject({
+      busyWorkers: 0,
+      queuedJobs: 1,
+      coalescedJobs: 0,
+    });
+    const dispatch = harness.scheduler.pump(3, harness.allocator).dispatches[0]!;
+    expect(dispatch.groupId).toBe('epoch:new');
+    expect(harness.preparations.get(dispatch.jobId)?.dispatch.eligibility).toMatchObject({
+      epoch: 'epoch:two',
+      targetRevision: 1,
+    });
+    expect(harness.ports).toHaveLength(2);
+    harness.scheduler.dispose(4);
+  });
+
   it('preserves stale precedence when a singleton group also exceeds staging', () => {
     const input = schedulerInput(0, 2);
     const oneJobPeak = input.sampleVolume.byteLength + input.outputBudget.maxTotalBytes;

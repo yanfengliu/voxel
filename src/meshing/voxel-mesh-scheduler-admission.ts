@@ -6,6 +6,7 @@ import {
   addQueuedJobV1Internal,
   failMeshSchedulerGroupV1Internal,
 } from './voxel-mesh-scheduler-lifecycle.js';
+import { replaceMeshSchedulerEpochV1Internal } from './voxel-mesh-scheduler-epoch.js';
 import {
   incrementMeshSchedulerMetricInternal,
   type MeshSchedulerGroupRecordInternal,
@@ -62,6 +63,7 @@ export function enqueueMeshSchedulerTargetV1Internal(
   state: MeshSchedulerStateInternal,
   groups: readonly MeshSchedulerGroupV1[],
   logicalTick: number,
+  replaceEpoch = false,
 ): MeshSchedulerEnqueueTargetResultV1 {
   if (groups.length === 0) {
     throw new RangeError('A scheduler target must contain at least one group.');
@@ -126,7 +128,8 @@ export function enqueueMeshSchedulerTargetV1Internal(
   }
   const targetKey = state.worldEpochKey(first.worldId, first.epoch);
   const latestTarget = state.latestTargets.get(targetKey);
-  if ((knownEpoch !== undefined && knownEpoch !== first.epoch)
+  const replacesEpoch = knownEpoch !== undefined && knownEpoch !== first.epoch;
+  if ((replacesEpoch && !replaceEpoch)
     || (latestTarget !== undefined && first.targetRevision < latestTarget)) {
     return rejected('stale-target');
   }
@@ -137,6 +140,10 @@ export function enqueueMeshSchedulerTargetV1Internal(
     for (const candidate of group.jobs) {
       const prior = state.jobsByCoordinate.get(candidate.registrationKey);
       if (!prior) continue;
+      if (prior.normalized.eligibility.epoch !== first.epoch) {
+        if (!replacesEpoch) return rejected('stale-target');
+        continue;
+      }
       if (prior.normalized.eligibility.targetRevision >= first.targetRevision) {
         return rejected('stale-target');
       }
@@ -154,7 +161,13 @@ export function enqueueMeshSchedulerTargetV1Internal(
     return rejected('staging-budget');
   }
 
-  const removed = queuedBudgetRemovedByGroups(coalescedGroups);
+  const epochGroups = replacesEpoch
+    ? new Set([...state.groups.values()].filter(
+        (group) => group.worldId === first.worldId && group.epoch !== first.epoch,
+      ))
+    : new Set<MeshSchedulerGroupRecordInternal>();
+  const removedGroups = new Set([...coalescedGroups, ...epochGroups]);
+  const removed = queuedBudgetRemovedByGroups(removedGroups);
   const totalJobs = declaredJobs;
   const newQueueBytes = checkedSum(
     normalized.flatMap((group) => group.jobs.map((job) => job.queueBytes)),
@@ -175,6 +188,14 @@ export function enqueueMeshSchedulerTargetV1Internal(
   const orderedCoalesced = [...coalescedGroups].sort(
     (left, right) => left.groupId < right.groupId ? -1 : left.groupId > right.groupId ? 1 : 0,
   );
+  if (replacesEpoch) {
+    replaceMeshSchedulerEpochV1Internal(
+      state,
+      first.worldId,
+      first.epoch,
+      logicalTick,
+    );
+  }
   for (const priorGroup of orderedCoalesced) {
     failMeshSchedulerGroupV1Internal(state, priorGroup, 'superseded', logicalTick);
   }

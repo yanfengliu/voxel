@@ -27,9 +27,9 @@ import {
 } from './voxel-mesh-scheduler-dispatch.js';
 import {
   failMeshSchedulerGroupV1Internal,
-  removeTerminalGroupWhenIdleV1Internal,
   settleWorkerJobV1Internal,
 } from './voxel-mesh-scheduler-lifecycle.js';
+import { replaceMeshSchedulerEpochV1Internal } from './voxel-mesh-scheduler-epoch.js';
 import { receiveMeshSchedulerResultV1Internal } from './voxel-mesh-scheduler-receipt.js';
 import {
   snapshotMeshSchedulerMetricsInternal,
@@ -111,6 +111,22 @@ export class VoxelMeshSchedulerV1 {
         this.#state,
         groups,
         logicalTick,
+      );
+    });
+  }
+
+  /** Preflights target admission before replacing a prior epoch and its workers. */
+  enqueueReplacingEpochTarget(
+    groups: readonly MeshSchedulerGroupV1[],
+    logicalTick: number,
+  ): MeshSchedulerEnqueueTargetResultV1 {
+    return this.#operate(() => {
+      this.#state.tick(logicalTick);
+      return enqueueMeshSchedulerTargetV1Internal(
+        this.#state,
+        groups,
+        logicalTick,
+        true,
       );
     });
   }
@@ -264,59 +280,16 @@ export class VoxelMeshSchedulerV1 {
       if (!this.#state.active) {
         return { status: 'disposed', ...identity, cancelledGroups: [] };
       }
-      const previousEpoch = this.#state.worldEpochs.get(worldId);
-      if (previousEpoch === epoch) {
-        return { status: 'replaced', ...identity, cancelledGroups: [] };
-      }
-      this.#state.worldEpochs.set(worldId, epoch);
-      if (previousEpoch !== undefined) {
-        this.#state.latestTargets.delete(this.#state.worldEpochKey(worldId, previousEpoch));
-      }
-      const cancelled = [...this.#state.groups.values()]
-        .filter((group) => group.worldId === worldId && group.epoch !== epoch)
-        .sort((left, right) => left.groupId < right.groupId ? -1 : 1);
-      for (const group of cancelled) {
-        failMeshSchedulerGroupV1Internal(
-          this.#state,
-          group,
-          'epoch-replaced',
-          logicalTick,
-        );
-      }
-      for (const slot of this.#state.slots) {
-        const active = slot.active;
-        if (active !== undefined) {
-          settleWorkerJobV1Internal(this.#state, slot, active);
-          const group = this.#state.groups.get(active.normalized.eligibility.groupId);
-          if (group?.state === 'active') {
-            active.state = 'retry-pending';
-            slot.retry = active;
-          } else {
-            active.state = 'terminal';
-            if (group !== undefined) {
-              removeTerminalGroupWhenIdleV1Internal(this.#state, group);
-            }
-          }
-        }
-        if (!this.#state.refreshPort(slot) && slot.retry !== undefined) {
-          const retry = slot.retry;
-          slot.retry = undefined;
-          retry.state = 'terminal';
-          const group = this.#state.groups.get(retry.normalized.eligibility.groupId);
-          if (group !== undefined) {
-            failMeshSchedulerGroupV1Internal(
-              this.#state,
-              group,
-              'worker-startup-failed',
-              logicalTick,
-            );
-          }
-        }
-      }
+      const cancelledGroups = replaceMeshSchedulerEpochV1Internal(
+        this.#state,
+        worldId,
+        epoch,
+        logicalTick,
+      );
       return Object.freeze({
         status: 'replaced',
         ...identity,
-        cancelledGroups: Object.freeze(cancelled.map((group) => group.groupId)),
+        cancelledGroups,
       });
     });
   }
