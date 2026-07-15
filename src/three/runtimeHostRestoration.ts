@@ -3,6 +3,7 @@ import type {
   ThreeFrameContext,
   ThreePrepareFrameResult,
 } from './hostFrameProtocol.js';
+import type { RuntimeAtomicPreparedFrameInternal } from './runtimeAtomicFrame.js';
 import type { HostFrameTicketRecordInternal } from './runtimeHostFrameTicket.js';
 import type { ThreePresentationSnapshot } from './runtimeTypes.js';
 
@@ -51,7 +52,24 @@ export interface PreparedHostFrameInternal {
   readonly previousPresentation: ThreePresentationSnapshot | null;
   readonly previousContext: ThreeFrameContext | null;
   readonly restoration: boolean;
+  /**
+   * Present when the atomic worker pipeline owns this frame. Its revision is
+   * carried by the transaction rather than by the legacy presenter fields
+   * above, so a payload with this set never takes the legacy commit path.
+   */
+  readonly atomic?: RuntimeAtomicHostFrameInternal;
 }
+
+/**
+ * The atomic work an embedded host's frame ticket brackets. `idle` redraws the
+ * displayed revision while workers are still meshing the pending one.
+ */
+export type RuntimeAtomicHostFrameInternal =
+  | { readonly kind: 'idle' }
+  | {
+    readonly kind: 'commit';
+    readonly prepared: RuntimeAtomicPreparedFrameInternal;
+  };
 
 /**
  * Prepares an embedded host's restoration frame.

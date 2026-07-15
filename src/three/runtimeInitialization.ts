@@ -91,15 +91,6 @@ export function initializeRuntimeInternal(
   if (options.renderer && options.rendererFactory) {
     throw new Error('Provide either renderer or rendererFactory, not both.');
   }
-  if (
-    (options as ThreeRenderRuntimeInternalOptions).voxelWorkersInternal
-    && resolvedHost.kind === 'embedded'
-  ) {
-    throw new Error(
-      'The atomic voxel worker pipeline does not support embedded hosts yet; '
-      + 'its frame-ticket integration is a separate delivery.',
-    );
-  }
   if (resolvedHost.view && options.camera) {
     throw new Error('Provide either the additive view policy or the legacy camera, not both.');
   }

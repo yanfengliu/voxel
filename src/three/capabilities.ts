@@ -54,9 +54,10 @@ const THREE_RUNTIME_CAPABILITIES_V1: ThreeRuntimeCapabilitiesV1 = Object.freeze(
   // browser, but they are reachable only through the package-internal voxel
   // worker option. No public configuration can obtain them, so advertising
   // them would promise support a consumer cannot enable. Both flip together
-  // when that option becomes public, which its own gates still block:
-  // embedded host frame tickets, the V-09/V-10 selection and culling
-  // evidence, and the E-04 edit-storm endurance baseline.
+  // when that option becomes public; every gate that blocked it now holds
+  // (embedded host frame tickets, the V-09/V-10 selection and culling
+  // evidence, and the E-04 edit-storm endurance baseline), so publishing the
+  // option is the only remaining step.
   pickingLanes: Object.freeze([] as const),
   workerMeshing: false,
   revisionAwareCapture: false,

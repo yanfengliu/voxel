@@ -31,6 +31,32 @@ export type RuntimeAtomicReserveResultInternal =
   | { readonly rejection: RuntimeAtomicAdmissionRejectionInternal };
 
 /**
+ * One atomic revision activated and awaiting a draw. The canonical ticket and
+ * the staged scene lease are already live, so whoever draws next renders this
+ * revision; the commit half is the acknowledgement that it reached the canvas.
+ */
+export interface RuntimeAtomicPreparedFrameInternal {
+  readonly frameCommit: RevisionAtomicFrameCommitInternal;
+  readonly lease: RevisionAtomicPresentationLeaseInternal;
+  readonly pending: CanonicalCandidateInternal;
+  readonly deviceGeneration: number;
+}
+
+/**
+ * The outcome of the prepare half. `idle` means workers are still meshing the
+ * pending revision, so the draw should show the currently displayed one rather
+ * than stall the host's cadence.
+ */
+export type RuntimeAtomicPrepareOutcomeInternal =
+  | 'no-atomic-target'
+  | { readonly status: 'unavailable' }
+  | { readonly status: 'idle' }
+  | {
+    readonly status: 'prepared';
+    readonly prepared: RuntimeAtomicPreparedFrameInternal;
+  };
+
+/**
  * The runtime surface the atomic frame flow drives. Every member reads or
  * writes live runtime state, so the runtime supplies closures rather than
  * exposing mutable fields.
@@ -151,17 +177,19 @@ export class RuntimeAtomicFrameCoordinatorInternal {
   }
 
   /**
-   * Runs one standalone frame for atomic-owned worlds: advances worker events,
-   * re-admits a pending revision whose target was lost, and commits a ready
-   * lease through the cross-layer frame transaction. Returns
+   * The prepare half of an atomic frame, shared by both host modes: advances
+   * worker events, re-admits a pending revision whose target was lost, and
+   * activates a ready lease so the next draw renders it. Returns
    * 'no-atomic-target' when neither the pending nor the presented canonical
    * state belongs to the atomic pipeline so the legacy path may run.
+   *
+   * Splitting here rather than at the commit is what lets an embedded host own
+   * the draw: the runtime's own draw and the host's frame ticket are the same
+   * transaction with a different party in the middle.
    */
-  standaloneFrameInternal(
-    context: Readonly<ThreeFrameContext>,
-  ): ThreePresentedManifestV1 | undefined | 'no-atomic-target' {
+  prepareAtomicFrameInternal(): RuntimeAtomicPrepareOutcomeInternal {
     this.setup.driver.advanceInternal();
-    if (!this.ops.isRunning()) return undefined;
+    if (!this.ops.isRunning()) return { status: 'unavailable' };
     const pending = pendingCanonicalStateForPresentationInternal(this.world);
     const atomicPending = pending && this.ownsCandidateInternal(pending) ? pending : null;
     if (atomicPending) {
@@ -172,17 +200,118 @@ export class RuntimeAtomicFrameCoordinatorInternal {
         && lease.targetInternal.epoch === atomicPending.epoch
         && lease.targetInternal.revision === atomicPending.revision
       ) {
-        return this.commitFrameInternal(context, lease, atomicPending);
+        return this.activatePreparedFrameInternal(atomicPending, lease);
       }
       // Workers are still meshing the pending revision: draw the currently
       // displayed revision so the host cadence continues without a seam.
-      return this.idleFrameInternal(context);
+      return { status: 'idle' };
     }
     const presented = presentedCanonicalStateForPresentationInternal(this.world);
-    if (presented && this.ownsCandidateInternal(presented)) {
-      return this.idleFrameInternal(context);
-    }
+    if (presented && this.ownsCandidateInternal(presented)) return { status: 'idle' };
     return 'no-atomic-target';
+  }
+
+  /**
+   * Runs one standalone frame for atomic-owned worlds. The runtime owns the
+   * draw here, so it sits between the same two halves an embedded host's frame
+   * ticket brackets.
+   */
+  standaloneFrameInternal(
+    context: Readonly<ThreeFrameContext>,
+  ): ThreePresentedManifestV1 | undefined | 'no-atomic-target' {
+    const outcome = this.prepareAtomicFrameInternal();
+    if (outcome === 'no-atomic-target') return 'no-atomic-target';
+    if (outcome.status === 'unavailable') return undefined;
+    if (outcome.status === 'idle') return this.idleFrameInternal(context);
+    const { prepared } = outcome;
+    try {
+      this.ops.renderCurrent();
+    } catch (error) {
+      const cleanup: unknown[] = [];
+      try {
+        prepared.frameCommit.abortInternal();
+      } catch (caught) {
+        cleanup.push(caught);
+      }
+      cleanup.push(...this.settleLeaseInternal(prepared.lease));
+      if (this.ops.isRunningAttempt(prepared.deviceGeneration)) {
+        this.ops.transitionToFailed('render', combineAtomicFrameErrors(error, cleanup));
+      }
+      throw error;
+    }
+    return this.commitPreparedAtomicFrameInternal(prepared, context);
+  }
+
+  /**
+   * Activates one ready revision for the coming draw. A canonical lane that is
+   * momentarily unpreparable (for example a reentrant settlement) yields an
+   * idle frame so the current revision draws and the next frame retries.
+   */
+  private activatePreparedFrameInternal(
+    pending: CanonicalCandidateInternal,
+    lease: RevisionAtomicPresentationLeaseInternal,
+  ): RuntimeAtomicPrepareOutcomeInternal {
+    const ticket = prepareCanonicalPresentationInternal(this.world, pending);
+    if (!ticket) return { status: 'idle' };
+    const frameCommit = new RevisionAtomicFrameCommitInternal({
+      canonicalTicket: ticket,
+      sceneLease: lease,
+    });
+    const generation = this.ops.deviceGeneration();
+    try {
+      frameCommit.activateInternal();
+    } catch (error) {
+      const cleanup = this.settleLeaseInternal(lease);
+      if (this.ops.isRunningAttempt(generation)) {
+        this.ops.transitionToFailed('prepare', combineAtomicFrameErrors(error, cleanup));
+      }
+      throw error;
+    }
+    return {
+      status: 'prepared',
+      prepared: { frameCommit, lease, pending, deviceGeneration: generation },
+    };
+  }
+
+  /**
+   * Settles a prepared frame that a device transition orphaned. A stale ticket
+   * can be neither committed nor aborted by its host, so without this the
+   * transaction would hold its target for the rest of the session. Failures are
+   * swallowed rather than escalated: the runtime is already lost or restoring,
+   * and the stager retains any restoration debt for the reconstruction path.
+   */
+  discardPreparedAtomicFrameInternal(prepared: RuntimeAtomicPreparedFrameInternal): void {
+    try {
+      prepared.frameCommit.abortInternal();
+    } catch {
+      // The stager retains restoration debt for the restore path.
+    }
+    this.settleLeaseInternal(prepared.lease);
+  }
+
+  /**
+   * Rolls back an activated revision whose draw never reached the canvas. The
+   * previously displayed revision is restored, and the lease settles so the
+   * coordinator stops holding the target.
+   */
+  abortPreparedAtomicFrameInternal(prepared: RuntimeAtomicPreparedFrameInternal): void {
+    const cleanup: unknown[] = [];
+    try {
+      prepared.frameCommit.abortInternal();
+    } catch (error) {
+      cleanup.push(error);
+    }
+    cleanup.push(...this.settleLeaseInternal(prepared.lease));
+    if (cleanup.length === 0) return;
+    // The displayed scene is now unknown, which is terminal rather than a
+    // frame the host may simply retry.
+    if (this.ops.isRunningAttempt(prepared.deviceGeneration)) {
+      this.ops.transitionToFailed(
+        'commit',
+        combineAtomicFrameErrors(cleanup[0], cleanup.slice(1)),
+      );
+    }
+    throw cleanup[0];
   }
 
   /**
@@ -245,6 +374,18 @@ export class RuntimeAtomicFrameCoordinatorInternal {
       }
       throw error;
     }
+    return this.commitIdleFrameInternal(context, generation);
+  }
+
+  /**
+   * The commit half of a frame that redraws the displayed revision. No
+   * canonical state advances, so this only records that a frame reached the
+   * canvas.
+   */
+  commitIdleFrameInternal(
+    context: Readonly<ThreeFrameContext>,
+    generation: number = this.ops.deviceGeneration(),
+  ): ThreePresentedManifestV1 | undefined {
     if (!this.ops.isRunningAttempt(generation)) return undefined;
     const previousFrames = this.ops.frames();
     this.ops.setFrames(previousFrames + 1);
@@ -264,48 +405,16 @@ export class RuntimeAtomicFrameCoordinatorInternal {
   }
 
   /**
-   * Draws and commits one ready atomic revision. The canonical ticket, staged
-   * scene lease, and (later) committed query candidate settle atomically; any
-   * pre-finalization failure preserves the previously displayed revision.
+   * The commit half: acknowledges that the draw put this revision on the
+   * canvas. The canonical ticket, staged scene lease, and committed query
+   * candidate settle atomically; any pre-finalization failure preserves the
+   * previously displayed revision.
    */
-  private commitFrameInternal(
+  commitPreparedAtomicFrameInternal(
+    prepared: RuntimeAtomicPreparedFrameInternal,
     context: Readonly<ThreeFrameContext>,
-    lease: RevisionAtomicPresentationLeaseInternal,
-    pending: CanonicalCandidateInternal,
   ): ThreePresentedManifestV1 | undefined {
-    const ticket = prepareCanonicalPresentationInternal(this.world, pending);
-    // The canonical lane is momentarily unpreparable (for example a
-    // reentrant settlement); draw the current revision and retry next frame.
-    if (!ticket) return this.idleFrameInternal(context);
-    const frameCommit = new RevisionAtomicFrameCommitInternal({
-      canonicalTicket: ticket,
-      sceneLease: lease,
-    });
-    const generation = this.ops.deviceGeneration();
-    try {
-      frameCommit.activateInternal();
-    } catch (error) {
-      const cleanup = this.settleLeaseInternal(lease);
-      if (this.ops.isRunningAttempt(generation)) {
-        this.ops.transitionToFailed('prepare', combineAtomicFrameErrors(error, cleanup));
-      }
-      throw error;
-    }
-    try {
-      this.ops.renderCurrent();
-    } catch (error) {
-      const cleanup: unknown[] = [];
-      try {
-        frameCommit.abortInternal();
-      } catch (caught) {
-        cleanup.push(caught);
-      }
-      cleanup.push(...this.settleLeaseInternal(lease));
-      if (this.ops.isRunningAttempt(generation)) {
-        this.ops.transitionToFailed('render', combineAtomicFrameErrors(error, cleanup));
-      }
-      throw error;
-    }
+    const { frameCommit, lease, pending, deviceGeneration: generation } = prepared;
     if (!this.ops.isRunningAttempt(generation)) {
       // A context transition interrupted the draw; preserve the prior
       // revision and let restoration handle the device change. Abort and

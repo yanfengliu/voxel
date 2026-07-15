@@ -106,6 +106,62 @@ function createAtomicRuntime(options: {
   return { runtime, renderer, pool, scene, atomicRoot };
 }
 
+function createEmbeddedAtomicRuntime(options: {
+  readonly workerPool?: ManualWorkerPoolInternal;
+} = {}) {
+  const pool = options.workerPool ?? new ManualWorkerPoolInternal();
+  pool.completeSynchronouslyInternal = true;
+  const renderer = new FakeRenderer();
+  const scene = new Scene();
+  const camera = new PerspectiveCamera(60, 16 / 10, 0.1, 1000);
+  camera.position.set(0, 0, 40);
+  camera.updateMatrixWorld(true);
+  const runtimeOptions: ThreeRenderRuntimeInternalOptions = {
+    host: {
+      kind: 'embedded',
+      renderer,
+      scene,
+      camera,
+      drawOwnership: 'host',
+      viewportOwnership: 'host',
+      captureOwnership: 'host',
+    },
+    width: 320,
+    height: 200,
+    voxelWorkersInternal: {
+      workerCount: 1,
+      startWorkerInternal: pool.startInternal,
+    },
+  };
+  const runtime = new ThreeRenderRuntime(runtimeOptions);
+  const atomicRoot = scene.children.find(
+    (child) => child.name === 'voxel:atomic-presentation',
+  );
+  if (!atomicRoot) throw new Error('Expected the atomic presentation root.');
+  return { runtime, renderer, pool, scene, camera, atomicRoot };
+}
+
+/**
+ * Drives host frame tickets the way an embedded host does -- prepare, draw,
+ * commit -- until the target revision presents. Mirrors frameUntilPresented:
+ * early cycles are idle while workers still mesh the pending revision.
+ */
+function hostFrameUntilPresented(
+  host: ReturnType<typeof createEmbeddedAtomicRuntime>,
+  revision: number,
+  firstFrameIndex: number,
+  maxFrames = 4,
+): number {
+  for (let attempt = 0; attempt < maxFrames; attempt += 1) {
+    const prepared = host.runtime.prepareFrame(frameContext(firstFrameIndex + attempt));
+    if (prepared.status !== 'prepared') throw new Error('Expected a prepared host frame.');
+    host.renderer.render(host.scene, host.camera);
+    const manifest = host.runtime.commitFrame(prepared.ticket);
+    if (manifest.presentedRevision === revision) return firstFrameIndex + attempt + 1;
+  }
+  throw new Error(`Revision ${String(revision)} did not present within ${String(maxFrames)} host frames.`);
+}
+
 /** Drives frames until the target revision presents or attempts run out. */
 function frameUntilPresented(
   runtime: ThreeRenderRuntime,
@@ -369,29 +425,85 @@ describe('ThreeRenderRuntime atomic voxel pipeline', () => {
     runtime.dispose();
   });
 
-  it('rejects embedded hosts until the atomic frame-ticket path exists', () => {
-    const pool = new ManualWorkerPoolInternal();
-    const renderer = new FakeRenderer();
-    const camera = new PerspectiveCamera(60, 16 / 10, 0.1, 100);
-    camera.updateMatrixWorld(true);
-    const options: ThreeRenderRuntimeInternalOptions = {
-      host: {
-        kind: 'embedded',
-        renderer,
-        scene: new Scene(),
-        camera,
-        drawOwnership: 'host',
-        viewportOwnership: 'host',
-        captureOwnership: 'host',
-      },
-      width: 320,
-      height: 200,
-      voxelWorkersInternal: {
-        workerCount: 1,
-        startWorkerInternal: pool.startInternal,
-      },
-    };
-    expect(() => new ThreeRenderRuntime(options)).toThrow(/embedded/i);
+  it('presents atomic worker revisions through an embedded host frame ticket', () => {
+    const host = createEmbeddedAtomicRuntime();
+    const { runtime, pool, atomicRoot } = host;
+
+    expect(runtime.acceptSnapshot(profiledSnapshot(1)).status).toBe('accepted');
+    // Nothing presents at accept time: the host's draw acknowledgement commits.
+    expect(runtime.metrics().presentedRevision).toBeNull();
+
+    hostFrameUntilPresented(host, 1, 0);
+
+    expect(runtime.metrics().presentedRevision).toBe(1);
+    expect(runtime.metrics().acceptedRevision).toBe(1);
+    // The revision went through the packaged worker protocol and presents
+    // through the atomic root, not the legacy synchronous surface.
+    expect(pool.handlesInternal.length).toBe(1);
+    expect(atomicRoot.children.length).toBe(1);
+    expect(runtime.presentationReadiness({
+      worldId: 'world:test',
+      epoch: 'epoch:runtime-atomic',
+      revision: 1,
+    })).toMatchObject({ status: 'ready' });
+    runtime.dispose();
+    expect(atomicRoot.children.length).toBe(0);
+  });
+
+  it('stages a ready revision before the host draws and commits only after', () => {
+    const host = createEmbeddedAtomicRuntime();
+    const { runtime, atomicRoot } = host;
+    expect(runtime.acceptSnapshot(profiledSnapshot(1)).status).toBe('accepted');
+    const settled = hostFrameUntilPresented(host, 1, 0);
+    const displayed = atomicRoot.children[0];
+
+    expect(runtime.acceptSnapshot(profiledSnapshot(2, [2])).status).toBe('accepted');
+    // Drive idle cycles until the second revision is staged and activated.
+    let prepared = runtime.prepareFrame(frameContext(settled));
+    for (let attempt = 1; attempt < 4 && atomicRoot.children[0] === displayed; attempt += 1) {
+      if (prepared.status !== 'prepared') throw new Error('Expected a prepared host frame.');
+      host.renderer.render(host.scene, host.camera);
+      runtime.commitFrame(prepared.ticket);
+      prepared = runtime.prepareFrame(frameContext(settled + attempt));
+    }
+    if (prepared.status !== 'prepared') throw new Error('Expected a prepared host frame.');
+
+    // The staged bundle is on the scene before the host draws, so the host's
+    // own draw is what puts the revision on the canvas -- but nothing is
+    // presented until the commit acknowledges it.
+    expect(atomicRoot.children[0]).not.toBe(displayed);
+    expect(runtime.metrics().presentedRevision).toBe(1);
+
+    host.renderer.render(host.scene, host.camera);
+    expect(runtime.commitFrame(prepared.ticket).presentedRevision).toBe(2);
+    expect(runtime.metrics().presentedRevision).toBe(2);
+    runtime.dispose();
+  });
+
+  it('keeps the displayed revision when an embedded host aborts an atomic frame', () => {
+    const host = createEmbeddedAtomicRuntime();
+    const { runtime, atomicRoot } = host;
+    expect(runtime.acceptSnapshot(profiledSnapshot(1)).status).toBe('accepted');
+    const settled = hostFrameUntilPresented(host, 1, 0);
+    const displayed = atomicRoot.children[0];
+
+    expect(runtime.acceptSnapshot(profiledSnapshot(2, [2])).status).toBe('accepted');
+    let prepared = runtime.prepareFrame(frameContext(settled));
+    for (let attempt = 1; attempt < 4 && atomicRoot.children[0] === displayed; attempt += 1) {
+      if (prepared.status !== 'prepared') throw new Error('Expected a prepared host frame.');
+      host.renderer.render(host.scene, host.camera);
+      runtime.commitFrame(prepared.ticket);
+      prepared = runtime.prepareFrame(frameContext(settled + attempt));
+    }
+    if (prepared.status !== 'prepared') throw new Error('Expected a prepared host frame.');
+    expect(atomicRoot.children[0]).not.toBe(displayed);
+
+    // The host's draw threw, so revision 2 never reached the canvas.
+    runtime.abortFrame(prepared.ticket);
+
+    expect(runtime.metrics().presentedRevision).toBe(1);
+    expect(atomicRoot.children).toEqual([displayed]);
+    runtime.dispose();
   });
 
   it('preserves the prior revision when the atomic draw fails', () => {
@@ -424,6 +536,53 @@ describe('ThreeRenderRuntime atomic voxel pipeline', () => {
     expect(runtime.metrics().presentedRevision).toBe(1);
     expect(runtime.metrics().acceptedRevision).toBe(2);
     expect(runtime.runtimeStatus().state).toBe('failed');
+    runtime.dispose();
+  });
+});
+
+describe('atomic host frame device transitions', () => {
+  it('settles an activated atomic host frame when the context is lost', () => {
+    const host = createEmbeddedAtomicRuntime();
+    const { runtime, renderer, atomicRoot } = host;
+    expect(runtime.acceptSnapshot(profiledSnapshot(1)).status).toBe('accepted');
+    const settled = hostFrameUntilPresented(host, 1, 0);
+    const displayed = atomicRoot.children[0];
+
+    expect(runtime.acceptSnapshot(profiledSnapshot(2, [2])).status).toBe('accepted');
+    let prepared = runtime.prepareFrame(frameContext(settled));
+    for (let attempt = 1; attempt < 4 && atomicRoot.children[0] === displayed; attempt += 1) {
+      if (prepared.status !== 'prepared') throw new Error('Expected a prepared host frame.');
+      host.renderer.render(host.scene, host.camera);
+      runtime.commitFrame(prepared.ticket);
+      prepared = runtime.prepareFrame(frameContext(settled + attempt));
+    }
+    if (prepared.status !== 'prepared') throw new Error('Expected a prepared host frame.');
+    expect(atomicRoot.children[0]).not.toBe(displayed);
+    expect(runtime.metrics().atomic?.preparedTargets).toBe(1);
+
+    // The device dies between the host's prepare and its commit. The ticket is
+    // now uncompletable in both directions, so nothing the host does later can
+    // settle this transaction.
+    renderer.emit('webglcontextlost');
+    expect(() => runtime.commitFrame(prepared.ticket)).toThrow(/obsolete device generation/);
+    expect(() => runtime.abortFrame(prepared.ticket)).toThrow(/obsolete device generation/);
+
+    expect(runtime.metrics().atomic?.preparedTargets).toBe(0);
+    // The counter returning to zero only means the target was released. What
+    // matters is that the revision was rolled back rather than lost: once the
+    // device returns, the host must still be able to present revision 2.
+    expect(runtime.metrics().presentedRevision).toBe(1);
+    renderer.emit('webglcontextrestored');
+    expect(runtime.runtimeStatus().state).toBe('restoring');
+    const restoration = runtime.prepareFrame(frameContext(settled + 8));
+    if (restoration.status !== 'prepared') throw new Error('Expected a restoration frame.');
+    host.renderer.render(host.scene, host.camera);
+    runtime.commitFrame(restoration.ticket);
+    expect(runtime.runtimeStatus().state).toBe('running');
+
+    hostFrameUntilPresented(host, 2, settled + 9);
+    expect(runtime.metrics().presentedRevision).toBe(2);
+    expect(runtime.metrics().atomic?.preparedTargets).toBe(0);
     runtime.dispose();
   });
 });

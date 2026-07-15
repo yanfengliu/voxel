@@ -1,4 +1,4 @@
-import { Frustum, Matrix4, type Camera, type Scene } from 'three';
+import type { Camera, Scene } from 'three';
 import {
   RenderWorld,
   type ApplyResultV1,
@@ -61,10 +61,18 @@ import {
   disposeRuntimeAtomicSetupInternal,
   type RuntimeAtomicSetupInternal,
 } from './runtimeAtomicSetup.js';
+import { collectAtomicPipelineMetricsInternal } from './runtimeAtomicMetrics.js';
 import {
   RuntimeAtomicFrameCoordinatorInternal,
   type RuntimeAtomicFrameOpsInternal,
 } from './runtimeAtomicFrame.js';
+import {
+  abortAtomicHostFrameInternal,
+  commitAtomicHostFrameInternal,
+  discardAtomicHostFrameInternal,
+  prepareEmbeddedAtomicHostFrameInternal,
+  type RuntimeAtomicHostFrameOpsInternal,
+} from './runtimeAtomicHostFrame.js';
 import {
   prepareHostRestorationFrameInternal,
   type PreparedHostFrameInternal,
@@ -92,7 +100,6 @@ import { runRuntimeDisposalInternal } from './runtimeDisposal.js';
 import { captureRuntimeCanvasInternal } from './runtimeCapture.js';
 import { initializeRuntimeInternal } from './runtimeInitialization.js';
 import { resizeRuntimeInternal } from './runtimeResize.js';
-import type { ChunkPresenter } from './chunkPresenter.js';
 import type { LegacyRuntimePresentationSurfaceInternal } from './runtimePresentationSurface.js';
 import {
   initializeRuntimeSnapshotMetricsInternal,
@@ -100,7 +107,6 @@ import {
 import type {
   ThreeCaptureResult,
   ThreePresentationSnapshot,
-  ThreeAtomicPipelineMetricsV1,
   ThreeRenderMetrics,
   ThreeRenderRuntimeOptions,
   ThreeRuntimeFailurePhaseV1,
@@ -113,8 +119,6 @@ export {
   snapshotIngestMetricsForTesting,
   type SnapshotIngestMetricsInternal,
 } from './runtimeSnapshotMetrics.js';
-const ATOMIC_FRUSTUM_INTERNAL = new Frustum();
-const ATOMIC_FRUSTUM_MATRIX_INTERNAL = new Matrix4();
 
 type CanonicalPresentationStateInternal = NonNullable<
   ReturnType<typeof pendingCanonicalStateForPresentationInternal>
@@ -172,6 +176,10 @@ export class ThreeRenderRuntime {
     this.lifecycleState = 'lost';
     setRenderWorldPresentationAvailabilityInternal(this.world, 'context-lost');
     this.contextLosses++;
+    // After the state is lost, so a settle failure cannot fail a runtime that
+    // is already gone. An orphaned atomic frame is settled here because its
+    // host can no longer complete the ticket in either direction.
+    if (invalidated) discardAtomicHostFrameInternal(this.atomicFrames, invalidated);
   };
   private readonly handleContextRestored = (): void => {
     if (this.lifecycleState !== 'lost') return;
@@ -482,56 +490,11 @@ export class ThreeRenderRuntime {
       contextRestorations: this.contextRestorations,
       presentationStagingBytes: presentationStaging.currentBytes,
       peakPresentationStagingBytes: presentationStaging.peakBytes,
-      atomic: this.atomicPipelineMetricsInternal(),
+      atomic: this.atomic
+        ? collectAtomicPipelineMetricsInternal(this.atomic, this.camera)
+        : null,
     });
   }
-  /**
-   * Chunks the camera can actually see. The frustum is derived from the live
-   * camera at read time, which is the same test Three runs internally.
-   */
-  private inFrustumChunkCountInternal(
-    bundle: { readonly chunkPresenterInternal: ChunkPresenter } | null | undefined,
-  ): number {
-    if (!bundle) return 0;
-    this.camera.updateMatrixWorld();
-    ATOMIC_FRUSTUM_MATRIX_INTERNAL.multiplyMatrices(
-      this.camera.projectionMatrix,
-      this.camera.matrixWorldInverse,
-    );
-    ATOMIC_FRUSTUM_INTERNAL.setFromProjectionMatrix(ATOMIC_FRUSTUM_MATRIX_INTERNAL);
-    return bundle.chunkPresenterInternal.inFrustumCountInternal(ATOMIC_FRUSTUM_INTERNAL);
-  }
-
-  /** Null unless this runtime owns a worker-meshed voxel pipeline. */
-  private atomicPipelineMetricsInternal(): ThreeAtomicPipelineMetricsV1 | null {
-    if (!this.atomic) return null;
-    const staging = this.atomic.pipeline.stagingMetricsInternal();
-    const driver = this.atomic.driver.metricsInternal();
-    return Object.freeze({
-      preparedTargets: staging.preparedTargets,
-      cpuStagingBytes: staging.cpuStagingBytes,
-      gpuStagingBytes: staging.gpuStagingBytes,
-      peakCpuStagingBytes: staging.peakCpuStagingBytes,
-      peakGpuStagingBytes: staging.peakGpuStagingBytes,
-      pendingRetiredBundles: staging.pendingRetiredBundles,
-      pendingRetirements: staging.pendingRetirements,
-      presentedTargets: staging.presentedTargets,
-      failedTargets: staging.failedTargets,
-      loadedChunks: staging.displayedBundle?.chunkPresenterInternal.count ?? 0,
-      nonemptyChunks: staging.displayedBundle?.chunkPresenterInternal.visibleCount ?? 0,
-      inFrustumChunks: this.inFrustumChunkCountInternal(staging.displayedBundle),
-      queuedJobs: staging.scheduler.queuedJobs,
-      queuedBytes: staging.scheduler.queuedBytes,
-      highWaterQueuedJobs: staging.scheduler.highWaterQueuedJobs,
-      highWaterQueuedBytes: staging.scheduler.highWaterQueuedBytes,
-      highWaterStagingBytes: staging.scheduler.highWaterStagingBytes,
-      highWaterBusyWorkers: staging.scheduler.highWaterBusyWorkers,
-      queuedWorkerEvents: driver.queuedEvents,
-      highWaterQueuedWorkerEvents: driver.highWaterQueuedEvents,
-      liveWorkers: driver.liveWorkers,
-    });
-  }
-
   dispose(): void {
     if (this.lifecycleState !== 'disposed') {
       const invalidated = this.hostFrames.dispose();
@@ -638,6 +601,18 @@ export class ThreeRenderRuntime {
       return prepareHostRestorationFrameInternal(context, this.restorationOpsInternal());
     }
     this.hostFrames.beginPreparation();
+    // An embedded host drives the atomic pipeline through this ticket, which
+    // brackets the same transaction halves the runtime's own draw sits between.
+    // Standalone hosts never reach this: frame() runs the atomic path first and
+    // only falls through when no atomic target exists.
+    if (this.atomicFrames && this.hostKind === 'embedded') {
+      const atomicResult = prepareEmbeddedAtomicHostFrameInternal(
+        this.atomicFrames,
+        context,
+        this.atomicHostFrameOpsInternal(),
+      );
+      if (atomicResult) return atomicResult;
+    }
     const generation = this.deviceGeneration;
     // Atomic-owned pendings present only through the worker frame transaction;
     // the legacy reconcile path must never stage the same revision.
@@ -716,6 +691,17 @@ export class ThreeRenderRuntime {
       this.hostFrames.finishPreparation();
     }
   }
+  /** Live-state closures the embedded host's atomic frame drives. */
+  private atomicHostFrameOpsInternal(): RuntimeAtomicHostFrameOpsInternal {
+    return {
+      deviceGeneration: () => this.deviceGeneration,
+      presentedCanonicalState: () => presentedCanonicalStateForPresentationInternal(this.world),
+      finishPreparation: () => { this.hostFrames.finishPreparation(); },
+      issueTicket: (payload, generation) => this.hostFrames.issue(payload, generation),
+      isFrameUnavailableAfterCallbacks: () => this.isFrameUnavailableAfterCallbacks(),
+      unavailableFrameResult: () => this.unavailableFrameResult(),
+    };
+  }
   /** Live-state closures the embedded restoration frame drives. */
   private restorationOpsInternal(): RuntimeHostRestorationOpsInternal {
     return {
@@ -761,6 +747,9 @@ export class ThreeRenderRuntime {
     record: HostFrameTicketRecordInternal<PreparedHostFrameInternal>,
   ): ThreePresentedManifestV1 | undefined {
     const prepared = record.payload;
+    if (prepared.atomic) {
+      return commitAtomicHostFrameInternal(this.atomicFrames, record, prepared.atomic);
+    }
     if (prepared.restoration) {
       // The host drew the rebuilt scene, which is the only evidence Voxel's
       // reconstructed GPU state actually reached the canvas. Report running
@@ -877,6 +866,11 @@ export class ThreeRenderRuntime {
   private restoreAbortedHostFrame(
     record: HostFrameTicketRecordInternal<PreparedHostFrameInternal>,
   ): void {
+    const atomic = record.payload.atomic;
+    if (atomic) {
+      abortAtomicHostFrameInternal(this.atomicFrames, atomic);
+      return;
+    }
     restoreAbortedHostFrameInternal(this.hostFrameRestoreOpsInternal(), record);
   }
   private restoreLateHostFrame(
