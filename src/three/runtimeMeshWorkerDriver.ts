@@ -43,6 +43,7 @@ export interface RuntimeMeshWorkerDriverOptionsInternal {
   readonly startWorkerInternal?: (
     context: MeshSchedulerWorkerContextV1,
   ) => RuntimeMeshWorkerStartupResultInternal;
+  /** Total queued receipts, including one fail-closed crash slot per owned worker. */
   readonly maxQueuedEventsInternal: number;
 }
 
@@ -164,7 +165,6 @@ export class RuntimeMeshWorkerDriverInternal {
   private readonly records = new Map<string, RuntimeMeshWorkerRecordInternal>();
   private readonly ownedHandles = new WeakSet();
   private queuedEvents: RuntimeMeshWorkerQueuedEventInternal[] = [];
-  private readonly overflowCrashWorkerIds = new Set<string>();
   private sink: RuntimeMeshWorkerSinkInternal | null = null;
   private lifecycle: RuntimeMeshWorkerLifecycleInternal = 'active';
   private advancing = false;
@@ -206,21 +206,6 @@ export class RuntimeMeshWorkerDriverInternal {
     this.advancing = true;
     let processed = 0;
     try {
-      const overflowCrashes = [...this.overflowCrashWorkerIds];
-      this.overflowCrashWorkerIds.clear();
-      let overflowIndex = 0;
-      try {
-        for (; overflowIndex < overflowCrashes.length; overflowIndex += 1) {
-          this.sink.workerCrashedInternal(overflowCrashes[overflowIndex]!);
-          processed = incrementInternal(processed);
-          this.processedEvents = incrementInternal(this.processedEvents);
-        }
-      } catch (error) {
-        for (const workerId of overflowCrashes.slice(overflowIndex + 1)) {
-          this.overflowCrashWorkerIds.add(workerId);
-        }
-        throw error;
-      }
       const queuedAtEntry = this.queuedEvents;
       this.queuedEvents = [];
       let eventIndex = 0;
@@ -245,7 +230,7 @@ export class RuntimeMeshWorkerDriverInternal {
       const pumpInternal = this.sink.pumpInternal();
       return Object.freeze({
         processedEvents: processed,
-        remainingEvents: this.queuedEvents.length + this.overflowCrashWorkerIds.size,
+        remainingEvents: this.queuedEvents.length,
         pumpInternal,
       });
     } finally {
@@ -283,7 +268,7 @@ export class RuntimeMeshWorkerDriverInternal {
     }
     this.lifecycle = 'disposing';
     this.queuedEvents = [];
-    this.overflowCrashWorkerIds.clear();
+    this.sink = null;
     let pendingWorkerTerminations = 0;
     for (const record of this.records.values()) {
       try {
@@ -307,6 +292,11 @@ export class RuntimeMeshWorkerDriverInternal {
     }
     if (this.records.has(context.workerId)) {
       throw new Error(`Runtime mesh worker identity is already owned: ${context.workerId}`);
+    }
+    this.finishPriorSlotCleanupInternal(context);
+    if (this.queuedEvents.length + this.reservedCrashReceiptsInternal()
+      >= this.maxQueuedEventsInternal) {
+      throw new Error('Runtime mesh worker crash receipt capacity is exhausted.');
     }
     const started = this.startWorkerInternal(context);
     if (started.status === 'failed') {
@@ -367,6 +357,18 @@ export class RuntimeMeshWorkerDriverInternal {
     });
   }
 
+  private finishPriorSlotCleanupInternal(context: MeshSchedulerWorkerContextV1): void {
+    for (const record of [...this.records.values()]) {
+      if (record.context.slotIndex !== context.slotIndex) continue;
+      if (!record.fenced) {
+        throw new Error(
+          `Runtime mesh worker slot ${String(context.slotIndex)} is already owned.`,
+        );
+      }
+      this.terminateRecordInternal(record);
+    }
+  }
+
   private attachListenersInternal(record: RuntimeMeshWorkerRecordInternal): void {
     for (const type of ['message', 'error', 'messageerror'] as const) {
       record.handle.addEventListener(type, record.listeners[type]);
@@ -379,7 +381,8 @@ export class RuntimeMeshWorkerDriverInternal {
       this.lateEvents = incrementInternal(this.lateEvents);
       return;
     }
-    if (this.queuedEvents.length >= this.maxQueuedEventsInternal) {
+    if (this.queuedEvents.length + this.reservedCrashReceiptsInternal()
+      >= this.maxQueuedEventsInternal) {
       this.overflowRecordInternal(record);
       return;
     }
@@ -403,19 +406,7 @@ export class RuntimeMeshWorkerDriverInternal {
     record.crashQueued = true;
     this.crashEvents = incrementInternal(this.crashEvents);
     this.fenceRecordInternal(record);
-    if (this.queuedEvents.length >= this.maxQueuedEventsInternal) {
-      this.discardQueuedWorkerEventsInternal(record.context.workerId);
-      this.overflowCrashWorkerIds.add(record.context.workerId);
-      return;
-    }
-    this.queuedEvents.push(Object.freeze({
-      kind: 'crash',
-      workerId: record.context.workerId,
-    }));
-    this.highWaterQueuedEvents = Math.max(
-      this.highWaterQueuedEvents,
-      this.queuedEvents.length,
-    );
+    this.queueCrashReceiptInternal(record);
   }
 
   private overflowRecordInternal(record: RuntimeMeshWorkerRecordInternal): void {
@@ -426,7 +417,28 @@ export class RuntimeMeshWorkerDriverInternal {
     }
     this.fenceRecordInternal(record);
     this.discardQueuedWorkerEventsInternal(record.context.workerId);
-    this.overflowCrashWorkerIds.add(record.context.workerId);
+    this.queueCrashReceiptInternal(record);
+  }
+
+  private queueCrashReceiptInternal(record: RuntimeMeshWorkerRecordInternal): void {
+    this.queuedEvents.push(Object.freeze({
+      kind: 'crash',
+      workerId: record.context.workerId,
+    }));
+    this.highWaterQueuedEvents = Math.max(
+      this.highWaterQueuedEvents,
+      this.queuedEvents.length,
+    );
+  }
+
+  private reservedCrashReceiptsInternal(): number {
+    let reserved = 0;
+    for (const record of this.records.values()) {
+      if (!record.fenced && !record.crashQueued && !record.terminationComplete) {
+        reserved += 1;
+      }
+    }
+    return reserved;
   }
 
   private discardQueuedWorkerEventsInternal(workerId: string): void {
@@ -455,6 +467,7 @@ export class RuntimeMeshWorkerDriverInternal {
 
   private terminateRecordInternal(record: RuntimeMeshWorkerRecordInternal): void {
     if (record.terminationComplete) return;
+    this.discardQueuedWorkerEventsInternal(record.context.workerId);
     const errors = this.fenceRecordInternal(record);
     if (!record.handleTerminated) {
       try {

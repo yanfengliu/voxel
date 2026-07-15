@@ -1,199 +1,15 @@
-import { describe, expect, it, vi } from 'vitest';
-import { Group } from 'three';
+import { describe, expect, it } from 'vitest';
 
-import {
-  executeMeshWorkerRequestV1,
-  GREEDY_OPAQUE_MESHER_V1,
-  VoxelMeshSchedulerV1,
-  type MeshSchedulerWorkerContextV1,
-} from '../../src/meshing/index.js';
-import { RevisionAtomicTargetCoordinatorInternal } from '../../src/three/revisionAtomicTargetCoordinator.js';
-import { RevisionAtomicPresentationStagerInternal } from '../../src/three/revisionAtomicStaging.js';
-import {
-  RuntimeMeshWorkerDriverInternal,
-  type RuntimeMeshWorkerHandleInternal,
-  type RuntimeMeshWorkerSinkInternal,
-  type RuntimeMeshWorkerStartupResultInternal,
-} from '../../src/three/runtimeMeshWorkerDriver.js';
+import { RuntimeMeshWorkerDriverInternal } from '../../src/three/runtimeMeshWorkerDriver.js';
 import { coordinatorTargetPlanInternal } from './revision-atomic-target-coordinator-fixtures.js';
-
-type WorkerEventTypeInternal = 'message' | 'error' | 'messageerror';
-
-class ManualWorkerHandleInternal implements RuntimeMeshWorkerHandleInternal {
-  readonly contextInternal: MeshSchedulerWorkerContextV1;
-  readonly postsInternal: unknown[] = [];
-  readonly postMessage = vi.fn((value: unknown, transfer: Transferable[]) => {
-    if (this.postFailuresRemainingInternal > 0) {
-      this.postFailuresRemainingInternal -= 1;
-      throw new Error('injected worker post failure');
-    }
-    const owned = structuredClone(value, { transfer });
-    this.postsInternal.push(owned);
-    if (this.completeSynchronouslyInternal) {
-      this.completePostInternal(this.postsInternal.length - 1);
-    }
-  });
-  readonly terminate = vi.fn(() => {
-    if (this.terminationFailuresRemainingInternal > 0) {
-      this.terminationFailuresRemainingInternal -= 1;
-      throw new Error('injected worker termination failure');
-    }
-  });
-  terminationFailuresRemainingInternal = 0;
-  postFailuresRemainingInternal = 0;
-  completeSynchronouslyInternal = false;
-  private readonly listeners = new Map<WorkerEventTypeInternal, Set<EventListener>>();
-
-  constructor(context: MeshSchedulerWorkerContextV1) {
-    this.contextInternal = context;
-  }
-
-  addEventListener(type: WorkerEventTypeInternal, listener: EventListener): void {
-    const listeners = this.listeners.get(type) ?? new Set<EventListener>();
-    listeners.add(listener);
-    this.listeners.set(type, listeners);
-  }
-
-  removeEventListener(type: WorkerEventTypeInternal, listener: EventListener): void {
-    this.listeners.get(type)?.delete(listener);
-  }
-
-  emitMessageInternal(value: unknown): Event {
-    const event = new Event('message');
-    Object.defineProperty(event, 'data', { value });
-    this.emitInternal('message', event);
-    return event;
-  }
-
-  completePostInternal(index: number): void {
-    const request = this.postsInternal[index];
-    if (request === undefined) throw new Error(`Missing worker post ${String(index)}.`);
-    const execution = executeMeshWorkerRequestV1(request, [GREEDY_OPAQUE_MESHER_V1]);
-    const message = structuredClone(execution.message, { transfer: [...execution.transfer] });
-    this.emitMessageInternal(message);
-  }
-
-  emitErrorInternal(type: 'error' | 'messageerror'): Event {
-    const event = new Event(type, { cancelable: true });
-    this.emitInternal(type, event);
-    return event;
-  }
-
-  captureListenerInternal(type: WorkerEventTypeInternal): EventListener {
-    const listeners = [...(this.listeners.get(type) ?? [])];
-    if (listeners.length !== 1) {
-      throw new Error(`Expected one ${type} listener, received ${String(listeners.length)}.`);
-    }
-    return listeners[0]!;
-  }
-
-  listenerCountInternal(): number {
-    let count = 0;
-    for (const listeners of this.listeners.values()) count += listeners.size;
-    return count;
-  }
-
-  private emitInternal(type: WorkerEventTypeInternal, event: Event): void {
-    for (const listener of [...(this.listeners.get(type) ?? [])]) listener(event);
-  }
-}
-
-class ManualWorkerPoolInternal {
-  readonly handlesInternal: ManualWorkerHandleInternal[] = [];
-  completeSynchronouslyInternal = false;
-  startupFailuresRemainingInternal = 0;
-
-  readonly startInternal = (
-    context: MeshSchedulerWorkerContextV1,
-  ): RuntimeMeshWorkerStartupResultInternal => {
-    if (this.startupFailuresRemainingInternal > 0) {
-      this.startupFailuresRemainingInternal -= 1;
-      return Object.freeze({
-        status: 'failed',
-        code: 'worker-startup-failed',
-        message: 'injected worker startup failure',
-      });
-    }
-    const handle = new ManualWorkerHandleInternal(context);
-    handle.completeSynchronouslyInternal = this.completeSynchronouslyInternal;
-    this.handlesInternal.push(handle);
-    return Object.freeze({ status: 'started' as const, handle });
-  };
-}
-
-function createIntegratedHarnessInternal(options: {
-  readonly completeSynchronously?: boolean;
-  readonly startupFailures?: number;
-} = {}) {
-  const root = new Group();
-  const pool = new ManualWorkerPoolInternal();
-  pool.completeSynchronouslyInternal = options.completeSynchronously ?? false;
-  pool.startupFailuresRemainingInternal = options.startupFailures ?? 0;
-  const driver = new RuntimeMeshWorkerDriverInternal({
-    startWorkerInternal: pool.startInternal,
-    maxQueuedEventsInternal: 16,
-  });
-  const scheduler = new VoxelMeshSchedulerV1({
-    runtimeId: 'runtime-mesh-worker-driver-test',
-    workerCount: 1,
-    maxQueuedJobs: 32,
-    maxQueuedBytes: 4_000_000,
-    maxStagingBytes: 4_000_000,
-    starvationPromotionDispatches: 2,
-  }, driver.workerFactoryInternal);
-  const stager = new RevisionAtomicPresentationStagerInternal({
-    root,
-    maxCpuStagingBytes: 4_000_000,
-    maxGpuStagingBytes: 4_000_000,
-    maxPreparedTargets: 2,
-  });
-  const coordinator = new RevisionAtomicTargetCoordinatorInternal({
-    schedulerInternal: scheduler,
-    stagerInternal: stager,
-  });
-  driver.bindInternal(coordinator);
-  return { coordinator, driver, pool, root, scheduler, stager };
-}
-
-class RecordingWorkerSinkInternal implements RuntimeMeshWorkerSinkInternal {
-  readonly receivesInternal: { readonly workerId: string; readonly value: unknown }[] = [];
-  readonly crashesInternal: string[] = [];
-  pumpCallsInternal = 0;
-
-  receiveInternal(workerId: string, value: unknown) {
-    this.receivesInternal.push({ workerId, value });
-    return Object.freeze({
-      status: 'ignored' as const,
-      reason: 'stale-result' as const,
-      schedulerInternal: Object.freeze({ status: 'stale-result' as const }),
-    });
-  }
-
-  workerCrashedInternal(workerId: string) {
-    this.crashesInternal.push(workerId);
-    return Object.freeze({
-      status: 'ignored' as const,
-      reason: 'stale-worker' as const,
-      schedulerInternal: Object.freeze({ status: 'stale-worker' as const }),
-    });
-  }
-
-  pumpInternal() {
-    this.pumpCallsInternal += 1;
-    const dispatches = Object.freeze([]);
-    return Object.freeze({
-      status: 'idle' as const,
-      dispatches,
-      schedulerInternal: Object.freeze({ status: 'active' as const, dispatches }),
-    });
-  }
-}
-
-const WORKER_CONTEXT_INTERNAL = Object.freeze({
-  workerId: 'runtime-driver:worker:0:1',
-  slotIndex: 0,
-  generation: 1,
-});
+import {
+  createIntegratedHarnessInternal,
+  ManualWorkerPoolInternal,
+  RecordingWorkerSinkInternal,
+  SECOND_WORKER_CONTEXT_INTERNAL,
+  THIRD_WORKER_CONTEXT_INTERNAL,
+  WORKER_CONTEXT_INTERNAL,
+} from './runtime-mesh-worker-driver-fixtures.js';
 
 describe('runtime mesh worker driver', () => {
   it('routes queued messages by captured generation and pumps once per advance', () => {
@@ -252,7 +68,7 @@ describe('runtime mesh worker driver', () => {
     const pool = new ManualWorkerPoolInternal();
     const driver = new RuntimeMeshWorkerDriverInternal({
       startWorkerInternal: pool.startInternal,
-      maxQueuedEventsInternal: 1,
+      maxQueuedEventsInternal: 2,
     });
     driver.workerFactoryInternal(WORKER_CONTEXT_INTERNAL);
     const sink = new RecordingWorkerSinkInternal();
@@ -262,13 +78,60 @@ describe('runtime mesh worker driver', () => {
     handle.emitMessageInternal({ sequence: 1 });
     handle.emitMessageInternal({ sequence: 2 });
     expect(driver.metricsInternal()).toMatchObject({
-      queuedEvents: 0,
+      queuedEvents: 1,
       highWaterQueuedEvents: 1,
       overflowEvents: 1,
     });
     expect(driver.advanceInternal()).toMatchObject({ processedEvents: 1 });
     expect(sink.receivesInternal).toEqual([]);
     expect(sink.crashesInternal).toEqual([WORKER_CONTEXT_INTERNAL.workerId]);
+    driver.disposeInternal();
+  });
+
+  it('reserves bounded crash receipts while preserving cross-worker event order', () => {
+    const pool = new ManualWorkerPoolInternal();
+    const driver = new RuntimeMeshWorkerDriverInternal({
+      startWorkerInternal: pool.startInternal,
+      maxQueuedEventsInternal: 3,
+    });
+    driver.workerFactoryInternal(WORKER_CONTEXT_INTERNAL);
+    driver.workerFactoryInternal(SECOND_WORKER_CONTEXT_INTERNAL);
+    const sink = new RecordingWorkerSinkInternal();
+    driver.bindInternal(sink);
+    const first = pool.handlesInternal[0]!;
+    const second = pool.handlesInternal[1]!;
+
+    first.emitMessageInternal({ sequence: 1 });
+    second.emitMessageInternal({ sequence: 2 });
+    expect(driver.metricsInternal()).toMatchObject({
+      queuedEvents: 2,
+      highWaterQueuedEvents: 2,
+      overflowEvents: 1,
+    });
+    expect(driver.advanceInternal()).toMatchObject({
+      processedEvents: 2,
+      remainingEvents: 0,
+    });
+    expect(sink.receivesInternal).toEqual([{
+      workerId: WORKER_CONTEXT_INTERNAL.workerId,
+      value: { sequence: 1 },
+    }]);
+    expect(sink.crashesInternal).toEqual([SECOND_WORKER_CONTEXT_INTERNAL.workerId]);
+    driver.disposeInternal();
+  });
+
+  it('rejects worker ownership that cannot reserve a bounded crash receipt', () => {
+    const pool = new ManualWorkerPoolInternal();
+    const driver = new RuntimeMeshWorkerDriverInternal({
+      startWorkerInternal: pool.startInternal,
+      maxQueuedEventsInternal: 2,
+    });
+
+    driver.workerFactoryInternal(WORKER_CONTEXT_INTERNAL);
+    driver.workerFactoryInternal(SECOND_WORKER_CONTEXT_INTERNAL);
+    expect(() => driver.workerFactoryInternal(THIRD_WORKER_CONTEXT_INTERNAL))
+      .toThrow(/crash receipt capacity/i);
+    expect(pool.handlesInternal).toHaveLength(2);
     driver.disposeInternal();
   });
 
@@ -299,6 +162,57 @@ describe('runtime mesh worker driver', () => {
     expect(handle.terminate).toHaveBeenCalledTimes(2);
     expect(driver.disposeInternal()).toMatchObject({ status: 'already-disposed' });
     expect(handle.terminate).toHaveBeenCalledTimes(2);
+  });
+
+  it('retries only the listener removal that failed during disposal', () => {
+    const pool = new ManualWorkerPoolInternal();
+    const driver = new RuntimeMeshWorkerDriverInternal({
+      startWorkerInternal: pool.startInternal,
+      maxQueuedEventsInternal: 4,
+    });
+    driver.workerFactoryInternal(WORKER_CONTEXT_INTERNAL);
+    const handle = pool.handlesInternal[0]!;
+    handle.listenerRemovalFailuresRemainingInternal = 1;
+
+    expect(driver.disposeInternal()).toMatchObject({
+      status: 'disposing',
+      pendingWorkerTerminations: 1,
+    });
+    expect(handle.listenerCountInternal()).toBe(1);
+    expect(handle.terminate).toHaveBeenCalledTimes(1);
+    expect(driver.metricsInternal().listenerRemovalFailures).toBe(1);
+
+    expect(driver.disposeInternal()).toMatchObject({
+      status: 'disposed',
+      pendingWorkerTerminations: 0,
+    });
+    expect(handle.listenerCountInternal()).toBe(0);
+    expect(handle.terminate).toHaveBeenCalledTimes(1);
+  });
+
+  it('finishes prior same-slot cleanup before starting a fresh generation', () => {
+    const pool = new ManualWorkerPoolInternal();
+    const driver = new RuntimeMeshWorkerDriverInternal({
+      startWorkerInternal: pool.startInternal,
+      maxQueuedEventsInternal: 4,
+    });
+    const port = driver.workerFactoryInternal(WORKER_CONTEXT_INTERNAL);
+    const prior = pool.handlesInternal[0]!;
+    prior.terminationFailuresRemainingInternal = 2;
+    expect(() => port.terminate()).toThrow(/cleanup failed/i);
+    const replacementContext = Object.freeze({
+      workerId: 'runtime-driver:worker:0:2',
+      slotIndex: 0,
+      generation: 2,
+    });
+
+    expect(() => driver.workerFactoryInternal(replacementContext)).toThrow(/cleanup failed/i);
+    expect(pool.handlesInternal).toHaveLength(1);
+    expect(prior.terminate).toHaveBeenCalledTimes(2);
+    expect(() => driver.workerFactoryInternal(replacementContext)).not.toThrow();
+    expect(pool.handlesInternal).toHaveLength(2);
+    expect(prior.terminate).toHaveBeenCalledTimes(3);
+    driver.disposeInternal();
   });
 
   it('repumps a freed slot and readies a complete target through real coordinator work', () => {
