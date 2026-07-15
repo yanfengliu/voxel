@@ -438,7 +438,10 @@ Current status after the lifecycle/camera slice:
 - [x] H-02 isometric, owned-perspective, and borrowed-camera strategies; explicit projection/viewport ownership; finite-safe projection and ray helpers; legacy compatibility.
 - [x] H-03 host-managed frame tickets, standalone protocol reuse, rollback, generation/reentrancy fences, immutable manifests, and an adversarial borrowed-renderer reentrancy regression are implemented and independently reviewed.
 - [ ] H-04 internal revision-aware capture contracts, coordinator, exact manifest/parity tests, and bounded lease cleanup are implemented; public `ThreeRenderRuntime` integration, exports, and browser evidence remain.
-- [ ] H-05 remains planned at committed HEAD; its reconstruction seam depends on the V-08 presenter transaction boundary.
+- [ ] H-05 has a bounded internal checkpoint/retry/resource-ownership prototype with focused
+  contract and lifecycle tests. It is not wired to `ThreeRenderRuntime` or real WebGL recovery,
+  and its synchronous internal draw/commit seam must be replaced by V-08 preparation plus an
+  explicit standalone/embedded draw acknowledgement before production integration.
 
 ### H-01: Runtime lifecycle state machine
 
