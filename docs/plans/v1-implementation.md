@@ -504,7 +504,19 @@ H exit gate: standalone and genuinely host-managed embedded modes work with orth
 Current status:
 
 - [x] C-01 Voxel-owned City-shaped sparse building fixture executes through a borrowed renderer/scene, perspective camera, host-owned prepare/draw/commit/capture/resize loop, neutral shadow policy, bounds, generational replacement, sparse upload metrics, and ownership-safe teardown across the TypeScript compatibility matrix.
-- [ ] C-02 through C-04 still require the design/authority gate and real-consumer regression evidence.
+- [x] C-02 design and authority gate: the owner granted authority to edit `../city` on
+  2026-07-15, and City's live building, scene, camera, capture, and teardown paths are traced
+  in its own migration plan, which lives in that repository at
+  `docs/architecture/voxel-buildings-migration.md` (City commit `884a2ba`).
+  The first slice is the `walls` layer of all three zone archetypes: opaque, one shared
+  material, no emissive and no per-frame material mutation, plain indexed unit-box geometry,
+  and still shadow-casting so neutral per-batch flags are exercised while City keeps
+  shadow-map policy. The trace established that City owns the renderer, camera, controls,
+  animation loop, viewport, and capture, so Voxel embeds borrowing all of them; that keyed
+  batches let the wall slot layout safely diverge from City's remaining four layers; and that
+  the one required City change is an additive after-draw hook, because City's frame callbacks
+  run only before its single draw.
+- [ ] C-03 building-lane adapter and C-04 cross-consumer regression remain.
 
 ### C-01: Voxel-owned City compatibility fixture
 
