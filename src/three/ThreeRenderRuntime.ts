@@ -10,13 +10,9 @@ import {
   type RenderSnapshotV1,
 } from '../core/index.js';
 import {
-  commitPreparedDeltaIntoRenderWorld,
-  commitPreparedSnapshotIntoRenderWorld,
   markPreparedCanonicalStatePresentedInternal,
   pendingCanonicalStateForPresentationInternal,
   presentedCanonicalStateForPresentationInternal,
-  prepareDeltaForRenderWorldInternal,
-  prepareSnapshotForRenderWorldInternal,
   setRenderWorldPresentationAvailabilityInternal,
 } from '../core/render-world.js';
 import {
@@ -45,6 +41,11 @@ import {
   requireDimensionInternal,
 } from './runtimeInputValidation.js';
 import { validateThreePresentationInternal } from './presentationValidation.js';
+import {
+  acceptDeltaInternal,
+  acceptSnapshotInternal,
+  type RuntimeIngestOpsInternal,
+} from './runtimeIngest.js';
 import { pickCommittedPresentedRayForLifecycleInternal } from './committedPresentedPickSnapshot.js';
 import type { PickPresentedResultV1, PickQueryV1 } from './pickingContracts.js';
 import type { RendererLike } from './rendererTypes.js';
@@ -54,7 +55,6 @@ import {
   type RenderInfoSnapshotInternal,
 } from './runtimeRenderInfo.js';
 import { collectRuntimeMetricsInternal } from './runtimeMetrics.js';
-import type { PresentationStagingHoldInternal } from './presentationStagingMetrics.js';
 import { RuntimePresentationRetentionInternal } from './runtimePresentationRetention.js';
 import type { ContextEventCanvasInternal } from './runtimeRendererSetup.js';
 import {
@@ -65,6 +65,11 @@ import {
   RuntimeAtomicFrameCoordinatorInternal,
   type RuntimeAtomicFrameOpsInternal,
 } from './runtimeAtomicFrame.js';
+import {
+  prepareHostRestorationFrameInternal,
+  type PreparedHostFrameInternal,
+  type RuntimeHostRestorationOpsInternal,
+} from './runtimeHostRestoration.js';
 import {
   RevisionAwareCaptureCoordinatorInternal,
   type RevisionCaptureRuntimePortInternal,
@@ -90,12 +95,7 @@ import { resizeRuntimeInternal } from './runtimeResize.js';
 import type { LegacyRuntimePresentationSurfaceInternal } from './runtimePresentationSurface.js';
 import {
   initializeRuntimeSnapshotMetricsInternal,
-  recordSnapshotCopyAttemptInternal,
 } from './runtimeSnapshotMetrics.js';
-import {
-  canonicalStateToThreePresentationInternal,
-  preparedDeltaToThreePresentationInternal,
-} from './snapshotAdapter.js';
 import type {
   ThreeCaptureResult,
   ThreePresentationSnapshot,
@@ -115,15 +115,6 @@ type CanonicalPresentationStateInternal = NonNullable<
   ReturnType<typeof pendingCanonicalStateForPresentationInternal>
 >;
 
-interface PreparedHostFrameInternal {
-  readonly context: Readonly<ThreeFrameContext>;
-  readonly pending: CanonicalPresentationStateInternal | null;
-  readonly target: CanonicalPresentationStateInternal | null;
-  readonly presentation: ThreePresentationSnapshot | null;
-  readonly previousPresentation: ThreePresentationSnapshot | null;
-  readonly previousContext: ThreeFrameContext | null;
-  readonly restoration: boolean;
-}
 
 export class ThreeRenderRuntime {
   private readonly scene!: Scene;
@@ -237,160 +228,24 @@ export class ThreeRenderRuntime {
   }
 
   acceptSnapshot(snapshot: RenderSnapshotV1): ApplyResultV1 {
-    this.assertAccepting();
-    const prepared = prepareSnapshotForRenderWorldInternal(this.world, snapshot);
-    const attemptMetrics = prepared.status === 'prepared'
-      ? prepared.prepared.metrics
-      : prepared.metrics;
-    const ingestMetrics = recordSnapshotCopyAttemptInternal(this, attemptMetrics);
-    // Validation walks untrusted object properties. A getter may reenter the
-    // runtime and end it, so fence terminal lifecycle before projection/commit.
-    this.assertAccepting();
-    if (prepared.status === 'rejected') {
-      return { status: 'rejected', ...prepared.issue };
-    }
-    if (this.atomicFrames) {
-      // One runtime keeps one presentation owner: the atomic pipeline never
-      // mixes with legacy reconciliation across epochs of the same runtime.
-      if (!this.atomicOwnsCandidateInternal(prepared.prepared.candidate)) {
-        return {
-          status: 'rejected',
-          code: 'three.voxel-profile-required',
-          path: 'descriptor.chunkProfile',
-          message: 'The atomic voxel worker runtime requires a uniform chunk profile.',
-        };
-      }
-      const reserved = this.atomicFrames.reserveAdmissionInternal(prepared.prepared.candidate);
-      if ('rejection' in reserved) return { status: 'rejected', ...reserved.rejection };
-      const applied = commitPreparedSnapshotIntoRenderWorld(this.world, prepared.prepared);
-      if (applied.status === 'accepted') ingestMetrics.accepted += 1;
-      if (
-        applied.status === 'accepted'
-        && this.world.epoch === applied.epoch
-        && this.world.acceptedRevision === applied.revision
-      ) {
-        this.atomicFrames.activateAdmissionInternal(reserved.handle);
-      } else {
-        // The commit failed or a reentrant settlement superseded it; the
-        // reservation is released and any newer acceptance owns admission.
-        this.atomicFrames.cancelAdmissionInternal(reserved.handle);
-      }
-      return applied;
-    }
-    let presentation: ThreePresentationSnapshot;
-    let candidateHold: PresentationStagingHoldInternal | null = null;
-    try {
-      presentation = canonicalStateToThreePresentationInternal(prepared.prepared.candidate);
-      candidateHold = this.presentations.retainCandidateInternal(presentation);
-      validateThreePresentationInternal(presentation);
-    } catch (error) {
-      candidateHold?.releaseInternal();
-      return {
-        status: 'rejected',
-        code: 'three.unsupported-snapshot',
-        path: '$',
-        message: error instanceof Error ? error.message : String(error),
-      };
-    }
-    try {
-      this.presentations.rememberInternal(
-        prepared.prepared.candidate,
-        presentation,
-      );
-      const applied = commitPreparedSnapshotIntoRenderWorld(this.world, prepared.prepared);
-      if (applied.status === 'accepted') {
-        ingestMetrics.accepted += 1;
-        const candidate = prepared.prepared.candidate;
-        if (presentedCanonicalStateForPresentationInternal(this.world) === candidate) {
-          // A waiter cleanup callback may have synchronously framed this exact
-          // candidate while the core commit was still settling the old epoch.
-          this.presentations.markCommittedInternal(presentation);
-          this.presentations.setPresentedInternal(presentation);
-          this.presentations.setPendingInternal(null);
-        } else if (pendingCanonicalStateForPresentationInternal(this.world) === candidate) {
-          this.presentations.setPendingInternal(presentation);
-        }
-      }
-      return applied;
-    } finally {
-      candidateHold.releaseInternal();
-    }
+    return acceptSnapshotInternal(snapshot, this.ingestOpsInternal());
   }
 
   acceptDelta(delta: RenderDeltaV1): DeltaApplyResultV1 {
-    this.assertAccepting();
-    const result = prepareDeltaForRenderWorldInternal(this.world, delta);
-    // Delta parsing has the same structural-getter reentrancy boundary.
-    this.assertAccepting();
-    if (result.status === 'resync-required') return result;
-    if (result.status === 'rejected') return { status: 'rejected', ...result.issue };
-    if (this.atomicFrames) {
-      if (!this.atomicOwnsCandidateInternal(result.prepared.candidate)) {
-        return {
-          status: 'rejected',
-          code: 'three.voxel-profile-required',
-          path: 'descriptor.chunkProfile',
-          message: 'The atomic voxel worker runtime requires a uniform chunk profile.',
-        };
-      }
-      const reserved = this.atomicFrames.reserveAdmissionInternal(
-        result.prepared.candidate,
-        result.prepared,
-      );
-      if ('rejection' in reserved) return { status: 'rejected', ...reserved.rejection };
-      const applied = commitPreparedDeltaIntoRenderWorld(this.world, result.prepared, {
-        deferAutomaticPresentation: true,
-      });
-      if (
-        applied.status === 'accepted'
-        && this.world.epoch === applied.epoch
-        && this.world.acceptedRevision === applied.revision
-      ) {
-        this.atomicFrames.activateAdmissionInternal(reserved.handle);
-      } else {
-        this.atomicFrames.cancelAdmissionInternal(reserved.handle);
-      }
-      return applied;
-    }
-    let presentation: ThreePresentationSnapshot;
-    let candidateHold: PresentationStagingHoldInternal | null = null;
-    try {
-      presentation = preparedDeltaToThreePresentationInternal(result.prepared);
-      candidateHold = this.presentations.retainCandidateInternal(presentation);
-      validateThreePresentationInternal(presentation);
-    } catch (error) {
-      candidateHold?.releaseInternal();
-      return {
-        status: 'rejected',
-        code: 'three.unsupported-delta',
-        path: '$',
-        message: error instanceof Error ? error.message : String(error),
-      };
-    }
-    try {
-      this.presentations.rememberInternal(result.prepared.candidate, presentation);
-      const applied = commitPreparedDeltaIntoRenderWorld(this.world, result.prepared, {
-        deferAutomaticPresentation: this.hostKind === 'embedded',
-      });
-      if (
-        applied.status === 'accepted'
-        && this.world.epoch === applied.epoch
-        && this.world.acceptedRevision === applied.revision
-      ) {
-        if (pendingCanonicalStateForPresentationInternal(this.world)) {
-          this.presentations.setPendingInternal(presentation);
-        } else {
-          // An empty atomic delta may advance the presented watermark without a
-          // draw. Its scene is byte-for-byte the currently displayed scene.
-          this.presentations.markCommittedInternal(presentation);
-          this.presentations.setPresentedInternal(presentation);
-          this.presentations.setPendingInternal(null);
-        }
-      }
-      return applied;
-    } finally {
-      candidateHold.releaseInternal();
-    }
+    return acceptDeltaInternal(delta, this.ingestOpsInternal());
+  }
+
+  /** Live-state handles the ingest path drives. */
+  private ingestOpsInternal(): RuntimeIngestOpsInternal {
+    return {
+      runtimeToken: this,
+      world: this.world,
+      presentations: this.presentations,
+      atomicFrames: this.atomicFrames,
+      hostKind: this.hostKind,
+      assertAccepting: () => { this.assertAccepting(); },
+      atomicOwnsCandidate: (candidate) => this.atomicOwnsCandidateInternal(candidate),
+    };
   }
 
   presentationReadiness(target: RenderRevisionRefV1): PresentationReadinessV1 {
@@ -727,7 +582,7 @@ export class ThreeRenderRuntime {
     // it, or the runtime stays restoring for the rest of the session.
     if (this.lifecycleState === 'restoring') {
       if (this.hostKind !== 'embedded') return this.unavailableFrameResult();
-      return this.prepareRestorationFrameInternal(context);
+      return prepareHostRestorationFrameInternal(context, this.restorationOpsInternal());
     }
     this.hostFrames.beginPreparation();
     const generation = this.deviceGeneration;
@@ -808,64 +663,27 @@ export class ThreeRenderRuntime {
       this.hostFrames.finishPreparation();
     }
   }
-  /**
-   * Re-establishes Voxel's presentation from the last presented canonical CPU
-   * state and hands the host a restoration ticket. The host's successful draw
-   * is the acknowledgement that the scene actually reached the restored
-   * canvas; only then does the runtime report running again.
-   *
-   * Reconciling against the presented state is deliberately cheap: the keys
-   * are unchanged, so presenters are re-driven rather than torn down, and
-   * Three's renderer re-uploads GPU buffers from the surviving CPU geometry on
-   * its own after a restore. What this earns is the frame-boundary evidence,
-   * not the upload. The standalone path does the same, and additionally
-   * restores size, DPR and camera, which an embedded host owns and Voxel must
-   * not touch.
-   */
-  private prepareRestorationFrameInternal(
-    context: Readonly<ThreeFrameContext>,
-  ): ThreePrepareFrameResult {
-    this.hostFrames.beginPreparation();
-    const generation = this.deviceGeneration;
-    try {
-      const presented = presentedCanonicalStateForPresentationInternal(this.world);
-      const presentation = this.presentations.presentedInternal;
-      if (!this.reconcilePresentation(
-        presentation,
-        () => this.isRestoreAttempt(generation),
-      )) return this.unavailableFrameResult();
-      if (!this.isRestoreAttempt(generation)) return this.unavailableFrameResult();
-      this.presentationSurface.animateInternal(context.nowMs);
-      if (!this.isRestoreAttempt(generation)) return this.unavailableFrameResult();
-      const record = this.hostFrames.issue({
-        context,
-        // Restoration re-presents what was already displayed, so it advances
-        // no canonical revision and carries no pending state.
-        pending: null,
-        target: presented,
-        presentation,
-        previousPresentation: presentation,
-        previousContext: this.lastPresentedFrameContext,
-        restoration: true,
-      }, generation);
-      this.presentations.retainHostFrameInternal(record, presentation);
-      return Object.freeze({
-        status: 'prepared',
-        ticket: record.ticket,
-        target: presented ? Object.freeze({
-          worldId: presented.worldId,
-          epoch: presented.epoch,
-          revision: presented.revision,
-        }) : null,
-        restoration: true,
-      });
-    } catch (error) {
-      if (this.isRestoreAttempt(generation)) this.transitionToFailed('restore', error);
-      if (this.isFrameUnavailableAfterCallbacks()) return this.unavailableFrameResult();
-      throw error;
-    } finally {
-      this.hostFrames.finishPreparation();
-    }
+  /** Live-state closures the embedded restoration frame drives. */
+  private restorationOpsInternal(): RuntimeHostRestorationOpsInternal {
+    return {
+      deviceGeneration: () => this.deviceGeneration,
+      isRestoreAttempt: (generation) => this.isRestoreAttempt(generation),
+      presentedCanonicalState: () => presentedCanonicalStateForPresentationInternal(this.world),
+      presentedPresentation: () => this.presentations.presentedInternal,
+      lastPresentedContext: () => this.lastPresentedFrameContext,
+      reconcilePresentation: (presentation, isCurrentAttempt) =>
+        this.reconcilePresentation(presentation, isCurrentAttempt),
+      animate: (nowMs) => { this.presentationSurface.animateInternal(nowMs); },
+      issueTicket: (payload, generation) => this.hostFrames.issue(payload, generation),
+      retainHostFrame: (record, presentation) => {
+        this.presentations.retainHostFrameInternal(record, presentation);
+      },
+      beginPreparation: () => { this.hostFrames.beginPreparation(); },
+      finishPreparation: () => { this.hostFrames.finishPreparation(); },
+      unavailableFrameResult: () => this.unavailableFrameResult(),
+      transitionToRestoreFailure: (reason) => { this.transitionToFailed('restore', reason); },
+      isFrameUnavailableAfterCallbacks: () => this.isFrameUnavailableAfterCallbacks(),
+    };
   }
 
   private commitFrameTicketInternal(
