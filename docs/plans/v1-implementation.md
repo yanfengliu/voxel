@@ -263,7 +263,7 @@ Current status after the indexed-oracle slice:
 - [x] V-05 indexed copied-halo synchronous oracle, local-space geometry, aggregate work budgets, and profiled-world Three integration.
 - [x] V-06 packaged Three-free module worker, copied transfer ownership, hard result protocol, offline/CSP path, startup failure, and real headless-browser evidence.
 - [x] V-07 bounded deterministic scheduler, group leases, coalescing/cancellation, one-crash retry, a timer-free unproven-generation startup circuit with one half-open probe, three eligibility firewalls, lifecycle accounting, focused tests, and real Chromium asynchronous module-failure teardown evidence.
-- [ ] V-08 revision-atomic staging is in progress; whole-target scheduler admission and the internal target coordinator now join deterministic multi-group completion, off-scene ownership transfer, supersession fencing, zero-job targets, generation-aware worker-crash retry/failure routing, and cleanup. A bounded internal browser-worker driver owns generation-captured ports/listeners, reserves one in-order fail-closed crash receipt per worker under the total queue cap, queues transport delivery without scheduler reentrancy, preserves message-before-error ordering, pumps once per advance cycle, and retries scoped teardown before same-slot replacement. The legacy runtime's complete root/presenter lifecycle is centralized behind one presentation-surface owner so an atomic mode will not share or double-own its graph. Runtime/frame integration, presented-store commit, and browser evidence remain open.
+- [ ] V-08 revision-atomic staging is implemented for standalone runtime-rendered hosts. Whole-target scheduler admission and the internal target coordinator join deterministic multi-group completion, off-scene ownership transfer, supersession fencing, zero-job targets, generation-aware worker-crash retry/failure routing, and cleanup. A bounded internal browser-worker driver owns generation-captured ports/listeners, reserves one in-order fail-closed crash receipt per worker under the total queue cap, queues transport delivery without scheduler reentrancy, preserves message-before-error ordering, pumps once per advance cycle, and retries scoped teardown before same-slot replacement. A cross-layer frame transaction sequences the canonical presentation ticket, the staged Three scene lease, and a reversible committed pick-snapshot publication owner: activation and validation precede the draw, tentative scene-then-canonical publication follows it, canonical finalization is the irrevocable commit whose synchronous waiter callbacks may reentrantly present a newer revision, and predecessor retirement happens only afterwards. The scheduler exposes nonmutating `preflightTarget`/`preflightReplacingEpochTarget`, and the coordinator's `prepareAdmissionInternal`/`activateAdmissionInternal`/`cancelAdmissionInternal` let the runtime reserve admission before canonical acceptance and cancel it on rejection, supersession, or disposal. `ThreeRenderRuntime` reserves admission before the canonical commit, activates only when the committed world still matches, drives worker events and commits each ready target through the transaction after its draw, refuses reentrant mid-draw acceptance while a presentation is in flight, bounds re-admission of a lost pending target before failing explicitly, and rejects unprofiled candidates so one runtime never mixes presentation owners. Headless Chromium proves a real packaged worker and WebGL2 draw commit revisions with no observable mixed frame. The embedded host frame-ticket path is explicitly rejected and remains open, as do presented-store publication through the runtime (P-02..P-04) and the V-10 culling metrics; the 1,000-edit/100-epoch endurance evidence belongs to E-04.
 - [ ] V-09 has a corpus-correct in-repo greedy candidate, packaged-worker proof, reproducible benchmark harness/baseline, external feasibility audit, and [provisional selection ADR](../architecture/mesher-selection.md); final production acceptance waits for V-08 end-to-end evidence.
 - [ ] V-10 remains planned behind V-08/V-09.
 
@@ -671,13 +671,20 @@ Control: roadmap non-goals and decision gates. New 1.0 scope requires an explici
 
 ## Immediate implementation slice
 
-The foundation telemetry gap is closed. The current critical path resumes at V-08:
+The V-08 transaction exists and commits standalone worker-meshed revisions with
+real browser evidence. The critical path continues:
 
-1. Give every synchronous presenter an explicit prepare/activate/commit/abort ownership boundary with rollback tests and no live-scene mutation during preparation.
-2. Integrate eligible worker groups into the same whole-revision transaction and prove that render or host-ticket failure restores the prior displayed scene and stores.
-3. Publish the committed presented voxel/instance stores and complete P-02 through P-04 without reading accepted or mutable host state.
-4. Complete H-04 revision-aware capture against the same committed manifest.
-5. Redesign H-05 reconstruction as prepare plus standalone/embedded draw acknowledgement plus commit/abort; never publish readiness from an internal draw that violates host ownership.
-6. Close V-09/V-10 with end-to-end selection evidence, culling, resource metrics, and edit-storm bounds.
+1. Publish the committed presented voxel/instance stores from the V-08
+   transaction and complete P-02 through P-04 without reading accepted,
+   pending, mutable-camera, or live-presenter state.
+2. Complete H-04 revision-aware capture against the same committed manifest.
+3. Join the embedded host frame ticket to the V-08 transaction so an embedded
+   host's successful draw is the presentation acknowledgement, replacing the
+   current explicit rejection.
+4. Redesign H-05 reconstruction as prepare plus standalone/embedded draw
+   acknowledgement plus commit/abort; never publish readiness from an internal
+   draw that violates host ownership.
+5. Close V-09/V-10 with end-to-end selection evidence, culling, resource
+   metrics, and edit-storm bounds.
 
 Each numbered step is split into minimal coherent verified commits and receives adversarial review as soon as its first public, async, presentation, or ownership boundary exists.
