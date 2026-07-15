@@ -243,9 +243,8 @@ describe('atomic pipeline endurance', () => {
   it('settles repeated aborted captures without stranding the runtime', async () => {
     const { runtime } = createRuntime();
     const epoch = 'epoch:endurance-capture';
-    let frameIndex = 0;
     expect(runtime.acceptSnapshot(editedSnapshot(1, epoch, true)).status).toBe('accepted');
-    frameIndex = presentRevision(runtime, 1, frameIndex);
+    presentRevision(runtime, 1, 0);
     const settled = runtime.metrics().atomic;
 
     const outcomes: string[] = [];

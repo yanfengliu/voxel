@@ -3,10 +3,10 @@ import {
   BufferAttribute,
   BufferGeometry,
   Color,
-  Frustum,
   Mesh,
   SRGBColorSpace,
   Vector3,
+  type Frustum,
   type Group,
   type Material,
 } from 'three';

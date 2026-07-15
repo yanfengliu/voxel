@@ -96,12 +96,12 @@ describe('snapshot ingest fuzz', () => {
 
       let result;
       try {
-        result = world.acceptSnapshot(snapshot as never);
+        result = world.acceptSnapshot(snapshot);
       } catch (error) {
         // Malformed data must be a typed rejection, never an escaping throw.
         // Only a consumer's own throwing getter may propagate, and this corpus
         // contains none.
-        throw new Error(`${seedLabel} threw: ${String(error)}`);
+        throw new Error(`${seedLabel} threw: ${String(error)}`, { cause: error });
       }
 
       if (result.status === 'accepted') {
@@ -138,9 +138,9 @@ describe('snapshot ingest fuzz', () => {
       const label = `hostile value ${String(index)}`;
       let result;
       try {
-        result = world.acceptSnapshot(HOSTILE_VALUES[index] as never);
+        result = world.acceptSnapshot(HOSTILE_VALUES[index]);
       } catch (error) {
-        throw new Error(`${label} threw: ${String(error)}`);
+        throw new Error(`${label} threw: ${String(error)}`, { cause: error });
       }
       expect(result.status, label).toBe('rejected');
       expect(ownership(world), label).toEqual(baseline);

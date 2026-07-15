@@ -296,7 +296,6 @@ test('atomic worker frames meet the fixed mesher selection budgets', async ({ pa
   expect(measured.peakCpuStagingBytes).toBeLessThanOrEqual(STAGING_CEILING_BYTES);
   expect(measured.peakGpuStagingBytes).toBeLessThanOrEqual(STAGING_CEILING_BYTES);
 
-  // eslint-disable-next-line no-console
   console.log(`[v-09 swiftshader] ${JSON.stringify({
     coldP50Ms: measured.coldP50Ms,
     coldP95Ms: measured.coldP95Ms,
