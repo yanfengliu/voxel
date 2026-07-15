@@ -56,7 +56,7 @@ The complete verification gate passed at that roadmap baseline commit. That evid
 - WebGPU parity or a speculative backend abstraction.
 - Smooth terrain, marching cubes, Surface Nets, Transvoxel, LOD, streaming, occlusion systems, indirect draws, or infinite worlds.
 - General ECS, simulation, networking, saves, UI, game rules, camera controls, or asset-authoring workflows.
-- Skeletal animation, clip graphs, animation textures, root motion, or gameplay animation state machines.
+- Skeletal animation, clip graphs, animation textures, root motion, or gameplay animation state machines. Deferred because no consumer needs them, not because they are forbidden; see [the animation scope](#animation-scope) for the standing direction and what would reopen this.
 - Ambient occlusion, propagated voxel lighting, transparent-voxel merging, liquids, engine-owned shadow-map/quality policy, post-processing, or GPU particle systems. Neutral per-batch cast/receive flags are required so an embedded host may apply its existing shadow system.
 - A general render graph, arbitrary mutable Three.js nodes in portable inputs, or consumer callbacks in the data plane.
 - A complete Townscaper migration. Townscaper compatibility is tracked, but its Three.js upgrade and topology-specific adoption are post-1.0 unless they become cheap, independently verified additions.
@@ -200,6 +200,44 @@ or any consumer who cannot roll back on their own.
 - The Three entry uses one narrow optional peer range and is tested against every supported peer version before the range changes.
 - Browser support claims name exact engines and platforms. Untested browsers may work but are not advertised as supported.
 - Private Git/tag and packed-artifact distribution is the initial stable channel. Public registry publication is a separate product decision.
+
+## Animation scope
+
+Standing direction from the owner on 2026-07-15: **Voxel should support every animation City
+and AoE2 already make, and potentially more. Keep the contract flexible and open.**
+
+That direction is bounded by evidence, not by ambition. A survey of both consumers on the same
+day found:
+
+- **No skeletal animation anywhere.** No `SkinnedMesh`, morph target, `AnimationMixer`, or bone
+  exists in either City or AoE2. Both animate entirely through per-instance transforms and
+  material properties.
+- **Two legitimate models, both already expressible.** AoE2 uses the parametric path: a batch
+  declares per-instance period, phase, and translation/rotation/scale amplitudes, and Voxel
+  evaluates `amplitude * sin(2*pi*t/period + phase)` from injected time, uploading nothing per
+  frame. City computes matrices itself each frame for vehicles and pedestrians and sends them
+  through ordinary batch updates.
+
+So the non-goal above stands for now on the strength of the survey, not on principle. Nothing
+is blocked.
+
+Three real gaps are named rather than discovered later. They are the concrete meaning of
+"potentially more":
+
+1. **Continuous rotation.** The parametric model oscillates. A bobbing boat is natural; a
+   turning windmill or gear cannot be expressed at all.
+2. **Material animation.** `MaterialResourceV1` has no emissive or time fields, so City's night
+   glow (emissive intensity) and water (a shader time uniform) cannot cross the boundary. This
+   will block those City lanes even though it does not block buildings.
+3. **Skeletal animation.** Not needed today. If a consumer ever needs a limb to bend, this
+   returns as an explicit scope revision with its own evidence gates — not by accretion.
+
+"Flexible and open" is a design constraint on the contract, not a licence to build all of it
+now. Concretely, it means: extend animation additively behind versioned optional fields;
+advertise each capability truthfully in the capability report so a consumer asks instead of
+guessing; and never encode an assumption that rigid transforms are the only possible model.
+The bar for implementing any of the three is the same as everywhere else in this plan — a real
+consumer needs it, and the evidence gate is named before the code.
 
 ## Decision gates
 
