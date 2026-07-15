@@ -538,6 +538,10 @@ export class ThreeRenderRuntime {
       ticket,
       this.lifecycleState,
       this.deviceGeneration,
+      // A restoration ticket is outstanding while restoring, so aborting one
+      // must not be mistaken for a stale pre-loss ticket: that would mask the
+      // host's own draw failure and strand this frame's retained presentation.
+      { allowRestoring: this.lifecycleState === 'restoring' },
     );
     try {
       this.restoreAbortedHostFrame(record);
@@ -717,8 +721,13 @@ export class ThreeRenderRuntime {
     context: Readonly<ThreeFrameContext>,
   ): ThreePrepareFrameResult {
     this.assertAccepting();
-    if (this.lifecycleState === 'lost' || this.lifecycleState === 'restoring') {
-      return this.unavailableFrameResult();
+    if (this.lifecycleState === 'lost') return this.unavailableFrameResult();
+    // An embedded host owns the draw, so it can never call frame(); the frame
+    // ticket is its only draw protocol and restoration must complete through
+    // it, or the runtime stays restoring for the rest of the session.
+    if (this.lifecycleState === 'restoring') {
+      if (this.hostKind !== 'embedded') return this.unavailableFrameResult();
+      return this.prepareRestorationFrameInternal(context);
     }
     this.hostFrames.beginPreparation();
     const generation = this.deviceGeneration;
@@ -799,10 +808,78 @@ export class ThreeRenderRuntime {
       this.hostFrames.finishPreparation();
     }
   }
+  /**
+   * Re-establishes Voxel's presentation from the last presented canonical CPU
+   * state and hands the host a restoration ticket. The host's successful draw
+   * is the acknowledgement that the scene actually reached the restored
+   * canvas; only then does the runtime report running again.
+   *
+   * Reconciling against the presented state is deliberately cheap: the keys
+   * are unchanged, so presenters are re-driven rather than torn down, and
+   * Three's renderer re-uploads GPU buffers from the surviving CPU geometry on
+   * its own after a restore. What this earns is the frame-boundary evidence,
+   * not the upload. The standalone path does the same, and additionally
+   * restores size, DPR and camera, which an embedded host owns and Voxel must
+   * not touch.
+   */
+  private prepareRestorationFrameInternal(
+    context: Readonly<ThreeFrameContext>,
+  ): ThreePrepareFrameResult {
+    this.hostFrames.beginPreparation();
+    const generation = this.deviceGeneration;
+    try {
+      const presented = presentedCanonicalStateForPresentationInternal(this.world);
+      const presentation = this.presentations.presentedInternal;
+      if (!this.reconcilePresentation(
+        presentation,
+        () => this.isRestoreAttempt(generation),
+      )) return this.unavailableFrameResult();
+      if (!this.isRestoreAttempt(generation)) return this.unavailableFrameResult();
+      this.presentationSurface.animateInternal(context.nowMs);
+      if (!this.isRestoreAttempt(generation)) return this.unavailableFrameResult();
+      const record = this.hostFrames.issue({
+        context,
+        // Restoration re-presents what was already displayed, so it advances
+        // no canonical revision and carries no pending state.
+        pending: null,
+        target: presented,
+        presentation,
+        previousPresentation: presentation,
+        previousContext: this.lastPresentedFrameContext,
+        restoration: true,
+      }, generation);
+      this.presentations.retainHostFrameInternal(record, presentation);
+      return Object.freeze({
+        status: 'prepared',
+        ticket: record.ticket,
+        target: presented ? Object.freeze({
+          worldId: presented.worldId,
+          epoch: presented.epoch,
+          revision: presented.revision,
+        }) : null,
+        restoration: true,
+      });
+    } catch (error) {
+      if (this.isRestoreAttempt(generation)) this.transitionToFailed('restore', error);
+      if (this.isFrameUnavailableAfterCallbacks()) return this.unavailableFrameResult();
+      throw error;
+    } finally {
+      this.hostFrames.finishPreparation();
+    }
+  }
+
   private commitFrameTicketInternal(
     ticket: ThreePreparedFrameTicket,
   ): ThreePresentedManifestV1 | undefined {
-    const record = this.hostFrames.consume(ticket, this.lifecycleState, this.deviceGeneration);
+    const record = this.hostFrames.consume(
+      ticket,
+      this.lifecycleState,
+      this.deviceGeneration,
+      // Only restoration issues a ticket while restoring, and only for the
+      // current device generation, so admitting it here cannot admit a frame
+      // prepared before the loss.
+      { allowRestoring: this.lifecycleState === 'restoring' },
+    );
     try {
       return this.commitConsumedFrameTicketInternal(record);
     } finally {
@@ -813,6 +890,16 @@ export class ThreeRenderRuntime {
     record: HostFrameTicketRecordInternal<PreparedHostFrameInternal>,
   ): ThreePresentedManifestV1 | undefined {
     const prepared = record.payload;
+    if (prepared.restoration) {
+      // The host drew the rebuilt scene, which is the only evidence Voxel's
+      // reconstructed GPU state actually reached the canvas. Report running
+      // before the manifest so this frame is an ordinary presented frame.
+      if (!this.isRestoreAttempt(record.deviceGeneration)) return undefined;
+      this.lifecycleState = 'running';
+      setRenderWorldPresentationAvailabilityInternal(this.world, 'available');
+      // handleContextRestored already counted this restoration.
+      if (!this.isRunningAttempt(record.deviceGeneration)) return undefined;
+    }
     const previousFrames = this.frames;
     const previousCameraGeneration = this.cameraGeneration;
     this.frames = previousFrames + 1;

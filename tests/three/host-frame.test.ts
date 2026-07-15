@@ -286,6 +286,107 @@ describe('ThreeRenderRuntime embedded host frames', () => {
     );
   });
 
+  it('recovers through the host frame protocol after a context restoration', () => {
+    const { renderer, scene, camera, runtime } = createEmbeddedHost();
+    expect(runtime.acceptSnapshot(citySnapshot(1, 4)).status).toBe('accepted');
+    const first = prepared(runtime.prepareFrame({ nowMs: 10, deltaMs: 10, frameIndex: 1 }));
+    runtime.commitFrame(first.ticket);
+    expect(runtime.metrics().presentedRevision).toBe(1);
+    const before = hostState(renderer, scene, camera);
+
+    renderer.emit('webglcontextlost');
+    expect(runtime.runtimeStatus().state).toBe('lost');
+    expect(runtime.prepareFrame({ nowMs: 20, deltaMs: 10, frameIndex: 2 })).toMatchObject({
+      status: 'unavailable',
+      reason: 'context-lost',
+    });
+
+    renderer.emit('webglcontextrestored');
+    expect(runtime.runtimeStatus().state).toBe('restoring');
+
+    // An embedded host cannot call frame(); the frame ticket is its only draw
+    // protocol, so restoration has to complete through it or the runtime is
+    // bricked for the rest of the session.
+    const restore = prepared(runtime.prepareFrame({ nowMs: 30, deltaMs: 10, frameIndex: 3 }));
+    expect(restore.restoration).toBe(true);
+    expect(restore.target).toEqual({
+      worldId: 'world:city-host',
+      epoch: 'epoch:city-host',
+      revision: 1,
+    });
+    // The load-bearing claim: preparing must NOT declare the restoration done.
+    // Only the host's completed draw may, so the runtime is still restoring
+    // here and readiness is still withheld.
+    expect(runtime.runtimeStatus().state).toBe('restoring');
+    expect(runtime.presentationReadiness({
+      worldId: 'world:city-host',
+      epoch: 'epoch:city-host',
+      revision: 1,
+    })).toMatchObject({ status: 'not-ready', reason: 'restoring' });
+
+    runtime.commitFrame(restore.ticket);
+
+    expect(runtime.runtimeStatus().state).toBe('running');
+    expect(runtime.metrics().presentedRevision).toBe(1);
+    // Restoration rebuilds Voxel's own GPU state and must not touch the host's.
+    expect(hostState(renderer, scene, camera)).toEqual(before);
+    expect(renderer.setSize).not.toHaveBeenCalled();
+    expect(renderer.setPixelRatio).not.toHaveBeenCalled();
+
+    // The runtime is fully live again: a newer revision presents normally.
+    expect(runtime.acceptSnapshot(citySnapshot(2, 4)).status).toBe('accepted');
+    const next = prepared(runtime.prepareFrame({ nowMs: 40, deltaMs: 10, frameIndex: 4 }));
+    expect(next.restoration).toBe(false);
+    runtime.commitFrame(next.ticket);
+    expect(runtime.metrics().presentedRevision).toBe(2);
+    runtime.dispose();
+  });
+
+  it('lets a host abort a failed restoration draw and retry it', () => {
+    const { renderer, runtime } = createEmbeddedHost();
+    expect(runtime.acceptSnapshot(citySnapshot(1, 4)).status).toBe('accepted');
+    runtime.commitFrame(prepared(runtime.prepareFrame({ nowMs: 10, deltaMs: 10, frameIndex: 1 })).ticket);
+    renderer.emit('webglcontextlost');
+    renderer.emit('webglcontextrestored');
+
+    const first = prepared(runtime.prepareFrame({ nowMs: 20, deltaMs: 10, frameIndex: 2 }));
+    // The host's own draw threw, so it aborts. That must not be mistaken for a
+    // stale pre-loss ticket: throwing here would mask the host's real error.
+    expect(() => runtime.abortFrame(first.ticket)).not.toThrow();
+    expect(runtime.runtimeStatus().state).toBe('restoring');
+    expect(runtime.metrics().presentedRevision).toBe(1);
+
+    // Aborting leaves the restoration retryable rather than bricked.
+    const retry = prepared(runtime.prepareFrame({ nowMs: 30, deltaMs: 10, frameIndex: 3 }));
+    expect(retry.restoration).toBe(true);
+    runtime.commitFrame(retry.ticket);
+    expect(runtime.runtimeStatus().state).toBe('running');
+    runtime.dispose();
+  });
+
+  it('rejects a restoration ticket that a further context loss superseded', () => {
+    const { renderer, runtime } = createEmbeddedHost();
+    expect(runtime.acceptSnapshot(citySnapshot(1, 4)).status).toBe('accepted');
+    runtime.commitFrame(prepared(runtime.prepareFrame({ nowMs: 10, deltaMs: 10, frameIndex: 1 })).ticket);
+    renderer.emit('webglcontextlost');
+    renderer.emit('webglcontextrestored');
+    const restore = prepared(runtime.prepareFrame({ nowMs: 20, deltaMs: 10, frameIndex: 2 }));
+
+    // The context dies again before the host finishes drawing the rebuild.
+    renderer.emit('webglcontextlost');
+    expect(() => runtime.commitFrame(restore.ticket)).toThrow(
+      expect.objectContaining({ code: 'three.frame-ticket.stale-device' }),
+    );
+    expect(runtime.runtimeStatus().state).toBe('lost');
+    expect(runtime.metrics().presentedRevision).toBe(1);
+
+    // The second restoration still recovers from its own generation.
+    renderer.emit('webglcontextrestored');
+    runtime.commitFrame(prepared(runtime.prepareFrame({ nowMs: 30, deltaMs: 10, frameIndex: 3 })).ticket);
+    expect(runtime.runtimeStatus().state).toBe('running');
+    runtime.dispose();
+  });
+
   it('records host viewport changes without mutation and removes only Voxel-owned objects', () => {
     const { renderer, scene, sentinel, camera, runtime } = createEmbeddedHost();
     const before = hostState(renderer, scene, camera);

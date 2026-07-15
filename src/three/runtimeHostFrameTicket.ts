@@ -53,10 +53,17 @@ export class HostFrameTicketLedgerInternal<Payload> {
     return record;
   }
 
+  /**
+   * `allowRestoring` admits a ticket issued by restoration itself. An embedded
+   * host draws the rebuilt scene while the runtime is still restoring, so that
+   * ticket must complete in that state; the device-generation check below
+   * still rejects any ticket prepared before the loss.
+   */
   consume(
     ticketValue: unknown,
     lifecycle: ThreeRuntimeLifecycleV1,
     deviceGeneration: number,
+    options: { readonly allowRestoring?: boolean } = {},
   ): HostFrameTicketRecordInternal<Payload> {
     if (typeof ticketValue !== 'object' || ticketValue === null) {
       throw this.error('three.frame-ticket.foreign', 'The frame ticket belongs to no runtime.');
@@ -86,9 +93,10 @@ export class HostFrameTicketLedgerInternal<Payload> {
       this.states.set(ticketValue, 'late');
       throw this.error('three.frame-ticket.late', 'The frame ticket is no longer outstanding.');
     }
+    const restoring = lifecycle === 'restoring' && options.allowRestoring === true;
     if (
       lifecycle === 'lost'
-      || lifecycle === 'restoring'
+      || (lifecycle === 'restoring' && !restoring)
       || record.deviceGeneration !== deviceGeneration
     ) {
       this.outstanding = null;
@@ -98,7 +106,7 @@ export class HostFrameTicketLedgerInternal<Payload> {
         'The frame ticket belongs to an obsolete device generation.',
       );
     }
-    if (lifecycle !== 'running') {
+    if (lifecycle !== 'running' && !restoring) {
       this.states.set(ticketValue, 'late');
       throw this.error('three.frame-ticket.late', 'The frame ticket is not completable now.');
     }
