@@ -387,6 +387,35 @@ describe('ThreeRenderRuntime embedded host frames', () => {
     runtime.dispose();
   });
 
+  it('survives repeated loss and restoration cycles without drifting', () => {
+    const { renderer, runtime } = createEmbeddedHost();
+    expect(runtime.acceptSnapshot(citySnapshot(1, 4)).status).toBe('accepted');
+    runtime.commitFrame(prepared(runtime.prepareFrame({ nowMs: 0, deltaMs: 0, frameIndex: 0 })).ticket);
+    const framesAfterFirst = runtime.metrics().frames;
+
+    for (let cycle = 1; cycle <= 3; cycle += 1) {
+      renderer.emit('webglcontextlost');
+      renderer.emit('webglcontextrestored');
+      const restore = prepared(runtime.prepareFrame({
+        nowMs: cycle * 10,
+        deltaMs: 10,
+        frameIndex: cycle,
+      }));
+      expect(restore.restoration).toBe(true);
+      runtime.commitFrame(restore.ticket);
+      expect(runtime.runtimeStatus().state).toBe('running');
+      expect(runtime.metrics().presentedRevision).toBe(1);
+    }
+
+    // Each cycle is one device generation and one presented frame: nothing
+    // accumulates, and the revision never regresses.
+    expect(runtime.runtimeStatus().deviceGeneration).toBe(4);
+    expect(runtime.metrics().contextLosses).toBe(3);
+    expect(runtime.metrics().contextRestorations).toBe(3);
+    expect(runtime.metrics().frames).toBe(framesAfterFirst + 3);
+    runtime.dispose();
+  });
+
   it('records host viewport changes without mutation and removes only Voxel-owned objects', () => {
     const { renderer, scene, sentinel, camera, runtime } = createEmbeddedHost();
     const before = hostState(renderer, scene, camera);
