@@ -156,14 +156,27 @@ export interface ThreeAtomicPipelineMetricsV1 {
   readonly cpuStagingBytes: number;
   /** Estimated GPU bytes held by those prepared presentations. */
   readonly gpuStagingBytes: number;
+  /**
+   * High-water marks since construction. Staging empties the moment a frame
+   * commits, so a caller sampling metrics can never observe its peak; these
+   * are recorded where the reservation happens.
+   */
+  readonly peakCpuStagingBytes: number;
+  readonly peakGpuStagingBytes: number;
   /** Superseded bundles whose disposal failed and is being retried. */
   readonly pendingRetiredBundles: number;
   /** Coordinator records still cleaning up after a terminal target. */
   readonly pendingRetirements: number;
   readonly queuedJobs: number;
   readonly queuedBytes: number;
+  /** Scheduler high-water marks since construction. */
+  readonly highWaterQueuedJobs: number;
+  readonly highWaterQueuedBytes: number;
+  readonly highWaterStagingBytes: number;
+  readonly highWaterBusyWorkers: number;
   /** Worker transport events accepted but not yet delivered to the scheduler. */
   readonly queuedWorkerEvents: number;
+  readonly highWaterQueuedWorkerEvents: number;
   readonly liveWorkers: number;
 }
 

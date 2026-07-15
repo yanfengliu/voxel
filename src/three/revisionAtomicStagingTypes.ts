@@ -64,6 +64,9 @@ export interface RevisionAtomicStagingMetricsInternal {
   readonly preparedTargets: number;
   readonly cpuStagingBytes: number;
   readonly gpuStagingBytes: number;
+  /** High-water marks; staging is transient and cannot be sampled for a peak. */
+  readonly peakCpuStagingBytes: number;
+  readonly peakGpuStagingBytes: number;
   readonly pendingRetiredBundles: number;
 }
 

@@ -149,6 +149,107 @@
         throw new Error(`Revision ${revision} did not present within ${maxFrames} frames.`);
       };
 
+      const percentile = (values, fraction) => {
+        if (values.length === 0) return null;
+        const sorted = [...values].sort((left, right) => left - right);
+        // Nearest-rank, matching the package's frame-budget reporting.
+        const rank = Math.max(1, Math.ceil(fraction * sorted.length));
+        return sorted[rank - 1];
+      };
+
+      /**
+       * V-09 production measurement harness. Records cold worker startup,
+       * accepted-to-presented latency, and staging high-water marks against
+       * the thresholds the selection ADR fixed before these results existed.
+       */
+      window.runAtomicRuntimeMeasurements = async ({ coldStarts, warmRevisions }) => {
+        const coldMs = [];
+        const warmMs = [];
+        let peakCpuStagingBytes = 0;
+        let peakGpuStagingBytes = 0;
+        let peakQueuedJobs = 0;
+        let peakQueuedWorkerEvents = 0;
+
+        // The runtime records its own staging high-water, because staging is
+        // empty again by the time any sample could read it.
+        const observePeaks = (runtime) => {
+          const atomic = runtime.metrics().atomic;
+          if (!atomic) return;
+          peakCpuStagingBytes = Math.max(peakCpuStagingBytes, atomic.peakCpuStagingBytes);
+          peakGpuStagingBytes = Math.max(peakGpuStagingBytes, atomic.peakGpuStagingBytes);
+          peakQueuedJobs = Math.max(peakQueuedJobs, atomic.highWaterQueuedJobs);
+          peakQueuedWorkerEvents = Math.max(peakQueuedWorkerEvents, atomic.highWaterQueuedWorkerEvents);
+        };
+
+        // Cold: a fresh runtime per sample, so each pays real module-worker
+        // startup. This is the only path that measures worker boot at all.
+        for (let sample = 0; sample < coldStarts; sample += 1) {
+          const canvas = document.createElement('canvas');
+          document.body.appendChild(canvas);
+          const runtime = new ThreeRenderRuntime({
+            canvas, width: WIDTH, height: HEIGHT, pixelRatio: 1,
+            center: { x: 2, y: 0, z: 2 }, zoom: 1,
+            voxelWorkersInternal: { workerCount: 1 },
+          });
+          try {
+            const startedAt = performance.now();
+            runtime.acceptSnapshot(paletteSnapshot(1, { r: 70, g: 200, b: 80, a: 255 }));
+            const present = await framesUntilPresented(runtime, 1, 0, 400);
+            coldMs.push(performance.now() - startedAt);
+            observePeaks(runtime);
+            if (!present) throw new Error('cold sample never presented');
+          } finally {
+            runtime.dispose();
+            canvas.remove();
+          }
+        }
+
+        // Warm: one runtime whose worker is already up, isolating
+        // accepted-to-presented cost from startup.
+        const canvas = document.createElement('canvas');
+        document.body.appendChild(canvas);
+        const runtime = new ThreeRenderRuntime({
+          canvas, width: WIDTH, height: HEIGHT, pixelRatio: 1,
+          center: { x: 2, y: 0, z: 2 }, zoom: 1,
+          voxelWorkersInternal: { workerCount: 1 },
+        });
+        try {
+          runtime.acceptSnapshot(paletteSnapshot(1, { r: 70, g: 200, b: 80, a: 255 }));
+          let frameIndex = (await framesUntilPresented(runtime, 1, 0, 400)).nextFrameIndex;
+          for (let revision = 2; revision <= warmRevisions + 1; revision += 1) {
+            const green = revision % 2 === 1;
+            const startedAt = performance.now();
+            runtime.acceptSnapshot(paletteSnapshot(
+              revision,
+              green ? { r: 70, g: 200, b: 80, a: 255 } : { r: 220, g: 40, b: 40, a: 255 },
+            ));
+            const present = await framesUntilPresented(runtime, revision, frameIndex, 400);
+            warmMs.push(performance.now() - startedAt);
+            frameIndex = present.nextFrameIndex;
+            observePeaks(runtime);
+          }
+          return {
+            webgl2: true,
+            coldStarts: coldMs.length,
+            warmRevisions: warmMs.length,
+            coldP50Ms: percentile(coldMs, 0.5),
+            coldP95Ms: percentile(coldMs, 0.95),
+            coldMaxMs: Math.max(...coldMs),
+            warmP50Ms: percentile(warmMs, 0.5),
+            warmP95Ms: percentile(warmMs, 0.95),
+            warmMaxMs: Math.max(...warmMs),
+            peakCpuStagingBytes,
+            peakGpuStagingBytes,
+            peakQueuedJobs,
+            peakQueuedWorkerEvents,
+            presentedRevision: runtime.metrics().presentedRevision,
+          };
+        } finally {
+          runtime.dispose();
+          canvas.remove();
+        }
+      };
+
       /**
        * Real-GPU endurance. Only a live context can prove a retired bundle's
        * resources were actually freed: a superseded bundle leaves the scene

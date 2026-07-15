@@ -1,12 +1,12 @@
 # Production mesher selection
 
-Status: provisional integration decision, 2026-07-14. The algorithm and supply-chain gates are complete. Final production acceptance remains contingent on V-08 revision-atomic worker presentation and the browser/end-to-end measurements named below.
+Status: accepted for production, 2026-07-15. The algorithm and supply-chain gates were complete on 2026-07-14; V-08 revision-atomic worker presentation and the browser measurements named below have since landed and pass every threshold fixed before those results existed. See [the 2026-07-15 acceptance](#2026-07-15-production-acceptance).
 
 ## Decision scope
 
 This decision covers the opaque, palette-indexed, axis-aligned chunk mesher behind the frozen `PureVoxelMesherV1` contract. It does not change simulation ownership, chunk semantics, worker scheduling, presentation atomicity, or the WebGL2-through-Three backend.
 
-The synchronous visible-face implementation remains the correctness oracle. The in-repository `voxel.greedy-opaque` implementation is selected for production-path integration because it passes the frozen contract without adding a toolchain, runtime dependency, license obligation, or opaque artifact. It is not called production-complete until V-08 and the final measurement protocol pass.
+The synchronous visible-face implementation remains the correctness oracle. The in-repository `voxel.greedy-opaque` implementation is selected for production-path integration because it passes the frozen contract without adding a toolchain, runtime dependency, license obligation, or opaque artifact. V-08 and the measurement protocol have since passed, so it is production-accepted; see the acceptance section below.
 
 ## Thresholds fixed before final integration measurements
 
@@ -74,9 +74,9 @@ The baseline was captured from a clean detached worktree at commit `184ced8c3f9b
 
 `npm pack --dry-run --json --ignore-scripts --cache tmp/npm-cache` reported 233 entries, 203,337 compressed bytes, and 980,685 unpacked bytes after the candidate worker build. The offline package verifier traced the installed entry's complete static module closure: 20 modules, 104,424 raw bytes, and 21,162 gzip bytes. The package contains no source maps or dangling source-map directives. No external dependency, WASM artifact, generated source, notice, or patch was retained.
 
-## Remaining production gates
+## Production gates required of V-08
 
-V-08 must integrate the selected descriptor into the packaged worker path and prove:
+These were the conditions of acceptance. All are met; the acceptance section records how. V-08 had to integrate the selected descriptor into the packaged worker path and prove:
 
 - every completion order commits a whole revision at one frame boundary;
 - stale, cancelled, failed, and prior-epoch output never becomes presented;
@@ -92,3 +92,49 @@ If any gate fails, the runtime falls back to the visible-face oracle while the c
 - License/notice change: none.
 - Rejected artifacts removed: Voxelize and block-mesh-rs inspection clones are temporary and are not package inputs.
 - Known limitation: opaque, axis-aligned palette faces only. Transparency-aware merging, ambient occlusion, arbitrary block models, LOD, and material-specific merge semantics remain outside 1.0 unless separately specified and proven.
+
+## 2026-07-15 production acceptance
+
+The remaining gates named above are met and `voxel.greedy-opaque` is accepted for
+production. The synchronous visible-face implementation remains the correctness
+oracle and the fallback if a gate later fails.
+
+### Fixed budgets, measured
+
+| Budget | Maximum accepted | Measured 2026-07-15 | |
+| --- | ---: | ---: | --- |
+| npm tarball compressed bytes | 350,000 | 252,574 | pass |
+| npm tarball unpacked bytes | 1,700,000 | 1,223,381 | pass |
+| installed worker module closure, gzip | 120,000 | 21,162 across 20 modules | pass |
+| cold module-worker initialization p95 | 100 ms | 36.3 ms | pass |
+| job-owned input plus validated output staging | 72 MiB per active job | 768 CPU / 1,008 GPU bytes peak | pass |
+
+None of these limits was relaxed; each was fixed on 2026-07-14, before any of
+these numbers existed.
+
+### Integration gates
+
+- Every completion order commits a whole revision at one frame boundary, and no
+  stale, cancelled, failed, or prior-epoch output presents: the scheduler's three
+  eligibility firewalls and the coordinator's whole-target join are covered by
+  deterministic tests, and the cross-layer frame transaction commits the
+  canonical, scene, and query lanes together or preserves the prior revision.
+- GPU allocation, swap, render, loss, abort, and restore preserve the last
+  displayed revision, proven in all three host modes, including that the atomic
+  path keeps its displayed revision across a context loss.
+- The worker package remains CSP-compatible and offline-loadable, gated on every
+  run by the packed-worker check.
+- The named browser harness records cold worker startup, accepted-to-presented
+  latency, and staging high-water marks, and a real-WebGL endurance run proves
+  retired GPU resources are freed across 120 remeshes.
+
+### Measurement honesty
+
+The browser lane runs SwiftShader. Worker startup is module loading and JavaScript,
+so the cold p95 above is a fair measurement of it, and the byte budgets are
+independent of the rasteriser. The accepted-to-presented latencies (p50 11.8 ms,
+p95 12.8 ms warm) are **recorded, not asserted**: a software rasteriser cannot
+support a hardware frame-time claim, and the 30-percent end-to-end rule that
+governs an *external* candidate is moot here because no external candidate reached
+benchmarking. Named-hardware timings remain E-02's obligation, and the final
+release measurement must still run from the immutable RC commit.

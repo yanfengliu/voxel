@@ -125,12 +125,17 @@ describe('revision-atomic presentation transaction', () => {
     expect(first.lease.bundleInternal.isDisposedInternal).toBe(true);
     expect(second.lease.bundleInternal.isDisposedInternal).toBe(true);
     expect(third.lease.bundleInternal.isDisposedInternal).toBe(true);
-    expect(atomic.metricsInternal()).toEqual({
+    const metrics = atomic.metricsInternal();
+    expect(metrics).toMatchObject({
       preparedTargets: 0,
       cpuStagingBytes: 0,
       gpuStagingBytes: 0,
       pendingRetiredBundles: 0,
     });
+    // Live staging returning to zero only means something if it was ever
+    // above it: the high-water proves the chain really staged and released.
+    expect(metrics.peakCpuStagingBytes).toBeGreaterThan(0);
+    expect(metrics.peakGpuStagingBytes).toBeGreaterThan(0);
   });
 
   it('does not roll back a published predecessor beneath an activated successor', () => {

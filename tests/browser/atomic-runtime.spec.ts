@@ -72,9 +72,30 @@ interface AtomicRuntimeEndurance {
   readonly state: string;
 }
 
+interface AtomicRuntimeMeasurements {
+  readonly webgl2: boolean;
+  readonly coldStarts: number;
+  readonly warmRevisions: number;
+  readonly coldP50Ms: number | null;
+  readonly coldP95Ms: number;
+  readonly coldMaxMs: number;
+  readonly warmP50Ms: number | null;
+  readonly warmP95Ms: number | null;
+  readonly warmMaxMs: number;
+  readonly peakCpuStagingBytes: number;
+  readonly peakGpuStagingBytes: number;
+  readonly peakQueuedJobs: number;
+  readonly peakQueuedWorkerEvents: number;
+  readonly presentedRevision: number | null;
+}
+
 declare global {
   interface Window {
     runAtomicRuntimeEvidence?: () => Promise<AtomicRuntimeEvidence>;
+    runAtomicRuntimeMeasurements?: (options: {
+      readonly coldStarts: number;
+      readonly warmRevisions: number;
+    }) => Promise<AtomicRuntimeMeasurements>;
     runAtomicRuntimeEndurance?: (options: {
       readonly edits: number;
       readonly settleAfter: number;
@@ -85,6 +106,11 @@ declare global {
 /** Kept modest: SwiftShader meshes and draws every one of these for real. */
 const ENDURANCE_EDITS = 120;
 const ENDURANCE_SETTLE_AFTER = 8;
+const COLD_START_SAMPLES = 20;
+const WARM_REVISION_SAMPLES = 40;
+/** Fixed by the mesher selection ADR before any of these results existed. */
+const COLD_START_P95_BUDGET_MS = 100;
+const STAGING_CEILING_BYTES = 72 * 1024 * 1024;
 
 const REPOSITORY_ROOT = fileURLToPath(new URL('../../', import.meta.url));
 const FIXTURE_PATH = '/tests/browser/fixtures/atomic-runtime.html';
@@ -233,4 +259,54 @@ test('atomic worker frames free retired GPU resources across repeated edits', as
       queuedWorkerEvents: 0,
     });
   }
+});
+
+test('atomic worker frames meet the fixed mesher selection budgets', async ({ page }) => {
+  const pageErrors: string[] = [];
+  page.on('pageerror', (error) => pageErrors.push(error.message));
+  page.on('console', (message) => {
+    if (message.type() === 'error') pageErrors.push(message.text());
+  });
+
+  if (!fixtureUrl) throw new Error('The atomic runtime test server is not running.');
+  const navigation = await page.goto(fixtureUrl, { waitUntil: 'load' });
+  expect(navigation?.ok()).toBe(true);
+  await page.waitForFunction(() => typeof window.runAtomicRuntimeMeasurements === 'function');
+
+  const measured = await page.evaluate(({ coldStarts, warmRevisions }) => {
+    const run = window.runAtomicRuntimeMeasurements;
+    if (!run) throw new Error('The atomic measurement fixture API is unavailable.');
+    return run({ coldStarts, warmRevisions });
+  }, { coldStarts: COLD_START_SAMPLES, warmRevisions: WARM_REVISION_SAMPLES });
+
+  expect(pageErrors).toEqual([]);
+  expect(measured.webgl2).toBe(true);
+  expect(measured.coldStarts).toBe(COLD_START_SAMPLES);
+  expect(measured.warmRevisions).toBe(WARM_REVISION_SAMPLES);
+  expect(measured.presentedRevision).toBe(WARM_REVISION_SAMPLES + 1);
+
+  // The selection ADR fixed 100 ms cold module-worker p95 before any of these
+  // numbers existed, and forbids relaxing it now that they do. Worker startup
+  // is module loading and JS, so SwiftShader measures it fairly; the latency
+  // figures below are recorded, not asserted, because a software rasteriser
+  // cannot support a hardware frame-time claim.
+  expect(measured.coldP95Ms).toBeLessThanOrEqual(COLD_START_P95_BUDGET_MS);
+
+  // Staging is contract-bounded per active job; the ADR's ceiling is 72 MiB.
+  expect(measured.peakCpuStagingBytes).toBeLessThanOrEqual(STAGING_CEILING_BYTES);
+  expect(measured.peakGpuStagingBytes).toBeLessThanOrEqual(STAGING_CEILING_BYTES);
+
+  // eslint-disable-next-line no-console
+  console.log(`[v-09 swiftshader] ${JSON.stringify({
+    coldP50Ms: measured.coldP50Ms,
+    coldP95Ms: measured.coldP95Ms,
+    coldMaxMs: measured.coldMaxMs,
+    warmP50Ms: measured.warmP50Ms,
+    warmP95Ms: measured.warmP95Ms,
+    warmMaxMs: measured.warmMaxMs,
+    peakCpuStagingBytes: measured.peakCpuStagingBytes,
+    peakGpuStagingBytes: measured.peakGpuStagingBytes,
+    peakQueuedJobs: measured.peakQueuedJobs,
+    peakQueuedWorkerEvents: measured.peakQueuedWorkerEvents,
+  })}`);
 });

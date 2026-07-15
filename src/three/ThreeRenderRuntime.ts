@@ -490,11 +490,18 @@ export class ThreeRenderRuntime {
       preparedTargets: staging.preparedTargets,
       cpuStagingBytes: staging.cpuStagingBytes,
       gpuStagingBytes: staging.gpuStagingBytes,
+      peakCpuStagingBytes: staging.peakCpuStagingBytes,
+      peakGpuStagingBytes: staging.peakGpuStagingBytes,
       pendingRetiredBundles: staging.pendingRetiredBundles,
       pendingRetirements: staging.pendingRetirements,
       queuedJobs: staging.scheduler.queuedJobs,
       queuedBytes: staging.scheduler.queuedBytes,
+      highWaterQueuedJobs: staging.scheduler.highWaterQueuedJobs,
+      highWaterQueuedBytes: staging.scheduler.highWaterQueuedBytes,
+      highWaterStagingBytes: staging.scheduler.highWaterStagingBytes,
+      highWaterBusyWorkers: staging.scheduler.highWaterBusyWorkers,
       queuedWorkerEvents: driver.queuedEvents,
+      highWaterQueuedWorkerEvents: driver.highWaterQueuedEvents,
       liveWorkers: driver.liveWorkers,
     });
   }

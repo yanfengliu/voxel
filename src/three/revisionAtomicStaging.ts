@@ -56,6 +56,8 @@ export class RevisionAtomicPresentationStagerInternal {
   #swapped: RevisionAtomicPresentationLeaseInternal | null = null;
   #cpuBytes = 0;
   #gpuBytes = 0;
+  #peakCpuBytes = 0;
+  #peakGpuBytes = 0;
   #operationInProgress = false;
   #lifecycle: 'active' | 'disposing' | 'disposed' = 'active';
 
@@ -93,6 +95,8 @@ export class RevisionAtomicPresentationStagerInternal {
       preparedTargets: this.#leases.size,
       cpuStagingBytes: this.#cpuBytes,
       gpuStagingBytes: this.#gpuBytes,
+      peakCpuStagingBytes: this.#peakCpuBytes,
+      peakGpuStagingBytes: this.#peakGpuBytes,
       pendingRetiredBundles: this.#retired.size,
     });
   }
@@ -346,6 +350,11 @@ export class RevisionAtomicPresentationStagerInternal {
     }
     this.#cpuBytes += cpuBytes;
     this.#gpuBytes += gpuBytes;
+    // Staging is transient by design: it is empty again the moment a frame
+    // commits. Sampling can never catch its peak, so record it where it
+    // happens, which is the only way a high-water claim can be true.
+    this.#peakCpuBytes = Math.max(this.#peakCpuBytes, this.#cpuBytes);
+    this.#peakGpuBytes = Math.max(this.#peakGpuBytes, this.#gpuBytes);
   }
 
   #release(cpuBytes: number, gpuBytes: number): void {
