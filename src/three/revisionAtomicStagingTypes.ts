@@ -77,6 +77,7 @@ export interface RevisionAtomicCommitResultInternal {
 export type RevisionAtomicLeaseStateInternal =
   | 'prepared'
   | 'swapped'
+  | 'published'
   | 'committed'
   | 'aborting'
   | 'aborted';

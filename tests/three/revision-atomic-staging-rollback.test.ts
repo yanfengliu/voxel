@@ -88,7 +88,7 @@ describe('revision-atomic scene-root rollback', () => {
     second.lease.swap();
     second.port.setCurrent(() => null);
 
-    expect(() => second.lease.commit()).toThrow(/post-render commit/i);
+    expect(() => second.lease.publish()).toThrow(/post-render publication/i);
     expect(root.children).toEqual([first.lease.bundleInternal.rootInternal]);
     expect(second.lease.stateInternal).toBe('aborted');
     expect(atomic.displayedTargetInternal).toEqual(target(1));

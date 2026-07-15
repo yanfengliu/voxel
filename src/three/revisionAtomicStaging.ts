@@ -13,9 +13,14 @@ import {
   revisionAtomicGroupEligibilityCurrentInternal,
   validateRevisionAtomicGroupsInternal,
 } from './revisionAtomicEligibility.js';
+import { RevisionAtomicPresentationLeaseInternal } from './revisionAtomicPresentationLease.js';
+import {
+  retireRevisionAtomicBundleInternal,
+  retryRevisionAtomicRetirementsInternal,
+} from './revisionAtomicRetirement.js';
+import { combineRevisionAtomicErrorsInternal as combineErrors } from './revisionAtomicStagingSupport.js';
 import type {
   RevisionAtomicCommitResultInternal,
-  RevisionAtomicGroupPortInternal,
   RevisionAtomicLeaseStateInternal,
   RevisionAtomicMountInternal,
   RevisionAtomicPrepareInputInternal,
@@ -24,6 +29,7 @@ import type {
   RevisionAtomicProfiledMeshInternal,
   RevisionAtomicStagingMetricsInternal,
 } from './revisionAtomicStagingTypes.js';
+export { RevisionAtomicPresentationLeaseInternal } from './revisionAtomicPresentationLease.js';
 export type {
   RevisionAtomicCommitResultInternal,
   RevisionAtomicGroupPortInternal,
@@ -36,37 +42,6 @@ export type {
   RevisionAtomicProfiledMeshInternal,
   RevisionAtomicStagingMetricsInternal,
 } from './revisionAtomicStagingTypes.js';
-
-type GroupStateInternal = 'prepared' | 'committed' | 'cancelled';
-
-function combineErrors(primary: unknown, cleanup: readonly unknown[], message: string): Error {
-  if (cleanup.length === 0) return primary instanceof Error ? primary : new Error(String(primary));
-  return new AggregateError([primary, ...cleanup], message);
-}
-
-export class RevisionAtomicPresentationLeaseInternal {
-  stateInternal: RevisionAtomicLeaseStateInternal = 'prepared';
-  previousBundleInternal: ThreeRevisionPresentationBundleInternal | null = null;
-  readonly groupStatesInternal = new Map<RevisionAtomicGroupPortInternal, GroupStateInternal>();
-
-  constructor(
-    private readonly owner: RevisionAtomicPresentationStagerInternal,
-    readonly targetInternal: RevisionAtomicPresentationTargetInternal,
-    readonly bundleInternal: ThreeRevisionPresentationBundleInternal,
-    readonly cpuBytesInternal: number,
-    readonly gpuBytesInternal: number,
-    readonly groupsInternal: readonly RevisionAtomicGroupPortInternal[],
-    readonly targetIsCurrentInternal: () => boolean,
-  ) {
-    for (const group of groupsInternal) this.groupStatesInternal.set(group, 'prepared');
-  }
-
-  swap(): void { this.owner.swapInternal(this); }
-  validateForRender(): void { this.owner.validateForRenderInternal(this); }
-  commit(): RevisionAtomicCommitResultInternal { return this.owner.commitInternal(this); }
-  abort(): void { this.owner.abortInternal(this); }
-  dispose(): void { this.abort(); }
-}
 
 export class RevisionAtomicPresentationStagerInternal {
   readonly #root: Group;
@@ -221,6 +196,7 @@ export class RevisionAtomicPresentationStagerInternal {
         this.#commitGroups(lease);
         const previous = this.#displayedBundle;
         lease.previousBundleInternal = previous;
+        lease.previousTargetInternal = this.#displayedTarget;
         try {
           if (previous) this.#mount.detach(previous.rootInternal);
           this.#mount.attach(lease.bundleInternal.rootInternal);
@@ -268,42 +244,21 @@ export class RevisionAtomicPresentationStagerInternal {
     });
   }
 
+  publishInternal(lease: RevisionAtomicPresentationLeaseInternal): void {
+    this.#operate(() => { this.#publishLeaseInternal(lease); }); }
+
+  finalizeInternal(
+    lease: RevisionAtomicPresentationLeaseInternal,
+  ): RevisionAtomicCommitResultInternal {
+    return this.#operate(() => this.#finalizeLeaseInternal(lease));
+  }
+
   commitInternal(
     lease: RevisionAtomicPresentationLeaseInternal,
   ): RevisionAtomicCommitResultInternal {
     return this.#operate(() => {
-      this.#assertOwned(lease, 'swapped');
-      if (this.#swapped !== lease) throw new Error('Revision-atomic swap ownership was lost.');
-      if (!this.#stillEligible(lease)) {
-        const cleanup = this.#rollbackSwapped(lease);
-        throw combineErrors(
-          new Error('Revision-atomic target eligibility changed before post-render commit.'),
-          cleanup,
-          'Revision-atomic post-render rollback failed.',
-        );
-      }
-      const previous = lease.previousBundleInternal;
-      this.#displayedBundle = lease.bundleInternal;
-      this.#displayedTarget = lease.targetInternal;
-      this.#swapped = null;
-      lease.stateInternal = 'committed';
-      this.#leases.delete(lease);
-      this.#release(lease.cpuBytesInternal, lease.gpuBytesInternal);
-      let retirement: RevisionAtomicCommitResultInternal['retirement'] = 'complete';
-      if (previous) {
-        try {
-          previous.dispose();
-        } catch {
-          this.#retired.add(previous);
-          retirement = 'pending';
-        }
-      }
-      return Object.freeze({
-        status: 'committed',
-        target: lease.targetInternal,
-        retirement,
-        pendingRetiredBundles: this.#retired.size,
-      });
+      this.#publishLeaseInternal(lease);
+      return this.#finalizeLeaseInternal(lease);
     });
   }
 
@@ -324,7 +279,7 @@ export class RevisionAtomicPresentationStagerInternal {
       if (lease.stateInternal === 'aborted' || lease.stateInternal === 'committed') return;
       if (!this.#leases.has(lease)) throw new Error('Foreign revision-atomic presentation lease.');
       const errors: unknown[] = [];
-      if (lease.stateInternal === 'swapped') {
+      if (lease.stateInternal === 'swapped' || lease.stateInternal === 'published') {
         errors.push(...this.#restoreDisplayedRoot(lease));
         if (errors.length > 0) {
           throw new AggregateError(
@@ -344,14 +299,24 @@ export class RevisionAtomicPresentationStagerInternal {
       if (this.#lifecycle === 'disposed') return;
       this.#lifecycle = 'disposing';
       const errors: unknown[] = [];
-      for (const lease of [...this.#leases]) {
-        if (lease.stateInternal === 'swapped') {
-          try { this.#mount.detach(lease.bundleInternal.rootInternal); } catch (error) { errors.push(error); }
-          this.#swapped = null;
+      for (const lease of [...this.#leases].reverse()) {
+        const supersededPublication = lease.stateInternal === 'published'
+          && this.#displayedBundle !== lease.bundleInternal;
+        if (supersededPublication) {
+          if (lease.previousBundleInternal) this.#retired.add(lease.previousBundleInternal);
+          errors.push(...this.#finishAbort(lease));
+          continue;
+        }
+        if (lease.stateInternal === 'swapped' || lease.stateInternal === 'published') {
+          const restoration = this.#restoreDisplayedRoot(lease);
+          errors.push(...restoration);
+          if (restoration.length > 0) continue;
         }
         errors.push(...this.#finishAbort(lease));
       }
-      if (this.#displayedBundle) {
+      const presentationRestorationPending = [...this.#leases].some((lease) =>
+        lease.stateInternal === 'swapped' || lease.stateInternal === 'published');
+      if (this.#displayedBundle && !presentationRestorationPending) {
         try { this.#displayedBundle.dispose(); } catch (error) { errors.push(error); }
         this.#displayedBundle = null;
         this.#displayedTarget = null;
@@ -411,15 +376,62 @@ export class RevisionAtomicPresentationStagerInternal {
       && lease.groupsInternal.every(revisionAtomicGroupEligibilityCurrentInternal);
   }
 
+  #publishLeaseInternal(lease: RevisionAtomicPresentationLeaseInternal): void {
+    this.#assertOwned(lease, 'swapped');
+    if (this.#swapped !== lease) throw new Error('Revision-atomic swap ownership was lost.');
+    if (!this.#stillEligible(lease)) {
+      const cleanup = this.#rollbackSwapped(lease);
+      throw combineErrors(
+        new Error('Revision-atomic target eligibility changed before post-render publication.'),
+        cleanup,
+        'Revision-atomic post-render rollback failed.',
+      );
+    }
+    this.#displayedBundle = lease.bundleInternal;
+    this.#displayedTarget = lease.targetInternal;
+    this.#swapped = null;
+    lease.stateInternal = 'published';
+  }
+
+  #finalizeLeaseInternal(
+    lease: RevisionAtomicPresentationLeaseInternal,
+  ): RevisionAtomicCommitResultInternal {
+    this.#assertOwned(lease, 'published');
+    const previous = lease.previousBundleInternal;
+    lease.stateInternal = 'committed';
+    this.#leases.delete(lease);
+    this.#release(lease.cpuBytesInternal, lease.gpuBytesInternal);
+    const retirement = retireRevisionAtomicBundleInternal(previous, this.#retired);
+    return Object.freeze({
+      status: 'committed',
+      target: lease.targetInternal,
+      retirement,
+      pendingRetiredBundles: this.#retired.size,
+    });
+  }
+
   #restoreDisplayedRoot(lease: RevisionAtomicPresentationLeaseInternal): unknown[] {
     const errors: unknown[] = [];
+    const published = lease.stateInternal === 'published';
+    if (published && this.#swapped) {
+      return [new Error('Published presentation rollback is blocked by an activated successor.')];
+    }
+    if (published && this.#displayedBundle !== lease.bundleInternal) {
+      return [new Error('A superseded published presentation cannot be rolled back.')];
+    }
     try { this.#mount.detach(lease.bundleInternal.rootInternal); } catch (error) { errors.push(error); }
     if (lease.previousBundleInternal) {
       try { this.#mount.attach(lease.previousBundleInternal.rootInternal); } catch (error) {
         errors.push(error);
       }
     }
-    if (errors.length === 0 && this.#swapped === lease) this.#swapped = null;
+    if (errors.length === 0) {
+      if (this.#swapped === lease) this.#swapped = null;
+      if (published) {
+        this.#displayedBundle = lease.previousBundleInternal;
+        this.#displayedTarget = lease.previousTargetInternal;
+      }
+    }
     return errors;
   }
 
@@ -453,16 +465,7 @@ export class RevisionAtomicPresentationStagerInternal {
   }
 
   #retryRetiredBundles(): unknown[] {
-    const errors: unknown[] = [];
-    for (const retired of [...this.#retired]) {
-      try {
-        retired.dispose();
-        this.#retired.delete(retired);
-      } catch (error) {
-        errors.push(error);
-      }
-    }
-    return errors;
+    return retryRevisionAtomicRetirementsInternal(this.#retired);
   }
 
   #assertOwned(
