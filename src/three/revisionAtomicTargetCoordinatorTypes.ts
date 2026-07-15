@@ -1,4 +1,5 @@
 import type {
+  MeshSchedulerCrashResultV1,
   MeshSchedulerDispatchV1,
   MeshSchedulerEnqueueTargetResultV1,
   MeshSchedulerGroupOutcomeV1,
@@ -81,6 +82,44 @@ export type RevisionAtomicTargetProgressResultInternal =
   | {
       readonly status: 'disposed';
       readonly schedulerInternal: MeshSchedulerReceiveResultV1;
+    };
+
+export type RevisionAtomicTargetCrashResultInternal =
+  | {
+      readonly status: 'retry-pending';
+      readonly target: RevisionAtomicPresentationTargetInternal;
+      readonly schedulerInternal: Extract<
+        MeshSchedulerCrashResultV1,
+        { readonly status: 'retry-pending' }
+      >;
+    }
+  | {
+      readonly status: 'target-failed';
+      readonly target: RevisionAtomicPresentationTargetInternal;
+      readonly terminal: RevisionAtomicTargetTerminalInternal;
+      readonly schedulerInternal: Extract<
+        MeshSchedulerCrashResultV1,
+        { readonly status: 'terminal' }
+      >;
+    }
+  | {
+      readonly status: 'worker-replaced';
+      readonly schedulerInternal: Extract<
+        MeshSchedulerCrashResultV1,
+        { readonly status: 'worker-replaced' }
+      >;
+    }
+  | {
+      readonly status: 'ignored';
+      readonly reason: 'stale-worker' | 'non-current';
+      readonly schedulerInternal: Exclude<
+        MeshSchedulerCrashResultV1,
+        { readonly status: 'disposed' }
+      >;
+    }
+  | {
+      readonly status: 'disposed';
+      readonly schedulerInternal: MeshSchedulerCrashResultV1;
     };
 
 export interface RevisionAtomicTargetPumpResultInternal {

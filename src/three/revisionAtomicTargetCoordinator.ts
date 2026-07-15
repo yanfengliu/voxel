@@ -19,6 +19,7 @@ import { RevisionAtomicTargetCoordinatorGuardInternal } from './revisionAtomicTa
 import type {
   CoordinatorLifecycleInternal,
   RevisionAtomicTargetAdmissionResultInternal,
+  RevisionAtomicTargetCrashResultInternal,
   RevisionAtomicTargetCoordinatorOptionsInternal,
   RevisionAtomicTargetProgressResultInternal,
   RevisionAtomicTargetPumpResultInternal,
@@ -27,6 +28,7 @@ import type {
 } from './revisionAtomicTargetCoordinatorTypes.js';
 export type {
   RevisionAtomicTargetAdmissionResultInternal,
+  RevisionAtomicTargetCrashResultInternal,
   RevisionAtomicTargetCoordinatorOptionsInternal,
   RevisionAtomicTargetProgressResultInternal,
   RevisionAtomicTargetPumpResultInternal,
@@ -268,6 +270,59 @@ export class RevisionAtomicTargetCoordinatorInternal {
         status: record.lease ? 'target-ready' : 'group-prepared',
         target: record.plan.target,
         remainingGroups: record.groupIds.length - record.preparedById.size,
+        schedulerInternal,
+      });
+    });
+  }
+
+  workerCrashedInternal(workerId: string): RevisionAtomicTargetCrashResultInternal {
+    return this.#operate(() => {
+      const record = this.#current;
+      const schedulerInternal = this.#scheduler.workerCrashed(
+        workerId,
+        this.#nextTickInternal(),
+      );
+      if (this.#lifecycle !== 'active' || schedulerInternal.status === 'disposed') {
+        return Object.freeze({ status: 'disposed', schedulerInternal });
+      }
+      if (schedulerInternal.status === 'worker-replaced') {
+        return Object.freeze({ status: 'worker-replaced', schedulerInternal });
+      }
+      if (schedulerInternal.status === 'stale-worker') {
+        return Object.freeze({
+          status: 'ignored',
+          reason: 'stale-worker',
+          schedulerInternal,
+        });
+      }
+      const ownsGroup = record !== null
+        && this.#current === record
+        && record.phase === 'pending'
+        && record.groupIds.includes(
+          schedulerInternal.status === 'terminal'
+            ? schedulerInternal.outcome.groupId
+            : schedulerInternal.groupId,
+        );
+      if (!ownsGroup) {
+        return Object.freeze({ status: 'ignored', reason: 'non-current', schedulerInternal });
+      }
+      if (schedulerInternal.status === 'retry-pending') {
+        return Object.freeze({
+          status: 'retry-pending',
+          target: record.plan.target,
+          schedulerInternal,
+        });
+      }
+      const terminal = this.#failRecordInternal(
+        record,
+        'group-terminal',
+        `Scheduler group ${schedulerInternal.outcome.groupId} became terminal after worker crash.`,
+        schedulerInternal.outcome,
+      );
+      return Object.freeze({
+        status: 'target-failed',
+        target: record.plan.target,
+        terminal,
         schedulerInternal,
       });
     });

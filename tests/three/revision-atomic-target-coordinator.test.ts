@@ -247,6 +247,100 @@ describe('revision-atomic worker target coordination', () => {
     harness.coordinator.disposeInternal();
   });
 
+  it('retries a first worker crash on a fresh generation and fences the old worker', () => {
+    const harness = createCoordinatorHarnessInternal(1);
+    const plan = coordinatorTargetPlanInternal(1, [0]);
+    expect(harness.coordinator.admitInternal(plan)).toMatchObject({ status: 'pending' });
+    harness.coordinator.pumpInternal();
+    const first = harness.workers.postsInternal[0]!;
+
+    expect(harness.coordinator.workerCrashedInternal(first.workerId)).toMatchObject({
+      status: 'retry-pending',
+      target: plan.target,
+      schedulerInternal: { attempt: 1 },
+    });
+    expect(harness.coordinator.workerCrashedInternal(first.workerId)).toMatchObject({
+      status: 'ignored',
+      reason: 'stale-worker',
+    });
+    expect(harness.coordinator.pumpInternal().dispatches).toHaveLength(1);
+    const retry = harness.workers.postsInternal[1]!;
+    expect(retry.workerId).not.toBe(first.workerId);
+    expect(harness.coordinator.receiveInternal(
+      retry.workerId,
+      harness.workers.completedInternal(retry),
+    )).toMatchObject({ status: 'target-ready', target: plan.target });
+    expect(harness.scheduler.getMetrics()).toMatchObject({
+      workerCrashes: 1,
+      crashRetries: 1,
+    });
+    harness.coordinator.disposeInternal();
+  });
+
+  it('fails the whole target after the retry worker also crashes', () => {
+    const harness = createCoordinatorHarnessInternal(1);
+    const plan = coordinatorTargetPlanInternal(1, [0]);
+    harness.coordinator.admitInternal(plan);
+    harness.coordinator.pumpInternal();
+    const first = harness.workers.postsInternal[0]!;
+    harness.coordinator.workerCrashedInternal(first.workerId);
+    harness.coordinator.pumpInternal();
+    const retry = harness.workers.postsInternal[1]!;
+
+    expect(harness.coordinator.workerCrashedInternal(retry.workerId)).toMatchObject({
+      status: 'target-failed',
+      target: plan.target,
+      terminal: {
+        reason: 'group-terminal',
+        primaryGroup: { code: 'worker-crash', status: 'failed' },
+      },
+    });
+    expect(harness.coordinator.activeTargetInternal).toBeNull();
+    expect(harness.coordinator.readyLeaseInternal).toBeNull();
+    expect(harness.coordinator.pumpInternal().dispatches).toEqual([]);
+    harness.coordinator.disposeInternal();
+  });
+
+  it('replaces an idle worker and ignores later events from its old generation', () => {
+    const harness = createCoordinatorHarnessInternal(1);
+    const firstWorkerId = harness.workers.workersInternal[0]!.context.workerId;
+
+    expect(harness.coordinator.workerCrashedInternal(firstWorkerId)).toMatchObject({
+      status: 'worker-replaced',
+    });
+    expect(harness.workers.workersInternal).toHaveLength(2);
+    expect(harness.workers.workersInternal[0]!.terminateCalls).toBe(1);
+    expect(harness.coordinator.workerCrashedInternal(firstWorkerId)).toMatchObject({
+      status: 'ignored',
+      reason: 'stale-worker',
+    });
+    harness.coordinator.disposeInternal();
+  });
+
+  it('ignores a terminal crash outcome from superseded work and dispatches the current target', () => {
+    const harness = createCoordinatorHarnessInternal(1);
+    const superseded = coordinatorTargetPlanInternal(1, [0]);
+    harness.coordinator.admitInternal(superseded);
+    harness.coordinator.pumpInternal();
+    const oldPost = harness.workers.postsInternal[0]!;
+    const current = coordinatorTargetPlanInternal(2, [4]);
+    expect(harness.coordinator.admitInternal(current)).toMatchObject({ status: 'pending' });
+
+    expect(harness.coordinator.workerCrashedInternal(oldPost.workerId)).toMatchObject({
+      status: 'ignored',
+      reason: 'non-current',
+      schedulerInternal: { status: 'terminal' },
+    });
+    expect(harness.coordinator.activeTargetInternal).toEqual(current.target);
+    expect(harness.coordinator.pumpInternal().dispatches).toHaveLength(1);
+    const currentPost = harness.workers.postsInternal[1]!;
+    expect(harness.coordinator.receiveInternal(
+      currentPost.workerId,
+      harness.workers.completedInternal(currentPost),
+    )).toMatchObject({ status: 'target-ready', target: current.target });
+    harness.coordinator.disposeInternal();
+  });
+
   it('keeps the old scene when a later group cannot commit and reports consumption', () => {
     const harness = createCoordinatorHarnessInternal();
     const displayed = coordinatorTargetPlanInternal(1);
@@ -325,6 +419,9 @@ describe('revision-atomic worker target coordination', () => {
       late.workerId,
       harness.workers.completedInternal(late),
     )).toMatchObject({ status: 'disposed' });
+    expect(harness.coordinator.workerCrashedInternal(late.workerId)).toMatchObject({
+      status: 'disposed',
+    });
     expect(harness.coordinator.disposeInternal()).toMatchObject({ status: 'already-disposed' });
     expect(harness.workers.workersInternal.every((worker) => worker.terminateCalls === 1)).toBe(true);
     expect(harness.root.children).toEqual([]);
