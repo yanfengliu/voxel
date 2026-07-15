@@ -61,7 +61,28 @@ import {
   disposeRuntimeAtomicSetupInternal,
   type RuntimeAtomicSetupInternal,
 } from './runtimeAtomicSetup.js';
-import { RuntimeAtomicFrameCoordinatorInternal } from './runtimeAtomicFrame.js';
+import {
+  RuntimeAtomicFrameCoordinatorInternal,
+  type RuntimeAtomicFrameOpsInternal,
+} from './runtimeAtomicFrame.js';
+import {
+  RevisionAwareCaptureCoordinatorInternal,
+  type RevisionCaptureRuntimePortInternal,
+} from './revisionCaptureCoordinator.js';
+import type {
+  ThreeCaptureOptionsV1,
+  ThreeCaptureWhenPresentedOptionsV1,
+  ThreeCaptureWhenPresentedResultV1,
+  ThreeCaptureWithManifestResultV1,
+} from './revisionCaptureContracts.js';
+import { createRuntimeCapturePortInternal } from './runtimeCaptureSupport.js';
+import {
+  abortStandaloneFrameAfterDrawFailureInternal,
+  restoreAbortedHostFrameInternal,
+  restoreHostSceneInternal,
+  restoreLateHostFrameInternal,
+  type RuntimeHostFrameRestoreOpsInternal,
+} from './runtimeHostFrameRestore.js';
 import { runRuntimeDisposalInternal } from './runtimeDisposal.js';
 import { captureRuntimeCanvasInternal } from './runtimeCapture.js';
 import { initializeRuntimeInternal } from './runtimeInitialization.js';
@@ -116,6 +137,9 @@ export class ThreeRenderRuntime {
   private readonly daylightRig!: DaylightRig | null;
   private readonly atomic!: RuntimeAtomicSetupInternal | null;
   private readonly atomicFrames!: RuntimeAtomicFrameCoordinatorInternal | null;
+  private readonly captures = new RevisionAwareCaptureCoordinatorInternal(
+    this.captureRuntimePortInternal(),
+  );
   private readonly world = new RenderWorld();
   private readonly contextCanvas!: ContextEventCanvasInternal | null;
   private readonly presentations = new RuntimePresentationRetentionInternal(
@@ -137,6 +161,8 @@ export class ThreeRenderRuntime {
   private disposalInProgress = false;
   private readonly hostFrames = new HostFrameTicketLedgerInternal<PreparedHostFrameInternal>();
   private lastPresentedFrameContext: ThreeFrameContext | null = null;
+  /** The exact manifest of the frame the canvas last presented. */
+  private lastPresentedManifest: ThreePresentedManifestV1 | null = null;
   private cameraGeneration = 0;
   private readonly handleContextLost = (event: Event): void => {
     event.preventDefault();
@@ -181,35 +207,11 @@ export class ThreeRenderRuntime {
     this.daylightRig = initialized.daylightRig;
     this.atomic = initialized.atomic;
     this.atomicFrames = initialized.atomic
-      ? new RuntimeAtomicFrameCoordinatorInternal(initialized.atomic, this.world, {
-          isRunning: () => this.lifecycleState === 'running',
-          deviceGeneration: () => this.deviceGeneration,
-          isRunningAttempt: (generation) => this.isRunningAttempt(generation),
-          hasRuntimeEndedAfterCallbacks: () => this.hasRuntimeEndedAfterCallbacks(),
-          renderCurrent: () => { this.renderCurrent(); },
-          transitionToFailed: (phase, reason) => { this.transitionToFailed(phase, reason); },
-          frames: () => this.frames,
-          setFrames: (value) => { this.frames = value; },
-          cameraGeneration: () => this.cameraGeneration,
-          setCameraGeneration: (value) => { this.cameraGeneration = value; },
-          presentedManifest: (context) => this.createManifestForCurrentState(context),
-          manifestForTarget: (target, context, deviceGeneration, cameraGeneration) =>
-            createPresentedManifestInternal({
-              target,
-              context,
-              width: this.width,
-              height: this.height,
-              pixelRatio: this.pixelRatio,
-              deviceGeneration,
-              cameraGeneration,
-              camera: this.camera,
-            }),
-          snapshotRenderInfo: () => snapshotRenderInfoInternal(this.renderer),
-          commitPresentedPointers: (context, renderInfo) => {
-            this.lastPresentedFrameContext = context;
-            if (renderInfo) this.renderInfo = renderInfo;
-          },
-        })
+      ? new RuntimeAtomicFrameCoordinatorInternal(
+          initialized.atomic,
+          this.world,
+          this.atomicFrameOpsInternal(),
+        )
       : null;
     this.contextCanvas = initialized.contextCanvas;
     this.width = initialized.width;
@@ -401,6 +403,28 @@ export class ThreeRenderRuntime {
     return this.world.awaitPresented(target, options);
   }
   /**
+   * Captures the frame the canvas currently presents, with the exact manifest
+   * identifying that frame. Runtime-owned capture may issue one fenced
+   * compatibility readback; embedded hosts own capture and receive
+   * `host-capture-owned` unless they supply an explicit readback lease.
+   */
+  captureWithManifest(options?: ThreeCaptureOptionsV1): ThreeCaptureWithManifestResultV1 {
+    return this.captures.captureWithManifest(options);
+  }
+
+  /**
+   * Captures a specific revision once it has actually been presented. The
+   * result identifies the exact presented frame, so a caller never receives
+   * pixels from a revision it did not ask for.
+   */
+  captureWhenPresented(
+    target: RenderRevisionRefV1,
+    options?: ThreeCaptureWhenPresentedOptionsV1,
+  ): Promise<ThreeCaptureWhenPresentedResultV1> {
+    return this.captures.captureWhenPresented(target, options);
+  }
+
+  /**
    * Queries the exact frame the canvas last presented. The result reads only
    * committed state: never accepted-but-unpresented revisions, pending edits,
    * the mutable camera, or live presenter objects. Runtimes without the voxel
@@ -463,6 +487,7 @@ export class ThreeRenderRuntime {
         const manifest = this.createManifestForCurrentState(frozenContext);
         this.cameraGeneration = manifest.cameraGeneration;
         this.lastPresentedFrameContext = frozenContext;
+        this.lastPresentedManifest = manifest;
         this.frames++;
         return manifest;
       } catch (error) {
@@ -614,6 +639,7 @@ export class ThreeRenderRuntime {
       ];
       this.presentations.disposeInternal();
       this.lastPresentedFrameContext = null;
+      this.lastPresentedManifest = null;
       this.renderInfo = EMPTY_RENDER_INFO_INTERNAL;
     }
     if (!this.disposalActions || this.disposalInProgress) return;
@@ -629,6 +655,62 @@ export class ThreeRenderRuntime {
     candidate: CanonicalPresentationStateInternal,
   ): boolean {
     return this.atomicFrames?.ownsCandidateInternal(candidate) ?? false;
+  }
+
+  /** Binds live runtime state for the atomic frame flow. */
+  private atomicFrameOpsInternal(): RuntimeAtomicFrameOpsInternal {
+    return {
+      isRunning: () => this.lifecycleState === 'running',
+      deviceGeneration: () => this.deviceGeneration,
+      isRunningAttempt: (generation) => this.isRunningAttempt(generation),
+      hasRuntimeEndedAfterCallbacks: () => this.hasRuntimeEndedAfterCallbacks(),
+      renderCurrent: () => { this.renderCurrent(); },
+      transitionToFailed: (phase, reason) => { this.transitionToFailed(phase, reason); },
+      frames: () => this.frames,
+      setFrames: (value) => { this.frames = value; },
+      cameraGeneration: () => this.cameraGeneration,
+      setCameraGeneration: (value) => { this.cameraGeneration = value; },
+      presentedManifest: (context) => this.createManifestForCurrentState(context),
+      manifestForTarget: (target, context, deviceGeneration, cameraGeneration) =>
+        createPresentedManifestInternal({
+          target,
+          context,
+          width: this.width,
+          height: this.height,
+          pixelRatio: this.pixelRatio,
+          deviceGeneration,
+          cameraGeneration,
+          camera: this.camera,
+        }),
+      snapshotRenderInfo: () => snapshotRenderInfoInternal(this.renderer),
+      commitPresentedPointers: (context, manifest, renderInfo) => {
+        this.lastPresentedFrameContext = context;
+        this.lastPresentedManifest = manifest;
+        if (renderInfo) this.renderInfo = renderInfo;
+      },
+    };
+  }
+
+  /** Exposes only committed presented state to the capture coordinator. */
+  private captureRuntimePortInternal(): RevisionCaptureRuntimePortInternal {
+    return createRuntimeCapturePortInternal({
+      captureOwnership: this.hostKind === 'embedded' ? 'host' : 'runtime',
+      renderer: () => this.renderer,
+      runtimeStatus: () => this.runtimeStatus(),
+      presentationReadiness: (target) => this.world.presentationReadiness(target),
+      awaitPresented: (target, signal) => this.world.awaitPresented(
+        target,
+        signal ? { signal } : undefined,
+      ),
+      metrics: () => this.metrics(),
+      presentedState: () => presentedCanonicalStateForPresentationInternal(this.world),
+      presentedManifest: () => this.lastPresentedManifest,
+      isRunning: () => this.lifecycleState === 'running',
+      deviceGeneration: () => this.deviceGeneration,
+      isRunningAttempt: (generation) => this.isRunningAttempt(generation),
+      renderCurrent: () => { this.renderCurrent(); },
+      failCapture: (reason) => { this.transitionToFailed('capture', reason); },
+    });
   }
 
   private prepareFrameInternal(
@@ -797,6 +879,7 @@ export class ThreeRenderRuntime {
         this.presentations.setPendingInternal(null);
       }
       this.lastPresentedFrameContext = prepared.context;
+      this.lastPresentedManifest = manifest;
       this.renderInfo = committedRenderInfo;
     }
     if (this.hasRuntimeEndedAfterCallbacks()) {
@@ -813,76 +896,52 @@ export class ThreeRenderRuntime {
     ) return undefined;
     return manifest;
   }
+  private hostFrameRestoreOpsInternal(): RuntimeHostFrameRestoreOpsInternal<PreparedHostFrameInternal> {
+    return {
+      isRunning: () => this.lifecycleState === 'running',
+      deviceGeneration: () => this.deviceGeneration,
+      isRunningAttempt: (generation) => this.isRunningAttempt(generation),
+      transitionToFailed: (phase, reason) => { this.transitionToFailed(phase, reason); },
+      resetPresentation: () => { this.presentationSurface.resetInternal(); },
+      reconcilePresentation: (presentation, isCurrentAttempt) =>
+        this.reconcilePresentation(presentation, isCurrentAttempt),
+      animatePresentation: (nowMs) => { this.presentationSurface.animateInternal(nowMs); },
+      consumeTicket: (ticket) => this.hostFrames.consume(
+        ticket,
+        this.lifecycleState,
+        this.deviceGeneration,
+      ),
+      releaseHostFrame: (record) => { this.presentations.releaseHostFrameInternal(record); },
+      previousPresentationOf: (payload) => payload.previousPresentation,
+      previousContextOf: (payload) => payload.previousContext,
+    };
+  }
   private restoreAbortedHostFrame(
     record: HostFrameTicketRecordInternal<PreparedHostFrameInternal>,
   ): void {
-    try {
-      this.restoreHostScene(
-        record.payload.previousPresentation,
-        record.payload.previousContext,
-        record.deviceGeneration,
-      );
-    } catch (error) {
-      if (this.isRunningAttempt(record.deviceGeneration)) {
-        this.transitionToFailed('commit', error);
-      }
-      throw error;
-    }
+    restoreAbortedHostFrameInternal(this.hostFrameRestoreOpsInternal(), record);
   }
   private restoreLateHostFrame(
     record: HostFrameTicketRecordInternal<PreparedHostFrameInternal>,
   ): void {
-    if (!this.isRunningAttempt(record.deviceGeneration)) return;
-    try {
-      this.restoreHostScene(
-        record.payload.previousPresentation,
-        record.payload.previousContext,
-        record.deviceGeneration,
-      );
-    } catch (error) {
-      this.transitionToFailed('commit', error);
-      throw error;
-    }
+    restoreLateHostFrameInternal(this.hostFrameRestoreOpsInternal(), record);
   }
   private restoreHostScene(
     presentation: ThreePresentationSnapshot | null,
     context: ThreeFrameContext | null,
     generation: number,
   ): void {
-    this.presentationSurface.resetInternal();
-    if (!this.reconcilePresentation(
-      presentation,
-      () => this.isRunningAttempt(generation),
-    )) return;
-    this.presentationSurface.animateInternal(context?.nowMs ?? 0);
+    restoreHostSceneInternal(this.hostFrameRestoreOpsInternal(), presentation, context, generation);
   }
   private abortStandaloneFrameAfterDrawFailure(
     ticket: ThreePreparedFrameTicket,
     renderError: unknown,
   ): void {
-    const generation = this.deviceGeneration;
-    if (this.lifecycleState === 'running') {
-      try {
-        const record = this.hostFrames.consume(ticket, this.lifecycleState, generation);
-        try {
-          this.restoreHostScene(
-            record.payload.previousPresentation,
-            record.payload.previousContext,
-            generation,
-          );
-        } finally {
-          this.presentations.releaseHostFrameInternal(record);
-        }
-      } catch (rollbackError) {
-        if (this.isRunningAttempt(generation)) {
-          this.transitionToFailed('render', new Error('Render failure rollback failed.', {
-            cause: rollbackError,
-          }));
-        }
-        return;
-      }
-      if (this.isRunningAttempt(generation)) this.transitionToFailed('render', renderError);
-    }
+    abortStandaloneFrameAfterDrawFailureInternal(
+      this.hostFrameRestoreOpsInternal(),
+      ticket,
+      renderError,
+    );
   }
   private createManifestForCurrentState(
     context: Readonly<ThreeFrameContext>,

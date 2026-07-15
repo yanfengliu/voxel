@@ -360,6 +360,12 @@
         "./three"
       ]
     },
+    "dist/three/revisionCaptureContracts.d.ts": {
+      "sha256": "99a2948bea97dd6af8ed775f91606b670eab7098ff1236f03884fc5cfeb56a28",
+      "reachableFrom": [
+        "./three"
+      ]
+    },
     "dist/three/runtimeSnapshotMetrics.d.ts": {
       "sha256": "1155ffdf7b96edbfefb79c07b82a23c065bd4851345f16740bb429da33d4c32c",
       "reachableFrom": [
@@ -373,7 +379,7 @@
       ]
     },
     "dist/three/ThreeRenderRuntime.d.ts": {
-      "sha256": "b42149992dd67ac65c58d38bf96c1d603cb4cbd4591d539bda608071fec33ed1",
+      "sha256": "0c3d3d467f4dbb3a00a5c6c91c23ac876dc945f0c1aacfa9864466b6950a2361",
       "reachableFrom": [
         "./three"
       ]

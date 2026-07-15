@@ -249,6 +249,47 @@ describe('ThreeRenderRuntime atomic voxel pipeline', () => {
     });
   });
 
+  it('captures the committed frame with a matching manifest', async () => {
+    const { runtime } = createAtomicRuntime();
+    const target = { worldId: 'world:test', epoch: 'epoch:runtime-atomic', revision: 1 };
+
+    // With no committed frame there is nothing to capture.
+    expect(runtime.captureWithManifest()).toMatchObject({ status: 'unavailable' });
+
+    expect(runtime.acceptSnapshot(profiledSnapshot(1)).status).toBe('accepted');
+    // Accepted but never drawn: capture must not describe revision 1 yet.
+    expect(runtime.captureWithManifest()).toMatchObject({ status: 'unavailable' });
+
+    frameUntilPresented(runtime, 1, 0);
+    const captured = runtime.captureWithManifest();
+    expect(captured).toMatchObject({ status: 'captured' });
+    if (captured.status !== 'captured') throw new Error('Expected a capture.');
+    expect(captured.manifest.presented).toMatchObject({
+      worldId: 'world:test',
+      epoch: 'epoch:runtime-atomic',
+      presentedRevision: 1,
+    });
+    expect(captured.readback.dataUrl.startsWith('data:')).toBe(true);
+
+    // A revision that is accepted but not drawn is never captured as ready.
+    expect(runtime.acceptSnapshot(profiledSnapshot(2, [2])).status).toBe('accepted');
+    const stale = runtime.captureWithManifest();
+    expect(stale).toMatchObject({ status: 'captured' });
+    if (stale.status !== 'captured') throw new Error('Expected a capture.');
+    expect(stale.manifest.presented.presentedRevision).toBe(1);
+
+    // captureWhenPresented resolves only once the revision is really drawn.
+    const pending = runtime.captureWhenPresented({ ...target, revision: 2 });
+    frameUntilPresented(runtime, 2, 4);
+    const settled = await pending;
+    expect(settled).toMatchObject({ status: 'ready' });
+    if (settled.status !== 'ready') throw new Error('Expected a ready capture.');
+    expect(settled.target.revision).toBe(2);
+    if (settled.capture.status !== 'captured') throw new Error('Expected pixels.');
+    expect(settled.capture.manifest.presented.presentedRevision).toBe(2);
+    runtime.dispose();
+  });
+
   it('reports no committed frame for runtimes without the voxel pipeline', () => {
     const renderer = new FakeRenderer();
     const runtime = new ThreeRenderRuntime({ renderer, width: 320, height: 200 });

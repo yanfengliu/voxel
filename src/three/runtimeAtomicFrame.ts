@@ -55,8 +55,14 @@ export interface RuntimeAtomicFrameOpsInternal {
     cameraGeneration: number,
   ): ThreePresentedManifestV1;
   snapshotRenderInfo(): RenderInfoSnapshotInternal;
+  /**
+   * Records the exact frame the canvas now shows. The manifest is the capture
+   * and query identity for that frame, so it must only advance for a draw the
+   * runtime actually acknowledged.
+   */
   commitPresentedPointers(
     context: Readonly<ThreeFrameContext>,
+    manifest: ThreePresentedManifestV1,
     renderInfo: RenderInfoSnapshotInternal | null,
   ): void;
 }
@@ -253,7 +259,7 @@ export class RuntimeAtomicFrameCoordinatorInternal {
       throw error;
     }
     this.ops.setCameraGeneration(manifest.cameraGeneration);
-    this.ops.commitPresentedPointers(context, null);
+    this.ops.commitPresentedPointers(context, manifest, null);
     return manifest;
   }
 
@@ -413,7 +419,7 @@ export class RuntimeAtomicFrameCoordinatorInternal {
       return undefined;
     }
     if (this.ops.hasRuntimeEndedAfterCallbacks()) return undefined;
-    this.ops.commitPresentedPointers(context, committedRenderInfo);
+    this.ops.commitPresentedPointers(context, manifest, committedRenderInfo);
     return manifest;
   }
 
