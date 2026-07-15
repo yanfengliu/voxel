@@ -47,11 +47,44 @@ interface AtomicRuntimeEvidence {
   };
 }
 
+interface AtomicPipelineOccupancy {
+  readonly preparedTargets: number;
+  readonly cpuStagingBytes: number;
+  readonly gpuStagingBytes: number;
+  readonly pendingRetiredBundles: number;
+  readonly queuedJobs: number;
+  readonly queuedWorkerEvents: number;
+}
+
+interface AtomicEnduranceSample {
+  readonly revision: number;
+  readonly rendererGeometries: number;
+  readonly rendererTextures: number;
+  readonly atomic: AtomicPipelineOccupancy | null;
+}
+
+interface AtomicRuntimeEndurance {
+  readonly webgl2: boolean;
+  readonly edits: number;
+  readonly settled: Omit<AtomicEnduranceSample, 'revision'> | null;
+  readonly samples: readonly AtomicEnduranceSample[];
+  readonly presentedRevision: number | null;
+  readonly state: string;
+}
+
 declare global {
   interface Window {
     runAtomicRuntimeEvidence?: () => Promise<AtomicRuntimeEvidence>;
+    runAtomicRuntimeEndurance?: (options: {
+      readonly edits: number;
+      readonly settleAfter: number;
+    }) => Promise<AtomicRuntimeEndurance>;
   }
 }
+
+/** Kept modest: SwiftShader meshes and draws every one of these for real. */
+const ENDURANCE_EDITS = 120;
+const ENDURANCE_SETTLE_AFTER = 8;
 
 const REPOSITORY_ROOT = fileURLToPath(new URL('../../', import.meta.url));
 const FIXTURE_PATH = '/tests/browser/fixtures/atomic-runtime.html';
@@ -156,4 +189,48 @@ test('atomic worker frames commit revisions without visible seams', async ({ pag
   // Teardown rejects later frames and reports the disposed state.
   expect(evidence.postDisposeFrameError).not.toBeNull();
   expect(evidence.disposedMetrics.state).toBe('disposed');
+});
+
+test('atomic worker frames free retired GPU resources across repeated edits', async ({ page }) => {
+  const pageErrors: string[] = [];
+  page.on('pageerror', (error) => pageErrors.push(error.message));
+  page.on('console', (message) => {
+    if (message.type() === 'error') pageErrors.push(message.text());
+  });
+
+  if (!fixtureUrl) throw new Error('The atomic runtime test server is not running.');
+  const navigation = await page.goto(fixtureUrl, { waitUntil: 'load' });
+  expect(navigation?.ok()).toBe(true);
+  await page.waitForFunction(() => typeof window.runAtomicRuntimeEndurance === 'function');
+
+  const result = await page.evaluate(({ edits, settleAfter }) => {
+    const run = window.runAtomicRuntimeEndurance;
+    if (!run) throw new Error('The atomic endurance fixture API is unavailable.');
+    return run({ edits, settleAfter });
+  }, { edits: ENDURANCE_EDITS, settleAfter: ENDURANCE_SETTLE_AFTER });
+
+  expect(pageErrors).toEqual([]);
+  expect(result.webgl2).toBe(true);
+  expect(result.presentedRevision).toBe(ENDURANCE_EDITS);
+  expect(result.state).toBe('running');
+  const settled = result.settled;
+  expect(settled).not.toBeNull();
+  expect(settled?.rendererGeometries).toBeGreaterThan(0);
+
+  // The claim only a live context can support: every superseded revision's
+  // geometry was actually released, so the renderer's own live count after a
+  // hundred-plus remeshes equals what it was after eight. A retirement that
+  // dropped bundles without disposing them would climb here and nowhere else.
+  for (const sample of result.samples) {
+    expect(sample.rendererGeometries).toBe(settled?.rendererGeometries);
+    expect(sample.rendererTextures).toBe(settled?.rendererTextures);
+    expect(sample.atomic).toMatchObject({
+      preparedTargets: 0,
+      cpuStagingBytes: 0,
+      gpuStagingBytes: 0,
+      pendingRetiredBundles: 0,
+      queuedJobs: 0,
+      queuedWorkerEvents: 0,
+    });
+  }
 });

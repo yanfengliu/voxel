@@ -51,6 +51,7 @@ function presented(
 
 function metrics(revision = 1, state: ThreeRenderMetrics['state'] = 'running'): ThreeRenderMetrics {
   return {
+    atomic: null,
     state,
     acceptedEpoch: 'epoch:capture',
     acceptedRevision: revision,

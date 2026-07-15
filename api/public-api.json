@@ -373,13 +373,13 @@
       ]
     },
     "dist/three/runtimeTypes.d.ts": {
-      "sha256": "539d806108a2123290b4a5a28dd89c5913a3f505b9620b9a330e0dbbfe0dac71",
+      "sha256": "b393bd23cbbf2aab994a2df7195bfd8f66327b30b76cedadc9d9b0144bad6970",
       "reachableFrom": [
         "./three"
       ]
     },
     "dist/three/ThreeRenderRuntime.d.ts": {
-      "sha256": "de3495e37746fa8617fd480d622f29cc64b89bdeb83018322def56840a723ac2",
+      "sha256": "143b48107433153c1e47385f7920837b3a41d59de51bd0c2b5a6ab30fbf93ae7",
       "reachableFrom": [
         "./three"
       ]

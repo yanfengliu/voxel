@@ -39,6 +39,7 @@ export interface RuntimeAtomicPipelineOptionsInternal {
  */
 export class RuntimeAtomicPipelineInternal {
   readonly #stager: RevisionAtomicPresentationStagerInternal;
+  readonly #scheduler: VoxelMeshSchedulerV1;
   readonly #coordinator: RevisionAtomicTargetCoordinatorInternal;
   readonly #limits: ProfiledWorkerTargetLimitsInternal;
   readonly #pipelineGeneration: number;
@@ -52,6 +53,7 @@ export class RuntimeAtomicPipelineInternal {
 
   constructor(options: RuntimeAtomicPipelineOptionsInternal) {
     this.#stager = options.stagerInternal;
+    this.#scheduler = options.schedulerInternal;
     this.#limits = options.limitsInternal;
     this.#pipelineGeneration = options.pipelineGenerationInternal ?? 1;
     this.#coordinator = new RevisionAtomicTargetCoordinatorInternal({
@@ -70,6 +72,15 @@ export class RuntimeAtomicPipelineInternal {
 
   get lastTerminalInternal(): RevisionAtomicTargetTerminalInternal | null {
     return this.#coordinator.lastTerminalInternal;
+  }
+
+  /** Live staging and scheduling occupancy, for the runtime's metrics. */
+  stagingMetricsInternal() {
+    return {
+      ...this.#stager.metricsInternal(),
+      pendingRetirements: this.#coordinator.pendingRetirementsInternal,
+      scheduler: this.#scheduler.getMetrics(),
+    };
   }
 
   reserveForCandidateInternal(

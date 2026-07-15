@@ -99,6 +99,7 @@ import {
 import type {
   ThreeCaptureResult,
   ThreePresentationSnapshot,
+  ThreeAtomicPipelineMetricsV1,
   ThreeRenderMetrics,
   ThreeRenderRuntimeOptions,
   ThreeRuntimeFailurePhaseV1,
@@ -477,8 +478,27 @@ export class ThreeRenderRuntime {
       contextRestorations: this.contextRestorations,
       presentationStagingBytes: presentationStaging.currentBytes,
       peakPresentationStagingBytes: presentationStaging.peakBytes,
+      atomic: this.atomicPipelineMetricsInternal(),
     });
   }
+  /** Null unless this runtime owns a worker-meshed voxel pipeline. */
+  private atomicPipelineMetricsInternal(): ThreeAtomicPipelineMetricsV1 | null {
+    if (!this.atomic) return null;
+    const staging = this.atomic.pipeline.stagingMetricsInternal();
+    const driver = this.atomic.driver.metricsInternal();
+    return Object.freeze({
+      preparedTargets: staging.preparedTargets,
+      cpuStagingBytes: staging.cpuStagingBytes,
+      gpuStagingBytes: staging.gpuStagingBytes,
+      pendingRetiredBundles: staging.pendingRetiredBundles,
+      pendingRetirements: staging.pendingRetirements,
+      queuedJobs: staging.scheduler.queuedJobs,
+      queuedBytes: staging.scheduler.queuedBytes,
+      queuedWorkerEvents: driver.queuedEvents,
+      liveWorkers: driver.liveWorkers,
+    });
+  }
+
   dispose(): void {
     if (this.lifecycleState !== 'disposed') {
       const invalidated = this.hostFrames.dispose();

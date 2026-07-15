@@ -139,6 +139,32 @@ export interface ThreeRenderMetrics {
   readonly presentationStagingBytes: number;
   /** High-water mark including provisional, pending, and frame-ticket overlap. */
   readonly peakPresentationStagingBytes: number;
+  /** Null unless the runtime owns a worker-meshed voxel pipeline. */
+  readonly atomic: ThreeAtomicPipelineMetricsV1 | null;
+}
+
+/**
+ * Worker voxel pipeline occupancy. Every field is a live count or a byte total
+ * that a steady world must hold flat: growth across repeated edits or epoch
+ * replacements is a leak, which is the only way that claim is checkable from
+ * outside the package.
+ */
+export interface ThreeAtomicPipelineMetricsV1 {
+  /** Presentations prepared off-screen and not yet committed or aborted. */
+  readonly preparedTargets: number;
+  /** CPU bytes held by those prepared presentations. */
+  readonly cpuStagingBytes: number;
+  /** Estimated GPU bytes held by those prepared presentations. */
+  readonly gpuStagingBytes: number;
+  /** Superseded bundles whose disposal failed and is being retried. */
+  readonly pendingRetiredBundles: number;
+  /** Coordinator records still cleaning up after a terminal target. */
+  readonly pendingRetirements: number;
+  readonly queuedJobs: number;
+  readonly queuedBytes: number;
+  /** Worker transport events accepted but not yet delivered to the scheduler. */
+  readonly queuedWorkerEvents: number;
+  readonly liveWorkers: number;
 }
 
 export interface ThreeCaptureResult {

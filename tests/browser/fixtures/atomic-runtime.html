@@ -149,6 +149,75 @@
         throw new Error(`Revision ${revision} did not present within ${maxFrames} frames.`);
       };
 
+      /**
+       * Real-GPU endurance. Only a live context can prove a retired bundle's
+       * resources were actually freed: a superseded bundle leaves the scene
+       * graph either way, so the renderer's own live geometry count is the
+       * only ground truth for a disposal leak.
+       */
+      window.runAtomicRuntimeEndurance = async ({ edits, settleAfter }) => {
+        const canvas = document.createElement('canvas');
+        document.body.appendChild(canvas);
+        const runtime = new ThreeRenderRuntime({
+          canvas,
+          width: WIDTH,
+          height: HEIGHT,
+          pixelRatio: 1,
+          center: { x: 2, y: 0, z: 2 },
+          zoom: 1,
+          voxelWorkersInternal: { workerCount: 1 },
+        });
+        const samples = [];
+        let settled = null;
+        try {
+          let frameIndex = 0;
+          for (let revision = 1; revision <= edits; revision += 1) {
+            // Alternate the palette so every revision is a genuine remesh
+            // producing new geometry, not a reused bundle.
+            const green = revision % 2 === 1;
+            const accepted = runtime.acceptSnapshot(paletteSnapshot(
+              revision,
+              green
+                ? { r: 70, g: 200, b: 80, a: 255 }
+                : { r: 220, g: 40, b: 40, a: 255 },
+            ));
+            if (accepted.status !== 'accepted') {
+              throw new Error(`revision ${revision} rejected: ${accepted.code}`);
+            }
+            const present = await framesUntilPresented(runtime, revision, frameIndex, 200);
+            frameIndex = present.nextFrameIndex;
+            const metrics = runtime.metrics();
+            if (revision === settleAfter) {
+              settled = {
+                rendererGeometries: metrics.rendererGeometries,
+                rendererTextures: metrics.rendererTextures,
+                atomic: metrics.atomic,
+              };
+            }
+            if (revision % Math.max(1, Math.floor(edits / 4)) === 0 || revision === edits) {
+              samples.push({
+                revision,
+                rendererGeometries: metrics.rendererGeometries,
+                rendererTextures: metrics.rendererTextures,
+                atomic: metrics.atomic,
+              });
+            }
+          }
+          const finalMetrics = runtime.metrics();
+          return {
+            webgl2: runtime.getCapabilities().webgl2 ?? true,
+            edits,
+            settled,
+            samples,
+            presentedRevision: finalMetrics.presentedRevision,
+            state: runtime.runtimeStatus().state,
+          };
+        } finally {
+          runtime.dispose();
+          canvas.remove();
+        }
+      };
+
       window.runAtomicRuntimeEvidence = async () => {
         const canvas = document.createElement('canvas');
         document.body.appendChild(canvas);

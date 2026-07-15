@@ -2,7 +2,7 @@ import type { RenderWorld } from '../core/index.js';
 import { renderWorldOwnershipMetricsInternal } from '../core/render-world.js';
 import type { RuntimePresentationSurfaceMetricsInternal } from './runtimePresentationSurface.js';
 import type { RenderInfoSnapshotInternal } from './runtimeRenderInfo.js';
-import type { ThreeRenderMetrics } from './runtimeTypes.js';
+import type { ThreeAtomicPipelineMetricsV1, ThreeRenderMetrics } from './runtimeTypes.js';
 
 export interface RuntimeMetricsInputInternal {
   readonly state: ThreeRenderMetrics['state'];
@@ -14,6 +14,7 @@ export interface RuntimeMetricsInputInternal {
   readonly contextRestorations: number;
   readonly presentationStagingBytes: number;
   readonly peakPresentationStagingBytes: number;
+  readonly atomic: ThreeAtomicPipelineMetricsV1 | null;
 }
 
 export function collectRuntimeMetricsInternal(
@@ -22,6 +23,7 @@ export function collectRuntimeMetricsInternal(
   const ownership = renderWorldOwnershipMetricsInternal(input.world);
   const presentation = input.presentation;
   return {
+    atomic: input.atomic,
     state: input.state,
     acceptedEpoch: input.world.epoch,
     acceptedRevision: input.world.acceptedRevision,
