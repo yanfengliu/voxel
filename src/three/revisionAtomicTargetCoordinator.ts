@@ -18,6 +18,9 @@ import {
 import { RevisionAtomicTargetCoordinatorGuardInternal } from './revisionAtomicTargetCoordinatorGuard.js';
 import type {
   CoordinatorLifecycleInternal,
+  RevisionAtomicAdmissionCancelResultInternal,
+  RevisionAtomicAdmissionReservationHandleInternal,
+  RevisionAtomicAdmissionReservationResultInternal,
   RevisionAtomicTargetAdmissionResultInternal,
   RevisionAtomicTargetCrashResultInternal,
   RevisionAtomicTargetCoordinatorOptionsInternal,
@@ -27,6 +30,9 @@ import type {
   RevisionAtomicTargetTerminalReasonInternal,
 } from './revisionAtomicTargetCoordinatorTypes.js';
 export type {
+  RevisionAtomicAdmissionCancelResultInternal,
+  RevisionAtomicAdmissionReservationHandleInternal,
+  RevisionAtomicAdmissionReservationResultInternal,
   RevisionAtomicTargetAdmissionResultInternal,
   RevisionAtomicTargetCrashResultInternal,
   RevisionAtomicTargetCoordinatorOptionsInternal,
@@ -35,6 +41,13 @@ export type {
   RevisionAtomicTargetTerminalInternal,
   RevisionAtomicTargetTerminalReasonInternal,
 } from './revisionAtomicTargetCoordinatorTypes.js';
+
+interface CoordinatorReservationInternal {
+  readonly handle: RevisionAtomicAdmissionReservationHandleInternal;
+  readonly plan: ProfiledWorkerTargetPlanInternal;
+  /** Held only for zero-job targets, whose scene lease is prepared eagerly. */
+  readonly record: CoordinatorTargetRecordInternal | null;
+}
 
 /**
  * Joins target planning, worker scheduling, exact completion, and off-scene
@@ -48,6 +61,7 @@ export class RevisionAtomicTargetCoordinatorInternal {
   readonly #guard = new RevisionAtomicTargetCoordinatorGuardInternal();
   #current: CoordinatorTargetRecordInternal | null = null;
   #provisional: CoordinatorTargetRecordInternal | null = null;
+  #reservation: CoordinatorReservationInternal | null = null;
   #lastTerminal: RevisionAtomicTargetTerminalInternal | null = null;
   #lastTargetSequence = 0;
   #lifecycle: CoordinatorLifecycleInternal = 'active';
@@ -76,82 +90,218 @@ export class RevisionAtomicTargetCoordinatorInternal {
     plan: ProfiledWorkerTargetPlanInternal,
   ): RevisionAtomicTargetAdmissionResultInternal {
     return this.#operate(() => {
+      const reservation = this.#reserveInternal(plan);
+      if (reservation.status !== 'reserved') return reservation;
+      return this.#activateInternal(reservation.handle);
+    });
+  }
+
+  /**
+   * Validates a target admission and holds a single-use reservation without
+   * enqueueing workers, superseding older targets, or cancelling epochs, so a
+   * runtime can gate canonical acceptance on admissibility. A newer
+   * reservation or a direct admission supersedes the outstanding handle.
+   */
+  prepareAdmissionInternal(
+    plan: ProfiledWorkerTargetPlanInternal,
+  ): RevisionAtomicAdmissionReservationResultInternal {
+    return this.#operate(() => this.#reserveInternal(plan));
+  }
+
+  /**
+   * Performs the reserved admission. Scheduler admission is revalidated, so
+   * state drift since the reservation surfaces as an explicit rejection or
+   * failure rather than corrupting accepted state.
+   */
+  activateAdmissionInternal(
+    handle: RevisionAtomicAdmissionReservationHandleInternal,
+  ): RevisionAtomicTargetAdmissionResultInternal {
+    return this.#operate(() => this.#activateInternal(handle));
+  }
+
+  cancelAdmissionInternal(
+    handle: RevisionAtomicAdmissionReservationHandleInternal,
+  ): RevisionAtomicAdmissionCancelResultInternal {
+    return this.#operate(() => {
       if (this.#lifecycle !== 'active') return Object.freeze({ status: 'disposed' });
-      this.#retryRetiringInternal();
-      const target = plan.target;
-      if (this.#current?.lease?.stateInternal === 'swapped') {
-        return Object.freeze({
-          status: 'blocked',
-          target,
-          reason: 'presentation-in-flight',
-        });
+      const reservation = this.#reservation;
+      if (!reservation || reservation.handle !== handle) {
+        return Object.freeze({ status: 'already-settled' });
       }
-      if (plan.targetSequence <= this.#lastTargetSequence) {
-        return Object.freeze({ status: 'rejected', target, reason: 'stale-sequence' });
+      this.#reservation = null;
+      this.#releaseReservationInternal(reservation, 'cancelled');
+      return Object.freeze({ status: 'cancelled' });
+    });
+  }
+
+  #reserveInternal(
+    plan: ProfiledWorkerTargetPlanInternal,
+  ): RevisionAtomicAdmissionReservationResultInternal {
+    if (this.#lifecycle !== 'active') return Object.freeze({ status: 'disposed' });
+    this.#supersedeReservationInternal();
+    this.#retryRetiringInternal();
+    const target = plan.target;
+    if (this.#current?.lease?.stateInternal === 'swapped') {
+      return Object.freeze({
+        status: 'blocked',
+        target,
+        reason: 'presentation-in-flight',
+      });
+    }
+    if (plan.targetSequence <= this.#lastTargetSequence) {
+      return Object.freeze({ status: 'rejected', target, reason: 'stale-sequence' });
+    }
+    const priorEpoch = this.#worldEpochs.get(target.worldId);
+    const replacesEpoch = priorEpoch !== undefined && priorEpoch !== target.epoch;
+    const handle: RevisionAtomicAdmissionReservationHandleInternal = Object.freeze({
+      targetInternal: target,
+    });
+    if (plan.groups.length > 0) {
+      const groups = Object.freeze(plan.groups.map((group) => group.group));
+      const tick = this.#nextTickInternal();
+      const verdict = replacesEpoch
+        ? this.#scheduler.preflightReplacingEpochTarget(groups, tick)
+        : this.#scheduler.preflightTarget(groups, tick);
+      if (verdict.status === 'rejected') {
+        return Object.freeze({ status: 'rejected', target, reason: verdict.reason });
       }
-      const priorEpoch = this.#worldEpochs.get(target.worldId);
-      const replacesEpoch = priorEpoch !== undefined && priorEpoch !== target.epoch;
-      const old = this.#current;
+      if (verdict.status === 'duplicate') {
+        return Object.freeze({ status: 'rejected', target, reason: 'duplicate-group' });
+      }
+      if (verdict.status === 'disposed') {
+        this.#lifecycle = 'disposing';
+        return Object.freeze({ status: 'disposed' });
+      }
+      this.#reservation = { handle, plan, record: null };
+    } else {
+      // The zero-job scene lease is prepared eagerly because staging is the
+      // only fallible admission step for an empty target. The lease is held
+      // reversibly: cancellation or supersession aborts it exactly.
       const record = this.#createRecordInternal(plan);
-      let coalescedGroupIds: readonly string[] = Object.freeze([]);
-      if (plan.groups.length > 0) {
-        const groups = Object.freeze(plan.groups.map((group) => group.group));
-        const tick = this.#nextTickInternal();
-        const admission = replacesEpoch
-          ? this.#scheduler.enqueueReplacingEpochTarget(groups, tick)
-          : this.#scheduler.enqueueTarget(groups, tick);
-        if (admission.status === 'rejected') {
-          return Object.freeze({ status: 'rejected', target, reason: admission.reason });
-        }
-        if (admission.status === 'duplicate') {
-          return Object.freeze({ status: 'rejected', target, reason: 'duplicate-group' });
-        }
-        if (admission.status === 'disposed') {
+      this.#provisional = record;
+      const terminal = this.#prepareTargetInternal(record);
+      if (terminal) {
+        this.#provisional = null;
+        return Object.freeze({ status: 'failed', target, terminal });
+      }
+      this.#reservation = { handle, plan, record };
+    }
+    return Object.freeze({
+      status: 'reserved',
+      target,
+      groupCount: plan.groups.length,
+      jobCount: plan.scheduledJobCount,
+      handle,
+    });
+  }
+
+  #activateInternal(
+    handle: RevisionAtomicAdmissionReservationHandleInternal,
+  ): RevisionAtomicTargetAdmissionResultInternal {
+    if (this.#lifecycle !== 'active') return Object.freeze({ status: 'disposed' });
+    const reservation = this.#reservation;
+    if (!reservation || reservation.handle !== handle) {
+      return Object.freeze({
+        status: 'rejected',
+        target: handle.targetInternal,
+        reason: 'superseded-reservation',
+      });
+    }
+    this.#reservation = null;
+    const plan = reservation.plan;
+    const target = plan.target;
+    if (this.#current?.lease?.stateInternal === 'swapped') {
+      this.#releaseReservationInternal(reservation, 'blocked');
+      return Object.freeze({
+        status: 'blocked',
+        target,
+        reason: 'presentation-in-flight',
+      });
+    }
+    if (plan.targetSequence <= this.#lastTargetSequence) {
+      this.#releaseReservationInternal(reservation, 'stale');
+      return Object.freeze({ status: 'rejected', target, reason: 'stale-sequence' });
+    }
+    const priorEpoch = this.#worldEpochs.get(target.worldId);
+    const replacesEpoch = priorEpoch !== undefined && priorEpoch !== target.epoch;
+    const old = this.#current;
+    let record: CoordinatorTargetRecordInternal;
+    let coalescedGroupIds: readonly string[] = Object.freeze([]);
+    if (plan.groups.length > 0) {
+      record = this.#createRecordInternal(plan);
+      const groups = Object.freeze(plan.groups.map((group) => group.group));
+      const tick = this.#nextTickInternal();
+      const admission = replacesEpoch
+        ? this.#scheduler.enqueueReplacingEpochTarget(groups, tick)
+        : this.#scheduler.enqueueTarget(groups, tick);
+      if (admission.status === 'rejected') {
+        return Object.freeze({ status: 'rejected', target, reason: admission.reason });
+      }
+      if (admission.status === 'duplicate') {
+        return Object.freeze({ status: 'rejected', target, reason: 'duplicate-group' });
+      }
+      if (admission.status === 'disposed') {
+        this.#lifecycle = 'disposing';
+        return Object.freeze({ status: 'disposed' });
+      }
+      coalescedGroupIds = admission.coalescedGroups;
+      this.#current = record;
+    } else {
+      record = reservation.record!;
+      if (replacesEpoch) {
+        const replacement = this.#scheduler.replaceEpoch(
+          target.worldId,
+          target.epoch,
+          this.#nextTickInternal(),
+        );
+        if (replacement.status === 'disposed') {
           this.#lifecycle = 'disposing';
+          this.#failRecordInternal(
+            record,
+            'disposed',
+            'Scheduler was disposed during zero-job epoch replacement.',
+          );
           return Object.freeze({ status: 'disposed' });
         }
-        coalescedGroupIds = admission.coalescedGroups;
-        this.#current = record;
-      } else {
-        this.#provisional = record;
-        const terminal = this.#prepareTargetInternal(record);
-        this.#provisional = null;
-        if (terminal) {
-          return Object.freeze({ status: 'failed', target, terminal });
-        }
-        if (replacesEpoch) {
-          const replacement = this.#scheduler.replaceEpoch(
-            target.worldId,
-            target.epoch,
-            this.#nextTickInternal(),
-          );
-          if (replacement.status === 'disposed') {
-            this.#lifecycle = 'disposing';
-            this.#failRecordInternal(
-              record,
-              'disposed',
-              'Scheduler was disposed during zero-job epoch replacement.',
-            );
-            return Object.freeze({ status: 'disposed' });
-          }
-        }
-        this.#current = record;
       }
-      this.#lastTargetSequence = plan.targetSequence;
-      this.#worldEpochs.set(target.worldId, target.epoch);
-      this.#lastTerminal = null;
-      if (old && old !== record) {
-        this.#retireRecordInternal(old, replacesEpoch ? 'epoch-replaced' : 'superseded');
-      }
-      return Object.freeze({
-        status: record.phase === 'ready' ? 'ready' : 'pending',
-        target,
-        groupCount: record.groupIds.length,
-        jobCount: plan.scheduledJobCount,
-        coalescedGroupIds,
-        cleanupPending: this.#retiring.size > 0,
-      });
+      this.#current = record;
+      this.#provisional = null;
+    }
+    this.#lastTargetSequence = plan.targetSequence;
+    this.#worldEpochs.set(target.worldId, target.epoch);
+    this.#lastTerminal = null;
+    if (old && old !== record) {
+      this.#retireRecordInternal(old, replacesEpoch ? 'epoch-replaced' : 'superseded');
+    }
+    return Object.freeze({
+      status: record.phase === 'ready' ? 'ready' : 'pending',
+      target,
+      groupCount: record.groupIds.length,
+      jobCount: plan.scheduledJobCount,
+      coalescedGroupIds,
+      cleanupPending: this.#retiring.size > 0,
     });
+  }
+
+  #supersedeReservationInternal(): void {
+    const reservation = this.#reservation;
+    if (!reservation) return;
+    this.#reservation = null;
+    this.#releaseReservationInternal(reservation, 'superseded');
+  }
+
+  #releaseReservationInternal(
+    reservation: CoordinatorReservationInternal,
+    cause: string,
+  ): void {
+    const record = reservation.record;
+    if (!record) return;
+    if (this.#provisional === record) this.#provisional = null;
+    this.#retireRecordInternal(
+      record,
+      'superseded',
+      `Revision-atomic admission reservation was ${cause}.`,
+    );
   }
 
   pumpInternal(): RevisionAtomicTargetPumpResultInternal {
@@ -367,6 +517,15 @@ export class RevisionAtomicTargetCoordinatorInternal {
       }
       this.#lifecycle = 'disposing';
       const errors: unknown[] = [];
+      const reservation = this.#reservation;
+      this.#reservation = null;
+      if (reservation) {
+        try {
+          this.#releaseReservationInternal(reservation, 'disposed');
+        } catch (error) {
+          errors.push(error);
+        }
+      }
       const current = this.#current;
       this.#current = null;
       this.#provisional = null;

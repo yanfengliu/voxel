@@ -47,7 +47,8 @@ export type RevisionAtomicTargetAdmissionResultInternal =
       readonly reason:
         | Extract<MeshSchedulerEnqueueTargetResultV1, { status: 'rejected' }>['reason']
         | 'duplicate-group'
-        | 'stale-sequence';
+        | 'stale-sequence'
+        | 'superseded-reservation';
     }
   | {
       readonly status: 'blocked';
@@ -143,3 +144,30 @@ export interface RevisionAtomicTargetCoordinatorOptionsInternal {
   readonly schedulerInternal: VoxelMeshSchedulerV1;
   readonly stagerInternal: RevisionAtomicPresentationStagerInternal;
 }
+
+/**
+ * Opaque single-use admission reservation. The newest reservation or a direct
+ * admission supersedes any outstanding one, so a stale handle can only be
+ * refused, never replayed.
+ */
+export interface RevisionAtomicAdmissionReservationHandleInternal {
+  readonly targetInternal: RevisionAtomicPresentationTargetInternal;
+}
+
+export type RevisionAtomicAdmissionReservationResultInternal =
+  | {
+      readonly status: 'reserved';
+      readonly target: RevisionAtomicPresentationTargetInternal;
+      readonly groupCount: number;
+      readonly jobCount: number;
+      readonly handle: RevisionAtomicAdmissionReservationHandleInternal;
+    }
+  | Exclude<
+      RevisionAtomicTargetAdmissionResultInternal,
+      { status: 'pending' | 'ready' }
+    >;
+
+export type RevisionAtomicAdmissionCancelResultInternal =
+  | { readonly status: 'cancelled' }
+  | { readonly status: 'already-settled' }
+  | { readonly status: 'disposed' };
