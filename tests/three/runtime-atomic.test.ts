@@ -10,13 +10,26 @@ import { ManualWorkerPoolInternal } from './runtime-mesh-worker-driver-fixtures.
 
 class FakeRenderer implements RendererLike {
   private pixelRatio = 1;
+  private readonly listeners = new Map<string, Set<(event: Event) => void>>();
   readonly domElement = {
     width: 0,
     height: 0,
     toDataURL: vi.fn(() => 'data:image/png;base64,fake'),
-    addEventListener: vi.fn(),
-    removeEventListener: vi.fn(),
+    addEventListener: (type: string, listener: (event: Event) => void) => {
+      const set = this.listeners.get(type) ?? new Set<(event: Event) => void>();
+      set.add(listener);
+      this.listeners.set(type, set);
+    },
+    removeEventListener: (type: string, listener: (event: Event) => void) => {
+      this.listeners.get(type)?.delete(listener);
+    },
   };
+
+  emit(type: 'webglcontextlost' | 'webglcontextrestored'): Event {
+    const event = new Event(type, { cancelable: true });
+    for (const listener of [...(this.listeners.get(type) ?? [])]) listener(event);
+    return event;
+  }
   readonly render = vi.fn<(scene: Scene, camera: Camera) => void>();
   readonly setSize = vi.fn((width: number, height: number) => {
     this.domElement.width = width;
@@ -147,6 +160,34 @@ describe('ThreeRenderRuntime atomic voxel pipeline', () => {
     // A snapshot within budget is still accepted afterwards.
     expect(runtime.acceptSnapshot(profiledSnapshot(1)).status).toBe('accepted');
     frameUntilPresented(runtime, 1, 0);
+    runtime.dispose();
+  });
+
+  it('keeps the worker-meshed revision displayed across a context restoration', () => {
+    const { runtime, renderer, atomicRoot } = createAtomicRuntime();
+    expect(runtime.acceptSnapshot(profiledSnapshot(1)).status).toBe('accepted');
+    const next = frameUntilPresented(runtime, 1, 0);
+    const displayed = atomicRoot.children[0];
+    expect(displayed).toBeDefined();
+
+    renderer.emit('webglcontextlost');
+    expect(runtime.runtimeStatus().state).toBe('lost');
+    expect(runtime.frame(frameContext(next))).toBeUndefined();
+
+    renderer.emit('webglcontextrestored');
+    expect(runtime.runtimeStatus().state).toBe('restoring');
+    // The staged bundles are CPU-side Three objects that outlive the context,
+    // so restoration must keep displaying them rather than drop the revision.
+    const manifest = runtime.frame(frameContext(next + 1));
+    expect(runtime.runtimeStatus().state).toBe('running');
+    expect(manifest?.presentedRevision).toBe(1);
+    expect(atomicRoot.children).toEqual([displayed]);
+    expect(runtime.metrics().presentedRevision).toBe(1);
+
+    // A newer revision still meshes and presents after the restoration.
+    expect(runtime.acceptSnapshot(profiledSnapshot(2, [2])).status).toBe('accepted');
+    frameUntilPresented(runtime, 2, next + 2);
+    expect(atomicRoot.children[0]).not.toBe(displayed);
     runtime.dispose();
   });
 
