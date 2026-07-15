@@ -50,7 +50,7 @@ Current status after the first 0.2 implementation slice on 2026-07-13:
 - [x] F-01 documentation routing, changelog/migration note, and support policy; local link/fence/whitespace checks pass.
 - [x] F-02 declaration/API report, deterministic update, drift diagnostics, and in-memory diagnostic self-test.
 - [ ] F-03 CI/package gates: workflow and local-equivalent gates are implemented; the first remote GitHub Actions run remains required before completion.
-- [ ] F-04 snapshot/delta copy instrumentation, defensive exports, canonical retention, and deterministic RenderWorld read/reset hooks are implemented. Fixed-page snapshot writes are included exactly, but profiled presentation-staging bytes and their peak remain unmeasured.
+- [x] F-04 snapshot/delta copy instrumentation, defensive exports, canonical retention, deterministic RenderWorld read/reset hooks, and profiled presentation-staging current/peak telemetry are implemented. Unique output-buffer capacity is exact across provisional rejection, replacement, pending/frame overlap, commit, abort, reentrant settlement, and disposal.
 - [x] F-05 prepared canonical snapshot ingest, exact world/base commit fencing, direct paged equality, defensive public access, presentation reuse, and mutable borrowed-scene isolation. A 257-instance color/animation regression proves one logical ownership copy across two fixed pages and runtime/world telemetry parity.
 - [x] F-06 immutable truthful backend capability report and pre-commit compatibility behavior.
 - [x] F-07 local support/consumer fixtures: policy, packed single-Three proof, exact TypeScript 5.7.3/5.9.3/6.0.3 compilers, and the City-shaped portable/host contract fixture are implemented. H-03 and C-01 subsequently upgraded that fixture to executable embedded-host coverage.
@@ -668,14 +668,13 @@ Control: roadmap non-goals and decision gates. New 1.0 scope requires an explici
 
 ## Immediate implementation slice
 
-The current critical path closes the remaining foundation telemetry gap, then resumes at V-08:
+The foundation telemetry gap is closed. The current critical path resumes at V-08:
 
-1. Close F-04 by measuring typed arrays retained only by uncommitted profiled presentations, including exact current/peak transitions across commit, abort, rejection, replacement, and disposal.
-2. Give every synchronous presenter an explicit prepare/activate/commit/abort ownership boundary with rollback tests and no live-scene mutation during preparation.
-3. Integrate eligible worker groups into the same whole-revision transaction and prove that render or host-ticket failure restores the prior displayed scene and stores.
-4. Publish the committed presented voxel/instance stores and complete P-02 through P-04 without reading accepted or mutable host state.
-5. Complete H-04 revision-aware capture against the same committed manifest.
-6. Redesign H-05 reconstruction as prepare plus standalone/embedded draw acknowledgement plus commit/abort; never publish readiness from an internal draw that violates host ownership.
-7. Close V-09/V-10 with end-to-end selection evidence, culling, resource metrics, and edit-storm bounds.
+1. Give every synchronous presenter an explicit prepare/activate/commit/abort ownership boundary with rollback tests and no live-scene mutation during preparation.
+2. Integrate eligible worker groups into the same whole-revision transaction and prove that render or host-ticket failure restores the prior displayed scene and stores.
+3. Publish the committed presented voxel/instance stores and complete P-02 through P-04 without reading accepted or mutable host state.
+4. Complete H-04 revision-aware capture against the same committed manifest.
+5. Redesign H-05 reconstruction as prepare plus standalone/embedded draw acknowledgement plus commit/abort; never publish readiness from an internal draw that violates host ownership.
+6. Close V-09/V-10 with end-to-end selection evidence, culling, resource metrics, and edit-storm bounds.
 
 Each numbered step is split into minimal coherent verified commits and receives adversarial review as soon as its first public, async, presentation, or ownership boundary exists.

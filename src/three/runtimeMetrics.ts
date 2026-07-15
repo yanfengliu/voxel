@@ -18,6 +18,8 @@ export interface RuntimeMetricsInputInternal {
   readonly renderInfo: RenderInfoSnapshotInternal;
   readonly contextLosses: number;
   readonly contextRestorations: number;
+  readonly presentationStagingBytes: number;
+  readonly peakPresentationStagingBytes: number;
 }
 
 export function collectRuntimeMetricsInternal(
@@ -61,7 +63,7 @@ export function collectRuntimeMetricsInternal(
     defensiveSnapshotCopyBytes: ownership.defensiveSnapshotCopyBytes,
     retainedTypedArrayBytes: ownership.retainedTypedArrayBytes,
     peakRetainedTypedArrayBytes: ownership.peakRetainedTypedArrayBytes,
-    presentationStagingBytes: 0,
-    peakPresentationStagingBytes: 0,
+    presentationStagingBytes: input.presentationStagingBytes,
+    peakPresentationStagingBytes: input.peakPresentationStagingBytes,
   };
 }

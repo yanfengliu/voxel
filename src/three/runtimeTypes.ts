@@ -135,9 +135,9 @@ export interface ThreeRenderMetrics {
   readonly retainedTypedArrayBytes: number;
   /** High-water mark of retained canonical typed-array capacity. */
   readonly peakRetainedTypedArrayBytes: number;
-  /** Additional typed-array bytes held only by an uncommitted presentation. */
+  /** Unique profiled-mesh buffer capacity held only by uncommitted presentations. */
   readonly presentationStagingBytes: number;
-  /** High-water mark of additional uncommitted presentation storage. */
+  /** High-water mark including provisional, pending, and frame-ticket overlap. */
   readonly peakPresentationStagingBytes: number;
 }
 
