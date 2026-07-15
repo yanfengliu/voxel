@@ -516,7 +516,24 @@ Current status:
   batches let the wall slot layout safely diverge from City's remaining four layers; and that
   the one required City change is an additive after-draw hook, because City's frame callbacks
   run only before its single draw.
-- [ ] C-03 building-lane adapter and C-04 cross-consumer regression remain.
+- [x] C-03 building-lane adapter: City draws its building walls through an embedded Voxel
+  runtime behind `?voxelWalls=1` (City commits `8a07109`, `756dbdf`, `a33f33b`). City keeps the
+  renderer, camera, viewport, capture, shadow policy, and the draw; Voxel contributes one root
+  and learns its work reached the canvas through City's additive after-draw hook. All three
+  zone archetypes collapse into one keyed batch because walls never varied by zone. Browser
+  evidence on City's 453-building fixture: draw calls 39 → 37, triangles identical at 452,211,
+  exactly one Voxel runtime root, no page errors, and a worst-case pixel delta equal to the
+  same-config animation noise floor. Ownership is pinned by tests that fail if Voxel claims the
+  viewport. This was the first real host to exercise embedded mode — AoE2 is standalone and
+  C-01 is Voxel-authored — and it found two adapter defects that a self-authored fixture could
+  not: a double sRGB conversion rendering walls ~3.5× too dark, and a `vertexColors` material
+  mismatch against a geometry with no colour attribute. Both were City-side and are now pinned.
+  A broad low-amplitude pixel residual remains and is inherent to this package's 8-bit sRGB
+  instance-colour lane quantising City's float32 tints.
+- [x] C-04 cross-consumer regression: AoE2's complete gate passes unchanged against this
+  package — 2,128 unit tests, 108 real-browser tests including context loss/restoration and
+  replay-scrub epoch rebuilds, typecheck, lint, and production build. No shared contract needed
+  reconciling; the only public change in this cycle was the additive scheduler preflight pair.
 
 ### C-01: Voxel-owned City compatibility fixture
 
@@ -549,6 +566,15 @@ Deliverables: re-run AoE's complete package/unit/browser/visual/performance chec
 Dependencies: C-03.
 
 C exit gate: AoE and a playable City lane use public Voxel without game types or duplicate Three; both retain their authoritative simulation and consumer-owned visual semantics.
+
+Met on 2026-07-15. AoE2 runs standalone as its sole world renderer; City draws its building
+wall lane through embedded Voxel behind a flag while owning every other lane, its renderer,
+camera, capture, and shadow policy. No consumer type entered this package: City's adapter and
+its `BuildingRenderView` live in City. Both consumers resolve exactly one Three runtime —
+AoE2's packed single-Three check and City's `resolve.dedupe(['three'])`, whose test fails if
+the dedupe is removed. Snapshot-per-dirty-frame in City's adapter rebuilds every matrix where
+its own view wrote one; if that proves material, the fix is this package's sparse delta path
+and not a change to the boundary.
 
 ## E — evidence and hardening
 
