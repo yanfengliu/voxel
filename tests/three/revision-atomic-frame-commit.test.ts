@@ -12,12 +12,14 @@ import {
   prepareCanonicalPresentationInternal,
   presentedCanonicalStateForPresentationInternal,
 } from '../../src/core/render-world.js';
+import { CommittedPresentedQueryAuthorityInternal } from '../../src/three/committedPresentedQueryAuthority.js';
 import { RevisionAtomicFrameCommitInternal } from '../../src/three/revisionAtomicFrameCommit.js';
 import {
   RevisionAtomicPresentationStagerInternal,
   type RevisionAtomicMountInternal,
 } from '../../src/three/revisionAtomicStaging.js';
 import { validSnapshot } from '../core/fixtures.js';
+import { pickCandidateFixture } from './committed-pick-fixtures.js';
 import {
   greedyOutput,
   groupPort,
@@ -371,6 +373,139 @@ describe('revision-atomic frame commit', () => {
     expect(presentedCanonicalStateForPresentationInternal(world)).toBe(rendered);
     expect(atomic.displayedTargetInternal).toEqual(target(2));
     expect(root.children).toEqual([scene.lease.bundleInternal.rootInternal]);
+  });
+
+  it('advances the query authority atomically with the canonical and scene lanes', () => {
+    const world = presentedWorldAtRevisionOne();
+    const rendered = acceptRevision(world, 2);
+    const { atomic } = sceneDisplayingRevisionOne();
+    const scene = prepareSceneLease(atomic, 2);
+    const authority = new CommittedPresentedQueryAuthorityInternal();
+    const base = pickCandidateFixture(1);
+    authority.publishInternal(base.candidate).finalizeInternal();
+    const baseSnapshot = authority.currentInternal!;
+    const next = pickCandidateFixture(2);
+
+    const commit = new RevisionAtomicFrameCommitInternal({
+      canonicalTicket: coreTicketFor(world, rendered),
+      sceneLease: scene.lease,
+    });
+    commit.activateInternal();
+    // Preparing the candidate after the draw does not advance the authority.
+    expect(authority.currentInternal).toBe(baseSnapshot);
+
+    const result = commit.commitInternal({ authority, candidate: next.candidate });
+
+    expect(result).toMatchObject({ status: 'committed', queryRetirement: 'complete' });
+    expect(authority.currentInternal?.frameInternal.presentedRevision).toBe(2);
+    expect(baseSnapshot.disposalCompleteInternal).toBe(true);
+    expect(authority.publicationsInternal).toBe(0);
+    expect(presentedCanonicalStateForPresentationInternal(world)).toBe(rendered);
+    expect(atomic.displayedTargetInternal).toEqual(target(2));
+  });
+
+  it('restores the query authority when canonical acceptance drifts', () => {
+    const world = presentedWorldAtRevisionOne();
+    const rendered = acceptRevision(world, 2);
+    const { atomic } = sceneDisplayingRevisionOne();
+    const scene = prepareSceneLease(atomic, 2);
+    const authority = new CommittedPresentedQueryAuthorityInternal();
+    const base = pickCandidateFixture(1);
+    authority.publishInternal(base.candidate).finalizeInternal();
+    const baseSnapshot = authority.currentInternal!;
+    const next = pickCandidateFixture(2);
+    const commit = new RevisionAtomicFrameCommitInternal({
+      canonicalTicket: coreTicketFor(world, rendered),
+      sceneLease: scene.lease,
+    });
+    commit.activateInternal();
+    acceptRevision(world, 3);
+
+    const result = commit.commitInternal({ authority, candidate: next.candidate });
+
+    expect(result).toEqual({ status: 'superseded', reason: 'canonical-superseded' });
+    expect(authority.currentInternal).toBe(baseSnapshot);
+    expect(baseSnapshot.disposalCompleteInternal).toBe(false);
+    expect(authority.publicationsInternal).toBe(0);
+    expect(atomic.displayedTargetInternal).toEqual(target(1));
+    // The superseded candidate's snapshot was published and rolled back.
+    expect(() => next.candidate.commitInternal()).toThrow(/committed/i);
+  });
+
+  it('discards the candidate without publishing when the scene lane fails first', () => {
+    const world = presentedWorldAtRevisionOne();
+    const rendered = acceptRevision(world, 2);
+    const { atomic } = sceneDisplayingRevisionOne();
+    let current = true;
+    const scene = prepareSceneLease(atomic, 2, { currentGetter: () => current });
+    const authority = new CommittedPresentedQueryAuthorityInternal();
+    const base = pickCandidateFixture(1);
+    authority.publishInternal(base.candidate).finalizeInternal();
+    const baseSnapshot = authority.currentInternal!;
+    const next = pickCandidateFixture(2);
+    const commit = new RevisionAtomicFrameCommitInternal({
+      canonicalTicket: coreTicketFor(world, rendered),
+      sceneLease: scene.lease,
+    });
+    commit.activateInternal();
+    current = false;
+
+    expect(() => commit.commitInternal({ authority, candidate: next.candidate }))
+      .toThrow(/eligibility changed/i);
+
+    expect(authority.currentInternal).toBe(baseSnapshot);
+    expect(authority.publicationsInternal).toBe(0);
+    // The transaction took ownership of the candidate and released it.
+    expect(() => next.candidate.commitInternal()).toThrow(/discarded/i);
+  });
+
+  it('chains query authority publications through a reentrant waiter commit', () => {
+    const world = presentedWorldAtRevisionOne();
+    const secondRendered = acceptRevision(world, 2);
+    const { atomic } = sceneDisplayingRevisionOne();
+    const second = prepareSceneLease(atomic, 2);
+    const third = prepareSceneLease(atomic, 3);
+    const authority = new CommittedPresentedQueryAuthorityInternal();
+    const secondPick = pickCandidateFixture(2);
+    const thirdPick = pickCandidateFixture(3);
+
+    let reentrantError: unknown;
+    let thirdResult: unknown;
+    const reentrantCommit = (): void => {
+      try {
+        const thirdRendered = acceptRevision(world, 3);
+        const nested = new RevisionAtomicFrameCommitInternal({
+          canonicalTicket: coreTicketFor(world, thirdRendered),
+          sceneLease: third.lease,
+        });
+        nested.activateInternal();
+        thirdResult = nested.commitInternal({ authority, candidate: thirdPick.candidate });
+      } catch (error) {
+        reentrantError = error;
+      }
+    };
+    void world.awaitPresented(coreTarget(2), { signal: hostileRemovalSignal(reentrantCommit) });
+
+    const secondCommit = new RevisionAtomicFrameCommitInternal({
+      canonicalTicket: coreTicketFor(world, secondRendered),
+      sceneLease: second.lease,
+    });
+    secondCommit.activateInternal();
+    const secondResult = secondCommit.commitInternal({
+      authority,
+      candidate: secondPick.candidate,
+    });
+
+    expect(reentrantError).toBeUndefined();
+    expect(thirdResult).toMatchObject({ status: 'committed', queryRetirement: 'complete' });
+    expect(secondResult).toMatchObject({ status: 'committed', queryRetirement: 'complete' });
+    // The nested successor retired revision 2's snapshot as its predecessor;
+    // the outer publication finalized afterwards with nothing left to retire.
+    expect(authority.currentInternal?.frameInternal.presentedRevision).toBe(3);
+    expect(authority.currentInternal?.disposalCompleteInternal).toBe(false);
+    expect(authority.publicationsInternal).toBe(0);
+    expect(authority.pendingRetiredInternal).toBe(0);
+    expect(atomic.displayedTargetInternal).toEqual(target(3));
   });
 
   it('presents a newer revision when a waiter synchronously commits during finalization', () => {
