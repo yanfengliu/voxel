@@ -591,10 +591,11 @@ E exit gate: every support/performance claim has repeatable evidence, no leak or
 - Review correctness, atomicity, stale races, seams, copy/transfer ownership, picking parity, host mutation, context restoration, leaks, API compatibility, supply chain, and unsupported claims.
 - Every substantive finding blocks the RC until fixed and reverified.
 
-### R-04: Immutable candidate and soak
+### R-04: Immutable candidate
 
 - Produce tarball, integrity hash, contents manifest, source commit, environment, audit results, and evidence index.
-- Tag a release candidate and run the full matrix without public/correctness changes for the soak window. Any such change creates a new RC.
+- Tag a release candidate and run the complete supported matrix against that exact artifact from a clean checkout. Any public or correctness change afterwards requires a new candidate and a new run.
+- No calendar soak is required; see the roadmap's rationale. The accumulative-failure risk a soak covered belongs to E-04, which must be green against the candidate.
 
 ### R-05: 1.0.0
 
@@ -602,7 +603,7 @@ E exit gate: every support/performance claim has repeatable evidence, no leak or
 - Finalize changelog, support policy, migration guide, known limitations, and post-1.0 backlog.
 - Tag the verified commit and attach the reproducible private artifact. Registry publication remains separately authorized.
 
-R exit gate: no required item is incomplete, no substantive review issue is open, the RC soak is green, and the artifact can be reproduced from the tag.
+R exit gate: no required item is incomplete, no substantive review issue is open, the complete supported matrix is green against the candidate from a clean checkout, and the artifact can be reproduced from the tag.
 
 ## Verification command matrix
 
@@ -617,7 +618,7 @@ The package scripts remain the authority. The target gate grows to cover:
 | Picking | portable unit plus presenter tests | fixed browser rays/captures, performance budget, full verify |
 | Dependency | targeted build/tests | lockfile, runtime/full audits, license record, pack inspection, full verify |
 | Public API | type fixtures | API update, changelog/migration, packed consumers, adversarial review, full verify |
-| Release candidate | all above | clean install, complete CI/support matrix, artifact hash, soak |
+| Release candidate | all above | clean install, complete CI/support matrix, artifact hash |
 
 ## Risk register
 

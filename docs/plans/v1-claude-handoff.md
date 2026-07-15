@@ -74,13 +74,14 @@ architecture.
 Critical path from here:
 
 `embedded frame ticket -> H-05 reconstruction -> V-09/V-10 -> make the worker option public
--> City proof -> evidence/hardening -> API freeze/RC -> seven-day soak -> 1.0 tag`
+-> City proof -> evidence/hardening -> API freeze/RC -> 1.0 tag`
 
-Three gates cannot be closed by an autonomous session and need the user:
+One gate still needs the user: named real-hardware performance evidence needs a real machine,
+because the browser lane runs on SwiftShader, which proves correctness but not frame time.
 
-1. The seven-day RC soak is calendar time.
-2. C-02/C-03 require explicit authority to edit `../city`.
-3. Named real-hardware performance evidence needs a real machine, not SwiftShader.
+Two earlier blockers are resolved. The owner removed the calendar soak on 2026-07-15 (single
+consumer, private distribution; the roadmap records the rationale and keeps the risk on E-04),
+and granted authority to edit `../city`, unblocking C-02 through C-04.
 
 ## The central constraint on everything below
 

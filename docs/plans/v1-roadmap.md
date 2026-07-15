@@ -76,7 +76,7 @@ Milestone labels express dependency order, not calendar promises. Time ranges ar
 | 0.7 | Second-consumer proof | 2–4 weeks | One City building lane uses embedded Voxel with parity and one Three runtime; AoE remains green |
 | 0.8 | Evidence and hardening | 2–4 weeks | Fuzz, endurance, visual, browser, performance, budget, cleanup, and cross-platform evidence |
 | 0.9 | Release candidate | 1–2 weeks | API and schema freeze, migration rehearsal, immutable artifact, no unresolved release blockers |
-| 1.0 | Stable release | 1 week soak | RC evidence stays green, release notes and support policy are final, tag and artifact are reproducible |
+| 1.0 | Stable release | — | RC evidence is green from a clean checkout, release notes and support policy are final, tag and artifact are reproducible |
 
 The expected critical path is 0.2 → 0.3 → 0.4 → 0.5/0.6 → 0.7 → 0.8 → 0.9 → 1.0. Picking and host work may proceed in parallel after the presentation ledger exists. Documentation, API reports, audits, and consumer fixtures advance continuously rather than being deferred to the release candidate.
 
@@ -160,15 +160,35 @@ Exit evidence: a playable City path and AoE both use the public package without 
 
 Exit evidence: all declared budgets have measured baselines and justified thresholds; repeated runs do not leak; supported browser/OS lanes pass; no open high/critical dependency finding lacks an accepted expiring exception.
 
-### 0.9 and 1.0 — freeze, soak, release
+### 0.9 and 1.0 — freeze and release
 
 - Freeze schema literals, discriminants, stable diagnostic codes, subpath exports, and 1.0 public declarations.
 - Publish migration notes from 0.1 snapshots through each opt-in feature and rehearse clean installs in representative consumers.
 - Produce a deterministic npm pack artifact from the release commit, record its integrity hash and contents, and attach it to an immutable Git tag or release.
 - Require an adversarial code review with no unresolved substantive finding.
-- Soak the release candidate under the complete supported matrix without changing public behavior. Any public or correctness change creates a new RC.
+- Verify the release candidate against the complete supported matrix from a clean checkout. Any public or correctness change after that verification requires a new candidate and a new run.
 
 The 1.0 tag is allowed only when every required exit gate has durable evidence linked from the implementation ledger.
+
+#### No calendar soak
+
+Earlier revisions required a one-week soak of the tagged candidate. That is removed. The
+owner is currently the only consumer, distribution is private tag and packed artifact, and a
+regression is therefore found and fixed by the same person who would have waited out the
+window; the soak bought delay rather than information.
+
+The risks a soak covers are kept, moved to gates that produce evidence directly instead of by
+elapsed time:
+
+- Accumulative leaks and time-dependent failures are E-04's job: 1,000 boundary edits, 100
+  epoch replacements, repeated loss/restore and teardown cycles, all with measured resource
+  plateaus. A soak observes those slowly; E-04 forces them.
+- Flakiness is caught by repeated matrix runs, which do not need to be spread over days.
+- Environment drift is real and unhurried by a soak: it is caught whenever the matrix next
+  runs, which the release process already requires from a clean checkout.
+
+Reinstate a soak window if the distribution model changes — a second team, a public registry,
+or any consumer who cannot roll back on their own.
 
 ## Support and compatibility policy
 
