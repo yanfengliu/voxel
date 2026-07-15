@@ -113,6 +113,14 @@ function census(root: Object3D, runtime: ThreeRenderRuntime): ResourceCensus {
   };
 }
 
+/** No worker pipeline: the instance-batch path City's lanes actually drive. */
+function createLegacyRuntime() {
+  const renderer = new EnduranceRenderer();
+  const scene = new Scene();
+  const runtime = new ThreeRenderRuntime({ renderer, scene, width: 320, height: 200 });
+  return { runtime, renderer, scene };
+}
+
 function createRuntime() {
   const pool = new ManualWorkerPoolInternal();
   pool.completeSynchronouslyInternal = true;
@@ -201,6 +209,94 @@ describe('atomic pipeline endurance', () => {
     expect(runtime.runtimeStatus().state).toBe('running');
     expect(census(atomicRoot, runtime)).toEqual(settled);
     expect(atomicRoot.children).toHaveLength(1);
+    runtime.dispose();
+  }, 120_000);
+
+  it('settles repeated aborted captures without stranding the runtime', async () => {
+    const { runtime } = createRuntime();
+    const epoch = 'epoch:endurance-capture';
+    let frameIndex = 0;
+    expect(runtime.acceptSnapshot(editedSnapshot(1, epoch, true)).status).toBe('accepted');
+    frameIndex = presentRevision(runtime, 1, frameIndex);
+    const settled = runtime.metrics().atomic;
+
+    const outcomes: string[] = [];
+    for (let cycle = 1; cycle <= 200; cycle += 1) {
+      const controller = new AbortController();
+      // Each capture waits on a revision nobody will present, registering a
+      // waiter and an abort listener, and is then abandoned. The core ledger
+      // pins waiter cleanup itself; what is unproven here is that the capture
+      // coordinator neither strands nor wedges after hundreds of them.
+      const pending = runtime.captureWhenPresented(
+        { worldId: 'world:test', epoch, revision: 9_000 + cycle },
+        { signal: controller.signal },
+      );
+      controller.abort();
+      outcomes.push(await pending.then(
+        (result) => result.status,
+        () => 'rejected',
+      ));
+    }
+
+    expect(outcomes).toHaveLength(200);
+    expect(new Set(outcomes).size).toBe(1);
+    expect(runtime.runtimeStatus().state).toBe('running');
+    expect(runtime.metrics().atomic).toEqual(settled);
+    // The runtime still captures the presented revision normally afterwards.
+    expect(runtime.captureWithManifest()).toMatchObject({ status: 'captured' });
+    runtime.dispose();
+  }, 60_000);
+
+  it('keeps resources flat across repeated sparse batch changes', () => {
+    // The instance lane City drives. A worker-pipeline runtime refuses
+    // unprofiled snapshots outright, so this is deliberately the legacy one.
+    const { runtime, scene } = createLegacyRuntime();
+    const epoch = 'epoch:endurance-batches';
+    const census = () => {
+      let meshes = 0;
+      scene.traverse((node) => {
+        if ((node as { isInstancedMesh?: boolean }).isInstancedMesh === true) meshes += 1;
+      });
+      return meshes;
+    };
+    let frameIndex = 0;
+    let settled = 0;
+
+    for (let revision = 1; revision <= 300; revision += 1) {
+      const snapshot = validSnapshot(revision, epoch);
+      snapshot.chunks = [];
+      const batch = snapshot.batches[0]!;
+      // Churn the keyed instance set: grow, shrink, and reuse keys.
+      const live = 1 + (revision % 7);
+      const matrices = new Float32Array(live * 16);
+      for (let index = 0; index < live; index += 1) {
+        // Column-major identity translated along x, so every instance is a
+        // valid affine transform that also moves each revision.
+        const at = index * 16;
+        matrices[at] = 1;
+        matrices[at + 5] = 1;
+        matrices[at + 10] = 1;
+        matrices[at + 12] = index + (revision % 3);
+        matrices[at + 15] = 1;
+      }
+      snapshot.batches[0] = {
+        ...batch,
+        revision,
+        instanceKeys: Array.from({ length: live }, (_, index) => `instance:${String(index)}`),
+        matrices,
+        colors: new Uint8Array(live * 4).fill(255),
+      };
+      expect(runtime.acceptSnapshot(snapshot).status).toBe('accepted');
+      runtime.frame({ nowMs: frameIndex * 16, deltaMs: 16, frameIndex });
+      frameIndex += 1;
+      if (revision === 20) settled = census();
+    }
+
+    expect(runtime.metrics().presentedRevision).toBe(300);
+    expect(runtime.runtimeStatus().state).toBe('running');
+    // Growing and shrinking the batch 300 times reuses one presenter mesh.
+    expect(census()).toBe(settled);
+    expect(runtime.metrics().instanceBatches).toBe(1);
     runtime.dispose();
   }, 120_000);
 
