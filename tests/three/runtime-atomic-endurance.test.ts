@@ -90,7 +90,29 @@ interface ResourceCensus {
   readonly meshes: number;
   readonly geometries: number;
   readonly materials: number;
-  readonly atomic: ThreeAtomicPipelineMetricsV1 | null;
+  readonly occupancy: Record<string, number> | null;
+}
+
+/**
+ * Only the gauges. Lifetime counters and high-water marks are excluded on
+ * purpose: presentedTargets and the peaks are meant to climb, and folding them
+ * in would make a flatness assertion impossible to state.
+ */
+function occupancyOf(atomic: ThreeAtomicPipelineMetricsV1 | null): Record<string, number> | null {
+  if (!atomic) return null;
+  return {
+    preparedTargets: atomic.preparedTargets,
+    cpuStagingBytes: atomic.cpuStagingBytes,
+    gpuStagingBytes: atomic.gpuStagingBytes,
+    pendingRetiredBundles: atomic.pendingRetiredBundles,
+    pendingRetirements: atomic.pendingRetirements,
+    queuedJobs: atomic.queuedJobs,
+    queuedBytes: atomic.queuedBytes,
+    queuedWorkerEvents: atomic.queuedWorkerEvents,
+    liveWorkers: atomic.liveWorkers,
+    loadedChunks: atomic.loadedChunks,
+    nonemptyChunks: atomic.nonemptyChunks,
+  };
 }
 
 function census(root: Object3D, runtime: ThreeRenderRuntime): ResourceCensus {
@@ -109,7 +131,7 @@ function census(root: Object3D, runtime: ThreeRenderRuntime): ResourceCensus {
     meshes,
     geometries: geometries.size,
     materials: materials.size,
-    atomic: runtime.metrics().atomic,
+    occupancy: occupancyOf(runtime.metrics().atomic),
   };
 }
 
@@ -177,7 +199,7 @@ describe('atomic pipeline endurance', () => {
     // A thousand remeshes leave the pipeline holding exactly what ten did:
     // one displayed root, no prepared backlog, no staged bytes, no queue.
     expect(census(atomicRoot, runtime)).toEqual(settled);
-    expect(settled?.atomic).toMatchObject({
+    expect(settled?.occupancy).toMatchObject({
       preparedTargets: 0,
       cpuStagingBytes: 0,
       gpuStagingBytes: 0,
@@ -185,6 +207,12 @@ describe('atomic pipeline endurance', () => {
       queuedJobs: 0,
       queuedBytes: 0,
       queuedWorkerEvents: 0,
+    });
+    // The lifetime counter is the positive half: every edit really presented,
+    // and none of them went terminal.
+    expect(runtime.metrics().atomic).toMatchObject({
+      presentedTargets: BOUNDARY_EDITS,
+      failedTargets: 0,
     });
     expect(atomicRoot.children).toHaveLength(1);
     runtime.dispose();

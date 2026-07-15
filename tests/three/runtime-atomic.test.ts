@@ -191,6 +191,31 @@ describe('ThreeRenderRuntime atomic voxel pipeline', () => {
     runtime.dispose();
   });
 
+  it('reports loaded, nonempty, and in-frustum chunks for the displayed revision', () => {
+    const { runtime } = createAtomicRuntime();
+    // Three chunks spread along x: one at the camera's centre, two far away.
+    const snapshot = profiledSnapshot(1, [1, 1, 1]);
+    expect(runtime.acceptSnapshot(snapshot).status).toBe('accepted');
+    frameUntilPresented(runtime, 1, 0);
+
+    const atomic = runtime.metrics().atomic!;
+    expect(atomic.loadedChunks).toBe(3);
+    expect(atomic.nonemptyChunks).toBe(3);
+    expect(atomic.presentedTargets).toBe(1);
+    expect(atomic.failedTargets).toBe(0);
+    // The camera sees the world, so every nonempty chunk is drawn.
+    expect(atomic.inFrustumChunks).toBe(3);
+
+    // Look somewhere else entirely: the same chunks are still loaded and
+    // nonempty, but none of them is drawn.
+    runtime.setView({ x: 10_000, y: 0, z: 10_000 });
+    const away = runtime.metrics().atomic!;
+    expect(away.loadedChunks).toBe(3);
+    expect(away.nonemptyChunks).toBe(3);
+    expect(away.inFrustumChunks).toBe(0);
+    runtime.dispose();
+  });
+
   it('rejects unprofiled snapshots so one runtime never mixes presentation owners', () => {
     const { runtime } = createAtomicRuntime();
     const unprofiled = profiledSnapshot(1);

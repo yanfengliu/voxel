@@ -3,6 +3,7 @@ import {
   BufferAttribute,
   BufferGeometry,
   Color,
+  Frustum,
   Mesh,
   SRGBColorSpace,
   Vector3,
@@ -20,6 +21,8 @@ interface ChunkEntry {
 }
 
 const color = new Color();
+/** Scratch for the per-chunk frustum test; the presenter is single-threaded. */
+const WORLD_BOUNDS_INTERNAL = new Box3();
 
 function buildMesh(resource: ChunkPresentation, material: Material): Mesh | null {
   if (Boolean(resource.precomputedMesh) !== Boolean(resource.voxelOrigin)) {
@@ -111,6 +114,28 @@ export class ChunkPresenter {
   get visibleCount(): number {
     let count = 0;
     for (const entry of this.entries.values()) if (entry.mesh) count++;
+    return count;
+  }
+
+  /**
+   * Nonempty chunks whose world bounds intersect the frustum, computed here
+   * rather than read back from the renderer: Three culls internally and
+   * reports only a total draw count, which cannot attribute draws to this
+   * lane. Every mesh carries exact local bounds, so this is the same test
+   * Three performs.
+   */
+  inFrustumCountInternal(frustum: Frustum): number {
+    let count = 0;
+    for (const entry of this.entries.values()) {
+      const mesh = entry.mesh;
+      if (!mesh) continue;
+      const geometry = mesh.geometry;
+      if (!geometry.boundingBox) geometry.computeBoundingBox();
+      const bounds = geometry.boundingBox;
+      if (!bounds) continue;
+      WORLD_BOUNDS_INTERNAL.copy(bounds).applyMatrix4(mesh.matrixWorld);
+      if (frustum.intersectsBox(WORLD_BOUNDS_INTERNAL)) count += 1;
+    }
     return count;
   }
 

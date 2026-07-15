@@ -167,6 +167,21 @@ export interface ThreeAtomicPipelineMetricsV1 {
   readonly pendingRetiredBundles: number;
   /** Coordinator records still cleaning up after a terminal target. */
   readonly pendingRetirements: number;
+  /** Whole revisions this pipeline has committed at a frame boundary. */
+  readonly presentedTargets: number;
+  /** Targets that went terminal instead of presenting. */
+  readonly failedTargets: number;
+  /** Chunks in the displayed revision, and how many of each kind. */
+  readonly loadedChunks: number;
+  /** Loaded chunks that produced geometry; an all-empty chunk produces none. */
+  readonly nonemptyChunks: number;
+  /**
+   * Nonempty chunks whose world bounds intersect the camera frustum, and so
+   * the chunks Three will draw. Computed against the live camera when metrics
+   * are read, because the renderer reports only a total draw count and cannot
+   * attribute draws to this lane.
+   */
+  readonly inFrustumChunks: number;
   readonly queuedJobs: number;
   readonly queuedBytes: number;
   /** Scheduler high-water marks since construction. */

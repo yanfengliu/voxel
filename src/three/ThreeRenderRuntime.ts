@@ -1,4 +1,4 @@
-import type { Camera, Scene } from 'three';
+import { Frustum, Matrix4, type Camera, type Scene } from 'three';
 import {
   RenderWorld,
   type ApplyResultV1,
@@ -92,6 +92,7 @@ import { runRuntimeDisposalInternal } from './runtimeDisposal.js';
 import { captureRuntimeCanvasInternal } from './runtimeCapture.js';
 import { initializeRuntimeInternal } from './runtimeInitialization.js';
 import { resizeRuntimeInternal } from './runtimeResize.js';
+import type { ChunkPresenter } from './chunkPresenter.js';
 import type { LegacyRuntimePresentationSurfaceInternal } from './runtimePresentationSurface.js';
 import {
   initializeRuntimeSnapshotMetricsInternal,
@@ -112,6 +113,9 @@ export {
   snapshotIngestMetricsForTesting,
   type SnapshotIngestMetricsInternal,
 } from './runtimeSnapshotMetrics.js';
+const ATOMIC_FRUSTUM_INTERNAL = new Frustum();
+const ATOMIC_FRUSTUM_MATRIX_INTERNAL = new Matrix4();
+
 type CanonicalPresentationStateInternal = NonNullable<
   ReturnType<typeof pendingCanonicalStateForPresentationInternal>
 >;
@@ -481,6 +485,23 @@ export class ThreeRenderRuntime {
       atomic: this.atomicPipelineMetricsInternal(),
     });
   }
+  /**
+   * Chunks the camera can actually see. The frustum is derived from the live
+   * camera at read time, which is the same test Three runs internally.
+   */
+  private inFrustumChunkCountInternal(
+    bundle: { readonly chunkPresenterInternal: ChunkPresenter } | null | undefined,
+  ): number {
+    if (!bundle) return 0;
+    this.camera.updateMatrixWorld();
+    ATOMIC_FRUSTUM_MATRIX_INTERNAL.multiplyMatrices(
+      this.camera.projectionMatrix,
+      this.camera.matrixWorldInverse,
+    );
+    ATOMIC_FRUSTUM_INTERNAL.setFromProjectionMatrix(ATOMIC_FRUSTUM_MATRIX_INTERNAL);
+    return bundle.chunkPresenterInternal.inFrustumCountInternal(ATOMIC_FRUSTUM_INTERNAL);
+  }
+
   /** Null unless this runtime owns a worker-meshed voxel pipeline. */
   private atomicPipelineMetricsInternal(): ThreeAtomicPipelineMetricsV1 | null {
     if (!this.atomic) return null;
@@ -494,6 +515,11 @@ export class ThreeRenderRuntime {
       peakGpuStagingBytes: staging.peakGpuStagingBytes,
       pendingRetiredBundles: staging.pendingRetiredBundles,
       pendingRetirements: staging.pendingRetirements,
+      presentedTargets: staging.presentedTargets,
+      failedTargets: staging.failedTargets,
+      loadedChunks: staging.displayedBundle?.chunkPresenterInternal.count ?? 0,
+      nonemptyChunks: staging.displayedBundle?.chunkPresenterInternal.visibleCount ?? 0,
+      inFrustumChunks: this.inFrustumChunkCountInternal(staging.displayedBundle),
       queuedJobs: staging.scheduler.queuedJobs,
       queuedBytes: staging.scheduler.queuedBytes,
       highWaterQueuedJobs: staging.scheduler.highWaterQueuedJobs,

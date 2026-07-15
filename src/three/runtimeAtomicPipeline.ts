@@ -49,6 +49,8 @@ export class RuntimeAtomicPipelineInternal {
     readonly plan: ProfiledWorkerTargetPlanInternal;
   } | null = null;
   #activePlan: ProfiledWorkerTargetPlanInternal | null = null;
+  #presentedTargets = 0;
+  #failedTargets = 0;
   #lastPresentedIndex: ChunkIndexV1 | null = null;
 
   constructor(options: RuntimeAtomicPipelineOptionsInternal) {
@@ -76,10 +78,14 @@ export class RuntimeAtomicPipelineInternal {
 
   /** Live staging and scheduling occupancy, for the runtime's metrics. */
   stagingMetricsInternal() {
+    const displayed = this.#stager.displayedBundleInternal;
     return {
       ...this.#stager.metricsInternal(),
       pendingRetirements: this.#coordinator.pendingRetirementsInternal,
       scheduler: this.#scheduler.getMetrics(),
+      presentedTargets: this.#presentedTargets,
+      failedTargets: this.#failedTargets,
+      displayedBundle: displayed,
     };
   }
 
@@ -145,11 +151,17 @@ export class RuntimeAtomicPipelineInternal {
 
   settleInternal(lease: RevisionAtomicPresentationLeaseInternal) {
     const result = this.#coordinator.settleLeaseInternal(lease);
-    if (result.status === 'presented' && this.#activePlan) {
-      this.#lastPresentedIndex = this.#activePlan.index;
+    if (result.status === 'presented') {
+      this.#presentedTargets += 1;
+      if (this.#activePlan) {
+        this.#lastPresentedIndex = this.#activePlan.index;
+        this.#activePlan = null;
+      }
+    }
+    if (result.status === 'aborted') {
+      this.#failedTargets += 1;
       this.#activePlan = null;
     }
-    if (result.status === 'aborted') this.#activePlan = null;
     return result;
   }
 
