@@ -386,8 +386,8 @@ V exit gate: the selected production path matches oracle coverage, packaged work
 Current status:
 
 - [x] P-01 bounded plain query/result identities, validation, lifecycle/budget outcomes, and deterministic distance/lane/stable-identity ordering.
-- [ ] P-02/P-03 internal voxel and exact instance query paths, work caps, committed snapshot/store objects, and focused tests are implemented; `ThreeRenderRuntime` integration/publication and public exposure wait for V-08 integration.
-- [ ] P-04 remains planned behind the committed composite runtime path.
+- [x] P-02/P-03 internal voxel and exact instance query paths, work caps, committed snapshot/store objects, and focused tests are implemented and published. Each drawn revision's committed pick candidate is built from its exact canonical state, presented bundle, and frame manifest, and joined to the V-08 frame transaction through a reversible publication owner, so the query lane advances with the canvas or not at all. Instance material slots mirror the presenter's own resolution.
+- [x] P-04 composite ordering is published through `ThreeRenderRuntime.pickPresented`, which merges bounded voxel and instance hits under the P-01 deterministic ordering and reads no accepted, pending, mutable-camera, or live-presenter state. Optional logical proxies remain undecided: no AoE2 or City interaction has yet demonstrated a hit area that displayed geometry cannot express, so none are added. Public capability advertisement waits for the voxel worker option to become public.
 
 ### P-01: Plain query/result contracts
 
@@ -437,7 +437,7 @@ Current status after the lifecycle/camera slice:
 - [x] H-01 explicit runtime states, stable failures, waiter integration, generation fences, transactional rollback, last-presented CPU reconstruction, and reentrancy-safe retryable disposal.
 - [x] H-02 isometric, owned-perspective, and borrowed-camera strategies; explicit projection/viewport ownership; finite-safe projection and ray helpers; legacy compatibility.
 - [x] H-03 host-managed frame tickets, standalone protocol reuse, rollback, generation/reentrancy fences, immutable manifests, and an adversarial borrowed-renderer reentrancy regression are implemented and independently reviewed.
-- [ ] H-04 internal revision-aware capture contracts, coordinator, exact manifest/parity tests, and bounded lease cleanup are implemented; public `ThreeRenderRuntime` integration, exports, and browser evidence remain.
+- [x] H-04 revision-aware capture is published. The runtime retains the manifest of the frame it last presented and adapts it to the capture port, so `captureWithManifest` describes the frame the canvas currently shows and `captureWhenPresented` resolves only once the requested revision has actually been drawn; an accepted-but-undrawn revision is never captured as ready. Runtime-owned capture issues one readback fenced to the committed manifest and its device generation; embedded hosts retain capture ownership; manifests enumerate only presented canonical state. Fixed-camera visual baselines remain E-03 work.
 - [ ] H-05 has a bounded internal checkpoint/retry/resource-ownership prototype with focused
   contract and lifecycle tests. It is not wired to `ThreeRenderRuntime` or real WebGL recovery,
   and its synchronous internal draw/commit seam must be replaced by V-08 preparation plus an
@@ -674,17 +674,15 @@ Control: roadmap non-goals and decision gates. New 1.0 scope requires an explici
 The V-08 transaction exists and commits standalone worker-meshed revisions with
 real browser evidence. The critical path continues:
 
-1. Publish the committed presented voxel/instance stores from the V-08
-   transaction and complete P-02 through P-04 without reading accepted,
-   pending, mutable-camera, or live-presenter state.
-2. Complete H-04 revision-aware capture against the same committed manifest.
-3. Join the embedded host frame ticket to the V-08 transaction so an embedded
+1. Join the embedded host frame ticket to the V-08 transaction so an embedded
    host's successful draw is the presentation acknowledgement, replacing the
    current explicit rejection.
-4. Redesign H-05 reconstruction as prepare plus standalone/embedded draw
+2. Redesign H-05 reconstruction as prepare plus standalone/embedded draw
    acknowledgement plus commit/abort; never publish readiness from an internal
    draw that violates host ownership.
-5. Close V-09/V-10 with end-to-end selection evidence, culling, resource
+3. Close V-09/V-10 with end-to-end selection evidence, culling, resource
    metrics, and edit-storm bounds.
+4. Make the voxel worker option public once those gates and the E-04 endurance
+   baseline hold, flipping the picking and worker-meshing capabilities with it.
 
 Each numbered step is split into minimal coherent verified commits and receives adversarial review as soon as its first public, async, presentation, or ownership boundary exists.
