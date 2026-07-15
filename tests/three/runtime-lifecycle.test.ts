@@ -14,6 +14,7 @@ import {
   type RendererLike,
 } from '../../src/three/ThreeRenderRuntime.js';
 import type { PresentationAbortSignalV1 } from '../../src/core/index.js';
+import { InstanceBatchPresenter } from '../../src/three/instanceBatchPresenter.js';
 import { validSnapshot } from '../core/fixtures.js';
 
 class LifecycleRenderer implements RendererLike {
@@ -104,6 +105,35 @@ describe('ThreeRenderRuntime lifecycle transactions', () => {
     expect(renderer.dispose).toHaveBeenCalledTimes(1);
     expect(renderer.emit('webglcontextlost').defaultPrevented).toBe(false);
     expect(renderer.domElement.removeEventListener).toHaveBeenCalledTimes(3);
+  });
+
+  it('retains a nested presenter cleanup after a primitive disposal throw', () => {
+    const renderer = new LifecycleRenderer();
+    const runtime = new ThreeRenderRuntime({
+      renderer,
+      rendererOwnership: 'owned',
+      width: 100,
+      height: 100,
+    });
+    const dispose = vi.spyOn(InstanceBatchPresenter.prototype, 'dispose');
+    dispose.mockImplementationOnce(() => {
+      const failure: unknown = undefined;
+      throw failure;
+    });
+    try {
+      expect(() => runtime.dispose()).toThrow(
+        'Runtime presentation surface disposal failed.',
+      );
+      expect(runtime.runtimeStatus().state).toBe('disposed');
+      expect(renderer.dispose).toHaveBeenCalledTimes(1);
+      expect(dispose).toHaveBeenCalledTimes(1);
+
+      expect(() => runtime.dispose()).not.toThrow();
+      expect(renderer.dispose).toHaveBeenCalledTimes(1);
+      expect(dispose).toHaveBeenCalledTimes(2);
+    } finally {
+      dispose.mockRestore();
+    }
   });
 
   it('does not repeat releases when waiter cleanup reenters disposal', async () => {

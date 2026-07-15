@@ -1,5 +1,4 @@
 import {
-  Group,
   Scene,
   type Camera,
   type WebGLRendererParameters,
@@ -11,11 +10,7 @@ import {
   createThreeViewStrategyInternal,
   type ThreeCameraStrategyInternal,
 } from './cameraStrategy.js';
-import { ChunkPresenter } from './chunkPresenter.js';
 import { DaylightRig, resolveDaylightOptions } from './daylightRig.js';
-import { GeometryPresenter } from './geometryPresenter.js';
-import { InstanceBatchPresenter } from './instanceBatchPresenter.js';
-import { MaterialPresenter } from './materialPresenter.js';
 import type { IsometricViewCenter } from './orthographicView.js';
 import type { RendererLike } from './rendererTypes.js';
 import { resolveRuntimeHostInternal } from './runtimeHost.js';
@@ -29,6 +24,7 @@ import {
   defaultRendererFactoryInternal,
   type ContextEventCanvasInternal,
 } from './runtimeRendererSetup.js';
+import { LegacyRuntimePresentationSurfaceInternal } from './runtimePresentationSurface.js';
 import type { ThreeRenderRuntimeOptions } from './runtimeTypes.js';
 
 export interface RuntimeInitializationHooksInternal {
@@ -45,12 +41,8 @@ export interface RuntimeInitializationInternal {
   readonly scene: Scene;
   readonly camera: Camera;
   readonly cameraStrategy: ThreeCameraStrategyInternal;
-  readonly root: Group;
+  readonly presentationSurface: LegacyRuntimePresentationSurfaceInternal;
   readonly daylightRig: DaylightRig | null;
-  readonly materialPresenter: MaterialPresenter;
-  readonly geometryPresenter: GeometryPresenter;
-  readonly chunkPresenter: ChunkPresenter;
-  readonly instancePresenter: InstanceBatchPresenter;
   readonly contextCanvas: ContextEventCanvasInternal | null;
   readonly width: number;
   readonly height: number;
@@ -121,12 +113,8 @@ export function initializeRuntimeInternal(
   let renderer: RendererLike | undefined;
   let contextCanvas: ContextEventCanvasInternal | null = null;
   let scene: Scene | undefined;
-  let root: Group | undefined;
+  let presentationSurface: LegacyRuntimePresentationSurfaceInternal | undefined;
   let daylightRig: DaylightRig | null = null;
-  let materialPresenter: MaterialPresenter | undefined;
-  let geometryPresenter: GeometryPresenter | undefined;
-  let chunkPresenter: ChunkPresenter | undefined;
-  let instancePresenter: InstanceBatchPresenter | undefined;
   let rollbackBorrowedCamera: (() => void) | undefined;
   let borrowedRendererViewport: RendererViewportSnapshotInternal | undefined;
   const rollbackInitializationInternal = (): void => {
@@ -136,16 +124,11 @@ export function initializeRuntimeInternal(
     ]) {
       try { removeListener(); } catch { /* Preserve the initialization failure. */ }
     }
-    for (const dispose of [
-      () => instancePresenter?.dispose(),
-      () => chunkPresenter?.dispose(),
-      () => geometryPresenter?.dispose(),
-      () => materialPresenter?.dispose(),
-    ]) {
-      try { dispose(); } catch { /* Preserve the initialization failure. */ }
-    }
+    try { presentationSurface?.disposeInternal(); } catch { /* Preserve the initialization failure. */ }
     try { if (scene) daylightRig?.dispose(scene); } catch { /* Best effort. */ }
-    try { if (scene && root) scene.remove(root); } catch { /* Best effort. */ }
+    try {
+      if (scene && presentationSurface) scene.remove(presentationSurface.rootInternal);
+    } catch { /* Best effort. */ }
     if (resolvedHost.rendererOwnership === 'owned') {
       try { renderer?.dispose(); } catch { /* Preserve the initialization failure. */ }
     } else {
@@ -177,18 +160,8 @@ export function initializeRuntimeInternal(
       : undefined;
     contextCanvas = contextEventCanvasInternal(renderer);
     scene = resolvedHost.scene ?? new Scene();
-    root = new Group();
-    const chunkRoot = new Group();
-    const instanceRoot = new Group();
-    materialPresenter = new MaterialPresenter();
-    geometryPresenter = new GeometryPresenter();
-    chunkPresenter = new ChunkPresenter(chunkRoot);
-    instancePresenter = new InstanceBatchPresenter(instanceRoot);
-    root.name = 'voxel-runtime';
-    chunkRoot.name = 'voxel-chunks';
-    instanceRoot.name = 'instance-batches';
-    root.add(chunkRoot, instanceRoot);
-    scene.add(root);
+    presentationSurface = new LegacyRuntimePresentationSurfaceInternal();
+    scene.add(presentationSurface.rootInternal);
     daylightRig = daylightOptions ? new DaylightRig(daylightOptions, center) : null;
     if (daylightRig) scene.add(daylightRig.root);
     contextCanvas?.addEventListener('webglcontextlost', hooks.handleContextLost);
@@ -205,12 +178,8 @@ export function initializeRuntimeInternal(
       scene,
       camera: cameraStrategy.camera,
       cameraStrategy,
-      root,
+      presentationSurface,
       daylightRig,
-      materialPresenter,
-      geometryPresenter,
-      chunkPresenter,
-      instancePresenter,
       contextCanvas,
       width: options.width,
       height: options.height,

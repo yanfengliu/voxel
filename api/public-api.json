@@ -365,7 +365,7 @@
       ]
     },
     "dist/three/ThreeRenderRuntime.d.ts": {
-      "sha256": "a8d7222e8c74d82728c485a5bcf88548b42af611ae606f1b9b3e4d5a86b141a2",
+      "sha256": "9c4b8bb85b539004f049a292a7df003343236f9822a0502887574cfee31aee04",
       "reachableFrom": [
         "./three"
       ]

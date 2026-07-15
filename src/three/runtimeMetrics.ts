@@ -1,9 +1,6 @@
 import type { RenderWorld } from '../core/index.js';
 import { renderWorldOwnershipMetricsInternal } from '../core/render-world.js';
-import type { ChunkPresenter } from './chunkPresenter.js';
-import type { GeometryPresenter } from './geometryPresenter.js';
-import type { InstanceBatchPresenter } from './instanceBatchPresenter.js';
-import type { MaterialPresenter } from './materialPresenter.js';
+import type { RuntimePresentationSurfaceMetricsInternal } from './runtimePresentationSurface.js';
 import type { RenderInfoSnapshotInternal } from './runtimeRenderInfo.js';
 import type { ThreeRenderMetrics } from './runtimeTypes.js';
 
@@ -11,10 +8,7 @@ export interface RuntimeMetricsInputInternal {
   readonly state: ThreeRenderMetrics['state'];
   readonly world: RenderWorld;
   readonly frames: number;
-  readonly materialPresenter: MaterialPresenter;
-  readonly geometryPresenter: GeometryPresenter;
-  readonly chunkPresenter: ChunkPresenter;
-  readonly instancePresenter: InstanceBatchPresenter;
+  readonly presentation: RuntimePresentationSurfaceMetricsInternal;
   readonly renderInfo: RenderInfoSnapshotInternal;
   readonly contextLosses: number;
   readonly contextRestorations: number;
@@ -26,7 +20,7 @@ export function collectRuntimeMetricsInternal(
   input: RuntimeMetricsInputInternal,
 ): ThreeRenderMetrics {
   const ownership = renderWorldOwnershipMetricsInternal(input.world);
-  const instances = input.instancePresenter;
+  const presentation = input.presentation;
   return {
     state: input.state,
     acceptedEpoch: input.world.epoch,
@@ -34,18 +28,18 @@ export function collectRuntimeMetricsInternal(
     presentedEpoch: input.world.presentedEpoch,
     presentedRevision: input.world.presentedRevision,
     frames: input.frames,
-    materialResources: input.materialPresenter.count,
-    geometryResources: input.geometryPresenter.count,
-    chunks: input.chunkPresenter.count,
-    visibleChunks: input.chunkPresenter.visibleCount,
-    instanceBatches: instances.count,
-    instances: instances.instanceCount,
-    animatedBatches: instances.animatedBatchCount,
-    animatedInstances: instances.animatedInstanceCount,
-    animationMatrixUpdates: instances.animationMatrixUpdates,
-    instancePresentationMatrixWrites: instances.presentationMatrixWritesInternal,
-    instancePresentationColorWrites: instances.presentationColorWritesInternal,
-    instancePresentationUpdateRanges: instances.presentationUpdateRangesInternal,
+    materialResources: presentation.materialResources,
+    geometryResources: presentation.geometryResources,
+    chunks: presentation.chunks,
+    visibleChunks: presentation.visibleChunks,
+    instanceBatches: presentation.instanceBatches,
+    instances: presentation.instances,
+    animatedBatches: presentation.animatedBatches,
+    animatedInstances: presentation.animatedInstances,
+    animationMatrixUpdates: presentation.animationMatrixUpdates,
+    instancePresentationMatrixWrites: presentation.instancePresentationMatrixWrites,
+    instancePresentationColorWrites: presentation.instancePresentationColorWrites,
+    instancePresentationUpdateRanges: presentation.instancePresentationUpdateRanges,
     drawCalls: input.renderInfo.drawCalls,
     triangles: input.renderInfo.triangles,
     points: input.renderInfo.points,

@@ -1,4 +1,4 @@
-import type { Camera, Group, Scene } from 'three';
+import type { Camera, Scene } from 'three';
 import {
   RenderWorld,
   type ApplyResultV1,
@@ -19,15 +19,11 @@ import {
   prepareSnapshotForRenderWorldInternal,
   setRenderWorldPresentationAvailabilityInternal,
 } from '../core/render-world.js';
-import type { ChunkPresenter } from './chunkPresenter.js';
 import {
   getThreeRuntimeCapabilitiesV1,
   type ThreeRuntimeCapabilitiesV1,
 } from './capabilities.js';
 import type { DaylightRig } from './daylightRig.js';
-import type { GeometryPresenter } from './geometryPresenter.js';
-import type { InstanceBatchPresenter } from './instanceBatchPresenter.js';
-import type { MaterialPresenter } from './materialPresenter.js';
 import type { IsometricViewCenter } from './orthographicView.js';
 import {
   type ThreeCameraStrategyInternal,
@@ -63,6 +59,7 @@ import { runRuntimeDisposalInternal } from './runtimeDisposal.js';
 import { captureRuntimeCanvasInternal } from './runtimeCapture.js';
 import { initializeRuntimeInternal } from './runtimeInitialization.js';
 import { resizeRuntimeInternal } from './runtimeResize.js';
+import type { LegacyRuntimePresentationSurfaceInternal } from './runtimePresentationSurface.js';
 import {
   initializeRuntimeSnapshotMetricsInternal,
   recordSnapshotCopyAttemptInternal,
@@ -103,16 +100,12 @@ export class ThreeRenderRuntime {
   private readonly scene!: Scene;
   private readonly camera!: Camera;
   private readonly cameraStrategy!: ThreeCameraStrategyInternal;
-  private readonly root!: Group;
+  private readonly presentationSurface!: LegacyRuntimePresentationSurfaceInternal;
   private readonly renderer!: RendererLike;
   private readonly rendererOwnership!: 'owned' | 'borrowed';
   private readonly viewportOwnership!: 'runtime' | 'host';
   private readonly hostKind!: 'runtime-rendered' | 'embedded';
   private readonly daylightRig!: DaylightRig | null;
-  private readonly materialPresenter!: MaterialPresenter;
-  private readonly geometryPresenter!: GeometryPresenter;
-  private readonly chunkPresenter!: ChunkPresenter;
-  private readonly instancePresenter!: InstanceBatchPresenter;
   private readonly world = new RenderWorld();
   private readonly contextCanvas!: ContextEventCanvasInternal | null;
   private readonly presentations = new RuntimePresentationRetentionInternal(
@@ -174,12 +167,8 @@ export class ThreeRenderRuntime {
     this.scene = initialized.scene;
     this.camera = initialized.camera;
     this.cameraStrategy = initialized.cameraStrategy;
-    this.root = initialized.root;
+    this.presentationSurface = initialized.presentationSurface;
     this.daylightRig = initialized.daylightRig;
-    this.materialPresenter = initialized.materialPresenter;
-    this.geometryPresenter = initialized.geometryPresenter;
-    this.chunkPresenter = initialized.chunkPresenter;
-    this.instancePresenter = initialized.instancePresenter;
     this.contextCanvas = initialized.contextCanvas;
     this.width = initialized.width;
     this.height = initialized.height;
@@ -483,10 +472,7 @@ export class ThreeRenderRuntime {
       state: this.legacyState(),
       world: this.world,
       frames: this.frames,
-      materialPresenter: this.materialPresenter,
-      geometryPresenter: this.geometryPresenter,
-      chunkPresenter: this.chunkPresenter,
-      instancePresenter: this.instancePresenter,
+      presentation: this.presentationSurface.metricsInternal(),
       renderInfo: this.renderInfo,
       contextLosses: this.contextLosses,
       contextRestorations: this.contextRestorations,
@@ -503,12 +489,9 @@ export class ThreeRenderRuntime {
         () => this.contextCanvas?.removeEventListener('webglcontextlost', this.handleContextLost),
         () => this.contextCanvas?.removeEventListener('webglcontextrestored', this.handleContextRestored),
         () => this.world.dispose(),
-        () => this.instancePresenter.dispose(),
-        () => this.chunkPresenter.dispose(),
-        () => this.geometryPresenter.dispose(),
-        () => this.materialPresenter.dispose(),
+        () => this.presentationSurface.disposeInternal(),
         () => this.daylightRig?.dispose(this.scene),
-        () => this.scene.remove(this.root),
+        () => this.scene.remove(this.presentationSurface.rootInternal),
         () => { if (this.rendererOwnership === 'owned') this.renderer.dispose(); },
       ];
       this.presentations.disposeInternal();
@@ -563,7 +546,7 @@ export class ThreeRenderRuntime {
       if (!this.isRunningAttempt(generation)) return this.unavailableFrameResult();
       phase = 'animate';
       mayNeedRollback = true;
-      this.instancePresenter.animate(context.nowMs);
+      this.presentationSurface.animateInternal(context.nowMs);
       if (!this.isRunningAttempt(generation)) return this.unavailableFrameResult();
       const record = this.hostFrames.issue({
         context,
@@ -737,15 +720,12 @@ export class ThreeRenderRuntime {
     context: ThreeFrameContext | null,
     generation: number,
   ): void {
-    this.instancePresenter.resetInternal();
-    this.chunkPresenter.resetInternal();
-    this.geometryPresenter.resetInternal();
-    this.materialPresenter.resetInternal();
+    this.presentationSurface.resetInternal();
     if (!this.reconcilePresentation(
       presentation,
       () => this.isRunningAttempt(generation),
     )) return;
-    this.instancePresenter.animate(context?.nowMs ?? 0);
+    this.presentationSurface.animateInternal(context?.nowMs ?? 0);
   }
   private abortStandaloneFrameAfterDrawFailure(
     ticket: ThreePreparedFrameTicket,
@@ -825,20 +805,7 @@ export class ThreeRenderRuntime {
     presentation: ThreePresentationSnapshot | null,
     isCurrentAttempt: () => boolean,
   ): boolean {
-    this.materialPresenter.reconcile(presentation?.materials ?? []);
-    if (!isCurrentAttempt()) return false;
-    this.geometryPresenter.reconcile(presentation?.geometries ?? []);
-    if (!isCurrentAttempt()) return false;
-    this.chunkPresenter.reconcile(
-      presentation?.chunks ?? [],
-      (key) => this.materialPresenter.get(key),
-    );
-    if (!isCurrentAttempt()) return false;
-    this.instancePresenter.reconcile(presentation?.batches ?? [], {
-      geometry: (key) => this.geometryPresenter.get(key),
-      material: (key) => this.materialPresenter.get(key),
-    });
-    return isCurrentAttempt();
+    return this.presentationSurface.reconcileInternal(presentation, isCurrentAttempt);
   }
 
   private commitViewportState(width: number, height: number, pixelRatio: number): void {
