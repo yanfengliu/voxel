@@ -1,4 +1,5 @@
 import type { RenderSnapshotV1 } from '../../src/core/index.js';
+import { DensePaletteChunk, meshVisibleFaces } from '../../src/meshing/index.js';
 
 import { validateGenomeV1, type VoxelGenomeV1 } from './genome.js';
 
@@ -9,15 +10,21 @@ import { validateGenomeV1, type VoxelGenomeV1 } from './genome.js';
  * makes evolution history, tiny-JSON persistence, and runtime regeneration in
  * the games all work, so nothing here may read a clock or an RNG.
  *
- * The snapshot is chunk-based rather than instanced boxes. A studio that
- * rendered models differently from the games that ship them would be
- * inspecting its own approximation, and chunks are the path the games are
- * moving to.
+ * The model is meshed once by the engine's own visible-face mesher and then
+ * placed as a single instance. That is not a detour around the voxel path: it
+ * is how a game ships a voxel model -- mesh it once, instance it many times --
+ * and it is the only lane that animates. voxel samples harmonic motion per
+ * instance; a chunk is static world geometry and has nowhere to carry a period.
+ *
+ * The first version of this emitted a chunk with no batches, so `genome.motion`
+ * was silently dropped before the engine ever saw it. The model drew and never
+ * moved. The studio's own never-moved guard caught it on the first run, which
+ * is the entire reason that guard exists.
  */
 
 const WORLD_ID = 'world:maker-studio';
-const CHUNK_KEY = 'chunk:model';
-const PALETTE_KEY = 'palette:model';
+const GEOMETRY_KEY = 'geometry:model';
+const BATCH_KEY = 'batch:model';
 const MATERIAL_KEY = 'material:model';
 
 export interface BuildOptionsV1 {
@@ -50,14 +57,40 @@ export function buildSnapshot(
   const revision = options.revision;
   const epoch = options.epoch ?? `epoch:${genome.id}`;
 
-  // voxel's chunk lane wants a Uint16Array of palette indices in the same
-  // x-major order the genome stores, so this is a copy rather than a
-  // transform. The genome keeps a plain array for JSON; the engine gets the
-  // typed one it validates.
   const voxels = new Uint16Array(sx * sy * sz);
   for (let index = 0; index < voxels.length; index += 1) {
     voxels[index] = genome.voxels[index] ?? 0;
   }
+
+  // The engine's own mesher, not a copy of it. A studio that meshed models its
+  // own way would be inspecting its own approximation of what the game draws.
+  const mesh = meshVisibleFaces(
+    new DensePaletteChunk({ origin: { x: 0, y: 0, z: 0 }, size: { x: sx, y: sy, z: sz }, voxels }),
+    { positionSpace: 'source-local' },
+  );
+
+  // Per-vertex colour resolved from the palette here, because a geometry
+  // resource carries colours while a chunk carries palette indices. Same
+  // palette, same result; only the lane differs.
+  const colors = new Uint8Array(mesh.paletteIndices.length * 3);
+  for (let vertex = 0; vertex < mesh.paletteIndices.length; vertex += 1) {
+    const entry = genome.palette[mesh.paletteIndices[vertex] ?? 0];
+    colors[vertex * 3] = entry?.r ?? 0;
+    colors[vertex * 3 + 1] = entry?.g ?? 0;
+    colors[vertex * 3 + 2] = entry?.b ?? 0;
+  }
+
+  const bounds = boundsOf(mesh.positions, sx, sy, sz);
+  const motion = genome.motion;
+
+  // Centre the model on its own middle so rotation turns it in place rather
+  // than swinging it around the grid's corner.
+  const matrices = new Float32Array([
+    1, 0, 0, 0,
+    0, 1, 0, 0,
+    0, 0, 1, 0,
+    -sx / 2, -sy / 2, -sz / 2, 1,
+  ]);
 
   return {
     schemaVersion: 'voxel.render-snapshot/1',
@@ -74,44 +107,34 @@ export function buildSnapshot(
         worldUnitsPerVoxel: { x: 1, y: 1, z: 1 },
       },
       colorEncoding: 'srgb8-straight-alpha',
-      capabilities: ['voxel-chunks'],
-      chunkProfile: {
-        layout: 'uniform-grid',
-        size: { x: sx, y: sy, z: sz },
-        gridOrigin: { x: 0, y: 0, z: 0 },
-        emptyPaletteIndex: 0,
-        surfaceModel: 'opaque',
-        // A studio model is one isolated object, so anything outside it is
-        // empty rather than an unloaded neighbour. This is what lets the
-        // mesher close the model's outer faces instead of hiding them.
-        missingNeighbor: 'empty',
-      },
+      capabilities: ['geometry-resources', 'instance-batches'],
       limits: {
         maxResources: 16,
         maxPaletteEntries: 256,
         maxChunks: 4,
         maxBatches: 4,
         maxVoxelsPerChunk: 262_144,
-        maxGeometryVertices: 65_536,
-        maxGeometryIndices: 196_608,
+        maxGeometryVertices: 262_144,
+        maxGeometryIndices: 786_432,
         maxInstancesPerBatch: 1_024,
-        maxTotalBytes: 8_000_000,
+        maxTotalBytes: 32_000_000,
       },
     },
     revision,
     resources: [
       {
-        kind: 'palette',
-        key: PALETTE_KEY,
+        kind: 'geometry',
+        key: GEOMETRY_KEY,
         incarnation: 1,
         revision,
-        entries: genome.palette.map((color, index) => ({
-          // Slot 0 is the grid's empty marker and is never drawn; giving it
-          // zero alpha keeps that true even if a mesher ever emitted it.
-          color: index === 0
-            ? { r: 0, g: 0, b: 0, a: 0 }
-            : { r: color.r, g: color.g, b: color.b, a: 255 },
-        })),
+        topology: 'triangles',
+        positions: mesh.positions,
+        normals: mesh.normals,
+        colors,
+        indices: mesh.indices,
+        groups: [{ start: 0, count: mesh.indices.length, materialKey: MATERIAL_KEY }],
+        bounds,
+        pivot: { x: 0, y: 0, z: 0 },
       },
       {
         kind: 'material',
@@ -131,20 +154,55 @@ export function buildSnapshot(
         metalness: 0,
       },
     ],
-    chunks: [
+    chunks: [],
+    batches: [
       {
-        key: CHUNK_KEY,
+        key: BATCH_KEY,
         incarnation: 1,
         revision,
-        origin: { x: 0, y: 0, z: 0 },
-        size: { x: sx, y: sy, z: sz },
-        paletteKey: PALETTE_KEY,
+        geometryKey: GEOMETRY_KEY,
         materialKey: MATERIAL_KEY,
-        voxels,
+        instanceKeys: [`${genome.id}#0`],
+        matrices,
+        animation: {
+          schemaVersion: 'voxel.instance-transform-animation/1',
+          // A zero period is voxel's own "still", so a still model needs no
+          // special case: it is an animation sampled at one time.
+          periodsMs: new Float32Array([motion.periodMs]),
+          phasesRadians: new Float32Array([motion.phaseRadians]),
+          translationAmplitudes: new Float32Array(motion.translation),
+          rotationAmplitudesRadians: new Float32Array(motion.rotationRadians),
+          scaleAmplitudes: new Float32Array(motion.scale),
+        },
       },
     ],
-    batches: [],
   };
+}
+
+/** Exact bounds from the mesh itself; an empty model still needs finite ones. */
+function boundsOf(
+  positions: Float32Array,
+  sx: number,
+  sy: number,
+  sz: number,
+): { readonly min: { x: number; y: number; z: number }; readonly max: { x: number; y: number; z: number } } {
+  if (positions.length === 0) {
+    return { min: { x: 0, y: 0, z: 0 }, max: { x: sx, y: sy, z: sz } };
+  }
+  let minX = Infinity; let minY = Infinity; let minZ = Infinity;
+  let maxX = -Infinity; let maxY = -Infinity; let maxZ = -Infinity;
+  for (let offset = 0; offset < positions.length; offset += 3) {
+    const x = positions[offset] ?? 0;
+    const y = positions[offset + 1] ?? 0;
+    const z = positions[offset + 2] ?? 0;
+    if (x < minX) minX = x;
+    if (y < minY) minY = y;
+    if (z < minZ) minZ = z;
+    if (x > maxX) maxX = x;
+    if (y > maxY) maxY = y;
+    if (z > maxZ) maxZ = z;
+  }
+  return { min: { x: minX, y: minY, z: minZ }, max: { x: maxX, y: maxY, z: maxZ } };
 }
 
 /** Voxels the model actually fills. Zero means nothing would be drawn. */
