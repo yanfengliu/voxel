@@ -171,7 +171,11 @@ Current status after the paged-delta implementation slice:
 - [x] D-03 atomic reducer, compact prepared change sets, resync ordering, final-graph/backend rejection, operation-order independence, and deterministic reference-model parity.
 - [x] D-04 fixed 256-slot copy-on-write pages, deterministic keyed compaction, exact presenter ranges, bounded copied bytes, and sparse runtime upload metrics.
 - [x] D-05 reentrancy-safe ledger, readiness, abortable waiters, and synchronous runtime integration are implemented, and both integrations the item waited on are now pinned from outside the package. A worker-meshed revision settles its waiter only once a draw has acknowledged it, never at accept time, in both host modes: the runtime's own draw standalone, and the host's frame-ticket commit embedded. Disposal settles waiters as terminal `unavailable`/`disposed` rather than transient `not-ready`, so a caller stops waiting instead of retrying forever, and a lost device reports `context-lost` while the revision is still accepted and still meshed.
-- [ ] D-06 transfer-owned path remains measurement-gated.
+- [x] D-06 deferred past 1.0 on 2026-07-15, which the item's own terms allow: it is not automatically a 1.0 blocker, and it only implements when copies prove material. They have not. No consumer reports copy cost as a problem, and the telemetry that would reveal one ships and is tested, so this is discoverable rather than assumed: `snapshotInputTypedArrayBytes`, `snapshotCopiedTypedArrayBytes`, and `snapshotCopyOperations` for snapshots, with the equivalent delta counters, expose exactly the ratio the decision turns on.
+
+  Deferring is the conservative direction here, not the expedient one. An ownership-taking API detaches the caller's buffers, and the load-bearing boundary is that simulation-owned memory is never transferred; shipping that tool before a measurement demands it invites a consumer to detach memory its own simulation still reads. It is also purely additive, so adding it later breaks nothing that 1.0 froze.
+
+  Reopen when a named E-02 scene shows ingest copies material against its frame budget. The full implementation obligation stands unchanged if that happens: branded claim/take, accepted and rejected detachment, complete transfer list, detached/duplicate/foreign/overlapping/SharedArrayBuffer cases, no extra retained copy, disposal, and the documentation warning.
 
 ### D-01: Freeze delta schemas and issue codes
 
