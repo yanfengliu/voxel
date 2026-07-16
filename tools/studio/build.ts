@@ -80,19 +80,31 @@ export function buildSnapshot(
     colors[vertex * 3 + 2] = entry?.b ?? 0;
   }
 
-  // Centre the mesh on its own middle, in the geometry rather than in the
-  // instance matrix. voxel post-multiplies the animation's rotation over the
-  // base matrix, so rotation turns about the geometry's local origin: a model
-  // meshed from a grid corner orbits that corner instead of spinning in place,
-  // and no instance translation can fix it because the rotation happens first.
-  // Centring here is also what `pivot` looks like it would do and does not --
-  // the geometry contract declares it, but the instance presenter never reads
-  // it.
+  // Centre the mesh on the model's own middle, in the geometry rather than in
+  // the instance matrix. voxel post-multiplies the animation's rotation over
+  // the base matrix, so rotation turns about the geometry's local origin: a
+  // model whose middle is not that origin orbits it instead of spinning in
+  // place, and no instance translation can fix it because the rotation happens
+  // first. Centring here is also what `pivot` looks like it would do and does
+  // not -- the geometry contract declares it, but the instance presenter never
+  // reads it.
+  //
+  // The middle of the *model*, not of the grid it was authored in. A model
+  // rarely fills its grid, so centring on the grid leaves it offset from the
+  // axis by however much empty space sits on one side, and it swings by
+  // exactly that. Measuring the rendered centroid of a pure spin is what caught
+  // that: 39 px of drift where zero was the whole claim.
+  const raw = boundsOf(mesh.positions, sx, sy, sz);
+  const middle = {
+    x: (raw.min.x + raw.max.x) / 2,
+    y: (raw.min.y + raw.max.y) / 2,
+    z: (raw.min.z + raw.max.z) / 2,
+  };
   const centred = new Float32Array(mesh.positions.length);
   for (let offset = 0; offset < mesh.positions.length; offset += 3) {
-    centred[offset] = (mesh.positions[offset] ?? 0) - sx / 2;
-    centred[offset + 1] = (mesh.positions[offset + 1] ?? 0) - sy / 2;
-    centred[offset + 2] = (mesh.positions[offset + 2] ?? 0) - sz / 2;
+    centred[offset] = (mesh.positions[offset] ?? 0) - middle.x;
+    centred[offset + 1] = (mesh.positions[offset + 1] ?? 0) - middle.y;
+    centred[offset + 2] = (mesh.positions[offset + 2] ?? 0) - middle.z;
   }
 
   const bounds = boundsOf(centred, sx, sy, sz);

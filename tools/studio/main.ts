@@ -206,7 +206,25 @@ function mount(): void {
     drawFrame();
     verdict.dataset.tone = 'idle';
     verdict.textContent = 'Sweep to judge this animation.';
+    // The old sheet describes the model before this edit, so it is stale the
+    // moment anything changes.
+    sheetImage.hidden = true;
   }
+
+  const sheetImage = element('img', 'sheet');
+  sheetImage.alt = 'Every frame of the period, in time order';
+  sheetImage.hidden = true;
+  const sheetButton = element('button');
+  sheetButton.textContent = 'Show every frame';
+  sheetButton.addEventListener('click', () => {
+    void (async () => {
+      // The studio's own sheet, so the page and the agent are looking at the
+      // same image rather than two tilings that could disagree.
+      const sheet = await harness.spriteSheet({ samplesPerPeriod: SWEEP_SAMPLES });
+      sheetImage.src = sheet.dataUrl;
+      sheetImage.hidden = false;
+    })();
+  });
 
   const sweepButton = element('button', 'primary');
   sweepButton.textContent = 'Sweep and judge';
@@ -255,11 +273,12 @@ function mount(): void {
   const inspect = element('div', 'card');
   const inspectTitle = element('h2');
   inspectTitle.textContent = 'Frame';
-  inspect.append(inspectTitle, labelled('Time', scrub), sweepButton, verdict, readout);
+  inspect.append(inspectTitle, labelled('Time', scrub), sweepButton, sheetButton,
+    verdict, readout);
 
   const columns = element('div', 'columns');
   columns.append(editor, motion, inspect);
-  root.append(stage, columns);
+  root.append(stage, columns, sheetImage);
   refresh();
 }
 

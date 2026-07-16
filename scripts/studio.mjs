@@ -180,57 +180,10 @@ const COMMANDS = {
     const dataUrl = await withStudio(async (page) => page.evaluate(async () => {
       const studio = window.voxelStudio;
       if (!studio) throw new Error('the studio harness is unavailable');
-      const swept = studio.sweep({ images: true });
-      const images = swept.images ?? [];
-      if (images.length === 0) throw new Error('the sweep produced no frames');
-
-      const loaded = await Promise.all(images.map(async (src) => {
-        const bitmap = await createImageBitmap(await (await fetch(src)).blob());
-        return bitmap;
-      }));
-      const first = loaded[0];
-      if (!first) throw new Error('the sweep produced no frames');
-
-      // Frames are small and the grid is read left-to-right in time order, so
-      // the eye follows the motion the way the animation runs.
-      const columns = 6;
-      const rows = Math.ceil(loaded.length / columns);
-      const cellW = first.width;
-      const cellH = first.height;
-      const pad = 4;
-      const labelH = 14;
-      const sheet = new OffscreenCanvas(
-        columns * cellW + (columns + 1) * pad,
-        rows * (cellH + labelH) + (rows + 1) * pad,
-      );
-      const ctx = sheet.getContext('2d');
-      if (!ctx) throw new Error('no 2d context for the sheet');
-      // An opaque ground: these frames carry alpha, and tiling them onto
-      // transparency would make every silhouette unreadable.
-      ctx.fillStyle = '#14171a';
-      ctx.fillRect(0, 0, sheet.width, sheet.height);
-      ctx.font = '10px monospace';
-      ctx.textBaseline = 'top';
-
-      loaded.forEach((bitmap, index) => {
-        const column = index % columns;
-        const row = Math.floor(index / columns);
-        const x = pad + column * (cellW + pad);
-        const y = pad + row * (cellH + labelH + pad);
-        ctx.fillStyle = '#8b98a5';
-        ctx.fillText(`${String(swept.frames[index]?.nowMs ?? 0)}ms`, x, y);
-        ctx.drawImage(bitmap, x, y + labelH);
-        bitmap.close();
-      });
-
-      const blob = await sheet.convertToBlob({ type: 'image/png' });
-      return await new Promise((resolve) => {
-        const reader = new FileReader();
-        reader.onload = () => { resolve(String(reader.result)); };
-        reader.readAsDataURL(blob);
-      });
+      // The studio composes its own sheet: a script that tiled frames itself
+      // would be a second animation view that could disagree with the page's.
+      return (await studio.spriteSheet()).dataUrl;
     }));
-
     await mkdir(OUTPUT_DIR, { recursive: true });
     await writeFile(file, Buffer.from(dataUrl.slice(dataUrl.indexOf(',') + 1), 'base64'));
     console.log(`${LOG_PREFIX} wrote ${relative(PROJECT_ROOT, file)}`);

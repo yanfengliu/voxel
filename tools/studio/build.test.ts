@@ -163,6 +163,39 @@ describe('building a genome into a voxel snapshot', () => {
     expect(() => buildSnapshot(genome, { revision: 1 })).toThrow(/\$\.voxels/);
   });
 
+  it('centres the mesh on the model, not on the grid it was authored in', () => {
+    // The bug this exists for: centring on the grid leaves a model that does
+    // not fill its grid offset from the rotation axis by however much empty
+    // space sits on one side, and voxel post-multiplies rotation over the base
+    // matrix, so it swings by exactly that. The rendered centroid of a pure
+    // spin drifted 39 px where zero was the whole claim.
+    //
+    // model() fills only (0,0,0) and (1,1,1) of a 3-cube, so its middle is
+    // (1,1,1) rather than the grid's (1.5,1.5,1.5).
+    const positions = geometry(buildSnapshot(model(), { revision: 1 })).positions;
+    let minX = Infinity; let maxX = -Infinity;
+    let minY = Infinity; let maxY = -Infinity;
+    let minZ = Infinity; let maxZ = -Infinity;
+    for (let offset = 0; offset < positions.length; offset += 3) {
+      minX = Math.min(minX, positions[offset] ?? 0);
+      maxX = Math.max(maxX, positions[offset] ?? 0);
+      minY = Math.min(minY, positions[offset + 1] ?? 0);
+      maxY = Math.max(maxY, positions[offset + 1] ?? 0);
+      minZ = Math.min(minZ, positions[offset + 2] ?? 0);
+      maxZ = Math.max(maxZ, positions[offset + 2] ?? 0);
+    }
+    // The model's own middle sits on the origin, which is the axis voxel
+    // rotates about.
+    expect((minX + maxX) / 2).toBeCloseTo(0);
+    expect((minY + maxY) / 2).toBeCloseTo(0);
+    expect((minZ + maxZ) / 2).toBeCloseTo(0);
+
+    // And the instance adds no translation of its own, because any it added
+    // would be applied after the rotation and reintroduce the swing.
+    const matrices = Array.from(batch(buildSnapshot(model(), { revision: 1 })).matrices);
+    expect(matrices.slice(12, 15)).toEqual([0, 0, 0]);
+  });
+
   it('counts what would actually be drawn', () => {
     expect(filledVoxelCount(createEmptyGenome({ id: 'e', size: [2, 2, 2] }))).toBe(0);
     expect(filledVoxelCount(model())).toBe(2);

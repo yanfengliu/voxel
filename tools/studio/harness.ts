@@ -8,6 +8,7 @@ import {
   stopMotion,
 } from './edit.js';
 import { validateGenomeV1, type GenomeMotionV1, type VoxelGenomeV1 } from './genome.js';
+import { composeSpriteSheet, type SpriteSheetPlanV1 } from './sheet.js';
 import type { StudioSession, StudioSweepResultV1 } from './session.js';
 
 /**
@@ -71,6 +72,14 @@ export interface VoxelStudioHarnessV1 {
     HarnessSweepSummaryV1 & { readonly images?: readonly string[] };
   /** Throws with the reason when the current model's animation is not sound. */
   assertSound(options?: { readonly samplesPerPeriod?: number }): HarnessSweepSummaryV1;
+  /**
+   * Every frame of one period in a single deterministically ordered sheet,
+   * ascending in time. This is the animation surface's native view, because
+   * looking at every frame is the only thing that judges quality -- the guards
+   * prove an animation is sound and a sound animation can still look wrong.
+   */
+  spriteSheet(options?: { readonly samplesPerPeriod?: number; readonly columns?: number }):
+    Promise<{ readonly dataUrl: string; readonly plan: SpriteSheetPlanV1 }>;
 
   validate(value: unknown): readonly { readonly path: string; readonly message: string }[];
 }
@@ -148,6 +157,13 @@ export function createStudioHarness(host: HarnessHostV1): VoxelStudioHarnessV1 {
         );
       }
       return summary;
+    },
+
+    async spriteSheet(options) {
+      const result = host.session().sweep(options?.samplesPerPeriod ?? 24);
+      return composeSpriteSheet(result.frames, {
+        ...(options?.columns === undefined ? {} : { columns: options.columns }),
+      });
     },
 
     validate: (value) => validateGenomeV1(value),
