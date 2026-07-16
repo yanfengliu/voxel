@@ -637,9 +637,13 @@ Dependencies: E-02.
 
 ### E-05: Supply chain and artifact audit
 
-Record every external mesher/source/asset version, SHA, license, notices, build toolchain, generated hash, and redistribution requirement. Run runtime/full audits and inspect packed contents/source maps/declarations/worker URLs/Three externalization.
+- [x] Recorded 2026-07-15 in [the supply chain record](../architecture/supply-chain.md), and enforced by `npm run test:supply-chain` inside `verify` rather than by hand.
 
-Dependencies: V-09 and F-03.
+The record is short because the tarball redistributes no third-party code: zero runtime dependencies, `three` and `@types/three` optional peers the consumer owns, no vendored source, and an original mesher with no upstream provenance. There are therefore no external asset or shader licenses to track. Both audits npm supports run on every `verify` and report zero findings; high and critical block.
+
+The gate pins the properties that make the record true rather than restating it: the runtime dependency count, both peers' optionality, and every dev dependency's license against an allowed permissive set. Adding a runtime dependency, un-optionalizing a peer, or introducing an unknown license each fail it. Artifact inspection was already covered by the packed-content, source-map, declaration-hash, worker-URL, and Three-externalization gates, which the record enumerates rather than duplicates.
+
+Dependencies: V-09 and F-03. F-03 does not gate the audit itself, which runs locally in `verify`; the remote run only repeats it.
 
 E exit gate: every support/performance claim has repeatable evidence, no leak or stale presentation remains, audits meet policy, and complete local/CI gates pass.
 

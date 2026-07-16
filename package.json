@@ -56,11 +56,12 @@
     "test:core-only-package": "node scripts/verify-core-only-package.mjs",
     "test:mesh-worker-package": "node scripts/verify-mesh-worker-package.mjs",
     "test:three-package": "node scripts/verify-three-package.mjs",
+    "test:supply-chain": "node scripts/verify-supply-chain.mjs",
     "benchmark:meshers": "npm run build && node scripts/benchmark-meshers.mjs",
     "pretest:browser": "npm run build",
     "test:browser": "playwright test",
     "test:browser:install": "playwright install chromium",
-    "verify": "npm run test && npm run typecheck && npm run lint && npm run build && npm run test:compatibility && npm run test:api && npm run test:api:self && npm run test:core-only-package && npm run test:mesh-worker-package && npm run test:three-package && npm run test:browser"
+    "verify": "npm run test && npm run typecheck && npm run lint && npm run build && npm run test:compatibility && npm run test:api && npm run test:api:self && npm run test:core-only-package && npm run test:mesh-worker-package && npm run test:three-package && npm run test:supply-chain && npm run test:browser"
   },
   "peerDependencies": {
     "@types/three": ">=0.185.0 <0.186.0",
