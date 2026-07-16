@@ -29,11 +29,16 @@ function element<K extends keyof HTMLElementTagNameMap>(
   return node;
 }
 
-function labelled(text: string, control: HTMLElement): HTMLLabelElement {
+function labelled(text: string, control: HTMLElement, hint?: string): HTMLLabelElement {
   const label = element('label', 'field');
   const span = element('span');
   span.textContent = text;
   label.append(span, control);
+  if (hint) {
+    const note = element('small', 'hint');
+    note.textContent = hint;
+    label.append(note);
+  }
   return label;
 }
 
@@ -82,6 +87,7 @@ function mount(): void {
   const layerInput = element('input', 'slider');
   layerInput.type = 'range';
   layerInput.min = '0';
+  const layerLabel = element('span', 'layer-label');
   const scrub = element('input', 'slider');
   scrub.type = 'range';
   scrub.min = '0';
@@ -159,6 +165,14 @@ function mount(): void {
     swatches.appendChild(add);
   }
 
+  function updateLayerLabel(): void {
+    const size = harness.genome().size;
+    const ground = layer === 0 ? ' (ground)' : '';
+    layerLabel.textContent =
+      `Level ${String(layer + 1)} of ${String(size[1])}${ground} · `
+      + `${String(size[0])} × ${String(size[2])} looking down`;
+  }
+
   function buildGrid(): void {
     const genome = harness.genome();
     const [sx, , sz] = genome.size;
@@ -174,7 +188,10 @@ function mount(): void {
         cell.style.background = slot === 0 ? 'transparent' : rgbHex(
           genome.palette[slot] ?? { r: 0, g: 0, b: 0 },
         );
-        cell.title = `${String(x)}, ${String(layer)}, ${String(z)}`;
+        // Named the way the label reads, not the way the array is indexed.
+        cell.title = slot === 0
+          ? `Empty · level ${String(layer + 1)}`
+          : `Colour ${String(slot)} · level ${String(layer + 1)}`;
         cell.addEventListener('click', () => {
           // Painting the selected slot, including the empty one, so erasing is
           // the same gesture rather than a mode.
@@ -198,6 +215,7 @@ function mount(): void {
     }
     layerInput.max = String(genome.size[1] - 1);
     if (Number(layerInput.value) !== layer) layerInput.value = String(layer);
+    updateLayerLabel();
     periodInput.value = String(period);
     spinInput.value = String(Math.round((genome.motion.rotationRadians[1] * 180) / Math.PI));
     riseInput.value = String(Math.round(genome.motion.translation[1] * 10));
@@ -243,6 +261,7 @@ function mount(): void {
   });
   layerInput.addEventListener('input', () => {
     layer = Number(layerInput.value);
+    updateLayerLabel();
     buildGrid();
   });
   scrub.addEventListener('input', drawFrame);
@@ -261,8 +280,14 @@ function mount(): void {
   const editor = element('div', 'card');
   const editorTitle = element('h2');
   editorTitle.textContent = 'Model';
-  editor.append(editorTitle, swatches, labelled('Colour', colorInput),
-    labelled('Layer (y)', layerInput), grid);
+  editor.append(
+    editorTitle,
+    swatches,
+    labelled('Colour', colorInput, 'Recolours every voxel using this swatch.'),
+    labelled('Height', layerInput, 'The grid below is one level of the model, seen from above.'),
+    layerLabel,
+    grid,
+  );
 
   const motion = element('div', 'card');
   const motionTitle = element('h2');
