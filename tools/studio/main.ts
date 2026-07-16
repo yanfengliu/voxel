@@ -1,6 +1,7 @@
 import { createStarterGenome, createStudioHarness, type VoxelStudioHarnessV1 } from './harness.js';
 import type { VoxelGenomeV1 } from './genome.js';
 import { voxelIndex } from './genome.js';
+import { describeMotion, describePoseAt } from './describe.js';
 import { StudioSession } from './session.js';
 
 /**
@@ -96,16 +97,45 @@ function mount(): void {
   const periodInput = element('input', 'slider');
   periodInput.type = 'range';
   periodInput.min = '0';
-  periodInput.max = '3000';
-  periodInput.step = '100';
-  const spinInput = element('input', 'slider');
-  spinInput.type = 'range';
-  spinInput.min = '0';
-  spinInput.max = '180';
-  const riseInput = element('input', 'slider');
-  riseInput.type = 'range';
-  riseInput.min = '0';
-  riseInput.max = '30';
+  periodInput.max = '4000';
+  periodInput.step = '50';
+  const phaseInput = element('input', 'slider');
+  phaseInput.type = 'range';
+  phaseInput.min = '-180';
+  phaseInput.max = '180';
+  const motionText = element('p', 'verdict');
+
+  /**
+   * Every amplitude the genome carries, not the two the first version happened
+   * to expose. A model that pitches, rolls, slides sideways, or pulses is not
+   * an exotic case; it was simply unreachable, and hardcoding y meant the tool
+   * knew about one model rather than about models.
+   */
+  const AMPLITUDES = [
+    { kind: 'rotationRadians', axis: 0, label: 'Pitch', unit: '°', max: 180, scale: Math.PI / 180 },
+    { kind: 'rotationRadians', axis: 1, label: 'Rock', unit: '°', max: 180, scale: Math.PI / 180 },
+    { kind: 'rotationRadians', axis: 2, label: 'Roll', unit: '°', max: 180, scale: Math.PI / 180 },
+    { kind: 'translation', axis: 0, label: 'Slide x', unit: '', max: 40, scale: 0.1 },
+    { kind: 'translation', axis: 1, label: 'Bob', unit: '', max: 40, scale: 0.1 },
+    { kind: 'translation', axis: 2, label: 'Slide z', unit: '', max: 40, scale: 0.1 },
+    { kind: 'scale', axis: 0, label: 'Stretch x', unit: '%', max: 100, scale: 0.01 },
+    { kind: 'scale', axis: 1, label: 'Stretch y', unit: '%', max: 100, scale: 0.01 },
+    { kind: 'scale', axis: 2, label: 'Stretch z', unit: '%', max: 100, scale: 0.01 },
+  ] as const;
+
+  const amplitudeInputs = AMPLITUDES.map((spec) => {
+    const input = element('input', 'slider');
+    input.type = 'range';
+    input.min = String(-spec.max);
+    input.max = String(spec.max);
+    input.addEventListener('input', () => {
+      const motion = harness.genome().motion;
+      const next: [number, number, number] = [...motion[spec.kind]];
+      next[spec.axis] = Number(input.value) * spec.scale;
+      harness.animate({ [spec.kind]: next });
+    });
+    return { spec, input };
+  });
 
   const harness = createStudioHarness({
     session: () => session,
@@ -128,7 +158,8 @@ function mount(): void {
     session.sampleAt(nowMs);
     const described = session.describe();
     readout.textContent = [
-      `time      ${String(nowMs)} ms of ${String(described.periodMs)}`,
+      `time      ${String(nowMs)} ms of ${String(described.periodMs)} `
+        + `(${describePoseAt(harness.genome().motion, nowMs)})`,
       `model     ${described.label}`,
       `size      ${described.size.join(' x ')}`,
       `voxels    ${String(described.filledVoxels)} filled`,
@@ -217,8 +248,13 @@ function mount(): void {
     if (Number(layerInput.value) !== layer) layerInput.value = String(layer);
     updateLayerLabel();
     periodInput.value = String(period);
-    spinInput.value = String(Math.round((genome.motion.rotationRadians[1] * 180) / Math.PI));
-    riseInput.value = String(Math.round(genome.motion.translation[1] * 10));
+    phaseInput.value = String(Math.round((genome.motion.phaseRadians * 180) / Math.PI));
+    for (const { spec, input } of amplitudeInputs) {
+      input.value = String(Math.round(genome.motion[spec.kind][spec.axis] / spec.scale));
+    }
+    // The tool states the intent it is being judged against, rather than
+    // leaving the person to infer it from nine sliders.
+    motionText.textContent = describeMotion(genome.motion);
     buildSwatches();
     buildGrid();
     drawFrame();
@@ -228,6 +264,84 @@ function mount(): void {
     // moment anything changes.
     sheetImage.hidden = true;
   }
+
+  /**
+   * Opening and keeping models. Without these the studio inspects whichever
+   * model it was built with, which makes it a demo of one model rather than a
+   * tool for models. The genome is plain JSON precisely so this is a text box
+   * and not an import pipeline.
+   */
+  const genomeText = element('textarea', 'genome');
+  genomeText.rows = 6;
+  genomeText.spellcheck = false;
+  const genomeStatus = element('p', 'verdict');
+
+  const loadButton = element('button');
+  loadButton.textContent = 'Open this model';
+  loadButton.addEventListener('click', () => {
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(genomeText.value);
+    } catch (error) {
+      genomeStatus.dataset.tone = 'bad';
+      genomeStatus.textContent = `That is not JSON: ${String(error)}`;
+      return;
+    }
+    // Reported as a list, because someone fixing a hand-written model wants
+    // every problem rather than the first one.
+    const issues = harness.validate(parsed);
+    if (issues.length > 0) {
+      genomeStatus.dataset.tone = 'bad';
+      genomeStatus.textContent = issues.map((i) => `${i.path} ${i.message}`).join(' · ');
+      return;
+    }
+    harness.load(parsed as VoxelGenomeV1);
+    genomeStatus.dataset.tone = 'ok';
+    genomeStatus.textContent = `Opened ${harness.genome().label}.`;
+  });
+
+  const copyButton = element('button');
+  copyButton.textContent = 'Copy this model';
+  copyButton.addEventListener('click', () => {
+    genomeText.value = JSON.stringify(harness.genome(), null, 2);
+    genomeText.select();
+    genomeStatus.dataset.tone = 'idle';
+    genomeStatus.textContent = 'The model is in the box, ready to copy or edit.';
+  });
+
+  const newButton = element('button');
+  newButton.textContent = 'New empty model';
+  newButton.addEventListener('click', () => {
+    const size = Number(sizeInput.value);
+    harness.load({
+      schemaVersion: 'maker.voxel-genome/1',
+      id: `studio:new-${String(size)}`,
+      label: `New ${String(size)} cube`,
+      seed: 1,
+      size: [size, size, size],
+      palette: [{ r: 0, g: 0, b: 0 }, { r: 150, g: 160, b: 175 }],
+      voxels: new Array<number>(size * size * size).fill(0),
+      motion: {
+        periodMs: 0,
+        phaseRadians: 0,
+        translation: [0, 0, 0],
+        rotationRadians: [0, 0, 0],
+        scale: [0, 0, 0],
+      },
+    });
+    genomeStatus.dataset.tone = 'idle';
+    genomeStatus.textContent = 'Empty model. Paint a level to begin.';
+  });
+
+  const starterButton = element('button');
+  starterButton.textContent = 'Starter';
+  starterButton.addEventListener('click', () => { harness.load(createStarterGenome()); });
+
+  const sizeInput = element('input', 'slider');
+  sizeInput.type = 'range';
+  sizeInput.min = '2';
+  sizeInput.max = '24';
+  sizeInput.value = '8';
 
   const sheetImage = element('img', 'sheet');
   sheetImage.alt = 'Every frame of the period, in time order';
@@ -268,13 +382,8 @@ function mount(): void {
   periodInput.addEventListener('input', () => {
     harness.animate({ periodMs: Number(periodInput.value) });
   });
-  spinInput.addEventListener('input', () => {
-    harness.animate({
-      rotationRadians: [0, (Number(spinInput.value) * Math.PI) / 180, 0],
-    });
-  });
-  riseInput.addEventListener('input', () => {
-    harness.animate({ translation: [0, Number(riseInput.value) / 10, 0] });
+  phaseInput.addEventListener('input', () => {
+    harness.animate({ phaseRadians: (Number(phaseInput.value) * Math.PI) / 180 });
   });
 
   const editor = element('div', 'card');
@@ -292,8 +401,15 @@ function mount(): void {
   const motion = element('div', 'card');
   const motionTitle = element('h2');
   motionTitle.textContent = 'Motion';
-  motion.append(motionTitle, labelled('Period (ms)', periodInput),
-    labelled('Spin (deg)', spinInput), labelled('Rise (voxels x10)', riseInput));
+  motion.append(
+    motionTitle,
+    motionText,
+    labelled('Period', periodInput, 'How long one full round trip takes. Zero is still.'),
+    labelled('Phase', phaseInput, 'Where in the cycle time zero starts.'),
+  );
+  for (const { spec, input } of amplitudeInputs) {
+    motion.append(labelled(`${spec.label}${spec.unit ? ` (${spec.unit})` : ' (levels)'}`, input));
+  }
 
   const inspect = element('div', 'card');
   const inspectTitle = element('h2');
@@ -301,9 +417,22 @@ function mount(): void {
   inspect.append(inspectTitle, labelled('Time', scrub), sweepButton, sheetButton,
     verdict, readout);
 
+  const models = element('div', 'card');
+  const modelsTitle = element('h2');
+  modelsTitle.textContent = 'Models';
+  const modelButtons = element('div', 'row');
+  modelButtons.append(starterButton, newButton, copyButton, loadButton);
+  models.append(
+    modelsTitle,
+    labelled('New model size', sizeInput, 'Cubes, for now. Any size a genome declares will open.'),
+    modelButtons,
+    genomeText,
+    genomeStatus,
+  );
+
   const columns = element('div', 'columns');
   columns.append(editor, motion, inspect);
-  root.append(stage, columns, sheetImage);
+  root.append(stage, columns, models, sheetImage);
   refresh();
 }
 
