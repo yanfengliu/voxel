@@ -20,6 +20,22 @@ The following limits are fixed for the V-08/V-09 rerun. They must not be relaxed
 | cold module-worker initialization p95 | to be measured by V-08 harness | 100 ms |
 | job-owned input plus validated output staging | contract-bounded | 72 MiB per active job |
 
+The 36.3 ms figure was measured on an otherwise idle machine. A later full
+`verify` run, where the browser lane starts immediately after a build,
+typecheck, lint, and two package-pack checks, recorded 136.5 ms for the same
+commit; three isolated re-runs of the same test passed. The budget measures
+worker startup -- module loading and JS -- so it is sensitive to host
+contention rather than to the renderer, and a failure here is worth
+re-measuring on an idle machine before it is read as a regression.
+
+The budget is deliberately not relaxed and the test is deliberately not
+retried. Relaxing it would break the rule that no budget moves after results
+exist, and retrying a performance assertion hides the regressions it is there
+to catch. The authoritative timing evidence remains E-02's named-hardware run;
+this lane exists to catch a pathological startup cost, which 136.5 ms under
+contention does not indicate.
+
+
 The existing external-candidate rule remains: at least 30 percent lower end-to-end accepted-to-presented cost on two of the three named scenes, no scene regression above 10 percent, and every correctness, reproducibility, package, memory, and runtime gate must pass.
 
 ## Candidate provenance and feasibility
