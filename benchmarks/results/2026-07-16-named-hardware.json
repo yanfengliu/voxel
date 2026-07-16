@@ -1,0 +1,67 @@
+{
+  "schema": "voxel.reference-scenes/1",
+  "lane": "named-hardware",
+  "recordedAtIso": "2026-07-16T00:47:32.404Z",
+  "package": {
+    "name": "voxel",
+    "version": "0.1.4",
+    "commit": "d18bf03533f1d94efc5046ccb280a9cc18c85d2e",
+    "worktreeClean": true
+  },
+  "host": {
+    "os": "win32 10.0.26100",
+    "arch": "x64",
+    "cpu": "13th Gen Intel(R) Core(TM) i9-13900KF",
+    "cpuCount": 32,
+    "totalMemoryBytes": 68423581696,
+    "node": "v22.14.0",
+    "browser": "chromium 147.0.7727.15",
+    "browserArgs": [
+      "--use-angle=d3d11"
+    ],
+    "headless": true
+  },
+  "device": {
+    "webgl2": true,
+    "renderer": "ANGLE (NVIDIA, NVIDIA GeForce RTX 4090 (0x00002684) Direct3D11 vs_5_0 ps_5_0, D3D11)",
+    "vendor": "Google Inc. (NVIDIA)",
+    "maxTextureSize": 16384
+  },
+  "viewport": {
+    "width": 640,
+    "height": 480,
+    "deviceScaleFactor": 1
+  },
+  "scenes": {
+    "atomic-cold-start": {
+      "samples": 20,
+      "coldP50Ms": 25.5,
+      "coldP95Ms": 31.5,
+      "coldMaxMs": 45.399999998509884
+    },
+    "atomic-warm-revision": {
+      "samples": 40,
+      "warmP50Ms": 11.600000001490116,
+      "warmP95Ms": 13,
+      "warmMaxMs": 13.199999995529652,
+      "presentedRevision": 41
+    },
+    "atomic-palette-swap": {
+      "correctness": {
+        "greenAcceptance": "accepted",
+        "redAcceptance": "accepted",
+        "presentedBeforeFirstFrame": null,
+        "greenDominantPixels": 16384,
+        "midFlightGreenDominantPixels": 16384,
+        "drawCalls": 1,
+        "triangles": 12
+      }
+    }
+  },
+  "resources": {
+    "peakCpuStagingBytes": 768,
+    "peakGpuStagingBytes": 1008,
+    "peakQueuedJobs": 1,
+    "peakQueuedWorkerEvents": 1
+  }
+}

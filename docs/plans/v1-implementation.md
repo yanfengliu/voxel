@@ -619,7 +619,13 @@ Dependencies: feature milestones.
 
 ### E-02: Named reference scenes
 
-- [ ] Open. This is the remaining evidence gate: the browser lane is SwiftShader, so every timing recorded so far is explicitly recorded rather than asserted, and no named-hardware measurement exists.
+- [~] The lane exists and the first named-hardware measurement is recorded; the scene corpus is partial.
+
+`npm run benchmark:scenes` records against the real device and refuses to record on a software rasteriser, because a silent fallback would write a file indistinguishable from a hardware run. The first recording (`benchmarks/results/2026-07-16-named-hardware.json`, commit `d18bf03`, clean worktree) covers the atomic cold-start, warm-revision, and palette-swap scenes on an NVIDIA RTX 4090 via ANGLE D3D11, Windows 11, i9-13900KF, headless Chromium, 640x480 at DPR 1: cold p50/p95/max 25.5/31.5/45.4 ms, warm 11.6/13.0/13.2 ms, 768/1008 peak CPU/GPU staging bytes, one draw call and twelve triangles, with the correctness result recorded beside the timings rather than separately -- 16,384 green-dominant pixels mid-flight is the same no-mixed-frame claim the SwiftShader lane asserts, now on hardware.
+
+That settles the question V-09 deferred here: the ADR's 100 ms cold budget holds on real hardware with room to spare, and the SwiftShader lane's 36.3 ms was pessimistic rather than flattering.
+
+Still open: the staircase and checkerboard chunk scenes, the 9x9 boundary edit field, AoE-like terrain, City-like 10k/50k sparse instances, combined picking, and teardown endurance as *named* scenes. Each exists as a correctness test already; what they lack is a recorded hardware measurement.
 
 Add fixed solid/staircase/checkerboard chunks, 9×9 boundary edit field, AoE-like terrain, City-like 10k/50k sparse instances, combined picking, context reconstruction, and teardown endurance scenes.
 
