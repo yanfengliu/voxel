@@ -170,7 +170,7 @@ Current status after the paged-delta implementation slice:
 - [x] D-02 immutable canonical lane indexes, deterministic materialization, per-lane incarnation tombstones, same-epoch snapshot ABA rejection, and defensive public access.
 - [x] D-03 atomic reducer, compact prepared change sets, resync ordering, final-graph/backend rejection, operation-order independence, and deterministic reference-model parity.
 - [x] D-04 fixed 256-slot copy-on-write pages, deterministic keyed compaction, exact presenter ranges, bounded copied bytes, and sparse runtime upload metrics.
-- [ ] D-05 reentrancy-safe ledger, readiness, abortable waiters, and synchronous runtime integration are implemented; worker dependency groups and host frame-ticket effects must integrate before completion.
+- [x] D-05 reentrancy-safe ledger, readiness, abortable waiters, and synchronous runtime integration are implemented, and both integrations the item waited on are now pinned from outside the package. A worker-meshed revision settles its waiter only once a draw has acknowledged it, never at accept time, in both host modes: the runtime's own draw standalone, and the host's frame-ticket commit embedded. Disposal settles waiters as terminal `unavailable`/`disposed` rather than transient `not-ready`, so a caller stops waiting instead of retrying forever, and a lost device reports `context-lost` while the revision is still accepted and still meshed.
 - [ ] D-06 transfer-owned path remains measurement-gated.
 
 ### D-01: Freeze delta schemas and issue codes

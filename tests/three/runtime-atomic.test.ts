@@ -586,3 +586,89 @@ describe('atomic host frame device transitions', () => {
     runtime.dispose();
   });
 });
+
+describe('atomic presentation ledger integration', () => {
+  const ref = (revision: number) => ({
+    worldId: 'world:test',
+    epoch: 'epoch:runtime-atomic',
+    revision,
+  });
+
+  it('resolves a waiter only once a worker-meshed revision has actually drawn', async () => {
+    const { runtime } = createAtomicRuntime();
+    expect(runtime.acceptSnapshot(profiledSnapshot(1)).status).toBe('accepted');
+
+    // Accepted is not presented: the workers have not meshed it and no draw has
+    // acknowledged it, so the ledger must report pending rather than settle.
+    const settled: string[] = [];
+    const wait = runtime.awaitPresented(ref(1)).then((result) => {
+      settled.push(result.status);
+      return result;
+    });
+    expect(runtime.presentationReadiness(ref(1))).toMatchObject({
+      status: 'not-ready',
+      reason: 'pending',
+    });
+    await Promise.resolve();
+    expect(settled).toEqual([]);
+
+    frameUntilPresented(runtime, 1, 0);
+
+    await expect(wait).resolves.toMatchObject({
+      status: 'ready',
+      target: ref(1),
+      presentedThrough: ref(1),
+    });
+    runtime.dispose();
+  });
+
+  it('resolves a waiter when an embedded host commits the revision', async () => {
+    const host = createEmbeddedAtomicRuntime();
+    const { runtime } = host;
+    expect(runtime.acceptSnapshot(profiledSnapshot(1)).status).toBe('accepted');
+    const wait = runtime.awaitPresented(ref(1));
+
+    // The host owns the draw, so its frame ticket is what settles the ledger.
+    hostFrameUntilPresented(host, 1, 0);
+
+    await expect(wait).resolves.toMatchObject({
+      status: 'ready',
+      presentedThrough: ref(1),
+    });
+    runtime.dispose();
+  });
+
+  it('settles a worker-meshed waiter when the runtime is disposed', async () => {
+    const { runtime } = createAtomicRuntime();
+    expect(runtime.acceptSnapshot(profiledSnapshot(1)).status).toBe('accepted');
+    const wait = runtime.awaitPresented(ref(1));
+
+    runtime.dispose();
+
+    // A waiter must never outlive the runtime it waits on, and disposal is
+    // terminal rather than transient: 'unavailable' tells a caller to stop
+    // waiting, where 'not-ready' would invite it to retry forever.
+    await expect(wait).resolves.toEqual({
+      status: 'unavailable',
+      reason: 'disposed',
+      target: ref(1),
+    });
+  });
+
+  it('reports a worker-meshed revision as not-ready while the device is lost', () => {
+    const { runtime, renderer } = createAtomicRuntime();
+    expect(runtime.acceptSnapshot(profiledSnapshot(1)).status).toBe('accepted');
+    frameUntilPresented(runtime, 1, 0);
+    expect(runtime.presentationReadiness(ref(1))).toMatchObject({ status: 'ready' });
+
+    renderer.emit('webglcontextlost');
+
+    // The revision is still accepted and still meshed, but nothing is on the
+    // canvas, so readiness must not claim it is.
+    expect(runtime.presentationReadiness(ref(1))).toMatchObject({
+      status: 'not-ready',
+      reason: 'context-lost',
+    });
+    runtime.dispose();
+  });
+});
