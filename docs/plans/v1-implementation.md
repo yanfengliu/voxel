@@ -611,11 +611,15 @@ and not a change to the boundary.
 
 ### E-01: Model/property/fuzz suite
 
-Cover snapshot/delta equivalence, unknown shapes, numeric extremes, metadata/byte/work budgets, typed-array alias/detachment, chunk edits, completion permutations, picking, and lifecycle races using deterministic seeds recorded on failure.
+- [x] Delivered. A pinned-seed hostile-snapshot corpus proves malformed input is always a typed rejection rather than an escaping throw, and that a rejected mutant leaves canonical ownership byte-identical to the baseline.
+
+The corpus is pinned rather than randomly reseeded per run, because a fuzz suite that finds a new failure only on someone else's machine is a flake, not evidence. Two earlier drafts of it were worthless -- one returned on the first accepted mutant, one shared a world across cases so ownership drift hid -- which is why the accepted/rejected split for the seed is asserted rather than assumed.
 
 Dependencies: feature milestones.
 
 ### E-02: Named reference scenes
+
+- [ ] Open. This is the remaining evidence gate: the browser lane is SwiftShader, so every timing recorded so far is explicitly recorded rather than asserted, and no named-hardware measurement exists.
 
 Add fixed solid/staircase/checkerboard chunks, 9×9 boundary edit field, AoE-like terrain, City-like 10k/50k sparse instances, combined picking, context reconstruction, and teardown endurance scenes.
 
@@ -625,15 +629,19 @@ Dependencies: V, P, H, C.
 
 ### E-03: Visual regression
 
+- [ ] Open. Depends on E-02.
+
 Use fixed camera, viewport, DPR, injected clock, and controlled Chromium lane. Keep structural geometry assertions authoritative and use documented screenshot tolerances for raster evidence.
 
 Dependencies: E-02.
 
 ### E-04: Endurance and cleanup
 
-Run at least 1,000 boundary edits, 100 epoch replacements, repeated sparse batch changes, repeated context losses/restores, capture aborts, and runtime rebuild/dispose cycles. Prove plateaued workers, listeners, waiters, geometries, materials, programs, textures, buffers, render targets, and staging memory.
+- [x] Delivered across both lanes, split by what each can actually support. Node runs 1,000 boundary edits, 100 epoch replacements, repeated sparse batch changes, capture aborts, and 50 loss/restore cycles, holding live occupancy flat while the lifetime counters climb -- 1,000 targets presented, none terminal. Real Chromium runs 120 remeshes and 30 real device losses against a live WebGL2 context.
 
-Dependencies: E-02.
+The split is the point. A Node fake renderer structurally cannot observe a GPU, so it cannot support a disposal claim no matter how many cycles it runs; only `renderer.info.memory` on a live context can, and stubbing retirement makes the real-browser edit test climb from 2 to 30 while leaving every Node assertion green. The context-loss test deliberately does not carry that claim either, because a loss resets `info.memory`.
+
+Dependencies: E-02 for named-hardware timings; the cleanup claims do not wait on it.
 
 ### E-05: Supply chain and artifact audit
 
