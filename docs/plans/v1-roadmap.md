@@ -23,6 +23,22 @@ The 1.0 claim requires all of the following:
 
 This is intentionally a useful shared renderer, not a universal graphics engine.
 
+## City art direction: voxel
+
+Decided 2026-07-15 by the owner. City renders low-poly primitives today -- its
+lane sends `chunks: []` and four instanced batches of box, cylinder, and sphere
+geometry -- so it uses the instanced half of this engine and none of the voxel
+half. That is legitimate under "voxel-first, not voxel-only", but it means the
+worker-meshed chunk path has no real consumer, including the embedded frame-ticket
+work that exists specifically to give it one.
+
+City will move to voxel art. This is a game-side change: City's adapter decides
+what to send, and the engine's job is to make the chunk path good enough that
+sending voxels is the obvious choice. The engine gains no City semantics from it.
+
+Sequenced after the frame inspection core, so the art can be judged by looking at
+it rather than by description. See [frame inspection](../design/frame-inspection.md).
+
 ## Roadmap baseline (faa00bf, 2026-07-13)
 
 At that baseline commit, version 0.1.4 was a production-shaped vertical slice, not a 1.0 candidate. It provided:
