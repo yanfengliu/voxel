@@ -455,8 +455,17 @@ Current status after the lifecycle/camera slice:
   idea is retry beyond a single attempt; the runtime instead treats a reconstruction error as
   terminal, and a real transient-failure case should motivate any retry policy.
 
-  Outstanding: a failed-reconstruction terminal path exercised end to end, loss during worker
-  upload/capture, and repeated loss/restore with measured resource plateaus (E-04).
+  Thirty real WebGL2 device losses now run against a live context: each one is detected, each
+  rebuild resumes to running, and a fresh revision accepts and presents after every one, so the
+  pipeline keeps working rather than merely surviving. Each rebuild re-uploads exactly the
+  displayed revision and no predecessor, and the pipeline's occupancy returns to zero every
+  cycle. That test deliberately does not carry the GPU-release claim: a context loss resets
+  Three's `info.memory`, so a leaked bundle is invisible to it and stubbing retirement leaves its
+  numbers unchanged. The repeated-edits test carries release instead, and does climb 2 to 30 when
+  retirement is stubbed. Loss between an embedded prepare and commit is covered by the atomic
+  host-frame suite.
+
+  Outstanding: a failed-reconstruction terminal path exercised end to end.
 
 ### H-01: Runtime lifecycle state machine
 

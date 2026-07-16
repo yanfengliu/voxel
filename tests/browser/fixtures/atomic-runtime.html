@@ -319,6 +319,111 @@
         }
       };
 
+      /**
+       * Repeated real context loss and restoration against a live WebGL2
+       * device. A fake renderer cannot support this claim: only the real
+       * driver reports whether reconstructed GPU objects plateau or climb.
+       */
+      window.runAtomicRuntimeContextEndurance = async ({ cycles, settleAfter }) => {
+        const canvas = document.createElement('canvas');
+        document.body.appendChild(canvas);
+        const runtime = new ThreeRenderRuntime({
+          canvas,
+          width: WIDTH,
+          height: HEIGHT,
+          pixelRatio: 1,
+          center: { x: 2, y: 0, z: 2 },
+          zoom: 1,
+          voxelWorkers: { workerCount: 1 },
+        });
+        const samples = [];
+        let settled = null;
+        try {
+          const gl = canvas.getContext('webgl2');
+          if (!gl) throw new Error('WebGL2 is unavailable.');
+          const lose = gl.getExtension('WEBGL_lose_context');
+          if (!lose) throw new Error('WEBGL_lose_context is unavailable.');
+          const withTimeout = (promise, label) => Promise.race([
+            promise,
+            new Promise((_, reject) => setTimeout(
+              () => reject(new Error(`timed out waiting for ${label}`)), 5000)),
+          ]);
+
+          // Present a real revision first, so every cycle has GPU state to lose.
+          let revision = 1;
+          let frameIndex = 0;
+          const accept = (rev) => {
+            const green = rev % 2 === 1;
+            const result = runtime.acceptSnapshot(paletteSnapshot(
+              rev,
+              green ? { r: 70, g: 200, b: 80, a: 255 } : { r: 220, g: 40, b: 40, a: 255 },
+            ));
+            if (result.status !== 'accepted') {
+              throw new Error(`revision ${rev} rejected: ${result.code}`);
+            }
+          };
+          accept(revision);
+          frameIndex = (await framesUntilPresented(runtime, revision, frameIndex, 200)).nextFrameIndex;
+
+          for (let cycle = 1; cycle <= cycles; cycle += 1) {
+            const lostEvent = new Promise((resolve) => {
+              canvas.addEventListener('webglcontextlost', resolve, { once: true });
+            });
+            lose.loseContext();
+            await withTimeout(lostEvent, `webglcontextlost cycle ${cycle}`);
+            if (runtime.runtimeStatus().state !== 'lost') {
+              throw new Error(`cycle ${cycle} did not reach lost: ${runtime.runtimeStatus().state}`);
+            }
+            // Chromium restores on a later task: restoreContext() called from
+            // the microtask that follows the lost event is silently dropped.
+            await new Promise((resolve) => { requestAnimationFrame(() => resolve()); });
+            const restoredEvent = new Promise((resolve) => {
+              canvas.addEventListener('webglcontextrestored', resolve, { once: true });
+            });
+            lose.restoreContext();
+            await withTimeout(restoredEvent, `webglcontextrestored cycle ${cycle}`);
+            // The runtime is restoring until a draw acknowledges the rebuilt
+            // scene; frame() is that acknowledgement for a standalone host.
+            const restoreFrame = frameIndex;
+            runtime.frame({ nowMs: restoreFrame * 16, deltaMs: 16, frameIndex: restoreFrame });
+            frameIndex = restoreFrame + 1;
+            if (runtime.runtimeStatus().state !== 'running') {
+              throw new Error(`cycle ${cycle} did not resume: ${runtime.runtimeStatus().state}`);
+            }
+            // The pipeline must still accept and present after the device
+            // returns, not merely survive the loss.
+            revision += 1;
+            accept(revision);
+            frameIndex = (await framesUntilPresented(runtime, revision, frameIndex, 200)).nextFrameIndex;
+
+            const metrics = runtime.metrics();
+            const sample = {
+              cycle,
+              presentedRevision: metrics.presentedRevision,
+              rendererGeometries: metrics.rendererGeometries,
+              rendererTextures: metrics.rendererTextures,
+              atomic: metrics.atomic,
+            };
+            if (cycle === settleAfter) settled = sample;
+            if (cycle >= settleAfter) samples.push(sample);
+          }
+          const finalMetrics = runtime.metrics();
+          return {
+            webgl2: true,
+            cycles,
+            settled,
+            samples,
+            presentedRevision: finalMetrics.presentedRevision,
+            contextLosses: finalMetrics.contextLosses,
+            contextRestorations: finalMetrics.contextRestorations,
+            state: runtime.runtimeStatus().state,
+          };
+        } finally {
+          runtime.dispose();
+          canvas.remove();
+        }
+      };
+
       window.runAtomicRuntimeEvidence = async () => {
         const canvas = document.createElement('canvas');
         document.body.appendChild(canvas);

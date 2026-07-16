@@ -72,6 +72,25 @@ interface AtomicRuntimeEndurance {
   readonly state: string;
 }
 
+interface AtomicContextEnduranceSample {
+  readonly cycle: number;
+  readonly presentedRevision: number | null;
+  readonly rendererGeometries: number;
+  readonly rendererTextures: number;
+  readonly atomic: Record<string, number> | null;
+}
+
+interface AtomicRuntimeContextEndurance {
+  readonly webgl2: boolean;
+  readonly cycles: number;
+  readonly settled: AtomicContextEnduranceSample | null;
+  readonly samples: readonly AtomicContextEnduranceSample[];
+  readonly presentedRevision: number | null;
+  readonly contextLosses: number;
+  readonly contextRestorations: number;
+  readonly state: string;
+}
+
 interface AtomicRuntimeMeasurements {
   readonly webgl2: boolean;
   readonly coldStarts: number;
@@ -100,12 +119,19 @@ declare global {
       readonly edits: number;
       readonly settleAfter: number;
     }) => Promise<AtomicRuntimeEndurance>;
+    runAtomicRuntimeContextEndurance?: (options: {
+      readonly cycles: number;
+      readonly settleAfter: number;
+    }) => Promise<AtomicRuntimeContextEndurance>;
   }
 }
 
 /** Kept modest: SwiftShader meshes and draws every one of these for real. */
 const ENDURANCE_EDITS = 120;
 const ENDURANCE_SETTLE_AFTER = 8;
+/** Each cycle is a real driver loss and rebuild, so these cost more than edits. */
+const CONTEXT_CYCLES = 30;
+const CONTEXT_SETTLE_AFTER = 3;
 const COLD_START_SAMPLES = 20;
 const WARM_REVISION_SAMPLES = 40;
 /** Fixed by the mesher selection ADR before any of these results existed. */
@@ -308,4 +334,63 @@ test('atomic worker frames meet the fixed mesher selection budgets', async ({ pa
     peakQueuedJobs: measured.peakQueuedJobs,
     peakQueuedWorkerEvents: measured.peakQueuedWorkerEvents,
   })}`);
+});
+
+test('atomic worker frames rebuild GPU resources across repeated context loss', async ({ page }) => {
+  const pageErrors: string[] = [];
+  page.on('pageerror', (error) => pageErrors.push(error.message));
+  page.on('console', (message) => {
+    if (message.type() === 'error') pageErrors.push(message.text());
+  });
+
+  if (!fixtureUrl) throw new Error('The atomic runtime test server is not running.');
+  const navigation = await page.goto(fixtureUrl, { waitUntil: 'load' });
+  expect(navigation?.ok()).toBe(true);
+  await page.waitForFunction(() => typeof window.runAtomicRuntimeContextEndurance === 'function');
+
+  const result = await page.evaluate(({ cycles, settleAfter }) => {
+    const run = window.runAtomicRuntimeContextEndurance;
+    if (!run) throw new Error('The atomic context endurance fixture API is unavailable.');
+    return run({ cycles, settleAfter });
+  }, { cycles: CONTEXT_CYCLES, settleAfter: CONTEXT_SETTLE_AFTER });
+
+  expect(pageErrors).toEqual([]);
+  expect(result.webgl2).toBe(true);
+  expect(result.state).toBe('running');
+  // Every cycle was a real driver loss that the runtime saw and recovered from.
+  expect(result.contextLosses).toBe(CONTEXT_CYCLES);
+  expect(result.contextRestorations).toBe(CONTEXT_CYCLES);
+  // One revision presents per cycle, plus the one presented before the first
+  // loss: the pipeline still accepts and presents after every rebuild rather
+  // than merely surviving.
+  expect(result.presentedRevision).toBe(CONTEXT_CYCLES + 1);
+
+  const settled = result.settled;
+  expect(settled).not.toBeNull();
+  expect(settled?.rendererGeometries).toBeGreaterThan(0);
+
+  // What this can and cannot support. A context loss resets Three's
+  // info.memory, so these counts only describe what the *current* device has
+  // re-uploaded -- a leaked bundle is invisible here, and stubbing retirement
+  // leaves every number below unchanged. The release claim belongs to the
+  // repeated-edits test above, which does climb when retirement is stubbed.
+  //
+  // What is left is still worth pinning: each rebuild re-uploads exactly the
+  // displayed revision and no predecessor, and the pipeline's own occupancy
+  // returns to zero after every one of thirty real device deaths rather than
+  // accumulating a target, a staging reservation, or a queued event per cycle.
+  for (const sample of result.samples) {
+    expect(sample.rendererGeometries, `cycle ${String(sample.cycle)}`)
+      .toBe(settled?.rendererGeometries);
+    expect(sample.rendererTextures, `cycle ${String(sample.cycle)}`)
+      .toBe(settled?.rendererTextures);
+    expect(sample.atomic, `cycle ${String(sample.cycle)}`).toMatchObject({
+      preparedTargets: 0,
+      cpuStagingBytes: 0,
+      gpuStagingBytes: 0,
+      pendingRetiredBundles: 0,
+      queuedJobs: 0,
+      queuedWorkerEvents: 0,
+    });
+  }
 });
