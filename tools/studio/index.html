@@ -57,12 +57,54 @@
         image-rendering: pixelated;
         max-width: 100%;
       }
-      .controls {
-        display: flex;
-        gap: 10px;
-        align-items: center;
-        flex-wrap: wrap;
+      .columns {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+        gap: 14px;
+        align-items: start;
       }
+      .card {
+        display: grid;
+        gap: 10px;
+        background: var(--panel);
+        border: 1px solid var(--line);
+        border-radius: 6px;
+        padding: 14px;
+      }
+      .card h2 {
+        font-size: 11px;
+        text-transform: uppercase;
+        letter-spacing: 0.09em;
+        color: var(--muted);
+        margin: 0;
+        font-weight: 600;
+      }
+      .field { display: grid; gap: 4px; font-size: 12.5px; color: var(--muted); }
+      .slider { width: 100%; accent-color: var(--accent); }
+      .swatches { display: flex; flex-wrap: wrap; gap: 5px; }
+      .swatch {
+        width: 26px;
+        height: 26px;
+        border-radius: 4px;
+        border: 1px solid var(--line);
+        cursor: pointer;
+        color: var(--muted);
+        font-size: 12px;
+        padding: 0;
+      }
+      .swatch[aria-pressed="true"] { outline: 2px solid var(--accent); outline-offset: 1px; }
+      .swatch.add { background: var(--ground); color: var(--text); }
+      .grid { display: grid; gap: 2px; }
+      .cell {
+        aspect-ratio: 1;
+        border: 1px solid var(--line);
+        border-radius: 2px;
+        padding: 0;
+        cursor: pointer;
+        min-width: 0;
+      }
+      .cell:hover { border-color: var(--accent); }
+      .primary { border-color: var(--accent); }
       button {
         font: inherit;
         font-size: 13px;
@@ -76,14 +118,6 @@
       button:hover { border-color: var(--accent); }
       button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
       .scrub { flex: 1; min-width: 160px; accent-color: var(--accent); }
-      .panel {
-        display: grid;
-        gap: 12px;
-        background: var(--panel);
-        border: 1px solid var(--line);
-        border-radius: 6px;
-        padding: 14px;
-      }
       .readout {
         margin: 0;
         font-family: ui-monospace, "Cascadia Code", "SF Mono", Menlo, monospace;

@@ -165,6 +165,32 @@ const COMMANDS = {
     }
     console.log(`${LOG_PREFIX} edit reached the frames and the result is sound`);
   },
+  /**
+   * A screenshot of the studio itself, not of a model. Reviewing a UI from its
+   * source is the same mistake as judging a render from its metrics: the layout
+   * is only real once something has laid it out.
+   */
+  async shot() {
+    const file = join(OUTPUT_DIR, 'studio-ui.png');
+    await withStudio(async (page) => {
+      await mkdir(OUTPUT_DIR, { recursive: true });
+      await page.screenshot({ path: file, fullPage: true });
+      // A page that renders but whose controls never wired up looks fine in a
+      // screenshot, so the count is asserted rather than eyeballed.
+      const controls = await page.evaluate(() => ({
+        cells: document.querySelectorAll('.cell').length,
+        swatches: document.querySelectorAll('.swatch').length,
+        sliders: document.querySelectorAll('.slider').length,
+      }));
+      console.log(`${LOG_PREFIX} ${String(controls.cells)} cells, `
+        + `${String(controls.swatches)} swatches, ${String(controls.sliders)} sliders`);
+      if (controls.cells === 0 || controls.swatches === 0) {
+        throw new Error('the editor rendered no controls');
+      }
+      return controls;
+    });
+    console.log(`${LOG_PREFIX} wrote ${relative(PROJECT_ROOT, file)}`);
+  },
 };
 
 const command = process.argv[2] ?? 'check';
