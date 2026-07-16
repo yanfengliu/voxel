@@ -49,7 +49,9 @@ Current status after the first 0.2 implementation slice on 2026-07-13:
 
 - [x] F-01 documentation routing, changelog/migration note, and support policy; local link/fence/whitespace checks pass.
 - [x] F-02 declaration/API report, deterministic update, drift diagnostics, and in-memory diagnostic self-test.
-- [ ] F-03 CI/package gates: workflow and local-equivalent gates are implemented; the first remote GitHub Actions run remains required before completion.
+- [x] F-03 CI/package gates. The first green remote GitHub Actions run landed on 2026-07-16 (run `29462742581`, commit `4395712`): Node 22 complete on Windows and Ubuntu, Node 24 portable on both, and the audit/package job, all green.
+
+  The first real remote runs were red, and for a reason worth keeping: the mesher ADR's 100 ms cold-start budget was asserted in the SwiftShader lane, where GitHub's shared runners measure 145 ms reliably rather than flakily. The budget was not the problem and was not relaxed -- it moved to the named-hardware lane that can support it, leaving a pathology ceiling behind. A local gate that only passes on the author's idle machine is not a gate, and CI is what surfaced that.
 - [x] F-04 snapshot/delta copy instrumentation, defensive exports, canonical retention, deterministic RenderWorld read/reset hooks, and profiled presentation-staging current/peak telemetry are implemented. Unique output-buffer capacity is exact across provisional rejection, replacement, pending/frame overlap, commit, abort, reentrant settlement, and disposal.
 - [x] F-05 prepared canonical snapshot ingest, exact world/base commit fencing, direct paged equality, defensive public access, presentation reuse, and mutable borrowed-scene isolation. A 257-instance color/animation regression proves one logical ownership copy across two fixed pages and runtime/world telemetry parity.
 - [x] F-06 immutable truthful backend capability report and pre-commit compatibility behavior.
