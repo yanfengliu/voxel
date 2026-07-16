@@ -85,9 +85,7 @@ function mount(): void {
   // Seeded from the slot that is actually selected, or the picker claims the
   // model is black while a green swatch shows as chosen.
   colorInput.value = rgbHex(session.genome.palette[selectedSlot] ?? { r: 0, g: 0, b: 0 });
-  const layerInput = element('input', 'slider');
-  layerInput.type = 'range';
-  layerInput.min = '0';
+  const stack = element('div', 'stack');
   const layerLabel = element('span', 'layer-label');
   const scrub = element('input', 'slider');
   scrub.type = 'range';
@@ -197,11 +195,60 @@ function mount(): void {
   }
 
   function updateLayerLabel(): void {
-    const size = harness.genome().size;
-    const ground = layer === 0 ? ' (ground)' : '';
+    const genome = harness.genome();
+    const [sx, sy, sz] = genome.size;
+    let filled = 0;
+    for (let x = 0; x < sx; x += 1) {
+      for (let z = 0; z < sz; z += 1) {
+        if ((genome.voxels[voxelIndex(genome, x, layer, z)] ?? 0) !== 0) filled += 1;
+      }
+    }
+    const ground = layer === 0 ? ', the ground' : '';
     layerLabel.textContent =
-      `Level ${String(layer + 1)} of ${String(size[1])}${ground} · `
-      + `${String(size[0])} × ${String(size[2])} looking down`;
+      `Editing floor ${String(layer + 1)} of ${String(sy)}${ground} · `
+      + `${String(filled)} of ${String(sx * sz)} squares filled`;
+  }
+
+  /**
+   * The whole model as a stack of floors, tallest at the top, so it reads the
+   * way the model stands. A slider hid this: the starter's first three floors
+   * are identical, so dragging it changed nothing visible and the control
+   * looked broken. Seeing every floor at once makes "a model is floors stacked
+   * up" obvious without a sentence explaining it, and shows at a glance which
+   * floors have anything on them.
+   */
+  function buildStack(): void {
+    const genome = harness.genome();
+    const [sx, sy, sz] = genome.size;
+    stack.replaceChildren();
+    for (let y = sy - 1; y >= 0; y -= 1) {
+      const row = element('button', 'floor');
+      row.setAttribute('aria-current', String(y === layer));
+      const mini = element('div', 'mini');
+      mini.style.gridTemplateColumns = `repeat(${String(sx)}, 1fr)`;
+      let filled = 0;
+      for (let z = sz - 1; z >= 0; z -= 1) {
+        for (let x = 0; x < sx; x += 1) {
+          const slot = genome.voxels[voxelIndex(genome, x, y, z)] ?? 0;
+          if (slot !== 0) filled += 1;
+          const dot = element('i');
+          dot.style.background = slot === 0
+            ? 'transparent'
+            : rgbHex(genome.palette[slot] ?? { r: 0, g: 0, b: 0 });
+          mini.appendChild(dot);
+        }
+      }
+      const tag = element('span');
+      tag.textContent = filled === 0 ? `${String(y + 1)} · empty` : String(y + 1);
+      row.append(tag, mini);
+      row.addEventListener('click', () => {
+        layer = y;
+        buildStack();
+        updateLayerLabel();
+        buildGrid();
+      });
+      stack.appendChild(row);
+    }
   }
 
   function buildGrid(): void {
@@ -244,8 +291,8 @@ function mount(): void {
     if (selectedSlot > 0) {
       colorInput.value = rgbHex(genome.palette[selectedSlot] ?? { r: 0, g: 0, b: 0 });
     }
-    layerInput.max = String(genome.size[1] - 1);
-    if (Number(layerInput.value) !== layer) layerInput.value = String(layer);
+    if (layer > genome.size[1] - 1) layer = 0;
+    buildStack();
     updateLayerLabel();
     periodInput.value = String(period);
     phaseInput.value = String(Math.round((genome.motion.phaseRadians * 180) / Math.PI));
@@ -373,11 +420,7 @@ function mount(): void {
   colorInput.addEventListener('input', () => {
     if (selectedSlot > 0) harness.recolor(selectedSlot, hexRgb(colorInput.value));
   });
-  layerInput.addEventListener('input', () => {
-    layer = Number(layerInput.value);
-    updateLayerLabel();
-    buildGrid();
-  });
+
   scrub.addEventListener('input', drawFrame);
   periodInput.addEventListener('input', () => {
     harness.animate({ periodMs: Number(periodInput.value) });
@@ -389,11 +432,15 @@ function mount(): void {
   const editor = element('div', 'card');
   const editorTitle = element('h2');
   editorTitle.textContent = 'Model';
+  const stackHint = element('p', 'hint');
+  stackHint.textContent = 'Your model is a stack of floors, shown here top to '
+    + 'bottom. Pick one to edit it below.';
   editor.append(
     editorTitle,
     swatches,
     labelled('Colour', colorInput, 'Recolours every voxel using this swatch.'),
-    labelled('Height', layerInput, 'The grid below is one level of the model, seen from above.'),
+    stackHint,
+    stack,
     layerLabel,
     grid,
   );

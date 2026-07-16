@@ -101,6 +101,29 @@
       }
       .swatch[aria-pressed="true"] { outline: 2px solid var(--accent); outline-offset: 1px; }
       .swatch.add { background: var(--ground); color: var(--text); }
+      .stack { display: grid; gap: 3px; }
+      .floor {
+        display: grid;
+        grid-template-columns: 34px 1fr;
+        align-items: center;
+        gap: 8px;
+        padding: 3px 5px;
+        background: transparent;
+        border: 1px solid transparent;
+        border-radius: 4px;
+        cursor: pointer;
+        text-align: left;
+      }
+      .floor:hover { border-color: var(--line); }
+      .floor[aria-current="true"] { border-color: var(--accent); background: var(--sunk, #101315); }
+      .floor span {
+        font-family: ui-monospace, "Cascadia Code", "SF Mono", Menlo, monospace;
+        font-size: 10px;
+        color: var(--muted);
+        font-variant-numeric: tabular-nums;
+      }
+      .mini { display: grid; gap: 1px; }
+      .mini i { aspect-ratio: 1; border-radius: 1px; outline: 1px solid rgba(255,255,255,0.04); }
       .grid { display: grid; gap: 2px; }
       .cell {
         aspect-ratio: 1;
