@@ -1,12 +1,12 @@
 {
   "schema": "voxel.reference-scenes/1",
   "lane": "named-hardware",
-  "recordedAtIso": "2026-07-16T00:47:32.404Z",
+  "recordedAtIso": "2026-07-16T00:52:36.626Z",
   "package": {
     "name": "voxel",
     "version": "0.1.4",
-    "commit": "d18bf03533f1d94efc5046ccb280a9cc18c85d2e",
-    "worktreeClean": true
+    "commit": "b956daaa48b884c8ea1203a2c5693e878b784dc5",
+    "worktreeClean": false
   },
   "host": {
     "os": "win32 10.0.26100",
@@ -35,15 +35,15 @@
   "scenes": {
     "atomic-cold-start": {
       "samples": 20,
-      "coldP50Ms": 25.5,
-      "coldP95Ms": 31.5,
-      "coldMaxMs": 45.399999998509884
+      "coldP50Ms": 25.700000002980232,
+      "coldP95Ms": 32.79999999701977,
+      "coldMaxMs": 48.79999999701977
     },
     "atomic-warm-revision": {
       "samples": 40,
-      "warmP50Ms": 11.600000001490116,
-      "warmP95Ms": 13,
-      "warmMaxMs": 13.199999995529652,
+      "warmP50Ms": 11.699999988079071,
+      "warmP95Ms": 12.900000005960464,
+      "warmMaxMs": 13.700000002980232,
       "presentedRevision": 41
     },
     "atomic-palette-swap": {

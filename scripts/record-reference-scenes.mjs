@@ -24,6 +24,13 @@ const GPU_LANE_ARGS = ['--use-angle=d3d11'];
 const VIEWPORT = { width: 640, height: 480 };
 const DEVICE_SCALE_FACTOR = 1;
 const COLD_START_SAMPLES = 20;
+/**
+ * The mesher selection ADR fixed this before any result existed and forbids
+ * relaxing it. It is asserted here rather than in the correctness suite because
+ * this is the only lane whose hardware is named: a budget checked against
+ * whatever runner CI happens to provide measures that runner.
+ */
+const COLD_START_P95_BUDGET_MS = 100;
 const WARM_REVISION_SAMPLES = 40;
 
 const MIME_TYPES = {
@@ -176,6 +183,13 @@ async function main() {
         peakQueuedWorkerEvents: measurements.peakQueuedWorkerEvents,
       },
     };
+
+    if (measurements.coldP95Ms > COLD_START_P95_BUDGET_MS) {
+      throw new Error(
+        `cold start p95 ${String(measurements.coldP95Ms)} ms exceeds the ADR's `
+        + `${String(COLD_START_P95_BUDGET_MS)} ms budget on ${String(device.renderer)}`,
+      );
+    }
 
     await mkdir(OUTPUT_DIR, { recursive: true });
     const stamp = record.recordedAtIso.slice(0, 10);
