@@ -1,0 +1,197 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>voxel frame inspection fixture</title>
+    <script type="importmap">
+      {
+        "imports": {
+          "three": "/node_modules/three/build/three.module.js"
+        }
+      }
+    </script>
+  </head>
+  <body>
+    <script type="module">
+      import { ThreeRenderRuntime } from '/dist/three/index.js';
+
+      const WIDTH = 320;
+      const HEIGHT = 240;
+
+      /**
+       * One animated instance and one static instance. The static one is the
+       * control: if a sample time changes it, the sampler is advancing hidden
+       * state and no frame here can be trusted.
+       */
+      const animatedSnapshot = (revision) => {
+        const matrices = new Float32Array(32);
+        // Column-major identity translated; instance 0 animates, instance 1 does not.
+        const place = (offset, x, y, z) => {
+          matrices.set([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, x, y, z, 1], offset);
+        };
+        place(0, -1.2, 0, 0);
+        place(16, 1.2, 0, 0);
+        return {
+          schemaVersion: 'voxel.render-snapshot/1',
+          descriptor: {
+            schemaVersion: 'voxel.world/1',
+            worldId: 'world:frame-inspection',
+            epoch: 'epoch:one',
+            coordinates: {
+              handedness: 'right',
+              upAxis: '+y',
+              forwardAxis: '-z',
+              chunkRounding: 'floor',
+              metersPerWorldUnit: 1,
+              worldUnitsPerVoxel: { x: 1, y: 1, z: 1 },
+            },
+            colorEncoding: 'srgb8-straight-alpha',
+            capabilities: ['geometry-resources', 'instance-batches'],
+            limits: {
+              maxResources: 16,
+              maxPaletteEntries: 256,
+              maxChunks: 16,
+              maxBatches: 16,
+              maxVoxelsPerChunk: 4096,
+              maxGeometryVertices: 4096,
+              maxGeometryIndices: 12288,
+              maxInstancesPerBatch: 1024,
+              maxTotalBytes: 4000000,
+            },
+          },
+          revision,
+          resources: [
+            {
+              kind: 'geometry',
+              key: 'geometry:cube',
+              incarnation: 1,
+              revision: 1,
+              topology: 'triangles',
+              positions: new Float32Array([
+                -0.5, -0.5, 0.5, 0.5, -0.5, 0.5, 0.5, 0.5, 0.5, -0.5, 0.5, 0.5,
+              ]),
+              normals: new Float32Array([
+                0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1,
+              ]),
+              indices: new Uint32Array([0, 1, 2, 0, 2, 3]),
+              groups: [{ start: 0, count: 6, materialKey: 'material:cube' }],
+              bounds: { min: { x: -0.5, y: -0.5, z: 0.5 }, max: { x: 0.5, y: 0.5, z: 0.5 } },
+              pivot: { x: 0, y: 0, z: 0 },
+            },
+            {
+              kind: 'material',
+              key: 'material:cube',
+              incarnation: 1,
+              revision: 1,
+              shading: 'unlit',
+              color: { r: 90, g: 200, b: 120, a: 255 },
+              vertexColors: false,
+              transparent: false,
+              opacity: 1,
+              doubleSided: true,
+              roughness: 1,
+              metalness: 0,
+            },
+          ],
+          chunks: [],
+          batches: [
+            {
+              key: 'batch:actors',
+              incarnation: 1,
+              revision,
+              geometryKey: 'geometry:cube',
+              materialKey: 'material:cube',
+              instanceKeys: ['actor:animated', 'actor:static'],
+              matrices,
+              animation: {
+                schemaVersion: 'voxel.instance-transform-animation/1',
+                // A zero period disables motion, which is what makes the second
+                // instance a control rather than a slow-moving one.
+                periodsMs: new Float32Array([1000, 0]),
+                phasesRadians: new Float32Array([0, 0]),
+                translationAmplitudes: new Float32Array([0, 0.8, 0, 0, 0, 0]),
+                rotationAmplitudesRadians: new Float32Array([0, Math.PI / 2, 0, 0, 0, 0]),
+                scaleAmplitudes: new Float32Array([0, 0, 0, 0, 0, 0]),
+              },
+            },
+          ],
+        };
+      };
+
+      /**
+       * Samples one frame at an exact time. Nothing here replays intermediate
+       * frames: the harmonic sampler is a pure function of nowMs, so time 400
+       * is addressable directly, and that is the whole reason an inspector can
+       * exist.
+       */
+      const sampleAt = (runtime, nowMs, frameIndex) => {
+        const manifest = runtime.frame({ nowMs, deltaMs: 16, frameIndex });
+        const capture = runtime.captureWithManifest();
+        const metrics = runtime.metrics();
+        return {
+          nowMs,
+          presentedRevision: manifest ? manifest.presentedRevision : null,
+          drawCalls: metrics.drawCalls,
+          triangles: metrics.triangles,
+          animatedInstances: metrics.animatedInstances ?? null,
+          dataUrl: capture.status === 'captured' ? capture.readback.dataUrl : null,
+          captureStatus: capture.status,
+        };
+      };
+
+      window.inspectAnimationFrames = async ({ sampleTimes, verifyTimes }) => {
+        const canvas = document.createElement('canvas');
+        document.body.appendChild(canvas);
+        const runtime = new ThreeRenderRuntime({
+          canvas,
+          width: WIDTH,
+          height: HEIGHT,
+          pixelRatio: 1,
+          center: { x: 0, y: 0, z: 0 },
+          zoom: 1,
+        });
+        try {
+          const accepted = runtime.acceptSnapshot(animatedSnapshot(1));
+          if (accepted.status !== 'accepted') {
+            throw new Error(`snapshot rejected: ${JSON.stringify(accepted)}`);
+          }
+
+          let frameIndex = 0;
+          const frames = [];
+          for (const nowMs of sampleTimes) {
+            frames.push(sampleAt(runtime, nowMs, frameIndex));
+            frameIndex += 1;
+          }
+
+          // Re-sample times already sampled, deliberately out of order and
+          // after the sweep has moved on. A tool whose value is "this frame is
+          // correct" is worthless if the frame is not reproducible, so this is
+          // checked rather than assumed.
+          const reSamples = [];
+          for (const nowMs of verifyTimes) {
+            const original = frames.find((frame) => frame.nowMs === nowMs);
+            const repeat = sampleAt(runtime, nowMs, frameIndex);
+            frameIndex += 1;
+            reSamples.push({
+              nowMs,
+              pixelsMatch: original.dataUrl === repeat.dataUrl,
+              trianglesMatch: original.triangles === repeat.triangles,
+              drawCallsMatch: original.drawCalls === repeat.drawCalls,
+            });
+          }
+
+          return {
+            webgl2: runtime.getCapabilities().webgl2 ?? true,
+            viewport: { width: WIDTH, height: HEIGHT, pixelRatio: 1 },
+            frames,
+            reSamples,
+            state: runtime.runtimeStatus().state,
+          };
+        } finally {
+          runtime.dispose();
+          canvas.remove();
+        }
+      };
+    </script>
+  </body>
+</html>

@@ -59,6 +59,7 @@
     "test:supply-chain": "node scripts/verify-supply-chain.mjs",
     "benchmark:meshers": "npm run build && node scripts/benchmark-meshers.mjs",
     "benchmark:scenes": "npm run build && node scripts/record-reference-scenes.mjs",
+    "inspect:frames": "npm run build && node scripts/inspect-frames.mjs",
     "pretest:browser": "npm run build",
     "test:browser": "playwright test",
     "test:browser:install": "playwright install chromium",
