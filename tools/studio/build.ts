@@ -80,16 +80,29 @@ export function buildSnapshot(
     colors[vertex * 3 + 2] = entry?.b ?? 0;
   }
 
-  const bounds = boundsOf(mesh.positions, sx, sy, sz);
+  // Centre the mesh on its own middle, in the geometry rather than in the
+  // instance matrix. voxel post-multiplies the animation's rotation over the
+  // base matrix, so rotation turns about the geometry's local origin: a model
+  // meshed from a grid corner orbits that corner instead of spinning in place,
+  // and no instance translation can fix it because the rotation happens first.
+  // Centring here is also what `pivot` looks like it would do and does not --
+  // the geometry contract declares it, but the instance presenter never reads
+  // it.
+  const centred = new Float32Array(mesh.positions.length);
+  for (let offset = 0; offset < mesh.positions.length; offset += 3) {
+    centred[offset] = (mesh.positions[offset] ?? 0) - sx / 2;
+    centred[offset + 1] = (mesh.positions[offset + 1] ?? 0) - sy / 2;
+    centred[offset + 2] = (mesh.positions[offset + 2] ?? 0) - sz / 2;
+  }
+
+  const bounds = boundsOf(centred, sx, sy, sz);
   const motion = genome.motion;
 
-  // Centre the model on its own middle so rotation turns it in place rather
-  // than swinging it around the grid's corner.
   const matrices = new Float32Array([
     1, 0, 0, 0,
     0, 1, 0, 0,
     0, 0, 1, 0,
-    -sx / 2, -sy / 2, -sz / 2, 1,
+    0, 0, 0, 1,
   ]);
 
   return {
@@ -128,12 +141,13 @@ export function buildSnapshot(
         incarnation: 1,
         revision,
         topology: 'triangles',
-        positions: mesh.positions,
+        positions: centred,
         normals: mesh.normals,
         colors,
         indices: mesh.indices,
         groups: [{ start: 0, count: mesh.indices.length, materialKey: MATERIAL_KEY }],
         bounds,
+        // The mesh is already centred, so the model's own middle is the origin.
         pivot: { x: 0, y: 0, z: 0 },
       },
       {

@@ -56,16 +56,15 @@ export class StudioSession {
   #disposed = false;
 
   constructor(genome: VoxelGenomeV1, options: StudioSessionOptionsV1) {
-    const size = genome.size;
     this.#genome = genome;
     this.#runtime = new ThreeRenderRuntime({
       canvas: options.canvas,
       width: options.width ?? DEFAULT_WIDTH,
       height: options.height ?? DEFAULT_HEIGHT,
       pixelRatio: 1,
-      // Centre on the model rather than the origin, so a model is framed by
-      // where it is instead of where the grid starts.
-      center: { x: size[0] / 2, y: size[1] / 2, z: size[2] / 2 },
+      // The mesh is centred on its own middle, so the model is at the origin
+      // and the camera looks there.
+      center: { x: 0, y: 0, z: 0 },
       zoom: options.zoom ?? DEFAULT_ZOOM,
     });
     this.#accept(genome);
