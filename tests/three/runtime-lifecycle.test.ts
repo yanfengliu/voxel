@@ -86,6 +86,47 @@ function hostileSignal(onRemove: () => void): PresentationAbortSignalV1 {
 }
 
 describe('ThreeRenderRuntime lifecycle transactions', () => {
+  it('fails terminally when reconstruction cannot rebuild the device', () => {
+    const renderer = new LifecycleRenderer();
+    const runtime = new ThreeRenderRuntime({
+      renderer,
+      rendererOwnership: 'owned',
+      width: 100,
+      height: 100,
+    });
+    runtime.frame({ nowMs: 0, deltaMs: 0, frameIndex: 0 });
+    expect(runtime.runtimeStatus().state).toBe('running');
+
+    renderer.emit('webglcontextlost');
+    renderer.emit('webglcontextrestored');
+    expect(runtime.runtimeStatus().state).toBe('restoring');
+
+    // The device came back but cannot be rebuilt on it. Reconstruction is not
+    // retried: a runtime that cannot rebuild has no state a later frame could
+    // recover from, so it reports failure once rather than throwing every frame.
+    const rebuildFailure = new Error('driver refused the rebuilt scene');
+    renderer.render.mockImplementationOnce(() => { throw rebuildFailure; });
+
+    expect(() => runtime.frame({ nowMs: 16, deltaMs: 16, frameIndex: 1 }))
+      .toThrow(rebuildFailure);
+
+    const status = runtime.runtimeStatus();
+    expect(status.state).toBe('failed');
+    expect(status.failure).toEqual({
+      code: 'three.runtime.restore-failed',
+      phase: 'restore',
+      name: 'Error',
+      message: 'driver refused the rebuilt scene',
+    });
+    // Terminal: the frame that failed is not counted, later frames are refused
+    // rather than silently retried, and the runtime still disposes cleanly.
+    expect(runtime.metrics().frames).toBe(1);
+    expect(() => runtime.frame({ nowMs: 32, deltaMs: 16, frameIndex: 2 })).toThrow();
+    expect(runtime.runtimeStatus().state).toBe('failed');
+    expect(() => { runtime.dispose(); }).not.toThrow();
+    expect(runtime.runtimeStatus().state).toBe('disposed');
+  });
+
   it('retries only failed disposal actions after publishing disposed state', () => {
     const renderer = new LifecycleRenderer();
     const runtime = new ThreeRenderRuntime({

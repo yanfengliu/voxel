@@ -438,8 +438,8 @@ Current status after the lifecycle/camera slice:
 - [x] H-02 isometric, owned-perspective, and borrowed-camera strategies; explicit projection/viewport ownership; finite-safe projection and ray helpers; legacy compatibility.
 - [x] H-03 host-managed frame tickets, standalone protocol reuse, rollback, generation/reentrancy fences, immutable manifests, and an adversarial borrowed-renderer reentrancy regression are implemented and independently reviewed.
 - [x] H-04 revision-aware capture is published. The runtime retains the manifest of the frame it last presented and adapts it to the capture port, so `captureWithManifest` describes the frame the canvas currently shows and `captureWhenPresented` resolves only once the requested revision has actually been drawn; an accepted-but-undrawn revision is never captured as ready. Runtime-owned capture issues one readback fenced to the committed manifest and its device generation; embedded hosts retain capture ownership; manifests enumerate only presented canonical state. Fixed-camera visual baselines remain E-03 work.
-- [ ] H-05 context restoration works in every host mode and is proven, but its named endurance
-  and failure evidence is outstanding. Standalone hosts restore through `frame()`; embedded
+- [x] H-05 context restoration works in every host mode and is proven. Standalone hosts restore
+  through `frame()`; embedded
   hosts now restore through the frame-ticket protocol they already own, because they may never
   call `frame()` and previously stayed `restoring` for the rest of the session. The atomic
   worker path is proven to keep its displayed revision across a loss: the staged bundles are
@@ -465,7 +465,10 @@ Current status after the lifecycle/camera slice:
   retirement is stubbed. Loss between an embedded prepare and commit is covered by the atomic
   host-frame suite.
 
-  Outstanding: a failed-reconstruction terminal path exercised end to end.
+  A reconstruction that cannot rebuild the device is terminal and exercised end to end: the
+  runtime reports `three.runtime.restore-failed` once, does not count the failed frame, refuses
+  later frames rather than silently retrying, and still disposes cleanly. Retry beyond a single
+  attempt stays unmodelled until a real transient-failure case motivates a policy.
 
 ### H-01: Runtime lifecycle state machine
 
