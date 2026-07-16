@@ -90,7 +90,7 @@ function createAtomicRuntime(options: {
     scene,
     width: 320,
     height: 200,
-    voxelWorkersInternal: {
+    voxelWorkers: {
       workerCount: 1,
       startWorkerInternal: pool.startInternal,
       ...(options.maxQueuedJobs !== undefined
@@ -128,7 +128,7 @@ function createEmbeddedAtomicRuntime(options: {
     },
     width: 320,
     height: 200,
-    voxelWorkersInternal: {
+    voxelWorkers: {
       workerCount: 1,
       startWorkerInternal: pool.startInternal,
     },

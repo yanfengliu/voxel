@@ -153,7 +153,7 @@ function createRuntime() {
     scene,
     width: 320,
     height: 200,
-    voxelWorkersInternal: { workerCount: 1, startWorkerInternal: pool.startInternal },
+    voxelWorkers: { workerCount: 1, startWorkerInternal: pool.startInternal },
   };
   const runtime = new ThreeRenderRuntime(options);
   const atomicRoot = scene.children.find((child) => child.name === 'voxel:atomic-presentation');

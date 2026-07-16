@@ -18,9 +18,9 @@ describe('Three runtime capabilities', () => {
       sceneOwnership: ['owned', 'borrowed'],
       viewportOwnership: ['runtime', 'host'],
       captureOwnership: ['runtime', 'host'],
-      pickingLanes: [],
-      workerMeshing: false,
-      revisionAwareCapture: false,
+      pickingLanes: ['voxel', 'instance'],
+      workerMeshing: true,
+      revisionAwareCapture: true,
       contextLoss: {
         fenced: true,
         restoration: 'event-resize-only',

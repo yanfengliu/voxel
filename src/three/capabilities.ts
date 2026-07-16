@@ -16,9 +16,9 @@ export interface ThreeRuntimeCapabilitiesV1 {
   readonly sceneOwnership: readonly ['owned', 'borrowed'];
   readonly viewportOwnership: readonly ['runtime', 'host'];
   readonly captureOwnership: readonly ['runtime', 'host'];
-  readonly pickingLanes: readonly [];
-  readonly workerMeshing: false;
-  readonly revisionAwareCapture: false;
+  readonly pickingLanes: readonly ['voxel', 'instance'];
+  readonly workerMeshing: true;
+  readonly revisionAwareCapture: true;
   readonly contextLoss: Readonly<{
     fenced: true;
     restoration: 'event-resize-only';
@@ -50,17 +50,14 @@ const THREE_RUNTIME_CAPABILITIES_V1: ThreeRuntimeCapabilitiesV1 = Object.freeze(
   sceneOwnership: Object.freeze(['owned', 'borrowed'] as const),
   viewportOwnership: Object.freeze(['runtime', 'host'] as const),
   captureOwnership: Object.freeze(['runtime', 'host'] as const),
-  // Worker meshing and committed picking are implemented and proven in a real
-  // browser, but they are reachable only through the package-internal voxel
-  // worker option. No public configuration can obtain them, so advertising
-  // them would promise support a consumer cannot enable. Both flip together
-  // when that option becomes public; every gate that blocked it now holds
-  // (embedded host frame tickets, the V-09/V-10 selection and culling
-  // evidence, and the E-04 edit-storm endurance baseline), so publishing the
-  // option is the only remaining step.
-  pickingLanes: Object.freeze([] as const),
-  workerMeshing: false,
-  revisionAwareCapture: false,
+  // Reachable from `ThreeRenderRuntimeOptions.voxelWorkers` and proven end to
+  // end in real Chromium: a packaged module worker meshes chunked worlds and a
+  // WebGL2 draw commits each revision. Picking reads the same presented bundle
+  // the canvas shows, and capture is fenced to the presented manifest, so all
+  // three describe one revision rather than three different ones.
+  pickingLanes: Object.freeze(['voxel', 'instance'] as const),
+  workerMeshing: true,
+  revisionAwareCapture: true,
   contextLoss: Object.freeze({
     fenced: true,
     restoration: 'event-resize-only',

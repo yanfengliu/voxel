@@ -4,6 +4,7 @@ import type {
   WebGLRendererParameters,
 } from 'three';
 
+import type { MeshSchedulerConfigV1 } from '../meshing/index.js';
 import type { ThreeViewOptionsV1 } from './cameraStrategy.js';
 import type { ThreeDaylightOptions } from './daylightRig.js';
 import type { ThreeRuntimeHostV1 } from './hostFrameProtocol.js';
@@ -64,6 +65,30 @@ export type ThreeRuntimeStatusV1 =
       readonly failure: ThreeRuntimeFailureV1;
     };
 
+/** Off-scene staging ceilings for the worker voxel pipeline. */
+export interface ThreeVoxelWorkerStagingBudgetsV1 {
+  readonly maxCpuStagingBytes?: number;
+  readonly maxGpuStagingBytes?: number;
+  readonly maxPreparedTargets?: number;
+}
+
+/**
+ * Enables the worker-meshed voxel pipeline. Chunked worlds whose descriptor
+ * carries a `chunkProfile` are meshed off the main thread and presented one
+ * whole revision at a time; worlds without one keep using the synchronous
+ * path, so enabling this never silently changes an unprofiled world.
+ *
+ * Every budget has a typed default. Omit them unless a measurement says
+ * otherwise.
+ */
+export interface ThreeVoxelWorkersV1 {
+  /** Workers to launch. Each one is a real module Worker. */
+  readonly workerCount: number;
+  readonly scheduler?: Partial<Omit<MeshSchedulerConfigV1, 'workerCount' | 'runtimeId'>>;
+  readonly staging?: ThreeVoxelWorkerStagingBudgetsV1;
+  readonly maxQueuedEvents?: number;
+}
+
 export interface ThreeRenderRuntimeOptions {
   /** Additive host policy. Omission preserves the runtime-rendered options below. */
   readonly host?: ThreeRuntimeHostV1;
@@ -88,6 +113,8 @@ export interface ThreeRenderRuntimeOptions {
   readonly zoom?: number;
   readonly tileWidthPixels?: number;
   readonly tileHeightPixels?: number;
+  /** Enables worker-meshed voxel chunks. Omission keeps the synchronous path. */
+  readonly voxelWorkers?: ThreeVoxelWorkersV1;
 }
 
 export interface ThreeRenderMetrics {

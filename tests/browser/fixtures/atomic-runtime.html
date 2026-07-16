@@ -189,7 +189,7 @@
           const runtime = new ThreeRenderRuntime({
             canvas, width: WIDTH, height: HEIGHT, pixelRatio: 1,
             center: { x: 2, y: 0, z: 2 }, zoom: 1,
-            voxelWorkersInternal: { workerCount: 1 },
+            voxelWorkers: { workerCount: 1 },
           });
           try {
             const startedAt = performance.now();
@@ -211,7 +211,7 @@
         const runtime = new ThreeRenderRuntime({
           canvas, width: WIDTH, height: HEIGHT, pixelRatio: 1,
           center: { x: 2, y: 0, z: 2 }, zoom: 1,
-          voxelWorkersInternal: { workerCount: 1 },
+          voxelWorkers: { workerCount: 1 },
         });
         try {
           runtime.acceptSnapshot(paletteSnapshot(1, { r: 70, g: 200, b: 80, a: 255 }));
@@ -266,7 +266,7 @@
           pixelRatio: 1,
           center: { x: 2, y: 0, z: 2 },
           zoom: 1,
-          voxelWorkersInternal: { workerCount: 1 },
+          voxelWorkers: { workerCount: 1 },
         });
         const samples = [];
         let settled = null;
@@ -329,7 +329,7 @@
           pixelRatio: 1,
           center: { x: 2, y: 0, z: 2 },
           zoom: 1,
-          voxelWorkersInternal: { workerCount: 1 },
+          voxelWorkers: { workerCount: 1 },
         });
         try {
           const greenAcceptance = runtime.acceptSnapshot(

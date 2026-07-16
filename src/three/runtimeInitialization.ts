@@ -38,8 +38,9 @@ import type { ThreeRenderRuntimeOptions } from './runtimeTypes.js';
  * stays off the public options type until its runtime path has end-to-end
  * browser evidence.
  */
-export interface ThreeRenderRuntimeInternalOptions extends ThreeRenderRuntimeOptions {
-  readonly voxelWorkersInternal?: ThreeRuntimeVoxelWorkersOptionsInternal;
+export interface ThreeRenderRuntimeInternalOptions
+  extends Omit<ThreeRenderRuntimeOptions, 'voxelWorkers'> {
+  readonly voxelWorkers?: ThreeRuntimeVoxelWorkersOptionsInternal;
 }
 
 export interface RuntimeInitializationHooksInternal {
@@ -182,7 +183,9 @@ export function initializeRuntimeInternal(
     scene = resolvedHost.scene ?? new Scene();
     presentationSurface = new LegacyRuntimePresentationSurfaceInternal();
     scene.add(presentationSurface.rootInternal);
-    const voxelWorkers = (options as ThreeRenderRuntimeInternalOptions).voxelWorkersInternal;
+    // The internal option only adds optional members, so the public shape is
+    // assignable and tests' extra seams flow through by structure.
+    const voxelWorkers = options.voxelWorkers;
     atomic = voxelWorkers ? createRuntimeAtomicSetupInternal(voxelWorkers, scene) : null;
     daylightRig = daylightOptions ? new DaylightRig(daylightOptions, center) : null;
     if (daylightRig) scene.add(daylightRig.root);

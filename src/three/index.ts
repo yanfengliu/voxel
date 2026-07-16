@@ -14,6 +14,8 @@ export type {
   ThreeRuntimeFailureV1,
   ThreeRuntimeLifecycleV1,
   ThreeRuntimeStatusV1,
+  ThreeVoxelWorkersV1,
+  ThreeVoxelWorkerStagingBudgetsV1,
 } from './runtimeTypes.js';
 export {
   THREE_PRESENTED_MANIFEST_SCHEMA_V1,

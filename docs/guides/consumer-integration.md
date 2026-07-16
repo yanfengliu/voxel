@@ -116,7 +116,26 @@ The pre-1.0 `RendererLike` contract now requires `getSize(target: Vector2)` and 
 
 Ownership fields on `metrics` distinguish work from live retention. `snapshotInputTypedArrayBytes` counts validated lane bytes per occurrence. `snapshotCopiedTypedArrayBytes` counts logical bytes written into canonical candidates, including candidates rejected after ownership work, and `snapshotCopyOperations` counts initialized canonical destination arrays, including each allocated fixed-page lane. The corresponding delta counters cover validated delta lanes plus copy-on-write page clones, slot moves, and payload writes; copied bytes can exceed input bytes when one transaction clones and then overwrites a page. `defensiveSnapshotCopyBytes` is cumulative public `RenderWorld` export work. `retainedTypedArrayBytes` is the unique current canonical backing allocation, including fixed-page capacity, and falls to zero on disposal; `peakRetainedTypedArrayBytes` is its high-water mark. `presentationStagingBytes` counts unique backing-buffer capacity for profiled mesh outputs held only by provisional candidates, accepted pending presentations, or active frame tickets; buffers already committed to a displayed presentation are excluded. Its peak records transient replacement and backend-rejection overlap. A committed buffer leaves current staging, while any newer pending or ticket-retained output remains counted; abort and context loss retain pending CPU staging, and disposal clears the current gauge. Sparse instance presentation additionally reports cumulative matrix writes, color writes, and GPU update ranges.
 
-Browser bundlers can start the packaged module worker from the dedicated DOM entry:
+## Worker-meshed voxel chunks
+
+`voxelWorkers` moves voxel meshing off the main thread. The runtime owns the workers, the scheduler, and the off-scene staging; the consumer only says how many workers to launch:
+
+```ts
+const runtime = new ThreeRenderRuntime({
+  renderer,
+  width: 1280,
+  height: 800,
+  voxelWorkers: { workerCount: 2 },
+});
+```
+
+This applies only to worlds whose descriptor carries a `chunkProfile`. A world without one keeps the synchronous path, so turning the option on never silently changes an unprofiled world, and one runtime never mixes the two presentation owners.
+
+Each revision presents whole. Accepting a snapshot does not display it: workers mesh it off-scene, and it reaches the canvas only when a draw is acknowledged — the runtime's own draw in standalone mode, or `commitFrame` in embedded mode. Until then the previously displayed revision keeps drawing, so a partially meshed world is never visible. `metrics().atomic` reports the pipeline: loaded, nonempty, and in-frustum chunks, presented and failed targets, staging and queue occupancy, and high-water marks. It is null unless the runtime owns a worker pipeline.
+
+Every budget has a typed default; omit `scheduler`, `staging`, and `maxQueuedEvents` unless a measurement says otherwise. The workers are real module Workers started through the same static `Worker`/`new URL` reference described below, so a bundler that can emit that asset needs no further configuration.
+
+Browser bundlers that drive the worker protocol themselves, rather than through the runtime, can start the packaged module worker from the dedicated DOM entry:
 
 ```ts
 import { startBrowserMeshWorkerV1 } from 'voxel/meshing/browser-worker';

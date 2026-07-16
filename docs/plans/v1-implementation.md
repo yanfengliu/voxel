@@ -736,8 +736,16 @@ real browser evidence. The critical path continues:
    from an internal draw that violates host ownership.
 3. ~~Close V-09/V-10 with end-to-end selection evidence, culling, resource
    metrics, and edit-storm bounds.~~ Delivered.
-4. Make the voxel worker option public now that those gates and the E-04
-   endurance baseline hold, flipping the picking and worker-meshing
-   capabilities with it. This is the remaining step on the critical path.
+4. ~~Make the voxel worker option public, flipping the picking and
+   worker-meshing capabilities with it.~~ Delivered: `voxelWorkers` is public,
+   the browser evidence now runs through the public option, and the capability
+   report advertises worker meshing, both picking lanes, and revision-aware
+   capture. `revisionAwareCapture` had been false since before H-04 published
+   it, which the flip also corrects.
+
+The critical path is clear. What remains for 1.0 is evidence and release work:
+E-02 named reference scenes on real hardware, E-03 visual baselines, E-05 the
+supply-chain and artifact audit, F-03 a first green remote CI run, D-05/D-06,
+and the R-series freeze, rehearsal, audit, and tag.
 
 Each numbered step is split into minimal coherent verified commits and receives adversarial review as soon as its first public, async, presentation, or ownership boundary exists.

@@ -3,10 +3,10 @@ import { Group } from 'three';
 import type { Scene } from 'three';
 import {
   VoxelMeshSchedulerV1,
-  type MeshSchedulerConfigV1,
   type MeshSchedulerWorkerContextV1,
 } from '../meshing/index.js';
 import { CommittedPresentedQueryAuthorityInternal } from './committedPresentedQueryAuthority.js';
+import type { ThreeVoxelWorkersV1 } from './runtimeTypes.js';
 import type { ProfiledWorkerTargetLimitsInternal } from './profiledWorkerTargetPlan.js';
 import { RevisionAtomicPresentationStagerInternal } from './revisionAtomicStaging.js';
 import { RuntimeAtomicPipelineInternal } from './runtimeAtomicPipeline.js';
@@ -16,20 +16,12 @@ import {
 } from './runtimeMeshWorkerDriver.js';
 
 /**
- * Package-internal atomic voxel pipeline activation. This option intentionally
- * stays off the public ThreeRenderRuntimeOptions type until the runtime path
- * has end-to-end browser evidence; tests reach it through this module.
+ * The public worker option plus the seams tests need. Consumers configure the
+ * pipeline through `ThreeVoxelWorkersV1`; the extra members here are a test
+ * launcher and plan limits whose type is not part of the public surface.
  */
-export interface ThreeRuntimeVoxelWorkersOptionsInternal {
-  readonly workerCount: number;
-  readonly scheduler?: Partial<Omit<MeshSchedulerConfigV1, 'workerCount' | 'runtimeId'>>;
+export interface ThreeRuntimeVoxelWorkersOptionsInternal extends ThreeVoxelWorkersV1 {
   readonly planLimits?: Partial<ProfiledWorkerTargetLimitsInternal>;
-  readonly staging?: {
-    readonly maxCpuStagingBytes?: number;
-    readonly maxGpuStagingBytes?: number;
-    readonly maxPreparedTargets?: number;
-  };
-  readonly maxQueuedEvents?: number;
   /** Test seam replacing the browser Worker launcher. */
   readonly startWorkerInternal?: (
     context: MeshSchedulerWorkerContextV1,
