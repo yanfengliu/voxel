@@ -1,4 +1,4 @@
-import type { GenomeMotionV1 } from './genome.js';
+import type { ModelMotionV1 } from './model.js';
 
 /**
  * Planning and judging an animation sweep, with no renderer and no DOM. The
@@ -48,7 +48,7 @@ export interface SweepVerdictV1 {
 }
 
 /** A still model is one frame. Sweeping it would sample the same image N times. */
-export function isStill(motion: GenomeMotionV1): boolean {
+export function isStill(motion: ModelMotionV1): boolean {
   return motion.periodMs <= 0;
 }
 
@@ -58,7 +58,7 @@ export function isStill(motion: GenomeMotionV1): boolean {
  * makes "every frame of the animation" a finite claim at all.
  */
 export function planSweep(
-  motion: GenomeMotionV1,
+  motion: ModelMotionV1,
   samplesPerPeriod = 24,
 ): SweepPlanV1 {
   if (isStill(motion)) {
@@ -92,7 +92,7 @@ export interface FrameStepV1 {
  * walking off either end wraps around, because the animation does.
  */
 export function stepFrame(
-  motion: GenomeMotionV1,
+  motion: ModelMotionV1,
   currentMs: number,
   direction: 1 | -1,
   samplesPerPeriod = 24,
@@ -116,7 +116,7 @@ export function stepFrame(
 
 /** The frame number the current moment is closest to, for the readout. */
 export function nearestFrame(
-  motion: GenomeMotionV1,
+  motion: ModelMotionV1,
   currentMs: number,
   samplesPerPeriod = 24,
 ): FrameStepV1 {

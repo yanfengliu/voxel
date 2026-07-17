@@ -1,7 +1,7 @@
 import { ThreeRenderRuntime } from '../../src/three/index.js';
 
 import { buildSnapshot, filledVoxelCount } from './build.js';
-import type { VoxelGenomeV1 } from './genome.js';
+import type { StudioModelV1 } from './model.js';
 import {
   isStill,
   planSweep,
@@ -13,7 +13,7 @@ import {
 } from './sweep.js';
 
 /**
- * One live studio session: a genome, the runtime drawing it, and the ability to
+ * One live studio session: a model, the runtime drawing it, and the ability to
  * sample any time of its animation.
  *
  * This is the only render path. The UI and the agent harness both drive this
@@ -50,13 +50,13 @@ const DEFAULT_ZOOM = 1;
 
 export class StudioSession {
   readonly #runtime: ThreeRenderRuntime;
-  #genome: VoxelGenomeV1;
+  #model: StudioModelV1;
   #revision = 0;
   #frameIndex = 0;
   #disposed = false;
 
-  constructor(genome: VoxelGenomeV1, options: StudioSessionOptionsV1) {
-    this.#genome = genome;
+  constructor(model: StudioModelV1, options: StudioSessionOptionsV1) {
+    this.#model = model;
     this.#runtime = new ThreeRenderRuntime({
       canvas: options.canvas,
       width: options.width ?? DEFAULT_WIDTH,
@@ -67,23 +67,23 @@ export class StudioSession {
       center: { x: 0, y: 0, z: 0 },
       zoom: options.zoom ?? DEFAULT_ZOOM,
     });
-    this.#accept(genome);
+    this.#accept(model);
   }
 
-  get genome(): VoxelGenomeV1 {
-    return this.#genome;
+  get model(): StudioModelV1 {
+    return this.#model;
   }
 
   /**
    * Replaces the model. Every edit flows through here, so the studio never has
-   * a genome the runtime has not seen -- which is what keeps the picture and
+   * a model the runtime has not seen -- which is what keeps the picture and
    * the data the same claim.
    */
-  setGenome(genome: VoxelGenomeV1): void {
+  setGenome(model: StudioModelV1): void {
     this.#assertLive();
-    if (genome === this.#genome) return;
-    this.#genome = genome;
-    this.#accept(genome);
+    if (model === this.#model) return;
+    this.#model = model;
+    this.#accept(model);
   }
 
   /**
@@ -133,7 +133,7 @@ export class StudioSession {
    */
   sweep(samplesPerPeriod = 24): StudioSweepResultV1 {
     this.#assertLive();
-    const plan = planSweep(this.#genome.motion, samplesPerPeriod);
+    const plan = planSweep(this.#model.motion, samplesPerPeriod);
     const frames = plan.sampleTimes.map((nowMs) => this.sampleAt(nowMs));
     // Re-sampled after the sweep has moved past them, in the plan's own
     // deliberately unsorted order.
@@ -146,7 +146,7 @@ export class StudioSession {
       frames,
       reSamples,
       verdict: verifySweep(
-        plan, frames, reSamples, this.#genome.motion.rotationStyle ?? 'swing',
+        plan, frames, reSamples, this.#model.motion.rotationStyle ?? 'swing',
       ),
     };
   }
@@ -164,13 +164,13 @@ export class StudioSession {
     readonly state: string;
   } {
     return {
-      id: this.#genome.id,
-      label: this.#genome.label,
-      size: this.#genome.size,
-      filledVoxels: filledVoxelCount(this.#genome),
-      paletteEntries: this.#genome.palette.length,
-      periodMs: this.#genome.motion.periodMs,
-      still: isStill(this.#genome.motion),
+      id: this.#model.id,
+      label: this.#model.label,
+      size: this.#model.size,
+      filledVoxels: filledVoxelCount(this.#model),
+      paletteEntries: this.#model.palette.length,
+      periodMs: this.#model.motion.periodMs,
+      still: isStill(this.#model.motion),
       revision: this.#revision,
       state: this.#runtime.runtimeStatus().state,
     };
@@ -182,14 +182,14 @@ export class StudioSession {
     this.#runtime.dispose();
   }
 
-  #accept(genome: VoxelGenomeV1): void {
+  #accept(model: StudioModelV1): void {
     this.#revision += 1;
-    const result = this.#runtime.acceptSnapshot(buildSnapshot(genome, {
+    const result = this.#runtime.acceptSnapshot(buildSnapshot(model, {
       revision: this.#revision,
-      epoch: `epoch:${genome.id}`,
+      epoch: `epoch:${model.id}`,
     }));
     if (result.status !== 'accepted') {
-      // The engine refused a genome the editors produced. That is an invariant
+      // The engine refused a model the editors produced. That is an invariant
       // break rather than a user error, and continuing would draw a stale model
       // while the studio reported the new one.
       throw new Error(

@@ -2,17 +2,17 @@ import {
   VOXEL_GENOME_SCHEMA_V1,
   voxelIndex,
   type GenomeColorV1,
-  type GenomeMotionV1,
-  type VoxelGenomeV1,
-} from './genome.js';
+  type ModelMotionV1,
+  type StudioModelV1,
+} from './model.js';
 
 /**
- * Editing is genome editing: every operation here takes a genome and returns a
- * new one. Nothing mutates, because the previous genome is the lineage -- undo,
+ * Editing is model editing: every operation here takes a model and returns a
+ * new one. Nothing mutates, because the previous model is the lineage -- undo,
  * history, and "make parent" are all just holding on to the value you had.
  *
- * Every operation clamps rather than rejects, so an invalid genome is
- * impossible to reach through an edit. Validation exists for genomes that
+ * Every operation clamps rather than rejects, so an invalid model is
+ * impossible to reach through an edit. Validation exists for model files that
  * arrive from outside; it should never fire on one of these results.
  */
 
@@ -36,35 +36,35 @@ const MAX_SCALE = 4;
  * Paints one voxel. `paletteIndex` 0 clears it, matching the grid's own empty
  * slot rather than inventing a separate erase concept.
  *
- * An out-of-range coordinate returns the genome unchanged rather than throwing:
+ * An out-of-range coordinate returns the model unchanged rather than throwing:
  * a drag that leaves the model's bounds is an ordinary thing a UI does, not an
  * error, and the harness wants the same forgiving semantics so a scripted edit
  * sweep does not need bounds arithmetic at every call site.
  */
 export function setVoxel(
-  genome: VoxelGenomeV1,
+  model: StudioModelV1,
   x: number,
   y: number,
   z: number,
   paletteIndex: number,
-): VoxelGenomeV1 {
-  const index = voxelIndex(genome, x, y, z);
-  if (index < 0) return genome;
-  const slot = clampInt(paletteIndex, 0, genome.palette.length - 1);
-  if (genome.voxels[index] === slot) return genome;
-  const voxels = genome.voxels.slice();
+): StudioModelV1 {
+  const index = voxelIndex(model, x, y, z);
+  if (index < 0) return model;
+  const slot = clampInt(paletteIndex, 0, model.palette.length - 1);
+  if (model.voxels[index] === slot) return model;
+  const voxels = model.voxels.slice();
   voxels[index] = slot;
-  return { ...genome, voxels };
+  return { ...model, voxels };
 }
 
 /** Clears a voxel. Sugar for painting the empty slot; the grid has one concept. */
 export function clearVoxel(
-  genome: VoxelGenomeV1,
+  model: StudioModelV1,
   x: number,
   y: number,
   z: number,
-): VoxelGenomeV1 {
-  return setVoxel(genome, x, y, z, 0);
+): StudioModelV1 {
+  return setVoxel(model, x, y, z, 0);
 }
 
 /**
@@ -73,29 +73,29 @@ export function clearVoxel(
  * each cell, so this is one edit rather than thousands.
  */
 export function setPaletteColor(
-  genome: VoxelGenomeV1,
+  model: StudioModelV1,
   paletteIndex: number,
   color: GenomeColorV1,
-): VoxelGenomeV1 {
-  if (!Number.isInteger(paletteIndex)) return genome;
-  if (paletteIndex < 0 || paletteIndex >= genome.palette.length) return genome;
+): StudioModelV1 {
+  if (!Number.isInteger(paletteIndex)) return model;
+  if (paletteIndex < 0 || paletteIndex >= model.palette.length) return model;
   const clamped: GenomeColorV1 = {
     r: clampInt(color.r, 0, 255),
     g: clampInt(color.g, 0, 255),
     b: clampInt(color.b, 0, 255),
   };
-  const palette = genome.palette.slice();
+  const palette = model.palette.slice();
   palette[paletteIndex] = clamped;
-  return { ...genome, palette };
+  return { ...model, palette };
 }
 
-/** Adds a palette entry and returns the genome plus the index it landed at. */
+/** Adds a palette entry and returns the model plus the index it landed at. */
 export function addPaletteColor(
-  genome: VoxelGenomeV1,
+  model: StudioModelV1,
   color: GenomeColorV1,
-): { readonly genome: VoxelGenomeV1; readonly paletteIndex: number } {
-  if (genome.palette.length >= 256) {
-    return { genome, paletteIndex: genome.palette.length - 1 };
+): { readonly model: StudioModelV1; readonly paletteIndex: number } {
+  if (model.palette.length >= 256) {
+    return { model, paletteIndex: model.palette.length - 1 };
   }
   const clamped: GenomeColorV1 = {
     r: clampInt(color.r, 0, 255),
@@ -103,8 +103,8 @@ export function addPaletteColor(
     b: clampInt(color.b, 0, 255),
   };
   return {
-    genome: { ...genome, palette: [...genome.palette, clamped] },
-    paletteIndex: genome.palette.length,
+    model: { ...model, palette: [...model.palette, clamped] },
+    paletteIndex: model.palette.length,
   };
 }
 
@@ -115,10 +115,10 @@ export function addPaletteColor(
  * parametric is that its bounds are knowable in advance.
  */
 export function setMotion(
-  genome: VoxelGenomeV1,
-  motion: Partial<GenomeMotionV1>,
-): VoxelGenomeV1 {
-  const current = genome.motion;
+  model: StudioModelV1,
+  motion: Partial<ModelMotionV1>,
+): StudioModelV1 {
+  const current = model.motion;
   const triple = (
     value: readonly number[] | undefined,
     fallback: readonly [number, number, number],
@@ -135,7 +135,7 @@ export function setMotion(
     ];
   };
   return {
-    ...genome,
+    ...model,
     motion: {
       periodMs: motion.periodMs === undefined
         ? current.periodMs
@@ -158,20 +158,20 @@ export function setMotion(
 }
 
 /** Stops the model. Sugar for a zero period, which is voxel's own "still". */
-export function stopMotion(genome: VoxelGenomeV1): VoxelGenomeV1 {
-  return setMotion(genome, { periodMs: 0 });
+export function stopMotion(model: StudioModelV1): StudioModelV1 {
+  return setMotion(model, { periodMs: 0 });
 }
 
 /**
  * An empty model to edit into something. Deliberately not a random one: a
  * studio that opens on noise makes the first edit hard to see.
  */
-export function createEmptyGenome(options: {
+export function createEmptyModel(options: {
   readonly id: string;
   readonly label?: string;
   readonly seed?: number;
   readonly size?: readonly [number, number, number];
-}): VoxelGenomeV1 {
+}): StudioModelV1 {
   const size: readonly [number, number, number] = options.size ?? [8, 8, 8];
   const [sx, sy, sz] = size;
   return {

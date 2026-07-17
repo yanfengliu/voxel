@@ -1,12 +1,12 @@
 import type { RenderSnapshotV1 } from '../../src/core/index.js';
 import { addFaceOutlines, DensePaletteChunk, meshVisibleFaces } from '../../src/meshing/index.js';
 
-import { validateGenomeV1, type VoxelGenomeV1 } from './genome.js';
+import { validateModelV1, type StudioModelV1 } from './model.js';
 
 /**
- * Turns a genome into a voxel render snapshot. This is the only place the
+ * Turns a model into a voxel render snapshot. This is the only place the
  * studio crosses from its own data into the engine's, and it is a pure
- * function: same genome, identical snapshot, always. That invariant is what
+ * function: same model, identical snapshot, always. That invariant is what
  * makes evolution history, tiny-JSON persistence, and runtime regeneration in
  * the games all work, so nothing here may read a clock or an RNG.
  *
@@ -16,7 +16,7 @@ import { validateGenomeV1, type VoxelGenomeV1 } from './genome.js';
  * and it is the only lane that animates. voxel samples harmonic motion per
  * instance; a chunk is static world geometry and has nowhere to carry a period.
  *
- * The first version of this emitted a chunk with no batches, so `genome.motion`
+ * The first version of this emitted a chunk with no batches, so `model.motion`
  * was silently dropped before the engine ever saw it. The model drew and never
  * moved. The studio's own never-moved guard caught it on the first run, which
  * is the entire reason that guard exists.
@@ -36,40 +36,40 @@ export interface BuildOptionsV1 {
   readonly epoch?: string;
 }
 
-export class GenomeBuildError extends Error {
+export class ModelBuildError extends Error {
   constructor(readonly issues: readonly { readonly path: string; readonly message: string }[]) {
     super(
-      `Genome cannot build: ${issues.map((i) => `${i.path} ${i.message}`).join('; ')}`,
+      `Model cannot build: ${issues.map((i) => `${i.path} ${i.message}`).join('; ')}`,
     );
-    this.name = 'GenomeBuildError';
+    this.name = 'ModelBuildError';
   }
 }
 
 export function buildSnapshot(
-  genome: VoxelGenomeV1,
+  model: StudioModelV1,
   options: BuildOptionsV1,
 ): RenderSnapshotV1 {
-  // Edits clamp, so a genome reaching here should always be valid. When one is
+  // Edits clamp, so a model reaching here should always be valid. When one is
   // not it came from outside, and building it anyway would misrender silently
   // rather than say what is wrong.
-  const issues = validateGenomeV1(genome);
-  if (issues.length > 0) throw new GenomeBuildError(issues);
+  const issues = validateModelV1(model);
+  if (issues.length > 0) throw new ModelBuildError(issues);
 
-  const [sx, sy, sz] = genome.size;
+  const [sx, sy, sz] = model.size;
   const revision = options.revision;
-  const epoch = options.epoch ?? `epoch:${genome.id}`;
+  const epoch = options.epoch ?? `epoch:${model.id}`;
 
-  // The genome and the chunk disagree on byte order: the genome stores
+  // The model and the chunk disagree on byte order: the model stores
   // x + sx*(y + sy*z) — height in the middle — while the chunk reads
   // x + sx*(z + sz*y) — depth in the middle. A straight index-for-index copy
   // silently swaps height and depth for any cube-shaped grid, which put the
   // starter's cap on its side for a whole session while every panel that reads
-  // the genome kept saying "top". Copy by coordinates, never by index.
+  // the model kept saying "top". Copy by coordinates, never by index.
   const voxels = new Uint16Array(sx * sy * sz);
   for (let y = 0; y < sy; y += 1) {
     for (let z = 0; z < sz; z += 1) {
       for (let x = 0; x < sx; x += 1) {
-        voxels[x + sx * (z + sz * y)] = genome.voxels[x + sx * (y + sy * z)] ?? 0;
+        voxels[x + sx * (z + sz * y)] = model.voxels[x + sx * (y + sy * z)] ?? 0;
       }
     }
   }
@@ -84,9 +84,9 @@ export function buildSnapshot(
   // Dark lines where surfaces turn or change colour, so the eye can tell the
   // top of a model from its side — flat unlit colour gives it nothing else to
   // go on. The line colour lives in the render palette only, one slot past the
-  // genome's own colours: it is presentation, not part of the model, so saving
-  // or copying a genome never carries it.
-  const outlineSlot = genome.palette.length;
+  // model's own colours: it is presentation, not part of the model, so saving
+  // or copying a model never carries it.
+  const outlineSlot = model.palette.length;
   const mesh = addFaceOutlines(bare, { paletteIndex: outlineSlot });
 
   // Per-vertex colour resolved from the palette here, because a geometry
@@ -95,7 +95,7 @@ export function buildSnapshot(
   const colors = new Uint8Array(mesh.paletteIndices.length * 3);
   for (let vertex = 0; vertex < mesh.paletteIndices.length; vertex += 1) {
     const slot = mesh.paletteIndices[vertex] ?? 0;
-    const entry = slot === outlineSlot ? OUTLINE_COLOR : genome.palette[slot];
+    const entry = slot === outlineSlot ? OUTLINE_COLOR : model.palette[slot];
     colors[vertex * 3] = entry?.r ?? 0;
     colors[vertex * 3 + 1] = entry?.g ?? 0;
     colors[vertex * 3 + 2] = entry?.b ?? 0;
@@ -129,7 +129,7 @@ export function buildSnapshot(
   }
 
   const bounds = boundsOf(centred, sx, sy, sz);
-  const motion = genome.motion;
+  const motion = model.motion;
 
   const matrices = new Float32Array([
     1, 0, 0, 0,
@@ -209,10 +209,10 @@ export function buildSnapshot(
         revision,
         geometryKey: GEOMETRY_KEY,
         materialKey: MATERIAL_KEY,
-        instanceKeys: [`${genome.id}#0`],
+        instanceKeys: [`${model.id}#0`],
         matrices,
         animation: {
-        ...(genome.motion.rotationStyle === 'turn' ? { rotationMode: 'turn' as const } : {}),
+        ...(model.motion.rotationStyle === 'turn' ? { rotationMode: 'turn' as const } : {}),
           schemaVersion: 'voxel.instance-transform-animation/1',
           // A zero period is voxel's own "still", so a still model needs no
           // special case: it is an animation sampled at one time.
@@ -254,8 +254,8 @@ function boundsOf(
 }
 
 /** Voxels the model actually fills. Zero means nothing would be drawn. */
-export function filledVoxelCount(genome: VoxelGenomeV1): number {
+export function filledVoxelCount(model: StudioModelV1): number {
   let count = 0;
-  for (const slot of genome.voxels) if (slot !== 0) count += 1;
+  for (const slot of model.voxels) if (slot !== 0) count += 1;
   return count;
 }

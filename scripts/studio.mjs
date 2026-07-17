@@ -135,7 +135,7 @@ const COMMANDS = {
         trianglesAfter: afterFrame.triangles,
         swept,
         genomeRoundTrips:
-          JSON.stringify(JSON.parse(JSON.stringify(studio.genome()))) === JSON.stringify(studio.genome()),
+          JSON.stringify(JSON.parse(JSON.stringify(studio.model()))) === JSON.stringify(studio.model()),
       };
     }));
 
@@ -144,7 +144,7 @@ const COMMANDS = {
       + `${String(report.after.paletteEntries)}`);
     console.log(`${LOG_PREFIX} triangles ${String(report.trianglesBefore)} -> `
       + `${String(report.trianglesAfter)}; frame changed: ${String(report.pixelsChanged)}`);
-    console.log(`${LOG_PREFIX} genome round-trips through JSON: ${String(report.genomeRoundTrips)}`);
+    console.log(`${LOG_PREFIX} model round-trips through JSON: ${String(report.genomeRoundTrips)}`);
     console.log(`${LOG_PREFIX} edited model's animation sound: ${String(report.swept.ok)}`);
 
     const failures = [];
@@ -154,7 +154,7 @@ const COMMANDS = {
     // An edit the renderer ignored is the failure that matters most here: the
     // studio would report a change it never drew.
     if (!report.pixelsChanged) failures.push('the edit never reached the rendered frame');
-    if (!report.genomeRoundTrips) failures.push('the genome did not survive JSON');
+    if (!report.genomeRoundTrips) failures.push('the model did not survive JSON');
     if (!report.swept.ok) {
       failures.push(`the edited model's animation is unsound: ${report.swept.issues.map((i) => i.message).join(' ')}`);
     }
@@ -176,15 +176,15 @@ const COMMANDS = {
    * routinely, so it did not happen. One sheet costs a single look, so it can.
    */
   async sheet() {
-    // Optionally renders a saved model instead of the starter: pass a genome
+    // Optionally renders a saved model instead of the starter: pass a model
     // file or a request file from tools/studio/requests/ — requests carry the
     // exact model the owner was looking at when they asked, so "render what
-    // request -002 saw" is one command rather than a hand-copied genome.
+    // request -002 saw" is one command rather than a hand-copied model.
     const sourcePath = process.argv[3];
-    let genome = null;
+    let model = null;
     if (sourcePath) {
       const raw = JSON.parse(await readFile(resolvePath(PROJECT_ROOT, sourcePath), 'utf8'));
-      genome = raw.schemaVersion === 'studio.request/1' ? raw.genome : raw;
+      model = raw.schemaVersion === 'studio.request/1' ? (raw.model ?? raw.genome) : raw;
     }
     const file = join(OUTPUT_DIR, 'contact-sheet.png');
     const dataUrl = await withStudio(async (page) => page.evaluate(async (loaded) => {
@@ -194,7 +194,7 @@ const COMMANDS = {
       // The studio composes its own sheet: a script that tiled frames itself
       // would be a second animation view that could disagree with the page's.
       return (await studio.spriteSheet()).dataUrl;
-    }, genome));
+    }, model));
     await mkdir(OUTPUT_DIR, { recursive: true });
     await writeFile(file, Buffer.from(dataUrl.slice(dataUrl.indexOf(',') + 1), 'base64'));
     console.log(`${LOG_PREFIX} wrote ${relative(PROJECT_ROOT, file)}`

@@ -1,6 +1,6 @@
-import { createStarterGenome, createStudioHarness, type VoxelStudioHarnessV1 } from './harness.js';
-import type { VoxelGenomeV1 } from './genome.js';
-import { voxelIndex } from './genome.js';
+import { createStarterModel, createStudioHarness, type VoxelStudioHarnessV1 } from './harness.js';
+import type { StudioModelV1 } from './model.js';
+import { voxelIndex } from './model.js';
 import { describeMotion, describePoseAt } from './describe.js';
 import { NoteStore, type StudioNoteV1 } from './notes.js';
 import { StudioPlayer } from './player.js';
@@ -81,13 +81,13 @@ function mount(): void {
   const stage = element('div', 'stage');
   stage.appendChild(canvasWrap);
 
-  let session = new StudioSession(createStarterGenome(), {
+  let session = new StudioSession(createStarterModel(), {
     canvas,
     width: VIEW_WIDTH,
     height: VIEW_HEIGHT,
     zoom: 1,
   });
-  const player = new StudioPlayer(session.genome.motion.periodMs);
+  const player = new StudioPlayer(session.model.motion.periodMs);
   const noteStore = new NoteStore();
   let selectedSlot = 1;
   let layer = 0;
@@ -211,7 +211,7 @@ function mount(): void {
     input.min = String(-spec.max);
     input.max = String(spec.max);
     input.addEventListener('input', () => {
-      const motion = harness.genome().motion;
+      const motion = harness.model().motion;
       const next: [number, number, number] = [...motion[spec.kind]];
       next[spec.axis] = Number(input.value) * spec.scale;
       harness.animate({ [spec.kind]: next });
@@ -219,10 +219,10 @@ function mount(): void {
     return { spec, input };
   });
 
-  const genomeText = element('textarea', 'genome');
-  genomeText.rows = 6;
-  genomeText.spellcheck = false;
-  const genomeStatus = element('p', 'verdict');
+  const modelText = element('textarea', 'model');
+  modelText.rows = 6;
+  modelText.spellcheck = false;
+  const modelStatus = element('p', 'verdict');
   const sizeInput = element('input', 'slider');
   sizeInput.type = 'range';
   sizeInput.min = '2';
@@ -232,15 +232,15 @@ function mount(): void {
   // ---- the harness: the one surface both the buttons and the agent use ----
   const harness = createStudioHarness({
     session: () => session,
-    replace(genome: VoxelGenomeV1) {
+    replace(model: StudioModelV1) {
       session.dispose();
-      session = new StudioSession(genome, {
+      session = new StudioSession(model, {
         canvas, width: VIEW_WIDTH, height: VIEW_HEIGHT, zoom: 1,
       });
       refresh();
     },
-    update(genome: VoxelGenomeV1) {
-      session.setGenome(genome);
+    update(model: StudioModelV1) {
+      session.setGenome(model);
       refresh();
     },
     player: () => player,
@@ -264,7 +264,7 @@ function mount(): void {
       timeLabel.textContent =
         `frame ${String(at.frame)} of ${String(at.frameCount)} · `
         + `${String(Math.round(timeMs))} ms of ${String(period)} · `
-        + describePoseAt(harness.genome().motion, timeMs);
+        + describePoseAt(harness.model().motion, timeMs);
     } else {
       timeLabel.textContent = 'still';
     }
@@ -352,7 +352,7 @@ function mount(): void {
       updateLayerLabel();
       buildGrid();
     }
-    const [sx, , sz] = harness.genome().size;
+    const [sx, , sz] = harness.model().size;
     const index = (sz - 1 - note.voxel.z) * sx + note.voxel.x;
     const cell = grid.children.item(index);
     if (cell instanceof HTMLElement) {
@@ -381,9 +381,9 @@ function mount(): void {
 
   // ---- swatches, floors, grid (the editors, unchanged in spirit) ----
   function buildSwatches(): void {
-    const genome = harness.genome();
+    const model = harness.model();
     swatches.replaceChildren();
-    genome.palette.forEach((color, index) => {
+    model.palette.forEach((color, index) => {
       const swatch = element('button', 'swatch');
       swatch.style.background = index === 0 ? 'transparent' : rgbHex(color);
       swatch.textContent = index === 0 ? '∅' : '';
@@ -406,12 +406,12 @@ function mount(): void {
   }
 
   function updateLayerLabel(): void {
-    const genome = harness.genome();
-    const [sx, sy, sz] = genome.size;
+    const model = harness.model();
+    const [sx, sy, sz] = model.size;
     let filled = 0;
     for (let x = 0; x < sx; x += 1) {
       for (let z = 0; z < sz; z += 1) {
-        if ((genome.voxels[voxelIndex(genome, x, layer, z)] ?? 0) !== 0) filled += 1;
+        if ((model.voxels[voxelIndex(model, x, layer, z)] ?? 0) !== 0) filled += 1;
       }
     }
     const ground = layer === 0 ? ', the ground' : '';
@@ -421,8 +421,8 @@ function mount(): void {
   }
 
   function buildStack(): void {
-    const genome = harness.genome();
-    const [sx, sy, sz] = genome.size;
+    const model = harness.model();
+    const [sx, sy, sz] = model.size;
     stack.replaceChildren();
     for (let y = sy - 1; y >= 0; y -= 1) {
       const row = element('button', 'floor');
@@ -432,12 +432,12 @@ function mount(): void {
       let filled = 0;
       for (let z = sz - 1; z >= 0; z -= 1) {
         for (let x = 0; x < sx; x += 1) {
-          const slot = genome.voxels[voxelIndex(genome, x, y, z)] ?? 0;
+          const slot = model.voxels[voxelIndex(model, x, y, z)] ?? 0;
           if (slot !== 0) filled += 1;
           const dot = element('i');
           dot.style.background = slot === 0
             ? 'transparent'
-            : rgbHex(genome.palette[slot] ?? { r: 0, g: 0, b: 0 });
+            : rgbHex(model.palette[slot] ?? { r: 0, g: 0, b: 0 });
           mini.appendChild(dot);
         }
       }
@@ -455,16 +455,16 @@ function mount(): void {
   }
 
   function buildGrid(): void {
-    const genome = harness.genome();
-    const [sx, , sz] = genome.size;
+    const model = harness.model();
+    const [sx, , sz] = model.size;
     grid.replaceChildren();
     grid.style.gridTemplateColumns = `repeat(${String(sx)}, 1fr)`;
     for (let z = sz - 1; z >= 0; z -= 1) {
       for (let x = 0; x < sx; x += 1) {
-        const slot = genome.voxels[voxelIndex(genome, x, layer, z)] ?? 0;
+        const slot = model.voxels[voxelIndex(model, x, layer, z)] ?? 0;
         const cell = element('button', 'cell');
         cell.style.background = slot === 0 ? 'transparent' : rgbHex(
-          genome.palette[slot] ?? { r: 0, g: 0, b: 0 },
+          model.palette[slot] ?? { r: 0, g: 0, b: 0 },
         );
         cell.title = slot === 0
           ? `Empty · floor ${String(layer + 1)}`
@@ -486,15 +486,15 @@ function mount(): void {
 
   // ---- refresh: one place where the page catches up with the model ----
   function refresh(): void {
-    const genome = harness.genome();
+    const model = harness.model();
     const described = harness.describe();
-    player.setPeriod(genome.motion.periodMs, performance.now());
+    player.setPeriod(model.motion.periodMs, performance.now());
     syncPlayButton();
     const period = player.periodMs;
     playButton.disabled = period <= 0;
     timeline.disabled = period <= 0;
     timeline.max = String(Math.max(period - 1, 0));
-    motionText.textContent = describeMotion(genome.motion);
+    motionText.textContent = describeMotion(model.motion);
     modelLine.textContent =
       `${described.label} · ${described.size.join('×')} · `
       + `${String(described.filledVoxels)} cubes · ${String(described.paletteEntries - 1)} colours`;
@@ -502,14 +502,14 @@ function mount(): void {
     engineWarning.dataset.tone = 'bad';
     engineWarning.textContent = `Something is wrong underneath: the engine reports "${described.state}".`;
     if (selectedSlot > 0) {
-      colorInput.value = rgbHex(genome.palette[selectedSlot] ?? { r: 0, g: 0, b: 0 });
+      colorInput.value = rgbHex(model.palette[selectedSlot] ?? { r: 0, g: 0, b: 0 });
     }
-    if (layer > genome.size[1] - 1) layer = 0;
-    periodInput.value = String(genome.motion.periodMs);
-    styleSelect.value = genome.motion.rotationStyle === 'turn' ? 'turn' : 'swing';
-    phaseInput.value = String(Math.round((genome.motion.phaseRadians * 180) / Math.PI));
+    if (layer > model.size[1] - 1) layer = 0;
+    periodInput.value = String(model.motion.periodMs);
+    styleSelect.value = model.motion.rotationStyle === 'turn' ? 'turn' : 'swing';
+    phaseInput.value = String(Math.round((model.motion.phaseRadians * 180) / Math.PI));
     for (const { spec, input } of amplitudeInputs) {
-      input.value = String(Math.round(genome.motion[spec.kind][spec.axis] / spec.scale));
+      input.value = String(Math.round(model.motion[spec.kind][spec.axis] / spec.scale));
     }
     buildSwatches();
     buildStack();
@@ -636,36 +636,36 @@ function mount(): void {
   loadButton.addEventListener('click', () => {
     let parsed: unknown;
     try {
-      parsed = JSON.parse(genomeText.value);
+      parsed = JSON.parse(modelText.value);
     } catch (error) {
-      genomeStatus.dataset.tone = 'bad';
-      genomeStatus.textContent = `That is not JSON: ${String(error)}`;
+      modelStatus.dataset.tone = 'bad';
+      modelStatus.textContent = `That is not JSON: ${String(error)}`;
       return;
     }
     const issues = harness.validate(parsed);
     if (issues.length > 0) {
-      genomeStatus.dataset.tone = 'bad';
-      genomeStatus.textContent = issues.map((i) => `${i.path} ${i.message}`).join(' · ');
+      modelStatus.dataset.tone = 'bad';
+      modelStatus.textContent = issues.map((i) => `${i.path} ${i.message}`).join(' · ');
       return;
     }
-    harness.load(parsed as VoxelGenomeV1);
-    genomeStatus.dataset.tone = 'ok';
-    genomeStatus.textContent = `Opened ${harness.genome().label}.`;
+    harness.load(parsed as StudioModelV1);
+    modelStatus.dataset.tone = 'ok';
+    modelStatus.textContent = `Opened ${harness.model().label}.`;
   });
   const copyButton = element('button');
   copyButton.textContent = 'Copy this model';
   copyButton.addEventListener('click', () => {
-    genomeText.value = JSON.stringify(harness.genome(), null, 2);
-    genomeText.select();
-    genomeStatus.dataset.tone = 'idle';
-    genomeStatus.textContent = 'The model is in the box, ready to copy or edit.';
+    modelText.value = JSON.stringify(harness.model(), null, 2);
+    modelText.select();
+    modelStatus.dataset.tone = 'idle';
+    modelStatus.textContent = 'The model is in the box, ready to copy or edit.';
   });
   const newButton = element('button');
   newButton.textContent = 'New empty model';
   newButton.addEventListener('click', () => {
     const size = Number(sizeInput.value);
     harness.load({
-      schemaVersion: 'maker.voxel-genome/1',
+      schemaVersion: 'studio.voxel-model/1',
       id: `studio:new-${String(size)}`,
       label: `New ${String(size)} cube`,
       seed: 1,
@@ -680,12 +680,12 @@ function mount(): void {
         scale: [0, 0, 0],
       },
     });
-    genomeStatus.dataset.tone = 'idle';
-    genomeStatus.textContent = 'Empty model. Paint a floor to begin.';
+    modelStatus.dataset.tone = 'idle';
+    modelStatus.textContent = 'Empty model. Paint a floor to begin.';
   });
   const starterButton = element('button');
   starterButton.textContent = 'Starter';
-  starterButton.addEventListener('click', () => { harness.load(createStarterGenome()); });
+  starterButton.addEventListener('click', () => { harness.load(createStarterModel()); });
 
   periodInput.addEventListener('input', () => {
     harness.animate({ periodMs: Number(periodInput.value) });
@@ -756,10 +756,10 @@ function mount(): void {
     layerLabel,
     grid,
     motionFields,
-    labelled('New model size', sizeInput, 'Cubes, for now. Any size a genome declares will open.'),
+    labelled('New model size', sizeInput, 'Cubes, for now. Any size a model declares will open.'),
     modelButtons,
-    genomeText,
-    genomeStatus,
+    modelText,
+    modelStatus,
   );
   editPanel.append(editSummary, editBody);
 

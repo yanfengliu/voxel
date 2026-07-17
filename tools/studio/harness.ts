@@ -1,13 +1,13 @@
 import {
   addPaletteColor,
   clearVoxel,
-  createEmptyGenome,
+  createEmptyModel,
   setMotion,
   setPaletteColor,
   setVoxel,
   stopMotion,
 } from './edit.js';
-import { validateGenomeV1, type GenomeMotionV1, type VoxelGenomeV1 } from './genome.js';
+import { validateModelV1, type ModelMotionV1, type StudioModelV1 } from './model.js';
 import type { NoteStore, StudioNoteV1 } from './notes.js';
 import type { StudioPlayer } from './player.js';
 import { buildRequest, sendRequest, type SendResult } from './requests.js';
@@ -46,16 +46,16 @@ export interface HarnessSweepSummaryV1 {
 
 export interface VoxelStudioHarnessV1 {
   /** Replaces the model under inspection. Returns what the studio now holds. */
-  load(genome: VoxelGenomeV1): ReturnType<StudioSession['describe']>;
-  /** The current genome, as plain JSON the caller may keep, diff, or persist. */
-  genome(): VoxelGenomeV1;
+  load(model: StudioModelV1): ReturnType<StudioSession['describe']>;
+  /** The current model, as plain JSON the caller may keep, diff, or persist. */
+  model(): StudioModelV1;
   describe(): ReturnType<StudioSession['describe']>;
 
   paint(x: number, y: number, z: number, paletteIndex: number): ReturnType<StudioSession['describe']>;
   erase(x: number, y: number, z: number): ReturnType<StudioSession['describe']>;
   recolor(paletteIndex: number, color: { r: number; g: number; b: number }): ReturnType<StudioSession['describe']>;
   addColor(color: { r: number; g: number; b: number }): { readonly paletteIndex: number };
-  animate(motion: Partial<GenomeMotionV1>): ReturnType<StudioSession['describe']>;
+  animate(motion: Partial<ModelMotionV1>): ReturnType<StudioSession['describe']>;
   stop(): ReturnType<StudioSession['describe']>;
 
   /** Draws one exact time. Returns the frame's data URL and what was drawn. */
@@ -147,10 +147,10 @@ function summarize(result: StudioSweepResultV1): HarnessSweepSummaryV1 {
 
 export interface HarnessHostV1 {
   session(): StudioSession;
-  /** Rebuilds the session around a new genome and tells the UI to catch up. */
-  replace(genome: VoxelGenomeV1): void;
+  /** Rebuilds the session around a new model and tells the UI to catch up. */
+  replace(model: StudioModelV1): void;
   /** Applies an edit and lets the UI redraw, without rebuilding the session. */
-  update(genome: VoxelGenomeV1): void;
+  update(model: StudioModelV1): void;
   player(): StudioPlayer;
   noteStore(): NoteStore;
   /** The page's clock for anchoring play and pause; tests inject their own. */
@@ -162,36 +162,36 @@ export interface HarnessHostV1 {
 }
 
 export function createStudioHarness(host: HarnessHostV1): VoxelStudioHarnessV1 {
-  const edit = (next: VoxelGenomeV1) => {
+  const edit = (next: StudioModelV1) => {
     host.update(next);
     return host.session().describe();
   };
   return {
-    load(genome) {
-      const issues = validateGenomeV1(genome);
+    load(model) {
+      const issues = validateModelV1(model);
       if (issues.length > 0) {
         throw new Error(
-          `Refusing to load an invalid genome: ${issues.map((i) => `${i.path} ${i.message}`).join('; ')}`,
+          `Refusing to load an invalid model: ${issues.map((i) => `${i.path} ${i.message}`).join('; ')}`,
         );
       }
-      host.replace(genome);
+      host.replace(model);
       return host.session().describe();
     },
-    genome: () => host.session().genome,
+    model: () => host.session().model,
     describe: () => host.session().describe(),
 
     paint: (x, y, z, paletteIndex) =>
-      edit(setVoxel(host.session().genome, x, y, z, paletteIndex)),
-    erase: (x, y, z) => edit(clearVoxel(host.session().genome, x, y, z)),
+      edit(setVoxel(host.session().model, x, y, z, paletteIndex)),
+    erase: (x, y, z) => edit(clearVoxel(host.session().model, x, y, z)),
     recolor: (paletteIndex, color) =>
-      edit(setPaletteColor(host.session().genome, paletteIndex, color)),
+      edit(setPaletteColor(host.session().model, paletteIndex, color)),
     addColor(color) {
-      const result = addPaletteColor(host.session().genome, color);
-      host.update(result.genome);
+      const result = addPaletteColor(host.session().model, color);
+      host.update(result.model);
       return { paletteIndex: result.paletteIndex };
     },
-    animate: (motion) => edit(setMotion(host.session().genome, motion)),
-    stop: () => edit(stopMotion(host.session().genome)),
+    animate: (motion) => edit(setMotion(host.session().model, motion)),
+    stop: () => edit(stopMotion(host.session().model)),
 
     sampleAt: (nowMs) => host.session().sampleAt(nowMs),
     sweep(options) {
@@ -242,7 +242,7 @@ export function createStudioHarness(host: HarnessHostV1): VoxelStudioHarnessV1 {
       const player = host.player();
       player.pause(host.now());
       const stepped = stepFrame(
-        host.session().genome.motion,
+        host.session().model.motion,
         player.timeAt(host.now()),
         direction,
         options?.samplesPerPeriod ?? 24,
@@ -253,7 +253,7 @@ export function createStudioHarness(host: HarnessHostV1): VoxelStudioHarnessV1 {
     },
     frameAt(options) {
       return nearestFrame(
-        host.session().genome.motion,
+        host.session().model.motion,
         host.player().timeAt(host.now()),
         options?.samplesPerPeriod ?? 24,
       );
@@ -282,9 +282,9 @@ export function createStudioHarness(host: HarnessHostV1): VoxelStudioHarnessV1 {
     },
 
     sendRequest: (words) =>
-      sendRequest(buildRequest(words, host.noteStore().list(), host.session().genome)),
+      sendRequest(buildRequest(words, host.noteStore().list(), host.session().model)),
 
-    validate: (value) => validateGenomeV1(value),
+    validate: (value) => validateModelV1(value),
   };
 
   function report(): PlayerReportV1 {
@@ -299,24 +299,24 @@ export function createStudioHarness(host: HarnessHostV1): VoxelStudioHarnessV1 {
 }
 
 /** A small model that is obviously a model, so the studio never opens on noise. */
-export function createStarterGenome(): VoxelGenomeV1 {
-  let genome = createEmptyGenome({ id: 'studio:starter', label: 'Starter', size: [6, 6, 6] });
-  const body = addPaletteColor(genome, { r: 90, g: 200, b: 120 });
-  genome = body.genome;
-  const accent = addPaletteColor(genome, { r: 230, g: 190, b: 90 });
-  genome = accent.genome;
+export function createStarterModel(): StudioModelV1 {
+  let model = createEmptyModel({ id: 'studio:starter', label: 'Starter', size: [6, 6, 6] });
+  const body = addPaletteColor(model, { r: 90, g: 200, b: 120 });
+  model = body.model;
+  const accent = addPaletteColor(model, { r: 230, g: 190, b: 90 });
+  model = accent.model;
 
   for (let x = 1; x < 5; x += 1) {
     for (let z = 1; z < 5; z += 1) {
-      for (let y = 0; y < 3; y += 1) genome = setVoxel(genome, x, y, z, body.paletteIndex);
+      for (let y = 0; y < 3; y += 1) model = setVoxel(model, x, y, z, body.paletteIndex);
     }
   }
   for (let x = 2; x < 4; x += 1) {
     for (let z = 2; z < 4; z += 1) {
-      genome = setVoxel(genome, x, 3, z, accent.paletteIndex);
+      model = setVoxel(model, x, 3, z, accent.paletteIndex);
     }
   }
-  return setMotion(genome, {
+  return setMotion(model, {
     periodMs: 1_000,
     translation: [0, 0.6, 0],
     rotationRadians: [0, Math.PI / 6, 0],

@@ -1,5 +1,5 @@
 /**
- * A genome is the whole truth about a model. Meshes, snapshots, and frames are
+ * A model is the whole truth about a model. Meshes, snapshots, and frames are
  * derived and disposable, which is what makes evolution history, tiny-JSON
  * persistence, and runtime regeneration in the games all work from one thing.
  *
@@ -7,7 +7,7 @@
  * has to survive JSON, `structuredClone`, an IndexedDB round trip, and a glTF
  * `extras` field without losing anything.
  */
-export const VOXEL_GENOME_SCHEMA_V1 = 'maker.voxel-genome/1' as const;
+export const VOXEL_GENOME_SCHEMA_V1 = 'studio.voxel-model/1' as const;
 
 /** Straight-alpha sRGB8, matching voxel's colour boundary exactly. */
 export interface GenomeColorV1 {
@@ -24,7 +24,7 @@ export interface GenomeColorV1 {
  * still, which is what makes a model an animation sampled at one time rather
  * than a different kind of thing.
  */
-export interface GenomeMotionV1 {
+export interface ModelMotionV1 {
   readonly periodMs: number;
   readonly phaseRadians: number;
   readonly translation: readonly [number, number, number];
@@ -42,7 +42,7 @@ export interface GenomeMotionV1 {
  * and the density that would justify a typed array is not the density a
  * hand-inspectable studio model has.
  */
-export interface VoxelGenomeV1 {
+export interface StudioModelV1 {
   readonly schemaVersion: typeof VOXEL_GENOME_SCHEMA_V1;
   readonly id: string;
   readonly label: string;
@@ -52,7 +52,7 @@ export interface VoxelGenomeV1 {
   /** Index 0 is the empty slot and is never drawn. */
   readonly palette: readonly GenomeColorV1[];
   readonly voxels: readonly number[];
-  readonly motion: GenomeMotionV1;
+  readonly motion: ModelMotionV1;
 }
 
 export interface GenomeIssueV1 {
@@ -86,36 +86,36 @@ function checkTriple(
 }
 
 /**
- * Rejects a genome that could not build. Invalid genomes should be impossible
+ * Rejects a model that could not build. Invalid model files should be impossible
  * by construction -- every edit clamps -- so anything this finds arrived from
  * outside: a hand-edited file, an older schema, a broken import. It reports
  * every issue rather than the first, because a caller fixing a file wants the
  * whole list.
  */
-export function validateGenomeV1(value: unknown): readonly GenomeIssueV1[] {
+export function validateModelV1(value: unknown): readonly GenomeIssueV1[] {
   const issues: GenomeIssueV1[] = [];
   if (typeof value !== 'object' || value === null) {
     return [{ path: '$', message: 'Expected an object.' }];
   }
-  const genome = value as Record<string, unknown>;
-  if (genome.schemaVersion !== VOXEL_GENOME_SCHEMA_V1) {
+  const model = value as Record<string, unknown>;
+  if (model.schemaVersion !== VOXEL_GENOME_SCHEMA_V1) {
     issues.push({
       path: '$.schemaVersion',
       message: `Expected ${VOXEL_GENOME_SCHEMA_V1}; unknown versions need migration, never a silent misrender.`,
     });
     return issues;
   }
-  if (typeof genome.id !== 'string' || genome.id.length === 0) {
+  if (typeof model.id !== 'string' || model.id.length === 0) {
     issues.push({ path: '$.id', message: 'Expected a non-empty id.' });
   }
-  if (typeof genome.label !== 'string') {
+  if (typeof model.label !== 'string') {
     issues.push({ path: '$.label', message: 'Expected a label.' });
   }
-  if (!isFiniteNumber(genome.seed)) {
+  if (!isFiniteNumber(model.seed)) {
     issues.push({ path: '$.seed', message: 'Expected a finite seed.' });
   }
 
-  const size: unknown = genome.size;
+  const size: unknown = model.size;
   let expectedVoxels = -1;
   if (!Array.isArray(size) || size.length !== 3) {
     issues.push({ path: '$.size', message: 'Expected three dimensions.' });
@@ -135,7 +135,7 @@ export function validateGenomeV1(value: unknown): readonly GenomeIssueV1[] {
     }
   }
 
-  const palette: unknown = genome.palette;
+  const palette: unknown = model.palette;
   if (!Array.isArray(palette) || palette.length < 1) {
     issues.push({ path: '$.palette', message: 'Expected at least the empty entry.' });
   } else if (palette.length > MAX_PALETTE) {
@@ -155,7 +155,7 @@ export function validateGenomeV1(value: unknown): readonly GenomeIssueV1[] {
     });
   }
 
-  const voxels: unknown = genome.voxels;
+  const voxels: unknown = model.voxels;
   if (!Array.isArray(voxels)) {
     issues.push({ path: '$.voxels', message: 'Expected an array of palette indices.' });
   } else {
@@ -179,7 +179,7 @@ export function validateGenomeV1(value: unknown): readonly GenomeIssueV1[] {
     }
   }
 
-  const motion: unknown = genome.motion;
+  const motion: unknown = model.motion;
   if (typeof motion !== 'object' || motion === null) {
     issues.push({ path: '$.motion', message: 'Expected a motion object.' });
   } else {
@@ -206,12 +206,12 @@ export function validateGenomeV1(value: unknown): readonly GenomeIssueV1[] {
 
 /** Index into the flat occupancy grid. Out-of-range coordinates return -1. */
 export function voxelIndex(
-  genome: VoxelGenomeV1,
+  model: StudioModelV1,
   x: number,
   y: number,
   z: number,
 ): number {
-  const [sx, sy, sz] = genome.size;
+  const [sx, sy, sz] = model.size;
   if (x < 0 || y < 0 || z < 0 || x >= sx || y >= sy || z >= sz) return -1;
   return x + sx * (y + sy * z);
 }

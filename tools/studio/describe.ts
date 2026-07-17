@@ -1,4 +1,4 @@
-import type { GenomeMotionV1 } from './genome.js';
+import type { ModelMotionV1 } from './model.js';
 
 /**
  * Saying what a motion does, in words.
@@ -42,7 +42,7 @@ function nonZero(values: readonly [number, number, number]): number[] {
  * still. Harmonic motion oscillates and returns; it never spins, so this says
  * "rocks" rather than "rotates" and states the swing as a plus-or-minus.
  */
-export function describeMotion(motion: GenomeMotionV1): string {
+export function describeMotion(motion: ModelMotionV1): string {
   if (motion.periodMs <= 0) return 'Still. Nothing moves; the model is one frame.';
 
   const parts: string[] = [];
@@ -85,7 +85,7 @@ export function describeMotion(motion: GenomeMotionV1): string {
 }
 
 /** The pose at one time, for the readout beside a scrubbed frame. */
-export function describePoseAt(motion: GenomeMotionV1, nowMs: number): string {
+export function describePoseAt(motion: ModelMotionV1, nowMs: number): string {
   if (motion.periodMs <= 0) return 'at rest';
   const wave = Math.sin((2 * Math.PI * nowMs) / motion.periodMs + motion.phaseRadians);
   if (Math.abs(wave) < 0.02) return 'at rest (crossing zero)';

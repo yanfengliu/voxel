@@ -1,33 +1,33 @@
 import { describe, expect, it } from 'vitest';
 import { RenderWorld } from '../../src/core/index.js';
 
-import { buildSnapshot, filledVoxelCount, GenomeBuildError } from './build.js';
+import { buildSnapshot, filledVoxelCount, ModelBuildError } from './build.js';
 import {
   addPaletteColor,
-  createEmptyGenome,
+  createEmptyModel,
   setMotion,
   setPaletteColor,
   setVoxel,
   stopMotion,
 } from './edit.js';
-import type { VoxelGenomeV1 } from './genome.js';
+import type { StudioModelV1 } from './model.js';
 
 /** Big enough that a rare stray random has nowhere to hide. */
-function largeModel(): VoxelGenomeV1 {
-  let genome = addPaletteColor(
-    createEmptyGenome({ id: 'test:dense', size: [8, 8, 8] }),
+function largeModel(): StudioModelV1 {
+  let model = addPaletteColor(
+    createEmptyModel({ id: 'test:dense', size: [8, 8, 8] }),
     { r: 200, g: 90, b: 60 },
-  ).genome;
+  ).model;
   for (let x = 0; x < 8; x += 1) {
     for (let y = 0; y < 8; y += 1) {
       for (let z = 0; z < 8; z += 1) {
         // A deterministic checker: dense, yet still a genuine pattern whose
         // corruption shows up rather than blending in.
-        if ((x + y + z) % 2 === 0) genome = setVoxel(genome, x, y, z, 1);
+        if ((x + y + z) % 2 === 0) model = setVoxel(model, x, y, z, 1);
       }
     }
   }
-  return genome;
+  return model;
 }
 
 /** The meshed geometry, asserted rather than assumed so a miss says why. */
@@ -48,17 +48,17 @@ function surface(snapshot: ReturnType<typeof buildSnapshot>): number[] {
   return Array.from(geometry(snapshot).positions);
 }
 
-function model(): VoxelGenomeV1 {
-  let genome = addPaletteColor(
-    createEmptyGenome({ id: 'test:cube', size: [3, 3, 3] }),
+function model(): StudioModelV1 {
+  let model = addPaletteColor(
+    createEmptyModel({ id: 'test:cube', size: [3, 3, 3] }),
     { r: 90, g: 200, b: 120 },
-  ).genome;
-  genome = setVoxel(genome, 1, 1, 1, 1);
-  genome = setVoxel(genome, 0, 0, 0, 1);
-  return genome;
+  ).model;
+  model = setVoxel(model, 1, 1, 1, 1);
+  model = setVoxel(model, 0, 0, 0, 1);
+  return model;
 }
 
-describe('building a genome into a voxel snapshot', () => {
+describe('building a model into a voxel snapshot', () => {
   it('is accepted by the engine that will actually draw it', () => {
     const world = new RenderWorld();
     // The point of building an engine snapshot rather than our own mesh: the
@@ -69,16 +69,16 @@ describe('building a genome into a voxel snapshot', () => {
     world.dispose();
   });
 
-  it('produces an identical snapshot for the same genome, always', () => {
-    // Deliberately large and rebuilt many times. Same genome, identical mesh is
+  it('produces an identical snapshot for the same model, always', () => {
+    // Deliberately large and rebuilt many times. Same model, identical mesh is
     // what makes evolution history, tiny-JSON persistence, and runtime
     // regeneration in the games all work, and the thing that breaks it is a
     // stray Math.random() firing rarely. A 27-voxel model built twice catches a
     // one-in-a-thousand stray about five percent of the time -- it would pass,
     // and report determinism it never established. A dense checker meshed 16
     // times compares hundreds of thousands of floats instead.
-    const genome = largeModel();
-    const first = buildSnapshot(genome, { revision: 1 });
+    const model = largeModel();
+    const first = buildSnapshot(model, { revision: 1 });
     expect(geometry(first).positions.length).toBeGreaterThan(1_000);
 
     // Exact, not sampled — but compared with a loop rather than a deep diff.
@@ -101,7 +101,7 @@ describe('building a genome into a voxel snapshot', () => {
     const firstSummary = summarize(first);
 
     for (let attempt = 0; attempt < 16; attempt += 1) {
-      const repeat = buildSnapshot(genome, { revision: 1 });
+      const repeat = buildSnapshot(model, { revision: 1 });
       const label = `build ${String(attempt)}`;
       expect(firstMismatch(geometry(repeat).positions, geometry(first).positions), label).toBe(-1);
       expect(firstMismatch(geometry(repeat).normals, geometry(first).normals), label).toBe(-1);
@@ -124,9 +124,9 @@ describe('building a genome into a voxel snapshot', () => {
   });
 
   it('recolours through the palette without touching occupancy', () => {
-    const genome = model();
-    const recoloured = setPaletteColor(genome, 1, { r: 10, g: 20, b: 30 });
-    const before = buildSnapshot(genome, { revision: 1 });
+    const subject = model();
+    const recoloured = setPaletteColor(subject, 1, { r: 10, g: 20, b: 30 });
+    const before = buildSnapshot(subject, { revision: 1 });
     const after = buildSnapshot(recoloured, { revision: 2 });
 
     // A recolour moves colour, not shape: the surface is untouched.
@@ -138,20 +138,20 @@ describe('building a genome into a voxel snapshot', () => {
   });
 
   it('renders height as height, not depth', () => {
-    // The genome stores height in the middle of its byte order; the engine's
+    // The model stores height in the middle of its byte order; the engine's
     // chunk stores depth there. An index-for-index copy silently swaps the
     // two, and on a cube-shaped grid nothing errors — the model just renders
     // lying on its side. That bug shipped, and the floors panel could not see
-    // it because it reads the genome, not the render. A tower two voxels tall
+    // it because it reads the model, not the render. A tower two voxels tall
     // and one deep must come out two tall and one deep.
-    let genome = addPaletteColor(
-      createEmptyGenome({ id: 'test:tower', size: [3, 3, 3] }),
+    let model = addPaletteColor(
+      createEmptyModel({ id: 'test:tower', size: [3, 3, 3] }),
       { r: 100, g: 100, b: 100 },
-    ).genome;
-    genome = setVoxel(genome, 0, 0, 0, 1);
-    genome = setVoxel(genome, 0, 1, 0, 1);
+    ).model;
+    model = setVoxel(model, 0, 0, 0, 1);
+    model = setVoxel(model, 0, 1, 0, 1);
 
-    const positions = geometry(buildSnapshot(genome, { revision: 1 })).positions;
+    const positions = geometry(buildSnapshot(model, { revision: 1 })).positions;
     let minX = Infinity; let maxX = -Infinity;
     let minY = Infinity; let maxY = -Infinity;
     let minZ = Infinity; let maxZ = -Infinity;
@@ -182,7 +182,7 @@ describe('building a genome into a voxel snapshot', () => {
     expect(snapshot.chunks).toEqual([]);
   });
 
-  it('carries genome motion into the batch the engine animates', () => {
+  it('carries model motion into the batch the engine animates', () => {
     // The bug this exists for: the first build emitted a chunk with no
     // batches, so motion was silently dropped and the model drew but never
     // moved. voxel samples harmonic motion per instance; a chunk has nowhere
@@ -214,12 +214,12 @@ describe('building a genome into a voxel snapshot', () => {
     expect(Array.from(animation?.periodsMs ?? [])).toEqual([0]);
   });
 
-  it('refuses to build a genome that arrived broken', () => {
-    const genome = { ...model(), voxels: model().voxels.slice(0, 3) };
+  it('refuses to build a model that arrived broken', () => {
+    const broken = { ...model(), voxels: model().voxels.slice(0, 3) };
     // Building it anyway would misrender silently; the studio would show a
-    // model nobody authored and call it the genome's.
-    expect(() => buildSnapshot(genome, { revision: 1 })).toThrow(GenomeBuildError);
-    expect(() => buildSnapshot(genome, { revision: 1 })).toThrow(/\$\.voxels/);
+    // model nobody authored and call it the model's.
+    expect(() => buildSnapshot(broken, { revision: 1 })).toThrow(ModelBuildError);
+    expect(() => buildSnapshot(broken, { revision: 1 })).toThrow(/\$\.voxels/);
   });
 
   it('centres the mesh on the model, not on the grid it was authored in', () => {
@@ -256,7 +256,7 @@ describe('building a genome into a voxel snapshot', () => {
   });
 
   it('counts what would actually be drawn', () => {
-    expect(filledVoxelCount(createEmptyGenome({ id: 'e', size: [2, 2, 2] }))).toBe(0);
+    expect(filledVoxelCount(createEmptyModel({ id: 'e', size: [2, 2, 2] }))).toBe(0);
     expect(filledVoxelCount(model())).toBe(2);
   });
 });

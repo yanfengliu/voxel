@@ -1,4 +1,4 @@
-import type { VoxelGenomeV1 } from './genome.js';
+import type { StudioModelV1 } from './model.js';
 import type { StudioNoteV1 } from './notes.js';
 
 /**
@@ -18,19 +18,19 @@ export interface StudioRequestV1 {
   readonly schemaVersion: typeof STUDIO_REQUEST_SCHEMA;
   readonly words: string;
   readonly notes: readonly StudioNoteV1[];
-  readonly genome: VoxelGenomeV1;
+  readonly model: StudioModelV1;
 }
 
 export function buildRequest(
   words: string,
   notes: readonly StudioNoteV1[],
-  genome: VoxelGenomeV1,
+  model: StudioModelV1,
 ): StudioRequestV1 {
   const trimmed = words.trim();
   if (trimmed.length === 0 && notes.length === 0) {
     throw new Error('A request needs words or at least one note.');
   }
-  return { schemaVersion: STUDIO_REQUEST_SCHEMA, words: trimmed, notes: [...notes], genome };
+  return { schemaVersion: STUDIO_REQUEST_SCHEMA, words: trimmed, notes: [...notes], model };
 }
 
 export type SendResult =

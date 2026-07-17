@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { createEmptyGenome, setMotion } from './edit.js';
+import { createEmptyModel, setMotion } from './edit.js';
 import {
   isStill,
   mirrorTime,
@@ -13,7 +13,7 @@ import {
 } from './sweep.js';
 
 const motion = (periodMs: number) =>
-  setMotion(createEmptyGenome({ id: 'm' }), { periodMs, translation: [0, 1, 0] }).motion;
+  setMotion(createEmptyModel({ id: 'm' }), { periodMs, translation: [0, 1, 0] }).motion;
 
 /**
  * A perfect sampler: a pure function of time, periodic, mirrored across the

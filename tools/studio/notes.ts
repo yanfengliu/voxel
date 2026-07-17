@@ -7,7 +7,7 @@
  * exactly where and when "here" is — the alternative is describing marks in
  * prose, which is the thing annotation exists to remove.
  *
- * Notes are review artifacts, not model data: they never enter the genome and
+ * Notes are review artifacts, not model data: they never enter the model and
  * are not part of what a request asks to change. They are how it was asked.
  */
 
