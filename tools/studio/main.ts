@@ -98,6 +98,12 @@ function mount(): void {
   // ---- player bar ----
   const playButton = element('button', 'primary play');
   playButton.textContent = '▶ Play';
+  const stepBack = element('button', 'step');
+  stepBack.textContent = '◀';
+  stepBack.title = 'One frame back (left arrow)';
+  const stepForward = element('button', 'step');
+  stepForward.textContent = '▶';
+  stepForward.title = 'One frame forward (right arrow)';
   const speedSelect = element('select', 'speed');
   for (const speed of [0.25, 0.5, 1, 2]) {
     const option = element('option');
@@ -240,9 +246,15 @@ function mount(): void {
     lastShownMs = timeMs;
     session.showAt(timeMs);
     const period = player.periodMs;
-    timeLabel.textContent = period > 0
-      ? `${String(Math.round(timeMs))} ms of ${String(period)} · ${describePoseAt(harness.genome().motion, timeMs)}`
-      : 'still';
+    if (period > 0) {
+      const at = harness.frameAt();
+      timeLabel.textContent =
+        `frame ${String(at.frame)} of ${String(at.frameCount)} · `
+        + `${String(Math.round(timeMs))} ms of ${String(period)} · `
+        + describePoseAt(harness.genome().motion, timeMs);
+    } else {
+      timeLabel.textContent = 'still';
+    }
     if (document.activeElement !== timeline) timeline.value = String(Math.round(timeMs));
     positionRings();
   }
@@ -502,6 +514,14 @@ function mount(): void {
     if (player.playing) harness.pause(); else harness.play();
     syncPlayButton();
   });
+  stepBack.addEventListener('click', () => {
+    harness.step(-1);
+    syncPlayButton();
+  });
+  stepForward.addEventListener('click', () => {
+    harness.step(1);
+    syncPlayButton();
+  });
   speedSelect.addEventListener('change', () => {
     harness.setSpeed(Number(speedSelect.value));
   });
@@ -664,11 +684,27 @@ function mount(): void {
   });
   document.addEventListener('keydown', (event) => {
     if (event.key === 'Escape' && (pending || armedForPlace)) closeNoteEditor();
+    // Arrow keys step frames anywhere except while typing or on a control
+    // that already owns arrows, like a slider.
+    const target = event.target;
+    const typing = target instanceof HTMLInputElement
+      || target instanceof HTMLTextAreaElement
+      || target instanceof HTMLSelectElement;
+    if (typing) return;
+    if (event.key === 'ArrowRight') {
+      event.preventDefault();
+      harness.step(1);
+      syncPlayButton();
+    } else if (event.key === 'ArrowLeft') {
+      event.preventDefault();
+      harness.step(-1);
+      syncPlayButton();
+    }
   });
 
   // ---- assembly ----
   const playerBar = element('div', 'playerbar');
-  playerBar.append(playButton, speedSelect, timelineWrap, timeLabel);
+  playerBar.append(stepBack, playButton, stepForward, speedSelect, timelineWrap, timeLabel);
   const checkRow = element('div', 'row');
   checkRow.append(sweepButton, sheetButton);
   const playerCard = element('div', 'card');

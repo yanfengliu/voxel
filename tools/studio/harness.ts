@@ -12,6 +12,7 @@ import type { NoteStore, StudioNoteV1 } from './notes.js';
 import type { StudioPlayer } from './player.js';
 import { buildRequest, sendRequest, type SendResult } from './requests.js';
 import { composeSpriteSheet, type SpriteSheetPlanV1 } from './sheet.js';
+import { nearestFrame, stepFrame, type FrameStepV1 } from './sweep.js';
 import type { StudioSession, StudioSweepResultV1 } from './session.js';
 
 /**
@@ -90,6 +91,15 @@ export interface VoxelStudioHarnessV1 {
   setSpeed(speed: number): PlayerReportV1;
   /** Jumps to an exact moment within the period. */
   seek(timeMs: number): PlayerReportV1;
+  /**
+   * One frame forward or back through the same frames the sweep checks and
+   * the sheet shows — stepping walks the evidence, not a private grid. Pauses
+   * playback, snaps to the frame grid, wraps at the ends.
+   */
+  step(direction: 1 | -1, options?: { readonly samplesPerPeriod?: number }):
+    PlayerReportV1 & { readonly frame: number; readonly frameCount: number };
+  /** Which frame the current moment is closest to, for readouts. */
+  frameAt(options?: { readonly samplesPerPeriod?: number }): FrameStepV1;
   playerState(): PlayerReportV1;
 
   /** Pins the owner's words to a moment: a time plus a spot on the picture. */
@@ -227,6 +237,26 @@ export function createStudioHarness(host: HarnessHostV1): VoxelStudioHarnessV1 {
       player.seek(timeMs, host.now());
       host.drawAt(player.timeAt(host.now()));
       return report();
+    },
+    step(direction, options) {
+      const player = host.player();
+      player.pause(host.now());
+      const stepped = stepFrame(
+        host.session().genome.motion,
+        player.timeAt(host.now()),
+        direction,
+        options?.samplesPerPeriod ?? 24,
+      );
+      player.seek(stepped.timeMs, host.now());
+      host.drawAt(stepped.timeMs);
+      return { ...report(), frame: stepped.frame, frameCount: stepped.frameCount };
+    },
+    frameAt(options) {
+      return nearestFrame(
+        host.session().genome.motion,
+        host.player().timeAt(host.now()),
+        options?.samplesPerPeriod ?? 24,
+      );
     },
     playerState: () => report(),
 

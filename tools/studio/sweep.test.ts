@@ -4,7 +4,9 @@ import { createEmptyGenome, setMotion } from './edit.js';
 import {
   isStill,
   mirrorTime,
+  nearestFrame,
   planSweep,
+  stepFrame,
   verifySweep,
   type SweepFrameV1,
   type SweepPlanV1,
@@ -153,5 +155,46 @@ describe('sweep verdicts', () => {
 
     // A still model is one frame by definition, not a broken animation.
     expect(verifySweep(plan, frames, [{ nowMs: 0, image: 'img:still' }]).ok).toBe(true);
+  });
+});
+
+describe('stepping through frames', () => {
+  const motion = {
+    periodMs: 1000,
+    phaseRadians: 0,
+    translation: [0, 0.6, 0],
+    rotationRadians: [0, Math.PI / 6, 0],
+    scale: [0, 0, 0],
+  } as const;
+
+  it('walks the same frames the sweep checks', () => {
+    // Frame times come from the sweep plan, so stepping inspects exactly the
+    // evidence the guards certified — not a private notion of "next".
+    const fromStart = stepFrame(motion, 0, 1);
+    expect(fromStart).toEqual({ timeMs: 42, frame: 2, frameCount: 24 });
+    expect(stepFrame(motion, 42, 1).timeMs).toBe(83);
+  });
+
+  it('wraps at both ends, because the animation does', () => {
+    expect(stepFrame(motion, 0, -1)).toEqual({ timeMs: 958, frame: 24, frameCount: 24 });
+    expect(stepFrame(motion, 958, 1)).toEqual({ timeMs: 0, frame: 1, frameCount: 24 });
+  });
+
+  it('snaps to the grid from between two frames', () => {
+    // Scrubbed to 50 ms, between frames at 42 and 83: nearest is 42, so a
+    // forward step lands on 83 rather than skipping it.
+    expect(stepFrame(motion, 50, 1).timeMs).toBe(83);
+    expect(stepFrame(motion, 50, -1).timeMs).toBe(0);
+  });
+
+  it('stays put on a still model', () => {
+    const still = { ...motion, periodMs: 0 };
+    expect(stepFrame(still, 0, 1)).toEqual({ timeMs: 0, frame: 1, frameCount: 1 });
+  });
+
+  it('reports which frame a moment is closest to', () => {
+    expect(nearestFrame(motion, 0).frame).toBe(1);
+    expect(nearestFrame(motion, 44).frame).toBe(2);
+    expect(nearestFrame(motion, 999).frame).toBe(24);
   });
 });

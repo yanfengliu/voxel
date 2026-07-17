@@ -78,6 +78,61 @@ export function planSweep(
   return { sampleTimes, verifyTimes, periodMs: period };
 }
 
+export interface FrameStepV1 {
+  readonly timeMs: number;
+  /** Which frame this is, counted from one so people can say "frame 7". */
+  readonly frame: number;
+  readonly frameCount: number;
+}
+
+/**
+ * One step through the animation's frames — the same frames the sweep checks
+ * and the sheet shows, so stepping walks exactly the evidence, not a private
+ * notion of "next". From between two frames, a step snaps to the grid first;
+ * walking off either end wraps around, because the animation does.
+ */
+export function stepFrame(
+  motion: GenomeMotionV1,
+  currentMs: number,
+  direction: 1 | -1,
+  samplesPerPeriod = 24,
+): FrameStepV1 {
+  const times = planSweep(motion, samplesPerPeriod).sampleTimes;
+  const count = times.length;
+  if (count <= 1) return { timeMs: 0, frame: 1, frameCount: count };
+  // Nearest frame to where we are now, then one over, wrapped.
+  let nearest = 0;
+  let distance = Infinity;
+  for (let index = 0; index < count; index += 1) {
+    const gap = Math.abs((times[index] ?? 0) - currentMs);
+    if (gap < distance) {
+      distance = gap;
+      nearest = index;
+    }
+  }
+  const next = (nearest + direction + count) % count;
+  return { timeMs: times[next] ?? 0, frame: next + 1, frameCount: count };
+}
+
+/** The frame number the current moment is closest to, for the readout. */
+export function nearestFrame(
+  motion: GenomeMotionV1,
+  currentMs: number,
+  samplesPerPeriod = 24,
+): FrameStepV1 {
+  const times = planSweep(motion, samplesPerPeriod).sampleTimes;
+  let nearest = 0;
+  let distance = Infinity;
+  for (let index = 0; index < times.length; index += 1) {
+    const gap = Math.abs((times[index] ?? 0) - currentMs);
+    if (gap < distance) {
+      distance = gap;
+      nearest = index;
+    }
+  }
+  return { timeMs: times[nearest] ?? 0, frame: nearest + 1, frameCount: times.length };
+}
+
 /** The mirror of a time across the half period: sin(t) equals sin(T/2 - t). */
 export function mirrorTime(nowMs: number, periodMs: number): number {
   return (((periodMs / 2) - nowMs) + periodMs) % periodMs;
