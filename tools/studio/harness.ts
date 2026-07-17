@@ -8,6 +8,9 @@ import {
   stopMotion,
 } from './edit.js';
 import { validateGenomeV1, type GenomeMotionV1, type VoxelGenomeV1 } from './genome.js';
+import type { NoteStore, StudioNoteV1 } from './notes.js';
+import type { StudioPlayer } from './player.js';
+import { buildRequest, sendRequest, type SendResult } from './requests.js';
 import { composeSpriteSheet, type SpriteSheetPlanV1 } from './sheet.js';
 import type { StudioSession, StudioSweepResultV1 } from './session.js';
 
@@ -81,7 +84,38 @@ export interface VoxelStudioHarnessV1 {
   spriteSheet(options?: { readonly samplesPerPeriod?: number; readonly columns?: number }):
     Promise<{ readonly dataUrl: string; readonly plan: SpriteSheetPlanV1 }>;
 
+  /** Starts replay. Same clock the page uses, so both see the same frames. */
+  play(): PlayerReportV1;
+  pause(): PlayerReportV1;
+  setSpeed(speed: number): PlayerReportV1;
+  /** Jumps to an exact moment within the period. */
+  seek(timeMs: number): PlayerReportV1;
+  playerState(): PlayerReportV1;
+
+  /** Pins the owner's words to a moment: a time plus a spot on the picture. */
+  addMomentNote(timeMs: number, spot: { u: number; v: number }, text: string): StudioNoteV1;
+  /** Pins the owner's words to an exact voxel. */
+  addPlaceNote(voxel: { x: number; y: number; z: number }, text: string): StudioNoteV1;
+  removeNote(id: number): boolean;
+  notes(): readonly StudioNoteV1[];
+  /** After applying a request, the agent clears the notes it answered. */
+  clearNotes(): void;
+
+  /**
+   * Bundles words + pinned notes + the current model into a request file via
+   * the dev server. This is how a revision is asked for; an agent watching
+   * tools/studio/requests/ applies it through this same surface.
+   */
+  sendRequest(words: string): Promise<SendResult>;
+
   validate(value: unknown): readonly { readonly path: string; readonly message: string }[];
+}
+
+export interface PlayerReportV1 {
+  readonly playing: boolean;
+  readonly speed: number;
+  readonly timeMs: number;
+  readonly periodMs: number;
 }
 
 function summarize(result: StudioSweepResultV1): HarnessSweepSummaryV1 {
@@ -107,6 +141,14 @@ export interface HarnessHostV1 {
   replace(genome: VoxelGenomeV1): void;
   /** Applies an edit and lets the UI redraw, without rebuilding the session. */
   update(genome: VoxelGenomeV1): void;
+  player(): StudioPlayer;
+  noteStore(): NoteStore;
+  /** The page's clock for anchoring play and pause; tests inject their own. */
+  now(): number;
+  /** Draws the frame at a moment and lets the UI's readouts catch up. */
+  drawAt(timeMs: number): void;
+  /** Tells the UI the notes changed, so lists and timeline dots catch up. */
+  notesChanged(): void;
 }
 
 export function createStudioHarness(host: HarnessHostV1): VoxelStudioHarnessV1 {
@@ -166,8 +208,64 @@ export function createStudioHarness(host: HarnessHostV1): VoxelStudioHarnessV1 {
       });
     },
 
+    play() {
+      host.player().play(host.now());
+      return report();
+    },
+    pause() {
+      const player = host.player();
+      player.pause(host.now());
+      host.drawAt(player.timeAt(host.now()));
+      return report();
+    },
+    setSpeed(speed) {
+      host.player().setSpeed(speed, host.now());
+      return report();
+    },
+    seek(timeMs) {
+      const player = host.player();
+      player.seek(timeMs, host.now());
+      host.drawAt(player.timeAt(host.now()));
+      return report();
+    },
+    playerState: () => report(),
+
+    addMomentNote(timeMs, spot, text) {
+      const note = host.noteStore().addMoment(timeMs, spot, text);
+      host.notesChanged();
+      return note;
+    },
+    addPlaceNote(voxel, text) {
+      const note = host.noteStore().addPlace(voxel, text);
+      host.notesChanged();
+      return note;
+    },
+    removeNote(id) {
+      const removed = host.noteStore().remove(id);
+      if (removed) host.notesChanged();
+      return removed;
+    },
+    notes: () => host.noteStore().list(),
+    clearNotes() {
+      host.noteStore().clear();
+      host.notesChanged();
+    },
+
+    sendRequest: (words) =>
+      sendRequest(buildRequest(words, host.noteStore().list(), host.session().genome)),
+
     validate: (value) => validateGenomeV1(value),
   };
+
+  function report(): PlayerReportV1 {
+    const player = host.player();
+    return {
+      playing: player.playing,
+      speed: player.speed,
+      timeMs: player.timeAt(host.now()),
+      periodMs: player.periodMs,
+    };
+  }
 }
 
 /** A small model that is obviously a model, so the studio never opens on noise. */

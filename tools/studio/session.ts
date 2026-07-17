@@ -86,6 +86,23 @@ export class StudioSession {
     this.#accept(genome);
   }
 
+  /**
+   * Draws one exact time on the canvas and nothing more. Replay calls this
+   * every animation frame; reading the pixels back into an image there would
+   * drag playback to a crawl, and playback only needs the canvas. sampleAt
+   * stays the evidence path — it draws AND captures, for anything that keeps
+   * or judges the frame.
+   */
+  showAt(nowMs: number): void {
+    this.#assertLive();
+    this.#runtime.frame({
+      nowMs,
+      deltaMs: 16,
+      frameIndex: this.#frameIndex,
+    });
+    this.#frameIndex += 1;
+  }
+
   /** Draws one exact time and reports what was drawn. */
   sampleAt(nowMs: number): StudioFrameV1 {
     this.#assertLive();

@@ -5,3 +5,4 @@ output/
 tmp/
 .playwright-cli/
 .git-broken-*/
+tools/studio/requests/

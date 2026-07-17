@@ -1,4 +1,4 @@
-import { mkdir, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { dirname, join, relative, resolve as resolvePath } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -176,17 +176,29 @@ const COMMANDS = {
    * routinely, so it did not happen. One sheet costs a single look, so it can.
    */
   async sheet() {
+    // Optionally renders a saved model instead of the starter: pass a genome
+    // file or a request file from tools/studio/requests/ — requests carry the
+    // exact model the owner was looking at when they asked, so "render what
+    // request -002 saw" is one command rather than a hand-copied genome.
+    const sourcePath = process.argv[3];
+    let genome = null;
+    if (sourcePath) {
+      const raw = JSON.parse(await readFile(resolvePath(PROJECT_ROOT, sourcePath), 'utf8'));
+      genome = raw.schemaVersion === 'studio.request/1' ? raw.genome : raw;
+    }
     const file = join(OUTPUT_DIR, 'contact-sheet.png');
-    const dataUrl = await withStudio(async (page) => page.evaluate(async () => {
+    const dataUrl = await withStudio(async (page) => page.evaluate(async (loaded) => {
       const studio = window.voxelStudio;
       if (!studio) throw new Error('the studio harness is unavailable');
+      if (loaded) studio.load(loaded);
       // The studio composes its own sheet: a script that tiled frames itself
       // would be a second animation view that could disagree with the page's.
       return (await studio.spriteSheet()).dataUrl;
-    }));
+    }, genome));
     await mkdir(OUTPUT_DIR, { recursive: true });
     await writeFile(file, Buffer.from(dataUrl.slice(dataUrl.indexOf(',') + 1), 'base64'));
-    console.log(`${LOG_PREFIX} wrote ${relative(PROJECT_ROOT, file)}`);
+    console.log(`${LOG_PREFIX} wrote ${relative(PROJECT_ROOT, file)}`
+      + (sourcePath ? ` from ${sourcePath}` : ''));
   },
 
   /**
