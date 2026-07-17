@@ -79,13 +79,36 @@ describe('building a genome into a voxel snapshot', () => {
     // times compares hundreds of thousands of floats instead.
     const genome = largeModel();
     const first = buildSnapshot(genome, { revision: 1 });
-    const expected = surface(first);
-    expect(expected.length).toBeGreaterThan(1_000);
+    expect(geometry(first).positions.length).toBeGreaterThan(1_000);
+
+    // Exact, not sampled — but compared with a loop rather than a deep diff.
+    // The outline pass grew these arrays about fivefold, and the test
+    // framework's element-by-element diffing turned sixteen rebuilds into a
+    // timeout for the same claim this makes in milliseconds.
+    const firstMismatch = (a: ArrayLike<number>, b: ArrayLike<number>): number => {
+      if (a.length !== b.length) return -2;
+      for (let at = 0; at < a.length; at += 1) if (a[at] !== b[at]) return at;
+      return -1;
+    };
+    // Typed arrays are loop-compared above; everything else must match too,
+    // and stringifying it with the big arrays reduced to their lengths keeps
+    // the comparison complete without rebuilding megabyte diffs.
+    const summarize = (snapshot: ReturnType<typeof buildSnapshot>): string =>
+      JSON.stringify(snapshot, (_key, value: unknown) =>
+        ArrayBuffer.isView(value)
+          ? `typed:${String((value as unknown as { length: number }).length)}`
+          : value);
+    const firstSummary = summarize(first);
 
     for (let attempt = 0; attempt < 16; attempt += 1) {
       const repeat = buildSnapshot(genome, { revision: 1 });
-      expect(surface(repeat), `build ${String(attempt)}`).toEqual(expected);
-      expect(repeat, `build ${String(attempt)}`).toEqual(first);
+      const label = `build ${String(attempt)}`;
+      expect(firstMismatch(geometry(repeat).positions, geometry(first).positions), label).toBe(-1);
+      expect(firstMismatch(geometry(repeat).normals, geometry(first).normals), label).toBe(-1);
+      expect(firstMismatch(geometry(repeat).colors ?? [], geometry(first).colors ?? []), label).toBe(-1);
+      expect(firstMismatch(geometry(repeat).indices, geometry(first).indices), label).toBe(-1);
+      expect(firstMismatch(repeat.batches[0]?.matrices ?? [], first.batches[0]?.matrices ?? []), label).toBe(-1);
+      expect(summarize(repeat), label).toBe(firstSummary);
     }
   });
 
@@ -114,12 +137,48 @@ describe('building a genome into a voxel snapshot', () => {
     expect(Array.from(geometry(after).colors ?? []).slice(0, 3)).toEqual([10, 20, 30]);
   });
 
+  it('renders height as height, not depth', () => {
+    // The genome stores height in the middle of its byte order; the engine's
+    // chunk stores depth there. An index-for-index copy silently swaps the
+    // two, and on a cube-shaped grid nothing errors — the model just renders
+    // lying on its side. That bug shipped, and the floors panel could not see
+    // it because it reads the genome, not the render. A tower two voxels tall
+    // and one deep must come out two tall and one deep.
+    let genome = addPaletteColor(
+      createEmptyGenome({ id: 'test:tower', size: [3, 3, 3] }),
+      { r: 100, g: 100, b: 100 },
+    ).genome;
+    genome = setVoxel(genome, 0, 0, 0, 1);
+    genome = setVoxel(genome, 0, 1, 0, 1);
+
+    const positions = geometry(buildSnapshot(genome, { revision: 1 })).positions;
+    let minX = Infinity; let maxX = -Infinity;
+    let minY = Infinity; let maxY = -Infinity;
+    let minZ = Infinity; let maxZ = -Infinity;
+    for (let offset = 0; offset < positions.length; offset += 3) {
+      minX = Math.min(minX, positions[offset] ?? 0);
+      maxX = Math.max(maxX, positions[offset] ?? 0);
+      minY = Math.min(minY, positions[offset + 1] ?? 0);
+      maxY = Math.max(maxY, positions[offset + 1] ?? 0);
+      minZ = Math.min(minZ, positions[offset + 2] ?? 0);
+      maxZ = Math.max(maxZ, positions[offset + 2] ?? 0);
+    }
+    const height = maxY - minY;
+    const depth = maxZ - minZ;
+    const width = maxX - minX;
+    expect(height).toBeGreaterThan(1.9);
+    expect(depth).toBeLessThan(1.2);
+    expect(width).toBeLessThan(1.2);
+  });
+
   it('meshes only the visible surface, never a box per voxel', () => {
     const snapshot = buildSnapshot(model(), { revision: 1 });
-    // Two isolated voxels: six faces each, four vertices per face. A mesher
+    // Two isolated voxels: six faces each, four vertices per face — 48
+    // surface vertices. Every edge of an isolated cube is drawn, so each face
+    // also carries four border strips of four vertices: 192 more. A mesher
     // that emitted interior faces, or a cube per voxel regardless of
     // occlusion, would not land on exactly this.
-    expect(geometry(snapshot).positions.length / 3).toBe(2 * 6 * 4);
+    expect(geometry(snapshot).positions.length / 3).toBe(2 * 6 * 4 + 2 * 6 * 4 * 4);
     expect(snapshot.chunks).toEqual([]);
   });
 

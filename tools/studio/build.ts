@@ -1,5 +1,5 @@
 import type { RenderSnapshotV1 } from '../../src/core/index.js';
-import { DensePaletteChunk, meshVisibleFaces } from '../../src/meshing/index.js';
+import { addFaceOutlines, DensePaletteChunk, meshVisibleFaces } from '../../src/meshing/index.js';
 
 import { validateGenomeV1, type VoxelGenomeV1 } from './genome.js';
 
@@ -26,6 +26,8 @@ const WORLD_ID = 'world:maker-studio';
 const GEOMETRY_KEY = 'geometry:model';
 const BATCH_KEY = 'batch:model';
 const MATERIAL_KEY = 'material:model';
+/** Near-black, softened so lines read as drawn edges rather than holes. */
+const OUTLINE_COLOR = { r: 24, g: 26, b: 30 };
 
 export interface BuildOptionsV1 {
   /** Distinguishes revisions of the same model. Must rise on every edit. */
@@ -57,24 +59,43 @@ export function buildSnapshot(
   const revision = options.revision;
   const epoch = options.epoch ?? `epoch:${genome.id}`;
 
+  // The genome and the chunk disagree on byte order: the genome stores
+  // x + sx*(y + sy*z) — height in the middle — while the chunk reads
+  // x + sx*(z + sz*y) — depth in the middle. A straight index-for-index copy
+  // silently swaps height and depth for any cube-shaped grid, which put the
+  // starter's cap on its side for a whole session while every panel that reads
+  // the genome kept saying "top". Copy by coordinates, never by index.
   const voxels = new Uint16Array(sx * sy * sz);
-  for (let index = 0; index < voxels.length; index += 1) {
-    voxels[index] = genome.voxels[index] ?? 0;
+  for (let y = 0; y < sy; y += 1) {
+    for (let z = 0; z < sz; z += 1) {
+      for (let x = 0; x < sx; x += 1) {
+        voxels[x + sx * (z + sz * y)] = genome.voxels[x + sx * (y + sy * z)] ?? 0;
+      }
+    }
   }
 
   // The engine's own mesher, not a copy of it. A studio that meshed models its
   // own way would be inspecting its own approximation of what the game draws.
-  const mesh = meshVisibleFaces(
+  const bare = meshVisibleFaces(
     new DensePaletteChunk({ origin: { x: 0, y: 0, z: 0 }, size: { x: sx, y: sy, z: sz }, voxels }),
     { positionSpace: 'source-local' },
   );
+
+  // Dark lines where surfaces turn or change colour, so the eye can tell the
+  // top of a model from its side — flat unlit colour gives it nothing else to
+  // go on. The line colour lives in the render palette only, one slot past the
+  // genome's own colours: it is presentation, not part of the model, so saving
+  // or copying a genome never carries it.
+  const outlineSlot = genome.palette.length;
+  const mesh = addFaceOutlines(bare, { paletteIndex: outlineSlot });
 
   // Per-vertex colour resolved from the palette here, because a geometry
   // resource carries colours while a chunk carries palette indices. Same
   // palette, same result; only the lane differs.
   const colors = new Uint8Array(mesh.paletteIndices.length * 3);
   for (let vertex = 0; vertex < mesh.paletteIndices.length; vertex += 1) {
-    const entry = genome.palette[mesh.paletteIndices[vertex] ?? 0];
+    const slot = mesh.paletteIndices[vertex] ?? 0;
+    const entry = slot === outlineSlot ? OUTLINE_COLOR : genome.palette[slot];
     colors[vertex * 3] = entry?.r ?? 0;
     colors[vertex * 3 + 1] = entry?.g ?? 0;
     colors[vertex * 3 + 2] = entry?.b ?? 0;

@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Added `addFaceOutlines` to `voxel/meshing`: a pure, deterministic post-pass that bakes dark border strips along a meshed model's edges as ordinary lifted triangles, so flat unlit voxel art reads as separate surfaces. Lines are drawn only where they carry information — where the surface turns, where the colour changes, or where it ends — never across the seam of a flat same-colour run. Because the borders are plain geometry, they animate, instance, and ship anywhere the base mesh does, with no Three.js involvement and no new draw calls.
 - Added the authoritative Voxel 1.0 roadmap, target architecture, executable implementation plan, and support/distribution policy.
 - Added a committed declaration/API compatibility report and CI jobs for Node 22 Windows/Linux complete verification, Node 24 portable compatibility, dependency audits, and package inspection.
 - Bounded the packed build payload to emitted ESM and declarations, disabled source-map directives/maps so the tarball is self-consistent, and added hard 350,000-byte packed and 1,700,000-byte unpacked gates. The resulting API-report hash update changes declaration emission only, not exported TypeScript semantics.

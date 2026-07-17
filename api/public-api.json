@@ -164,6 +164,13 @@
         "./three"
       ]
     },
+    "dist/meshing/face-outlines.d.ts": {
+      "sha256": "cfb514d6fc2873efb6a4929ab315688d2e3c404be58f4707a4d38e11323cff9c",
+      "reachableFrom": [
+        "./meshing",
+        "./three"
+      ]
+    },
     "dist/meshing/greedy-opaque-mesher.d.ts": {
       "sha256": "20befe2561495c4f9d80f1996d6872808fa7023afc516b4e70eca387a0143d2b",
       "reachableFrom": [
@@ -172,7 +179,7 @@
       ]
     },
     "dist/meshing/index.d.ts": {
-      "sha256": "e488df809359a7973d1dde1af9041d5b14da983ec1b9d09a9cfc50656ba7a4c5",
+      "sha256": "6abcc7e4be0825f887e94d0d4f7e1d6164b1ff90625dcdac809118e814bf1341",
       "reachableFrom": [
         "./meshing",
         "./three"

@@ -27,6 +27,11 @@ export {
   type VisibleFaceMesherOptions,
 } from './visible-face-mesher.js';
 export {
+  addFaceOutlines,
+  type FaceOutlineOptionsV1,
+  type OutlinedMeshV1,
+} from './face-outlines.js';
+export {
   ChunkIndexV1,
   FACE_NEIGHBOR_OFFSETS_V1,
   MAX_CHUNK_DEPENDENCY_OFFSETS_V1,
