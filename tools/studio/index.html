@@ -16,6 +16,10 @@
         --check-a: #24292e;
         --check-b: #1b1f23;
       }
+      /* The hidden attribute works by a default display:none, which loses to
+         any of this page's own display rules; without this, "hidden" panels
+         with flex or grid layouts show anyway. */
+      [hidden] { display: none !important; }
       body {
         margin: 0;
         background: var(--ground);
