@@ -20,6 +20,13 @@ import type { VisibleFaceMesh } from './visible-face-mesher.js';
  * way as the face they trace. Nothing here knows about Three.js, instancing,
  * or animation — which is exactly why the result animates, instances, and
  * ships anywhere the base mesh does. Same input, same outline, always.
+ *
+ * Owner policy (2026-07-17): edges are an examination aid, not part of the
+ * art. The model studio draws them so a person can judge a model; games do
+ * not draw them. Nothing in the engine calls this on its own — a caller must
+ * choose it — and edges never enter a saved model file, so a game loading the
+ * same model always draws it clean. If a game ever wants edges as a style,
+ * that is a new decision for the owner, not a default to inherit.
  */
 
 export interface FaceOutlineOptionsV1 {
