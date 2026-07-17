@@ -1,0 +1,394 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>studio design proposal</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        --bg: #0f1214;
+        --rail: #14181b;
+        --panel: #191e22;
+        --line: #262c33;
+        --line-soft: #1f242a;
+        --text: #e8eef4;
+        --muted: #93a0ac;
+        --faint: #5c6873;
+        --accent: #56c980;
+        --pin: #e2b93b;
+        font-size: 16px;
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--text);
+        font: 13.5px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
+        height: 100vh;
+        display: grid;
+        grid-template-rows: auto 1fr;
+      }
+      .banner {
+        background: #2a2410;
+        color: #e2c96a;
+        font-size: 12px;
+        padding: 6px 16px;
+        border-bottom: 1px solid #3a3218;
+      }
+      .app {
+        display: grid;
+        grid-template-rows: 48px 1fr 60px;
+        grid-template-columns: 216px 1fr 300px;
+        grid-template-areas:
+          "top top top"
+          "rail stage inspector"
+          "rail player inspector";
+        min-height: 0;
+      }
+      /* ---- top bar ---- */
+      .top {
+        grid-area: top;
+        display: flex;
+        align-items: center;
+        gap: 14px;
+        padding: 0 16px;
+        border-bottom: 1px solid var(--line);
+        background: var(--rail);
+      }
+      .top .name { font-weight: 600; font-size: 14px; letter-spacing: -0.01em; }
+      .status {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        font-size: 12px;
+        color: var(--muted);
+      }
+      .status::before {
+        content: "";
+        width: 7px; height: 7px;
+        border-radius: 50%;
+        background: var(--accent);
+      }
+      .top .grow { flex: 1; }
+      button {
+        font: inherit;
+        font-size: 12.5px;
+        color: var(--text);
+        background: transparent;
+        border: 1px solid var(--line);
+        border-radius: 6px;
+        padding: 5px 12px;
+        cursor: pointer;
+      }
+      button:hover { border-color: var(--accent); }
+      .primary { border-color: var(--accent); }
+      /* ---- catalog rail ---- */
+      .rail {
+        grid-area: rail;
+        background: var(--rail);
+        border-right: 1px solid var(--line);
+        padding: 14px 10px;
+        overflow-y: auto;
+      }
+      .rail h2 {
+        font-size: 10.5px;
+        letter-spacing: 0.1em;
+        text-transform: uppercase;
+        color: var(--faint);
+        margin: 14px 6px 6px;
+        font-weight: 600;
+      }
+      .rail h2:first-child { margin-top: 0; }
+      .model-row {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 6px 8px;
+        border-radius: 6px;
+        color: var(--muted);
+        cursor: pointer;
+        border: 1px solid transparent;
+      }
+      .model-row:hover { background: var(--panel); color: var(--text); }
+      .model-row.active {
+        background: var(--panel);
+        border-color: var(--line);
+        color: var(--text);
+      }
+      .model-row .dot {
+        width: 14px; height: 14px;
+        border-radius: 3px;
+        background: linear-gradient(135deg, #b24a3a 60%, #a8a298 60%);
+        flex: none;
+      }
+      .model-row .dot.green { background: linear-gradient(135deg, #5ac878 55%, #e6be5a 55%); }
+      .model-row .dot.grey { background: #39424b; }
+      .rail .note { font-size: 11px; color: var(--faint); margin: 10px 8px 0; line-height: 1.45; }
+      /* ---- stage ---- */
+      .stage {
+        grid-area: stage;
+        position: relative;
+        min-height: 0;
+        background:
+          radial-gradient(1200px 500px at 50% 30%, #171c20 0%, #101416 70%);
+        display: grid;
+        place-items: center;
+        overflow: hidden;
+      }
+      .stage .model {
+        width: min(46%, 400px);
+        aspect-ratio: 560 / 390;
+        background-image: url("./design-sample.png");
+        /* Sized to hold the whole wall with air around it; nudged to crop the
+           sheet's time caption out of the top-left corner. */
+        background-size: auto 112%;
+        background-position: -10px -18px;
+        filter: drop-shadow(0 26px 44px rgba(0, 0, 0, 0.5));
+      }
+      .viewchip {
+        position: absolute;
+        top: 12px; left: 14px;
+        font-size: 11.5px;
+        color: var(--muted);
+        background: rgba(15, 18, 20, 0.7);
+        border: 1px solid var(--line-soft);
+        border-radius: 6px;
+        padding: 4px 10px;
+      }
+      .stagehint {
+        position: absolute;
+        bottom: 12px; left: 14px;
+        font-size: 11.5px;
+        color: var(--faint);
+      }
+      .toggles {
+        position: absolute;
+        top: 12px; right: 14px;
+        display: flex;
+        gap: 6px;
+      }
+      .toggle {
+        font-size: 11.5px;
+        padding: 4px 10px;
+        border-radius: 6px;
+        border: 1px solid var(--line-soft);
+        color: var(--muted);
+        background: rgba(15, 18, 20, 0.7);
+        cursor: pointer;
+      }
+      .toggle.on { color: var(--accent); border-color: var(--accent); }
+      .pin {
+        position: absolute;
+        left: 46%; top: 38%;
+        width: 26px; height: 26px;
+        border: 2px solid var(--pin);
+        border-radius: 50%;
+        box-shadow: 0 0 0 2px rgba(0,0,0,0.4);
+      }
+      /* ---- player ---- */
+      .player {
+        grid-area: player;
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding: 0 16px;
+        border-top: 1px solid var(--line);
+        background: var(--rail);
+      }
+      .transport { display: flex; gap: 6px; }
+      .transport button { min-width: 38px; padding: 6px 0; text-align: center; }
+      .transport .play { min-width: 46px; border-color: var(--accent); }
+      .track {
+        position: relative;
+        flex: 1;
+        height: 26px;
+      }
+      .track .bar {
+        position: absolute;
+        top: 12px; left: 0; right: 0;
+        height: 3px;
+        border-radius: 2px;
+        background: var(--line);
+      }
+      .track .fill {
+        position: absolute;
+        top: 12px; left: 0; width: 29%;
+        height: 3px;
+        border-radius: 2px;
+        background: var(--accent);
+      }
+      .track .head {
+        position: absolute;
+        top: 7px; left: 29%;
+        width: 13px; height: 13px;
+        border-radius: 50%;
+        background: var(--accent);
+        transform: translateX(-50%);
+      }
+      .track .tick {
+        position: absolute;
+        top: 10px;
+        width: 8px; height: 8px;
+        border-radius: 50%;
+        background: var(--pin);
+        border: 1px solid var(--bg);
+        transform: translateX(-50%);
+      }
+      .player .clock {
+        font-family: ui-monospace, "Cascadia Code", Menlo, monospace;
+        font-size: 11.5px;
+        color: var(--muted);
+        font-variant-numeric: tabular-nums;
+        white-space: nowrap;
+      }
+      /* ---- inspector ---- */
+      .inspector {
+        grid-area: inspector;
+        border-left: 1px solid var(--line);
+        background: var(--rail);
+        display: grid;
+        grid-template-rows: auto 1fr;
+        min-height: 0;
+      }
+      .tabs {
+        display: flex;
+        border-bottom: 1px solid var(--line);
+      }
+      .tab {
+        flex: 1;
+        text-align: center;
+        font-size: 12px;
+        color: var(--faint);
+        padding: 10px 0 9px;
+        cursor: pointer;
+        border-bottom: 2px solid transparent;
+      }
+      .tab.active { color: var(--text); border-bottom-color: var(--accent); }
+      .pane { padding: 14px; overflow-y: auto; display: grid; gap: 14px; align-content: start; }
+      .sentence { font-size: 13px; line-height: 1.55; margin: 0; }
+      .factline {
+        font-family: ui-monospace, "Cascadia Code", Menlo, monospace;
+        font-size: 11.5px;
+        color: var(--muted);
+      }
+      .checks {
+        border: 1px solid var(--line-soft);
+        border-radius: 8px;
+        padding: 10px 12px;
+        display: grid;
+        gap: 6px;
+      }
+      .check { display: flex; gap: 8px; font-size: 12px; color: var(--muted); }
+      .check::before { content: "✓"; color: var(--accent); }
+      .actions { display: flex; gap: 8px; flex-wrap: wrap; }
+      .notecard {
+        border: 1px solid var(--line-soft);
+        border-radius: 8px;
+        padding: 9px 11px;
+        display: grid;
+        gap: 3px;
+      }
+      .notecard .where {
+        font-family: ui-monospace, Menlo, monospace;
+        font-size: 10.5px;
+        color: var(--pin);
+      }
+      .notecard .words { font-size: 12.5px; }
+      textarea {
+        font: inherit;
+        font-size: 12.5px;
+        background: var(--panel);
+        color: var(--text);
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        padding: 9px;
+        resize: vertical;
+        width: 100%;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="banner">Design proposal — a picture of the layout, not the working tool. Nothing here is wired up.</div>
+    <div class="app">
+      <div class="top">
+        <span class="name">Brick wall</span>
+        <span class="status">movement steady · all checks pass</span>
+        <span class="grow"></span>
+        <button>Open…</button>
+        <button>New</button>
+        <button>Copy</button>
+        <button class="primary">Send request</button>
+      </div>
+
+      <div class="rail">
+        <h2>Studio</h2>
+        <div class="model-row"><span class="dot green"></span>Starter</div>
+        <div class="model-row active"><span class="dot"></span>Brick wall</div>
+        <h2>City</h2>
+        <div class="model-row"><span class="dot grey"></span>Small house</div>
+        <div class="model-row"><span class="dot grey"></span>Office tower</div>
+        <div class="model-row"><span class="dot grey"></span>Street tree</div>
+        <h2>AoE2</h2>
+        <div class="model-row"><span class="dot grey"></span>Villager</div>
+        <div class="model-row"><span class="dot grey"></span>Town centre</div>
+        <p class="note">Each game brings its own shelf of models. The studio is the same everywhere; the shelf is the game's.</p>
+      </div>
+
+      <div class="stage">
+        <div class="model"></div>
+        <span class="viewchip">front-left · 30° up</span>
+        <div class="toggles">
+          <span class="toggle on">study edges</span>
+          <span class="toggle">game look</span>
+          <span class="toggle">floor</span>
+        </div>
+        <div class="pin"></div>
+        <span class="stagehint">drag to turn · scroll to zoom · double-click to re-centre · click to pin a note</span>
+      </div>
+
+      <div class="player">
+        <div class="transport">
+          <button>◀</button>
+          <button class="play">⏵</button>
+          <button>▶</button>
+          <button>1×</button>
+        </div>
+        <div class="track">
+          <div class="bar"></div>
+          <div class="fill"></div>
+          <div class="head"></div>
+          <div class="tick" style="left: 43%"></div>
+          <div class="tick" style="left: 71%"></div>
+        </div>
+        <span class="clock">frame 7 / 24 · 292 ms of 1000 · leaning forward</span>
+      </div>
+
+      <div class="inspector">
+        <div class="tabs">
+          <span class="tab active">Examine</span>
+          <span class="tab">Edit</span>
+          <span class="tab">Motion</span>
+          <span class="tab">Notes</span>
+        </div>
+        <div class="pane">
+          <p class="sentence">Rocking side to side by ±30° and bobbing up and down by ±0.6 levels, once every 1s. It returns to rest at the halfway point and swings the other way.</p>
+          <p class="factline">Brick wall · 16×10×2 · 320 cubes · 4 colours</p>
+          <div class="checks">
+            <span class="check">same moment, same picture — every time</span>
+            <span class="check">it moves: 13 different poses</span>
+            <span class="check">repeats exactly, no drift</span>
+          </div>
+          <div class="actions">
+            <button>Check the movement</button>
+            <button>All frames</button>
+          </div>
+          <div class="notecard">
+            <span class="where">292 ms · on the picture</span>
+            <span class="words">The top course clips through the cap here</span>
+          </div>
+          <textarea rows="3" placeholder="What should change? Your notes travel with this."></textarea>
+        </div>
+      </div>
+    </div>
+  </body>
+</html>

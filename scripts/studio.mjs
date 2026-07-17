@@ -207,9 +207,21 @@ const COMMANDS = {
    * is only real once something has laid it out.
    */
   async shot() {
-    const file = join(OUTPUT_DIR, 'studio-ui.png');
+    // Optionally shoots another page of the studio server, e.g.
+    // `shot design-proposal.html` — used to look at layout proposals with the
+    // same eyes as the tool itself.
+    const pagePath = process.argv[3];
+    const file = join(OUTPUT_DIR, pagePath ? 'studio-page.png' : 'studio-ui.png');
     await withStudio(async (page) => {
       await mkdir(OUTPUT_DIR, { recursive: true });
+      if (pagePath) {
+        const target = new URL(pagePath, page.url()).toString();
+        await page.goto(target, { waitUntil: 'load' });
+        await page.setViewportSize({ width: 1280, height: 800 });
+        await page.screenshot({ path: file, fullPage: false });
+        console.log(`${LOG_PREFIX} wrote ${relative(PROJECT_ROOT, file)} from ${pagePath}`);
+        return;
+      }
       await page.screenshot({ path: file, fullPage: true });
       // A page that renders but whose controls never wired up looks fine in a
       // screenshot, so the count is asserted rather than eyeballed.

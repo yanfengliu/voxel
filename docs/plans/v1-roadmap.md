@@ -23,6 +23,21 @@ The 1.0 claim requires all of the following:
 
 This is intentionally a useful shared renderer, not a universal graphics engine.
 
+## Every game gets a model studio
+
+Decided 2026-07-17 by the owner. The model studio is not a voxel-repo tool; it
+is the pattern every game using this engine gets, the way Townscaper already
+has one. The purpose is a loop: games ship models; the studio examines them
+frame by frame; the owner pins notes and sends requests; an agent revises
+through the same controls; the game reloads the result. Graphics and animation
+improve continuously, and the owner steers by looking rather than by reading.
+
+Boundary, per AGENTS.md: the engine repo owns the studio's reusable core --
+viewing, playback, checks, notes, requests, the agent-drivable controls. Each
+game owns its catalog (which models exist, what they are named, where they
+save) and mounts the studio with that catalog. Game meaning never enters the
+engine; the studio core never hardcodes a game.
+
 ## City art direction: voxel
 
 Decided 2026-07-15 by the owner. City renders low-poly primitives today -- its
