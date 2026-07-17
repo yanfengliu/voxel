@@ -114,6 +114,9 @@ implements PagedInstanceBatchSourceInternal {
   get countInternal(): number { return this.#state.count; }
   get hasColorsInternal(): boolean { return this.#state.hasColors; }
   get hasAnimationInternal(): boolean { return this.#state.hasAnimation; }
+  get animationRotationModeInternal(): 'swing' | 'turn' {
+    return this.#state.animationRotationModeInternal;
+  }
   get opacityPageScansInternal(): number { return this.#opacityPageScans; }
 
   keyAtInternal(slot: number): string {

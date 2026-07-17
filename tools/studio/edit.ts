@@ -146,6 +146,13 @@ export function setMotion(
       translation: triple(motion.translation, current.translation, MAX_TRANSLATION),
       rotationRadians: triple(motion.rotationRadians, current.rotationRadians, MAX_ROTATION),
       scale: triple(motion.scale, current.scale, MAX_SCALE),
+      // Carried explicitly: this rebuild once dropped the style on every edit,
+      // so the page said "turn" while the engine kept swinging — the sweep's
+      // distinct-frame count (11 of 24, each pose visited twice) was what told
+      // the truth. Absent means swing, so 'swing' is stored as absence.
+      ...((motion.rotationStyle ?? current.rotationStyle) === 'turn'
+        ? { rotationStyle: 'turn' as const }
+        : {}),
     },
   };
 }

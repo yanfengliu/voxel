@@ -212,6 +212,7 @@ export function buildSnapshot(
         instanceKeys: [`${genome.id}#0`],
         matrices,
         animation: {
+        ...(genome.motion.rotationStyle === 'turn' ? { rotationMode: 'turn' as const } : {}),
           schemaVersion: 'voxel.instance-transform-animation/1',
           // A zero period is voxel's own "still", so a still model needs no
           // special case: it is an animation sampled at one time.

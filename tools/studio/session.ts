@@ -141,7 +141,14 @@ export class StudioSession {
       nowMs,
       image: this.sampleAt(nowMs).image,
     }));
-    return { plan, frames, reSamples, verdict: verifySweep(plan, frames, reSamples) };
+    return {
+      plan,
+      frames,
+      reSamples,
+      verdict: verifySweep(
+        plan, frames, reSamples, this.#genome.motion.rotationStyle ?? 'swing',
+      ),
+    };
   }
 
   /** What the studio knows about the model without drawing it. */

@@ -73,6 +73,7 @@ export function pagedInstanceBatchEqualsBorrowedInternal(
     || typedArrayLengthInternal(animation.translationAmplitudes) !== state.count * 3
     || typedArrayLengthInternal(animation.rotationAmplitudesRadians) !== state.count * 3
     || typedArrayLengthInternal(animation.scaleAmplitudes) !== state.count * 3
+    || (animation.rotationMode ?? 'swing') !== state.animationRotationModeInternal
   )) return false;
 
   let previousOrdinal = -1;

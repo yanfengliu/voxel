@@ -26,6 +26,7 @@ import {
   instanceBatchHasColorsInternal,
   instanceBatchUpdateRangesInternal,
   isPagedInstanceBatchPresentationInternal,
+  instanceBatchAnimationRotationModeInternal,
   readInstanceAnimationAtInternal,
   readInstanceColorAtInternal,
   readInstanceMatrixAtInternal,
@@ -354,11 +355,19 @@ export class InstanceBatchPresenter {
         const phase = (((nowMs % periodMs) + periodMs) % periodMs)
           / periodMs * Math.PI * 2 + animationSample[1]!;
         const wave = Math.sin(phase);
+        // 'turn' ramps rotation straight through the period — amplitude 2π is
+        // one full turn — while translation and scale keep swinging: a ramping
+        // slide or stretch runs away by construction. The fraction inherits
+        // the same phase, so a turn can start anywhere in its cycle, and it
+        // stays a pure, periodic, bounded function of the clock.
+        const rotationFactor = instanceBatchAnimationRotationModeInternal(entry.batch) === 'turn'
+          ? (((phase / (2 * Math.PI)) % 1) + 1) % 1
+          : wave;
         readInstanceMatrixAtInternal(entry.batch, index, matrix);
         offsetEuler.set(
-          animationSample[5]! * wave,
-          animationSample[6]! * wave,
-          animationSample[7]! * wave,
+          animationSample[5]! * rotationFactor,
+          animationSample[6]! * rotationFactor,
+          animationSample[7]! * rotationFactor,
         );
         offsetScale.set(
           1 + animationSample[8]! * wave,

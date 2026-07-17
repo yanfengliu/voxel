@@ -18,7 +18,7 @@
       ]
     },
     "dist/core/contracts.d.ts": {
-      "sha256": "d8f418c35c469ba10a1a2c60c8479feffbc66fe14169054b66bc503ab40501a0",
+      "sha256": "c3b465d771deae5fd619a47856a6bc26d7af219ee2f6ab162085657f1587955c",
       "reachableFrom": [
         "./core",
         "./meshing",
@@ -67,7 +67,7 @@
       ]
     },
     "dist/core/paged-instance-batch-work.d.ts": {
-      "sha256": "323b95ceee51ec38599d48c8ef1b06bf45d0498649e8605e4703475a6e54a2ec",
+      "sha256": "d509bedfe8194782437ce6522f6177fd4ce0b8fdf6da3d0f0715a1b8c07fcd1c",
       "reachableFrom": [
         "./core",
         "./testing",
@@ -75,7 +75,7 @@
       ]
     },
     "dist/core/paged-instance-batch.d.ts": {
-      "sha256": "7e27b9354906d82bca110732d84612a91759019b98049e738007a006d5190bd5",
+      "sha256": "fb2704e216084fa08552fadca7b3e16f201eb76908b5773f689bf504ad316ab3",
       "reachableFrom": [
         "./core",
         "./testing",
@@ -356,7 +356,7 @@
       ]
     },
     "dist/three/presentationTypes.d.ts": {
-      "sha256": "43d426de7237a228470472ab1270be55412c0577d52daa0202ab9ba4384d2354",
+      "sha256": "13459c156b6f5b067756b6fdab029f932416211d82f69cea802986d8cd358434",
       "reachableFrom": [
         "./three"
       ]

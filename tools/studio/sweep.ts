@@ -151,10 +151,17 @@ export function mirrorTime(nowMs: number, periodMs: number): number {
  *   integrates time instead of sampling it fails there while passing every
  *   single-frame check.
  */
+/**
+ * The mirror rules assume swinging: sin returns to zero at the half period.
+ * A turning model is half a turn around at that moment, so for 'turn' those
+ * rules are skipped — its own invariants are re-sample identity and frames
+ * that keep changing, which still hold.
+ */
 export function verifySweep(
   plan: SweepPlanV1,
   frames: readonly SweepFrameV1[],
   reSamples: readonly SweepReSampleV1[],
+  style: 'swing' | 'turn' = 'swing',
 ): SweepVerdictV1 {
   const issues: SweepIssueV1[] = [];
   const byTime = new Map(frames.map((frame) => [frame.nowMs, frame]));
@@ -195,7 +202,7 @@ export function verifySweep(
   }
 
   let mirrored = 0;
-  if (!still) {
+  if (!still && style === 'swing') {
     const half = plan.periodMs / 2;
     const zero = byTime.get(0);
     const halfFrame = byTime.get(Math.round(half));

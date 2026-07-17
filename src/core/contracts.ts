@@ -213,6 +213,17 @@ export interface InstanceTransformAnimationV1 {
   readonly rotationAmplitudesRadians: Float32Array;
   /** XYZ fractional scale amplitude, three floats per instance. */
   readonly scaleAmplitudes: Float32Array;
+  /**
+   * How rotation uses the clock, for the whole batch. 'swing' — the default
+   * when absent — multiplies amplitudes by a sine, so motion goes out and
+   * comes back. 'turn' ramps rotation steadily through the period instead: an
+   * amplitude of 2π is exactly one full turn per period. Translation and
+   * scale keep swinging in either mode, because a ramping slide or stretch
+   * runs away by construction. Both modes stay bounded, periodic, and a pure
+   * function of the frame clock, which is what keeps any moment addressable
+   * without replay.
+   */
+  readonly rotationMode?: 'swing' | 'turn';
 }
 
 export interface InstanceBatchPresentationPolicyV1 {

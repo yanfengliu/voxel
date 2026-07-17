@@ -30,6 +30,8 @@ export interface GenomeMotionV1 {
   readonly translation: readonly [number, number, number];
   readonly rotationRadians: readonly [number, number, number];
   readonly scale: readonly [number, number, number];
+  /** 'swing' (default) goes out and comes back; 'turn' goes all the way around. */
+  readonly rotationStyle?: 'swing' | 'turn';
 }
 
 /**
@@ -194,6 +196,10 @@ export function validateGenomeV1(value: unknown): readonly GenomeIssueV1[] {
     checkTriple(m.translation, '$.motion.translation', issues);
     checkTriple(m.rotationRadians, '$.motion.rotationRadians', issues);
     checkTriple(m.scale, '$.motion.scale', issues);
+    const style = (m as { rotationStyle?: unknown }).rotationStyle;
+    if (style !== undefined && style !== 'swing' && style !== 'turn') {
+      issues.push({ path: '$.motion.rotationStyle', message: "must be 'swing' or 'turn'" });
+    }
   }
   return issues;
 }

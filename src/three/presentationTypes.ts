@@ -56,6 +56,7 @@ export interface PagedInstanceBatchSourceInternal {
   readonly countInternal: number;
   readonly hasColorsInternal: boolean;
   readonly hasAnimationInternal: boolean;
+  readonly animationRotationModeInternal: 'swing' | 'turn';
   readonly opacityPageScansInternal: number;
   keyAtInternal(slot: number): string;
   readMatrixAtInternal(slot: number, target: Matrix4): void;

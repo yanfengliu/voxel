@@ -179,6 +179,19 @@ function mount(): void {
   phaseInput.type = 'range';
   phaseInput.min = '-180';
   phaseInput.max = '180';
+  const styleSelect = element('select', 'speed');
+  for (const [value, label] of [
+    ['swing', 'Swings back and forth'],
+    ['turn', 'Turns all the way around'],
+  ] as const) {
+    const option = element('option');
+    option.value = value;
+    option.textContent = label;
+    styleSelect.appendChild(option);
+  }
+  styleSelect.addEventListener('change', () => {
+    harness.animate({ rotationStyle: styleSelect.value === 'turn' ? 'turn' : 'swing' });
+  });
 
   const AMPLITUDES = [
     { kind: 'rotationRadians', axis: 0, label: 'Pitch', unit: '°', max: 180, scale: Math.PI / 180 },
@@ -493,6 +506,7 @@ function mount(): void {
     }
     if (layer > genome.size[1] - 1) layer = 0;
     periodInput.value = String(genome.motion.periodMs);
+    styleSelect.value = genome.motion.rotationStyle === 'turn' ? 'turn' : 'swing';
     phaseInput.value = String(Math.round((genome.motion.phaseRadians * 180) / Math.PI));
     for (const { spec, input } of amplitudeInputs) {
       input.value = String(Math.round(genome.motion[spec.kind][spec.axis] / spec.scale));
@@ -704,11 +718,11 @@ function mount(): void {
 
   // ---- assembly ----
   const playerBar = element('div', 'playerbar');
-  playerBar.append(stepBack, playButton, stepForward, speedSelect, timelineWrap, timeLabel);
+  playerBar.append(stepBack, playButton, stepForward, speedSelect, timelineWrap);
   const checkRow = element('div', 'row');
   checkRow.append(sweepButton, sheetButton);
   const playerCard = element('div', 'card');
-  playerCard.append(playerBar, motionText, modelLine, engineWarning, checkRow, verdict);
+  playerCard.append(playerBar, timeLabel, motionText, modelLine, engineWarning, checkRow, verdict);
 
   const notesCard = element('div', 'card');
   const notesTitle = element('h2');
@@ -724,6 +738,10 @@ function mount(): void {
   modelButtons.append(starterButton, newButton, copyButton, loadButton);
   const motionFields = element('div', 'motion-fields');
   motionFields.append(
+    labelled('Movement style', styleSelect,
+      'Swinging goes out and comes back; turning goes all the way around. '
+      + 'Turning uses the Pitch, Rock, and Roll amounts as how far around to go: '
+      + 'set 360° for a full turn each cycle.'),
     labelled('Period', periodInput, 'How long one full round trip takes. Zero is still.'),
     labelled('Phase', phaseInput, 'Where in the cycle time zero starts.'),
   );

@@ -116,6 +116,7 @@ export function copyInstanceBatchV1Internal(batch: InstanceBatchV1): InstanceBat
           batch.animation.rotationAmplitudesRadians,
         ),
         scaleAmplitudes: copyTypedArrayInternal(batch.animation.scaleAmplitudes),
+        ...(batch.animation.rotationMode === 'turn' ? { rotationMode: 'turn' as const } : {}),
       },
     } : {}),
     ...(batch.presentation ? { presentation: { ...batch.presentation } } : {}),

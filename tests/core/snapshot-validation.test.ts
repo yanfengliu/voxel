@@ -49,6 +49,31 @@ function identityMatrices(count: number): Float32Array {
 }
 
 describe('validateAndCopySnapshotV1', () => {
+  it('accepts an exact full turn and keeps the rotation mode', () => {
+    const snapshot = validSnapshot();
+    const animation = addAnimation(snapshot);
+    // 2π rounded to 32 bits sits slightly above the double 2π; the bound is
+    // enforced at the data's own precision, or the one value the rotation
+    // bound exists to permit -- one full turn -- would be rejected.
+    animation.rotationAmplitudesRadians.set([0, Math.PI * 2, 0]);
+    (animation as { rotationMode?: string }).rotationMode = 'turn';
+    const result = validateAndCopySnapshotV1(snapshot);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.batches[0]?.animation?.rotationMode).toBe('turn');
+  });
+
+  it('rejects a rotation mode that is neither swing nor turn', () => {
+    const snapshot = validSnapshot();
+    const animation = addAnimation(snapshot);
+    (animation as { rotationMode?: string }).rotationMode = 'spin';
+    const result = validateAndCopySnapshotV1(snapshot);
+    expect(result).toMatchObject({
+      ok: false,
+      issue: { code: 'batch.animation.rotation-mode' },
+    });
+  });
+
   it('densifies sparse lists so holes reject with a typed issue', () => {
     const snapshot = validSnapshot();
     snapshot.resources = new Array<GeometryResourceV1>(1);

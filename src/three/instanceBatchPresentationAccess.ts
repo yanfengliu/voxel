@@ -42,6 +42,20 @@ export function instanceBatchHasAnimationInternal(
     : Boolean(batch.animation);
 }
 
+/**
+ * The batch-level rotation mode, whichever shape the presentation batch has.
+ * The presenter must ask through here: reading `.animation.rotationMode`
+ * directly reads undefined on a paged batch — whose animation lives behind
+ * read methods, not a plain object — and a turn silently becomes a swing.
+ */
+export function instanceBatchAnimationRotationModeInternal(
+  batch: InstanceBatchPresentation,
+): 'swing' | 'turn' {
+  return isPagedInstanceBatchPresentationInternal(batch)
+    ? batch.pagedSourceInternal.animationRotationModeInternal
+    : batch.animation?.rotationMode ?? 'swing';
+}
+
 export function instanceBatchKeyAtInternal(
   batch: InstanceBatchPresentation,
   slot: number,

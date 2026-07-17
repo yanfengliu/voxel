@@ -42,6 +42,8 @@ interface InstanceIndexEntryInternal {
 export interface InstanceBatchLayoutInternal {
   readonly colors: boolean;
   readonly animation: boolean;
+  /** Batch-level rotation mode; a change repages like any layout change. */
+  readonly animationRotationMode: 'swing' | 'turn';
 }
 
 interface InstanceBatchMetadataInternal {
@@ -323,7 +325,10 @@ function assertPatchLayout(
   }
   if (
     upsertCount > 0
-    && (patch.upserts.animation !== undefined) !== state.hasAnimation
+    && ((patch.upserts.animation !== undefined) !== state.hasAnimation
+      || (patch.upserts.animation !== undefined
+        && (patch.upserts.animation.rotationMode ?? 'swing')
+          !== state.animationRotationModeInternal))
   ) {
     fail('paged-batch.animation.layout', 'Patch animation layout must match the live batch.');
   }
@@ -744,6 +749,9 @@ export class PagedInstanceBatchInternal {
   get materialKey(): string { return this.metadata.materialKey; }
   get hasColors(): boolean { return this.layoutInternal.colors; }
   get hasAnimation(): boolean { return this.layoutInternal.animation; }
+  get animationRotationModeInternal(): 'swing' | 'turn' {
+    return this.layoutInternal.animationRotationMode;
+  }
   get pageCountInternal(): number { return this.pages.length; }
   get retainedTypedArrayBytesInternal(): number {
     return this.pages.length * pageTypedArrayBytes(this.layoutInternal);
@@ -829,7 +837,11 @@ export function preparePagedInstanceBatchCreatePlanInternal(
 ): PagedInstanceBatchCreatePlanInternal {
   const work = new PagedInstanceBatchWorkBudgetInternal(budget.maxWorkElements);
   const validated = validateBatchLayoutWithBudgetInternal(batch, work);
-  const layout = { colors: validated.colors, animation: validated.animation };
+  const layout = {
+    colors: validated.colors,
+    animation: validated.animation,
+    animationRotationMode: validated.animationRotationMode,
+  };
   const count = batch.instanceKeys.length;
   const pageCount = Math.ceil(count / INSTANCE_BATCH_PAGE_SIZE_INTERNAL);
   const writtenBytes = typedArrayByteLengthInternal(batch.matrices)

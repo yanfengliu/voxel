@@ -640,8 +640,13 @@ function requireAnimationRange(
   code: string,
   path: string,
 ): void {
+  // The values are 32-bit floats and the bound is a double. Rounding 2π to
+  // 32 bits lands slightly ABOVE the double 2π, so comparing raw would reject
+  // an exact full turn — the one value the rotation bound exists to permit.
+  // Enforce the bound at the same precision the data actually has.
+  const bound = Math.fround(maximumAbsolute);
   for (let index = 0; index < values.length; index += 1) {
-    if (Math.abs(values[index]!) > maximumAbsolute) {
+    if (Math.abs(values[index]!) > bound) {
       fail(code, `${path}[${String(index)}]`, `Animation value exceeds ${String(maximumAbsolute)}.`);
     }
   }
@@ -742,6 +747,14 @@ function parseInstanceAnimation(
     'batch.animation.scale-range',
     `${path}.scaleAmplitudes`,
   );
+  const rotationMode = input.rotationMode;
+  if (rotationMode !== undefined && rotationMode !== 'swing' && rotationMode !== 'turn') {
+    fail(
+      'batch.animation.rotation-mode',
+      `${path}.rotationMode`,
+      "Rotation mode must be 'swing' or 'turn'.",
+    );
+  }
   return {
     schemaVersion,
     periodsMs,
@@ -749,6 +762,7 @@ function parseInstanceAnimation(
     translationAmplitudes,
     rotationAmplitudesRadians,
     scaleAmplitudes,
+    ...(rotationMode === 'turn' ? { rotationMode } : {}),
   };
 }
 

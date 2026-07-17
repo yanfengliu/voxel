@@ -64,6 +64,7 @@ export function checkPagedInstanceBudgetInternal(
 export interface ValidatedBatchLayoutInternal {
   readonly colors: boolean;
   readonly animation: boolean;
+  readonly animationRotationMode: 'swing' | 'turn';
   readonly keyCodeUnits: number;
 }
 
@@ -116,6 +117,7 @@ export function validateBatchLayoutWithBudgetInternal(
   return {
     colors: batch.colors !== undefined,
     animation: motion !== undefined,
+    animationRotationMode: motion?.rotationMode ?? 'swing',
     keyCodeUnits,
   };
 }

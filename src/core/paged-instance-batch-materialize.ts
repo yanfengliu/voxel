@@ -56,6 +56,9 @@ export function materializePagedInstanceBatchInternal(
   const animation: InstanceTransformAnimationV1 | undefined = state.hasAnimation
     ? {
         schemaVersion: INSTANCE_TRANSFORM_ANIMATION_SCHEMA_V1,
+        ...(state.animationRotationModeInternal === 'turn'
+          ? { rotationMode: 'turn' as const }
+          : {}),
         periodsMs: new Float32Array(state.count),
         phasesRadians: new Float32Array(state.count),
         translationAmplitudes: new Float32Array(state.count * 3),

@@ -46,9 +46,14 @@ export function describeMotion(motion: GenomeMotionV1): string {
   if (motion.periodMs <= 0) return 'Still. Nothing moves; the model is one frame.';
 
   const parts: string[] = [];
+  const turns = motion.rotationStyle === 'turn';
   for (const axis of nonZero(motion.rotationRadians)) {
-    parts.push(`${ROTATION_AXIS[axis] ?? `rotating about ${AXIS_NAMES[axis] ?? '?'}`} by `
-      + `±${degrees(Math.abs(motion.rotationRadians[axis] ?? 0))}`);
+    const amount = Math.abs(motion.rotationRadians[axis] ?? 0);
+    parts.push(turns
+      ? `turning ${round(amount / (2 * Math.PI), 2)} of the way around`
+        + ` (${AXIS_NAMES[axis] ?? '?'} axis)`
+      : `${ROTATION_AXIS[axis] ?? `rotating about ${AXIS_NAMES[axis] ?? '?'}`} by `
+        + `±${degrees(amount)}`);
   }
   for (const axis of nonZero(motion.translation)) {
     parts.push(`${TRANSLATION_AXIS[axis] ?? `moving along ${AXIS_NAMES[axis] ?? '?'}`} by `
@@ -72,9 +77,11 @@ export function describeMotion(motion: GenomeMotionV1): string {
   const phase = Math.abs(motion.phaseRadians) > 1e-6
     ? `, starting ${degrees(motion.phaseRadians)} into the cycle`
     : '';
+  const tail = motion.rotationStyle === 'turn'
+    ? ' It goes all the way around and starts again, never swinging back.'
+    : ' It returns to rest at the halfway point and swings the other way, rather than going around.';
   return `${(list ?? '').charAt(0).toUpperCase()}${(list ?? '').slice(1)}, `
-    + `once every ${seconds(motion.periodMs)}${phase}. It returns to rest at the halfway point `
-    + 'and swings the other way, rather than going around.';
+    + `once every ${seconds(motion.periodMs)}${phase}.${tail}`;
 }
 
 /** The pose at one time, for the readout beside a scrubbed frame. */

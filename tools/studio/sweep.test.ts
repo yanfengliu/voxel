@@ -198,3 +198,30 @@ describe('stepping through frames', () => {
     expect(nearestFrame(motion, 999).frame).toBe(24);
   });
 });
+
+describe('judging a turning model', () => {
+  it('does not fail a correct turn for missing its mirror', () => {
+    // Half a turn around at the half period is CORRECT for 'turn' — the swing
+    // rules would call it broken. Frames all distinct, none mirrored.
+    const plan: SweepPlanV1 = {
+      sampleTimes: [0, 250, 500, 750],
+      verifyTimes: [250],
+      periodMs: 1000,
+    };
+    const frames = plan.sampleTimes.map((nowMs) => ({
+      nowMs,
+      image: `img:${String(nowMs)}`,
+      drawCalls: 1,
+      triangles: 12,
+    }));
+    const swingVerdict = verifySweep(plan, frames, [{ nowMs: 250, image: 'img:250' }], 'swing');
+    const turnVerdict = verifySweep(plan, frames, [{ nowMs: 250, image: 'img:250' }], 'turn');
+
+    expect(swingVerdict.ok).toBe(false);
+    expect(swingVerdict.issues[0]?.kind).toBe('not-periodic');
+    expect(turnVerdict.ok).toBe(true);
+    // And the re-sample rule still bites in turn mode.
+    const drifted = verifySweep(plan, frames, [{ nowMs: 250, image: 'img:other' }], 'turn');
+    expect(drifted.ok).toBe(false);
+  });
+});
