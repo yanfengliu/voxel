@@ -19,6 +19,8 @@
         font-size: 16px;
       }
       * { box-sizing: border-box; }
+      /* hidden must beat the panes' own grid display, as the real studio learned. */
+      [hidden] { display: none !important; }
       body {
         margin: 0;
         background: var(--bg);
@@ -294,6 +296,62 @@
         color: var(--pin);
       }
       .notecard .words { font-size: 12.5px; }
+      .swatchrow { display: flex; gap: 6px; flex-wrap: wrap; }
+      .sw {
+        width: 26px; height: 26px;
+        border-radius: 6px;
+        border: 1px solid var(--line);
+        display: grid; place-items: center;
+        color: var(--muted); font-size: 12px;
+        cursor: pointer;
+      }
+      .sw.sel { outline: 2px solid var(--accent); outline-offset: 1px; }
+      .floorrow {
+        display: grid;
+        grid-template-columns: 26px 1fr;
+        gap: 8px;
+        align-items: center;
+        padding: 3px 6px;
+        border: 1px solid transparent;
+        border-radius: 6px;
+        cursor: pointer;
+        color: var(--faint);
+        font-family: ui-monospace, Menlo, monospace;
+        font-size: 10.5px;
+      }
+      .floorrow.sel { border-color: var(--accent); background: var(--panel); color: var(--text); }
+      .floorbar { height: 10px; border-radius: 3px; background: var(--line-soft); position: relative; overflow: hidden; }
+      .floorbar i { position: absolute; inset: 0; }
+      .paintgrid {
+        display: grid;
+        grid-template-columns: repeat(8, 1fr);
+        gap: 2px;
+      }
+      .paintgrid i {
+        aspect-ratio: 1;
+        border-radius: 2px;
+        border: 1px solid var(--line-soft);
+      }
+      .fieldrow { display: grid; gap: 4px; }
+      .fieldrow label { font-size: 11.5px; color: var(--muted); display: flex; justify-content: space-between; }
+      .fieldrow label b { color: var(--text); font-weight: 500; font-family: ui-monospace, Menlo, monospace; font-size: 11px; }
+      .fieldrow input[type="range"] { width: 100%; accent-color: var(--accent); margin: 0; }
+      .grouphead {
+        font-size: 10.5px;
+        letter-spacing: 0.1em;
+        text-transform: uppercase;
+        color: var(--faint);
+        font-weight: 600;
+        margin: 4px 0 0;
+      }
+      .styleselect {
+        font: inherit; font-size: 12.5px;
+        background: var(--panel); color: var(--text);
+        border: 1px solid var(--line); border-radius: 6px;
+        padding: 7px 10px; width: 100%;
+      }
+      .sentline { font-size: 12px; color: var(--muted); margin: 0; line-height: 1.5; }
+      .statusline { font-size: 11.5px; color: var(--accent); margin: 0; }
       textarea {
         font: inherit;
         font-size: 12.5px;
@@ -370,7 +428,7 @@
           <span class="tab">Motion</span>
           <span class="tab">Notes</span>
         </div>
-        <div class="pane">
+        <div class="pane" data-pane="examine">
           <p class="sentence">Rocking side to side by ±30° and bobbing up and down by ±0.6 levels, once every 1s. It returns to rest at the halfway point and swings the other way.</p>
           <p class="factline">Brick wall · 16×10×2 · 320 cubes · 4 colours</p>
           <div class="checks">
@@ -386,9 +444,98 @@
             <span class="where">292 ms · on the picture</span>
             <span class="words">The top course clips through the cap here</span>
           </div>
+        </div>
+
+        <div class="pane" data-pane="edit" hidden>
+          <div class="fieldrow">
+            <label>Paint with</label>
+            <div class="swatchrow">
+              <span class="sw">∅</span>
+              <span class="sw" style="background:#a8a298"></span>
+              <span class="sw sel" style="background:#b24a3a"></span>
+              <span class="sw" style="background:#a04236"></span>
+              <span class="sw" style="background:#c05440"></span>
+              <span class="sw">+</span>
+            </div>
+          </div>
+          <div class="fieldrow">
+            <label>Colour <b>#b24a3a</b></label>
+            <span class="sw" style="background:#b24a3a; width: 100%; height: 22px;"></span>
+          </div>
+          <p class="grouphead">Floors — tallest first</p>
+          <div>
+            <div class="floorrow"><span>10</span><div class="floorbar"><i style="background:repeating-linear-gradient(90deg,#b24a3a 0 12px,#a8a298 12px 15px)"></i></div></div>
+            <div class="floorrow"><span>9</span><div class="floorbar"><i style="background:#a8a298"></i></div></div>
+            <div class="floorrow sel"><span>8</span><div class="floorbar"><i style="background:repeating-linear-gradient(90deg,#c05440 0 10px,#a8a298 10px 13px)"></i></div></div>
+            <div class="floorrow"><span>7</span><div class="floorbar"><i style="background:repeating-linear-gradient(90deg,#a04236 0 14px,#a8a298 14px 17px)"></i></div></div>
+            <div class="floorrow"><span>6</span><div class="floorbar"><i style="background:#a8a298"></i></div></div>
+          </div>
+          <p class="grouphead">Floor 8 — looking down</p>
+          <div class="paintgrid">
+            <i style="background:#b24a3a"></i><i style="background:#b24a3a"></i><i style="background:#a8a298"></i><i style="background:#c05440"></i><i style="background:#c05440"></i><i style="background:#c05440"></i><i style="background:#a8a298"></i><i style="background:#a04236"></i>
+            <i style="background:#b24a3a"></i><i style="background:#b24a3a"></i><i style="background:#a8a298"></i><i style="background:#c05440"></i><i style="background:#c05440"></i><i style="background:#c05440"></i><i style="background:#a8a298"></i><i style="background:#a04236"></i>
+            <i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i>
+            <i style="background:#a04236"></i><i style="background:#a04236"></i><i style="background:#a8a298"></i><i style="background:#b24a3a"></i><i style="background:#b24a3a"></i><i style="background:#b24a3a"></i><i style="background:#a8a298"></i><i style="background:#c05440"></i>
+          </div>
+          <p class="sentline">Click a square to paint it with the chosen colour; ∅ erases. 12 of 32 squares filled on this floor.</p>
+        </div>
+
+        <div class="pane" data-pane="motion" hidden>
+          <p class="sentline">Rocking side to side by ±30° and bobbing ±0.6 levels, once every 1s.</p>
+          <div class="fieldrow">
+            <label>Movement style</label>
+            <select class="styleselect">
+              <option selected>Swings back and forth</option>
+              <option>Turns all the way around</option>
+            </select>
+          </div>
+          <div class="fieldrow"><label>Period <b>1.0 s</b></label><input type="range" value="25" /></div>
+          <div class="fieldrow"><label>Phase <b>0°</b></label><input type="range" value="50" /></div>
+          <p class="grouphead">Turn</p>
+          <div class="fieldrow"><label>Pitch <b>0°</b></label><input type="range" value="50" /></div>
+          <div class="fieldrow"><label>Rock <b>±30°</b></label><input type="range" value="58" /></div>
+          <div class="fieldrow"><label>Roll <b>0°</b></label><input type="range" value="50" /></div>
+          <p class="grouphead">Slide</p>
+          <div class="fieldrow"><label>Sideways <b>0</b></label><input type="range" value="50" /></div>
+          <div class="fieldrow"><label>Up and down <b>±0.6</b></label><input type="range" value="56" /></div>
+          <div class="fieldrow"><label>In and out <b>0</b></label><input type="range" value="50" /></div>
+          <p class="grouphead">Stretch</p>
+          <div class="fieldrow"><label>Width <b>0%</b></label><input type="range" value="50" /></div>
+          <div class="fieldrow"><label>Height <b>0%</b></label><input type="range" value="50" /></div>
+          <div class="fieldrow"><label>Depth <b>0%</b></label><input type="range" value="50" /></div>
+        </div>
+
+        <div class="pane" data-pane="notes" hidden>
+          <p class="sentline">Pause and click the picture to pin a note to that moment, or pin one to a spot on the model.</p>
+          <button>Pin to a spot on the model</button>
+          <div class="notecard">
+            <span class="where">292 ms · on the picture</span>
+            <span class="words">The top course clips through the cap here</span>
+          </div>
+          <div class="notecard">
+            <span class="where">floor 8 · square 3,1</span>
+            <span class="words">This brick should be the darker red</span>
+          </div>
+          <div class="notecard">
+            <span class="where">625 ms · on the picture</span>
+            <span class="words">Left edge looks doubled at this angle</span>
+          </div>
           <textarea rows="3" placeholder="What should change? Your notes travel with this."></textarea>
+          <button class="primary">Send request</button>
+          <p class="statusline">Saved as requests/2026-07-17…json — an agent will pick it up.</p>
         </div>
       </div>
     </div>
+    <script>
+      const tabs = [...document.querySelectorAll('.tab')];
+      const panes = [...document.querySelectorAll('.pane')];
+      function show(name) {
+        tabs.forEach((t) => t.classList.toggle('active', t.textContent.toLowerCase() === name));
+        panes.forEach((p) => { p.hidden = p.dataset.pane !== name; });
+      }
+      tabs.forEach((t) => t.addEventListener('click', () => show(t.textContent.toLowerCase())));
+      const wanted = new URLSearchParams(location.search).get('tab');
+      if (wanted) show(wanted);
+    </script>
   </body>
 </html>
