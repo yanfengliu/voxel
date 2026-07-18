@@ -661,6 +661,23 @@ E exit gate: every support/performance claim has repeatable evidence, no leak or
 
 ### R-01: API/schema freeze
 
+- [x] Frozen 2026-07-18 for the 1.0 candidate. The freeze covers: the five
+  subpath exports (`voxel/core`, `voxel/meshing`, `voxel/meshing/browser-worker`,
+  `voxel/three`, `voxel/testing`); the 55 reachable public declaration files
+  pinned by SHA-256 in `api/public-api.json` (`test:api` green, self-test
+  green, no accidental differences to resolve); the ten schema literals —
+  `voxel.world/1`, `voxel.render-snapshot/1`, `voxel.render-delta/1`,
+  `voxel.instance-transform-animation/1`, `voxel.mesh-worker/1`,
+  `voxel.mesh-worker-entry/1`, `voxel.mesher-descriptor/1`,
+  `voxel.mesher-input/1`, `voxel.mesher-output/1`,
+  `voxel.three-capabilities/1`; the seven delta operation discriminants
+  (`put-resource`, `remove-resource`, `put-chunk`, `remove-chunk`,
+  `put-batch`, `remove-batch`, `patch-batch-instances`); the stable
+  diagnostic codes D-01 delivered; and the support matrix in
+  `docs/policies/support.md`. No experimental or internal-marked export
+  exists on any entry surface. From this point, any public or schema change
+  requires a new release candidate and a rerun of the complete matrix.
+
 - Freeze public declarations, exports, schema literals, operation discriminants, stable result/diagnostic codes, support matrix, and ownership semantics.
 - Resolve every accidental API report difference and remove undocumented experimental exports.
 
