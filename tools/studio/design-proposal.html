@@ -125,6 +125,15 @@
       }
       .model-row .dot.green { background: linear-gradient(135deg, #5ac878 55%, #e6be5a 55%); }
       .model-row .dot.grey { background: #39424b; }
+      .section-head {
+        font-size: 11.5px;
+        color: var(--muted);
+        padding: 6px 6px 4px;
+        cursor: pointer;
+        user-select: none;
+      }
+      .section-head:hover { color: var(--text); }
+      .shelf-section { margin-bottom: 2px; }
       .rail .note { font-size: 11px; color: var(--faint); margin: 10px 8px 0; line-height: 1.45; }
       /* ---- stage ---- */
       .stage {
@@ -380,10 +389,19 @@
 
       <div class="rail">
         <h2>This studio's shelf</h2>
-        <div class="model-row"><span class="dot green"></span>Starter</div>
-        <div class="model-row active"><span class="dot"></span>Brick wall</div>
-        <p class="note">One studio per game, each with only its own shelf. This one belongs to the engine, so it holds the engine's test models.</p>
-        <p class="note" style="border: 1px dashed var(--line); border-radius: 6px; padding: 8px;">In City, this same tool opens inside the game and the shelf reads: Small house, Office tower, Street tree. In the AoE2 game: Villager, Town centre. The tool is shared; the shelf never is.</p>
+        <div class="shelf-section">
+          <div class="section-head open">▾ Shapes</div>
+          <div class="model-row"><span class="dot green"></span>Starter</div>
+        </div>
+        <div class="shelf-section">
+          <div class="section-head open">▾ Walls</div>
+          <div class="model-row active"><span class="dot"></span>Brick wall</div>
+        </div>
+        <div class="shelf-section">
+          <div class="section-head">▸ Retired experiments</div>
+        </div>
+        <p class="note">Sections are the game's to name and order — characters, buildings, items, whatever fits. Click a heading to fold it away.</p>
+        <p class="note" style="border: 1px dashed var(--line); border-radius: 6px; padding: 8px;">In City this same tool opens inside the game: Characters (Resident, Visitor), Buildings (Small house, Office tower), Trees (Street tree). In the AoE2 game: Units, Buildings, Resources. The tool is shared; the shelf and its sections never are.</p>
       </div>
 
       <div class="stage">
