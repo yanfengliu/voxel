@@ -112,8 +112,11 @@ function mount(): void {
 
   const flatCamera = new OrthographicCamera();
   const depthCamera = new PerspectiveCamera();
-  let depthOn = false;
-  let camera: OrthographicCamera | PerspectiveCamera = flatCamera;
+  // Real depth is the resting state, per the owner: the flat view's
+  // equal-sizes-everywhere reads backwards at a glance, so the honest eye is
+  // the default and flat is the deliberate choice.
+  let depthOn = true;
+  let camera: OrthographicCamera | PerspectiveCamera = depthCamera;
   let orbit: OrbitStateV1 = DEFAULT_ORBIT;
   let viewW = VIEW_WIDTH;
   let viewH = VIEW_HEIGHT;
