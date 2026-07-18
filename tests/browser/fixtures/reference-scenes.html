@@ -838,12 +838,151 @@
       };
 
       /**
+       * The showcase town: one world carrying both lanes at once — chunked
+       * terrain meshed by the worker path, and two instanced batches placed on
+       * it. It exists to be looked at: docs/media renders come from here, and
+       * the composition is deterministic so the picture is reproducible.
+       */
+      const showcaseTownSnapshot = () => {
+        const profileSize = { x: 16, y: 8, z: 16 };
+        const grid = 4;
+        const extent = profileSize.x * grid;
+        const terrainHeight = (wx, wz) => {
+          const rolling = Math.sin(wx * 0.22) * 1.4 + Math.cos(wz * 0.19) * 1.4;
+          return Math.max(1, Math.min(6, Math.round(2.6 + rolling)));
+        };
+        // Palette: 1 sand, 2/3 grass, 4 rock, 5 dark rock.
+        const bandFor = (height) => (height <= 1 ? 1 : height <= 3 ? 2 : height <= 4 ? 3 : height <= 5 ? 4 : 5);
+        const base = chunkFieldSnapshot({
+          worldId: 'world:showcase-town',
+          epoch: 'epoch:one',
+          revision: 1,
+          profileSize,
+          grid,
+          source: () => 0,
+          paletteCount: 5,
+        });
+        const chunks = base.chunks.map((chunk) => ({
+          ...chunk,
+          voxels: (() => {
+            const voxels = new Uint16Array(profileSize.x * profileSize.y * profileSize.z);
+            for (let z = 0; z < profileSize.z; z += 1) {
+              for (let x = 0; x < profileSize.x; x += 1) {
+                const height = terrainHeight(chunk.origin.x + x, chunk.origin.z + z);
+                for (let y = 0; y < height; y += 1) {
+                  voxels[chunkIndex(x, y, z, profileSize)] = y === height - 1
+                    ? bandFor(height)
+                    : 1;
+                }
+              }
+            }
+            return voxels;
+          })(),
+        }));
+        const paletteResource = {
+          kind: 'palette',
+          key: 'palette:scene',
+          incarnation: 1,
+          revision: 1,
+          entries: [
+            { color: { r: 0, g: 0, b: 0, a: 0 } },
+            { color: { r: 196, g: 176, b: 128, a: 255 } },
+            { color: { r: 96, g: 158, b: 84, a: 255 } },
+            { color: { r: 76, g: 138, b: 74, a: 255 } },
+            { color: { r: 142, g: 142, b: 150, a: 255 } },
+            { color: { r: 108, g: 108, b: 118, a: 255 } },
+          ],
+        };
+
+        const random = lcg(0x70a11);
+        const boxBatch = (key, placements) => {
+          const matrices = new Float32Array(placements.length * 16);
+          const colors = new Uint8Array(placements.length * 4);
+          const instanceKeys = placements.map((placement, index) => {
+            const matrix = [
+              placement.sx, 0, 0, 0,
+              0, placement.sy, 0, 0,
+              0, 0, placement.sz, 0,
+              placement.x, placement.y, placement.z, 1,
+            ];
+            matrices.set(matrix, index * 16);
+            colors[index * 4] = placement.color[0];
+            colors[index * 4 + 1] = placement.color[1];
+            colors[index * 4 + 2] = placement.color[2];
+            colors[index * 4 + 3] = 255;
+            return `${key}:${index}`;
+          });
+          return {
+            key,
+            incarnation: 1,
+            revision: 1,
+            geometryKey: 'geometry:box',
+            materialKey: 'material:box',
+            instanceKeys,
+            matrices,
+            colors,
+          };
+        };
+
+        const buildings = [];
+        for (let row = 0; row < 4; row += 1) {
+          for (let column = 0; column < 4; column += 1) {
+            const x = 14 + column * 10 + Math.floor(random() * 3);
+            const z = 14 + row * 10 + Math.floor(random() * 3);
+            const width = 3 + Math.floor(random() * 3);
+            const depth = 3 + Math.floor(random() * 3);
+            const height = 3 + Math.floor(random() * 4);
+            const warm = random() < 0.5;
+            buildings.push({
+              x, z,
+              y: terrainHeight(x, z) + height / 2,
+              sx: width, sy: height, sz: depth,
+              color: warm ? [188, 108, 82] : [206, 186, 150],
+            });
+          }
+        }
+        const units = [];
+        for (let unit = 0; unit < 60; unit += 1) {
+          const x = 4 + random() * (extent - 8);
+          const z = 4 + random() * (extent - 8);
+          units.push({
+            x, z,
+            y: terrainHeight(Math.round(x), Math.round(z)) + 0.45,
+            sx: 0.9, sy: 0.9, sz: 0.9,
+            color: unit % 2 === 0 ? [66, 96, 190] : [190, 66, 66],
+          });
+        }
+
+        const instances = instanceSnapshot({
+          worldId: 'world:showcase-town', epoch: 'epoch:one', revision: 1, count: 1,
+        });
+        return {
+          ...base,
+          descriptor: {
+            ...base.descriptor,
+            capabilities: ['voxel-chunks', 'geometry-resources', 'instance-batches'],
+          },
+          resources: [
+            paletteResource,
+            ...base.resources.filter((resource) => resource.kind !== 'palette'),
+            ...instances.resources,
+          ],
+          chunks,
+          batches: [
+            boxBatch('batch:buildings', buildings),
+            boxBatch('batch:units', units),
+          ],
+        };
+      };
+
+      /**
        * E-03's capture entry: build one named scene, present exactly revision
        * 1 under the injected frame clock, read the presented canvas back, and
        * tear down. The raster goes to the visual-baseline comparison; the
-       * structural numbers stay the authoritative claim beside it.
+       * structural numbers stay the authoritative claim beside it. `size` lets
+       * the showcase renders come out larger than the baseline viewport.
        */
-      window.captureReferenceScene = async (name) => {
+      window.captureReferenceScene = async (name, size) => {
         const scenes = {
           'chunk-staircase': {
             snapshot: () => chunkFieldSnapshot({
@@ -875,6 +1014,10 @@
             }),
             center: { x: 100, y: 2, z: 100 }, zoom: 0.05, workers: 0,
           },
+          'showcase-town': {
+            snapshot: showcaseTownSnapshot,
+            center: { x: 32, y: 3, z: 32 }, zoom: 0.235, workers: 1,
+          },
         };
         const scene = scenes[name];
         if (!scene) throw new Error(`no capture scene '${name}'`);
@@ -882,7 +1025,10 @@
         const canvas = document.createElement('canvas');
         document.body.appendChild(canvas);
         const runtime = new ThreeRenderRuntime({
-          canvas, width: WIDTH, height: HEIGHT, pixelRatio: 1,
+          canvas,
+          width: size && size.width ? size.width : WIDTH,
+          height: size && size.height ? size.height : HEIGHT,
+          pixelRatio: 1,
           center: scene.center, zoom: scene.zoom,
           ...(scene.workers > 0 ? { voxelWorkers: { workerCount: scene.workers } } : {}),
         });
