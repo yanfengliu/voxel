@@ -20,7 +20,7 @@ const OUTPUT_DIR = join(PROJECT_ROOT, 'output', 'studio');
  * proves nothing about what the human sees.
  */
 
-async function withStudio(run) {
+async function withStudio(run, pagePath = '') {
   // Vite compiles the studio's TypeScript on demand, so there is no build step
   // between editing the tool and using it.
   const server = await createServer({
@@ -46,7 +46,7 @@ async function withStudio(run) {
       if (message.type() === 'error') errors.push(message.text());
     });
 
-    const response = await page.goto(url, { waitUntil: 'load' });
+    const response = await page.goto(new URL(pagePath, url).toString(), { waitUntil: 'load' });
     if (!response?.ok()) throw new Error(`the studio did not load: ${String(response?.status())}`);
     // Mounting is what publishes the harness, so this waits for the real thing
     // rather than a timer.
@@ -199,6 +199,96 @@ const COMMANDS = {
     await writeFile(file, Buffer.from(dataUrl.slice(dataUrl.indexOf(',') + 1), 'base64'));
     console.log(`${LOG_PREFIX} wrote ${relative(PROJECT_ROOT, file)}`
       + (sourcePath ? ` from ${sourcePath}` : ''));
+  },
+
+  /**
+   * Proves a *game* can mount the studio: loads the Harbor fixture page, which
+   * brings its own catalog, parts, and recipes and imports only the studio's
+   * game-facing surface, then checks the studio it stood up is Harbor's and
+   * not the engine's.
+   *
+   * This is the mount seam's only real evidence. The unit tests prove the
+   * pieces; nothing but a second catalog in a real page proves the studio is
+   * mountable rather than merely factored to look mountable.
+   */
+  async game() {
+    const report = await withStudio(async (page) => {
+      const observed = await page.evaluate(async () => {
+        const studio = window.voxelStudio;
+        if (!studio) throw new Error('the studio harness is unavailable');
+        const shelf = studio.shelf();
+        const opened = studio.describe();
+        const firstFrame = studio.sampleAt(0);
+
+        // Open the game's other model and confirm the stage really changed.
+        const crate = studio.openFromShelf('harbor:crate');
+        const crateFrame = studio.sampleAt(0);
+
+        // Back to the boat, and check its animation is sound — the same
+        // judgement the engine's own models get.
+        studio.openFromShelf('harbor:fishing-boat');
+        const swept = studio.sweep();
+
+        return {
+          sections: shelf.map((section) => ({
+            name: section.name,
+            models: section.models.map((entry) => entry.id),
+          })),
+          openedLabel: opened.label,
+          openedVoxels: opened.filledVoxels,
+          crateVoxels: crate.filledVoxels,
+          boatTriangles: firstFrame.triangles,
+          crateTriangles: crateFrame.triangles,
+          framesDiffer: firstFrame.image !== crateFrame.image,
+          sweepOk: swept.ok,
+          sweepIssues: swept.issues.map((issue) => issue.message),
+          distinctFrames: swept.distinctFrames,
+        };
+      });
+      const shot = join(OUTPUT_DIR, 'game-studio.png');
+      await mkdir(OUTPUT_DIR, { recursive: true });
+      await page.screenshot({ path: shot, fullPage: false });
+      return { observed, shot };
+    }, 'game-fixture.html');
+
+    const { observed, shot } = report;
+    const sectionNames = observed.sections.map((section) => section.name);
+    const modelIds = observed.sections.flatMap((section) => section.models);
+    console.log(`${LOG_PREFIX} shelf: ${sectionNames.join(', ')}`);
+    console.log(`${LOG_PREFIX} models: ${modelIds.join(', ')}`);
+    console.log(`${LOG_PREFIX} opened ${observed.openedLabel} `
+      + `(${String(observed.openedVoxels)} voxels, ${String(observed.boatTriangles)} triangles)`);
+    console.log(`${LOG_PREFIX} animation sound: ${String(observed.sweepOk)}; `
+      + `${String(observed.distinctFrames)} distinct frames`);
+    console.log(`${LOG_PREFIX} wrote ${relative(PROJECT_ROOT, shot)}`);
+
+    const failures = [];
+    if (sectionNames.join(',') !== 'Boats,Dockside') {
+      failures.push(`the shelf is not the game's: ${sectionNames.join(', ')}`);
+    }
+    // The engine's own shelf must be nowhere in sight: a mount that leaked
+    // engine content would mean the studio still hardcodes a catalog.
+    if (modelIds.some((id) => id.startsWith('studio:'))) {
+      failures.push(`engine models leaked onto the game's shelf: ${modelIds.join(', ')}`);
+    }
+    if (observed.openedVoxels <= 0 || observed.boatTriangles <= 0) {
+      failures.push('the opened model drew nothing');
+    }
+    if (observed.crateVoxels <= 0 || observed.crateTriangles <= 0) {
+      failures.push('the second model drew nothing');
+    }
+    if (!observed.framesDiffer) {
+      failures.push('opening a different model did not change the picture');
+    }
+    if (!observed.sweepOk) {
+      failures.push(`the game model's animation is unsound: ${observed.sweepIssues.join(' ')}`);
+    }
+    if (failures.length > 0) {
+      for (const failure of failures) console.error(`${LOG_PREFIX} ${failure}`);
+      process.exitCode = 1;
+      return;
+    }
+    console.log(`${LOG_PREFIX} a game mounted the studio with its own shelf, parts, and recipes`);
   },
 
   /**
