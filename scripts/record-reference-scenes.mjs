@@ -10,7 +10,25 @@ import { chromium } from '@playwright/test';
 const LOG_PREFIX = '[reference-scenes]';
 const PROJECT_ROOT = resolvePath(dirname(fileURLToPath(import.meta.url)), '..');
 const FIXTURE_PATH = '/tests/browser/fixtures/atomic-runtime.html';
+const SCENES_FIXTURE_PATH = '/tests/browser/fixtures/reference-scenes.html';
 const OUTPUT_DIR = join(PROJECT_ROOT, 'benchmarks', 'results');
+
+/**
+ * E-02's named scene corpus. Every scene asserts its own correctness inside
+ * the fixture and records timings for this file; a failed correctness flag
+ * fails the run after the evidence is written, so a bad run leaves its
+ * numbers behind to look at rather than only an error.
+ */
+const NAMED_SCENES = [
+  'chunk-staircase',
+  'chunk-checkerboard',
+  'terrain-aoe-like',
+  'edit-field-9x9',
+  'instances-city-10k',
+  'instances-city-50k',
+  'picking-combined',
+  'teardown-endurance',
+];
 
 /**
  * The whole point of this lane. `playwright.config.ts` pins SwiftShader so the
@@ -123,6 +141,20 @@ async function main() {
     );
     const evidence = await page.evaluate(() => window.runAtomicRuntimeEvidence());
 
+    const scenesResponse = await page.goto(`${origin}${SCENES_FIXTURE_PATH}`, { waitUntil: 'load' });
+    if (!scenesResponse?.ok()) {
+      throw new Error(`scenes fixture did not load: ${String(scenesResponse?.status())}`);
+    }
+    await page.waitForFunction(() => typeof window.runReferenceScene === 'function');
+    const namedScenes = {};
+    for (const sceneName of NAMED_SCENES) {
+      console.log(`${LOG_PREFIX} running ${sceneName}…`);
+      namedScenes[sceneName] = await page.evaluate(
+        (name) => window.runReferenceScene(name),
+        sceneName,
+      );
+    }
+
     if (errors.length > 0) throw new Error(`page reported errors: ${errors.join('; ')}`);
 
     const record = {
@@ -175,6 +207,7 @@ async function main() {
             triangles: evidence.presentedGreen.triangles,
           },
         },
+        ...namedScenes,
       },
       resources: {
         peakCpuStagingBytes: measurements.peakCpuStagingBytes,
@@ -200,9 +233,21 @@ async function main() {
       + `${String(measurements.coldP95Ms)}/${String(measurements.coldMaxMs)} ms; `
       + `warm p50/p95/max ${String(measurements.warmP50Ms)}/`
       + `${String(measurements.warmP95Ms)}/${String(measurements.warmMaxMs)} ms`);
+    for (const [sceneName, scene] of Object.entries(namedScenes)) {
+      const summary = scene.warm ?? scene.edit ?? scene.patch ?? scene.query ?? scene.cycle;
+      console.log(`${LOG_PREFIX} ${sceneName}: `
+        + (summary ? `p50 ${String(summary.p50Ms)} ms, p95 ${String(summary.p95Ms)} ms; ` : '')
+        + `correct: ${String(scene.correctness.ok)}`);
+    }
     console.log(`${LOG_PREFIX} wrote ${relative(PROJECT_ROOT, file)}`);
     if (!record.package.worktreeClean) {
       console.log(`${LOG_PREFIX} worktree is dirty; this recording is not reproducible`);
+    }
+    const failedScenes = Object.entries(namedScenes)
+      .filter(([, scene]) => scene.correctness.ok !== true)
+      .map(([sceneName]) => sceneName);
+    if (failedScenes.length > 0) {
+      throw new Error(`scenes failed their correctness checks: ${failedScenes.join(', ')}`);
     }
   } finally {
     await browser?.close();

@@ -1,0 +1,876 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="icon" href="data:,">
+    <title>Voxel named reference scenes</title>
+    <style>
+      html,
+      body {
+        width: 100%;
+        height: 100%;
+        margin: 0;
+        overflow: hidden;
+        background: #18202a;
+      }
+
+      canvas {
+        display: block;
+        width: 640px;
+        height: 480px;
+      }
+    </style>
+    <script type="importmap">
+      {
+        "imports": {
+          "three": "/node_modules/three/build/three.module.js"
+        }
+      }
+    </script>
+  </head>
+  <body>
+    <script type="module">
+      import { ThreeRenderRuntime } from '/dist/three/index.js';
+
+      const WIDTH = 640;
+      const HEIGHT = 480;
+
+      /**
+       * E-02's named scenes. Every scene records its timings and asserts its
+       * correctness in the same run, because a number without a correctness
+       * result beside it cannot say whether the work it timed was the right
+       * work. Timings are recorded, never asserted: budgets are set from
+       * baselines, and this lane is where the baselines come from.
+       */
+
+      const percentile = (values, fraction) => {
+        if (values.length === 0) return null;
+        const sorted = [...values].sort((left, right) => left - right);
+        const rank = Math.max(1, Math.ceil(fraction * sorted.length));
+        return sorted[rank - 1];
+      };
+
+      const summarize = (values) => ({
+        samples: values.length,
+        p50Ms: percentile(values, 0.5),
+        p95Ms: percentile(values, 0.95),
+        maxMs: values.length ? Math.max(...values) : null,
+      });
+
+      const framesUntilPresented = async (runtime, revision, firstFrameIndex, maxFrames) => {
+        for (let attempt = 0; attempt < maxFrames; attempt += 1) {
+          const frameIndex = firstFrameIndex + attempt;
+          const manifest = runtime.frame({ nowMs: frameIndex * 16, deltaMs: 16, frameIndex });
+          if (manifest && manifest.presentedRevision === revision) {
+            return { frames: attempt + 1, nextFrameIndex: frameIndex + 1 };
+          }
+          await new Promise((resolveDelay) => setTimeout(resolveDelay, 5));
+        }
+        throw new Error(`Revision ${revision} did not present within ${maxFrames} frames.`);
+      };
+
+      // Deterministic sub-selection for sparse patches; scenes must not read
+      // Math.random or a clock for anything that shapes their work.
+      const lcg = (seed) => {
+        let state = seed >>> 0;
+        return () => {
+          state = (Math.imul(state, 1664525) + 1013904223) >>> 0;
+          return state / 0x100000000;
+        };
+      };
+
+      const chunkIndex = (x, y, z, size) => x + size.x * (z + size.z * y);
+
+      const fillChunk = (size, source) => {
+        const voxels = new Uint16Array(size.x * size.y * size.z);
+        for (let y = 0; y < size.y; y += 1) {
+          for (let z = 0; z < size.z; z += 1) {
+            for (let x = 0; x < size.x; x += 1) {
+              voxels[chunkIndex(x, y, z, size)] = source(x, y, z);
+            }
+          }
+        }
+        return voxels;
+      };
+
+      const paletteEntries = (count) => {
+        const entries = [{ color: { r: 0, g: 0, b: 0, a: 0 } }];
+        for (let slot = 1; slot <= count; slot += 1) {
+          entries.push({
+            color: {
+              r: 60 + ((slot * 47) % 180),
+              g: 90 + ((slot * 31) % 150),
+              b: 60 + ((slot * 71) % 160),
+              a: 255,
+            },
+          });
+        }
+        return entries;
+      };
+
+      const chunkDescriptor = (worldId, epoch, profileSize, limits) => ({
+        schemaVersion: 'voxel.world/1',
+        worldId,
+        epoch,
+        coordinates: {
+          handedness: 'right',
+          upAxis: '+y',
+          forwardAxis: '-z',
+          chunkRounding: 'floor',
+          metersPerWorldUnit: 1,
+          worldUnitsPerVoxel: { x: 1, y: 1, z: 1 },
+        },
+        colorEncoding: 'srgb8-straight-alpha',
+        capabilities: ['voxel-chunks'],
+        chunkProfile: {
+          layout: 'uniform-grid',
+          size: profileSize,
+          gridOrigin: { x: 0, y: 0, z: 0 },
+          emptyPaletteIndex: 0,
+          surfaceModel: 'opaque',
+          missingNeighbor: 'empty',
+        },
+        limits,
+      });
+
+      const chunkResources = (revision, paletteCount) => ([
+        {
+          kind: 'palette',
+          key: 'palette:scene',
+          incarnation: 1,
+          revision,
+          entries: paletteEntries(paletteCount),
+        },
+        {
+          kind: 'material',
+          key: 'material:scene',
+          incarnation: 1,
+          revision: 1,
+          shading: 'lambert',
+          color: { r: 255, g: 255, b: 255, a: 255 },
+          vertexColors: true,
+          transparent: false,
+          opacity: 1,
+          doubleSided: false,
+          roughness: 1,
+          metalness: 0,
+        },
+      ]);
+
+      /**
+       * A chunk-grid snapshot: `grid` chunks on x/z, every chunk filled by the
+       * same source formula in chunk-local coordinates, so a scene's occupancy
+       * is exactly the corpus pattern it is named after.
+       */
+      const chunkFieldSnapshot = ({
+        worldId, epoch, revision, profileSize, grid, source, paletteCount,
+      }) => {
+        const chunks = [];
+        for (let gz = 0; gz < grid; gz += 1) {
+          for (let gx = 0; gx < grid; gx += 1) {
+            chunks.push({
+              key: `chunk:${gx}:${gz}`,
+              incarnation: 1,
+              revision,
+              origin: {
+                x: gx * profileSize.x,
+                y: 0,
+                z: gz * profileSize.z,
+              },
+              size: profileSize,
+              paletteKey: 'palette:scene',
+              materialKey: 'material:scene',
+              voxels: fillChunk(profileSize, source),
+            });
+          }
+        }
+        return {
+          schemaVersion: 'voxel.render-snapshot/1',
+          descriptor: chunkDescriptor(worldId, epoch, profileSize, {
+            maxResources: 16,
+            maxPaletteEntries: 256,
+            maxChunks: 128,
+            maxVoxelsPerChunk: 65536,
+            maxBatches: 16,
+            maxGeometryVertices: 65536,
+            maxGeometryIndices: 196608,
+            maxInstancesPerBatch: 1024,
+            maxTotalBytes: 128000000,
+          }),
+          revision,
+          resources: chunkResources(revision, paletteCount),
+          chunks,
+          batches: [],
+        };
+      };
+
+      const CORPUS_SOURCES = {
+        staircase: (x, y, z) => (y <= Math.min(15, x + Math.floor(z / 2)) ? 1 + ((x + z) % 4) : 0),
+        checkerboard: (x, y, z) => ((x + y + z) % 2 === 0 ? 3 : 0),
+        'aoe-like': (x, y, z) => {
+          const height = 1 + ((x * 3 + z * 5 + (x ^ z)) % 4);
+          return y < height ? 1 + (height % 4) : 0;
+        },
+      };
+
+      /**
+       * One warm chunk scene: cold accept-to-present with worker startup, then
+       * warm re-accepts alternating the palette so every revision is a genuine
+       * whole-field remesh. Determinism is asserted by rebuilding the same
+       * snapshot in a second fresh runtime and comparing presented topology.
+       */
+      const runChunkScene = async ({
+        name, profileSize, grid, source, paletteCount, warmRevisions, center, zoom,
+      }) => {
+        const snapshotAt = (revision) => chunkFieldSnapshot({
+          worldId: `world:${name}`,
+          epoch: 'epoch:one',
+          revision,
+          profileSize,
+          grid,
+          source,
+          paletteCount: paletteCount + (revision % 2),
+        });
+
+        const runOnce = async (revisions) => {
+          const canvas = document.createElement('canvas');
+          document.body.appendChild(canvas);
+          const runtime = new ThreeRenderRuntime({
+            canvas, width: WIDTH, height: HEIGHT, pixelRatio: 1,
+            center, zoom,
+            voxelWorkers: { workerCount: 1 },
+          });
+          try {
+            const coldStartedAt = performance.now();
+            const first = runtime.acceptSnapshot(snapshotAt(1));
+            if (first.status !== 'accepted') throw new Error(`rejected: ${first.code}`);
+            let frameIndex = (await framesUntilPresented(runtime, 1, 0, 800)).nextFrameIndex;
+            const coldMs = performance.now() - coldStartedAt;
+
+            const warmMs = [];
+            for (let revision = 2; revision <= revisions + 1; revision += 1) {
+              const startedAt = performance.now();
+              const accepted = runtime.acceptSnapshot(snapshotAt(revision));
+              if (accepted.status !== 'accepted') throw new Error(`rejected: ${accepted.code}`);
+              frameIndex = (await framesUntilPresented(runtime, revision, frameIndex, 800)).nextFrameIndex;
+              warmMs.push(performance.now() - startedAt);
+            }
+            const metrics = runtime.metrics();
+            return {
+              coldMs,
+              warmMs,
+              triangles: metrics.triangles,
+              drawCalls: metrics.drawCalls,
+              atomic: metrics.atomic,
+              presentedRevision: metrics.presentedRevision,
+              state: runtime.runtimeStatus().state,
+            };
+          } finally {
+            runtime.dispose();
+            canvas.remove();
+          }
+        };
+
+        const main = await runOnce(warmRevisions);
+        const rebuilt = await runOnce(0);
+        const deterministicTopology = main.atomic && rebuilt.atomic
+          ? rebuilt.triangles === (main.presentedRevision % 2 === 1
+            ? main.triangles
+            : rebuilt.triangles)
+          : rebuilt.triangles > 0;
+        // Odd-revision snapshots share palette parity with revision 1, so the
+        // comparison is only meaningful when the main run ended on odd; the
+        // voxel occupancy is identical either way, and triangle counts must be.
+        const comparable = main.presentedRevision % 2 === 1;
+
+        return {
+          scene: name,
+          workerCount: 1,
+          coldFirstPresentMs: main.coldMs,
+          warm: summarize(main.warmMs),
+          triangles: main.triangles,
+          drawCalls: main.drawCalls,
+          chunks: main.atomic
+            ? {
+                loaded: main.atomic.loadedChunks,
+                nonempty: main.atomic.nonemptyChunks,
+                inFrustum: main.atomic.inFrustumChunks,
+              }
+            : null,
+          correctness: {
+            ok: main.state === 'running'
+              && main.presentedRevision === warmRevisions + 1
+              && main.triangles > 0
+              && (!comparable || rebuilt.triangles === main.triangles),
+            presentedRevision: main.presentedRevision,
+            rebuiltTriangles: rebuilt.triangles,
+            deterministicTopology: comparable ? rebuilt.triangles === main.triangles : deterministicTopology,
+          },
+        };
+      };
+
+      /**
+       * The 9x9 boundary edit field: 81 chunks stay resident while the centre
+       * chunk's boundary voxel toggles through the sparse delta path, so each
+       * sample is one production edit — delta accept, face-halo remesh, atomic
+       * present — never a whole-field rebuild.
+       */
+      const runEditFieldScene = async ({ edits }) => {
+        const profileSize = { x: 8, y: 8, z: 8 };
+        const source = CORPUS_SOURCES['aoe-like'];
+        const base = chunkFieldSnapshot({
+          worldId: 'world:edit-field',
+          epoch: 'epoch:one',
+          revision: 1,
+          profileSize,
+          grid: 9,
+          source,
+          paletteCount: 5,
+        });
+        const canvas = document.createElement('canvas');
+        document.body.appendChild(canvas);
+        const runtime = new ThreeRenderRuntime({
+          canvas, width: WIDTH, height: HEIGHT, pixelRatio: 1,
+          center: { x: 36, y: 2, z: 36 }, zoom: 0.12,
+          voxelWorkers: { workerCount: 1 },
+        });
+        try {
+          const coldStartedAt = performance.now();
+          if (runtime.acceptSnapshot(base).status !== 'accepted') {
+            throw new Error('base field rejected');
+          }
+          let frameIndex = (await framesUntilPresented(runtime, 1, 0, 1200)).nextFrameIndex;
+          const coldMs = performance.now() - coldStartedAt;
+
+          const centreChunk = base.chunks[4 * 9 + 4];
+          const editMs = [];
+          for (let edit = 1; edit <= edits; edit += 1) {
+            const revision = 1 + edit;
+            const voxels = centreChunk.voxels.slice();
+            // A boundary cell, so the face-halo dependents remesh too — that
+            // is what makes this an edit-field scene rather than a chunk scene.
+            voxels[chunkIndex(0, 4, 4, profileSize)] = edit % 2 === 0 ? 0 : 2;
+            const startedAt = performance.now();
+            const accepted = runtime.acceptDelta({
+              schemaVersion: 'voxel.render-delta/1',
+              worldId: 'world:edit-field',
+              epoch: 'epoch:one',
+              baseRevision: revision - 1,
+              revision,
+              operations: [{
+                op: 'put-chunk',
+                chunk: { ...centreChunk, revision, voxels },
+              }],
+            });
+            if (accepted.status !== 'accepted') {
+              throw new Error(`edit ${edit} rejected: ${accepted.code}`);
+            }
+            frameIndex = (await framesUntilPresented(runtime, revision, frameIndex, 800)).nextFrameIndex;
+            editMs.push(performance.now() - startedAt);
+          }
+          const metrics = runtime.metrics();
+          return {
+            scene: 'edit-field-9x9',
+            workerCount: 1,
+            chunksLoaded: metrics.atomic ? metrics.atomic.loadedChunks : null,
+            coldFirstPresentMs: coldMs,
+            edit: summarize(editMs),
+            peakCpuStagingBytes: metrics.atomic ? metrics.atomic.peakCpuStagingBytes : null,
+            peakGpuStagingBytes: metrics.atomic ? metrics.atomic.peakGpuStagingBytes : null,
+            correctness: {
+              ok: runtime.runtimeStatus().state === 'running'
+                && metrics.presentedRevision === 1 + edits
+                && (metrics.atomic ? metrics.atomic.loadedChunks === 81 : false),
+              presentedRevision: metrics.presentedRevision,
+            },
+          };
+        } finally {
+          runtime.dispose();
+          canvas.remove();
+        }
+      };
+
+      const BOX_POSITIONS = [];
+      const BOX_NORMALS = [];
+      const BOX_INDICES = [];
+      {
+        const faces = [
+          { normal: [1, 0, 0], corners: [[1, 0, 0], [1, 1, 0], [1, 1, 1], [1, 0, 1]] },
+          { normal: [-1, 0, 0], corners: [[0, 0, 1], [0, 1, 1], [0, 1, 0], [0, 0, 0]] },
+          { normal: [0, 1, 0], corners: [[0, 1, 0], [0, 1, 1], [1, 1, 1], [1, 1, 0]] },
+          { normal: [0, -1, 0], corners: [[0, 0, 1], [0, 0, 0], [1, 0, 0], [1, 0, 1]] },
+          { normal: [0, 0, 1], corners: [[1, 0, 1], [1, 1, 1], [0, 1, 1], [0, 0, 1]] },
+          { normal: [0, 0, -1], corners: [[0, 0, 0], [0, 1, 0], [1, 1, 0], [1, 0, 0]] },
+        ];
+        for (const face of faces) {
+          const base = BOX_POSITIONS.length / 3;
+          for (const corner of face.corners) {
+            BOX_POSITIONS.push(corner[0] - 0.5, corner[1] - 0.5, corner[2] - 0.5);
+            BOX_NORMALS.push(face.normal[0], face.normal[1], face.normal[2]);
+          }
+          BOX_INDICES.push(base, base + 1, base + 2, base, base + 2, base + 3);
+        }
+      }
+
+      const instanceDescriptor = (worldId, epoch, maxInstances) => ({
+        schemaVersion: 'voxel.world/1',
+        worldId,
+        epoch,
+        coordinates: {
+          handedness: 'right',
+          upAxis: '+y',
+          forwardAxis: '-z',
+          chunkRounding: 'floor',
+          metersPerWorldUnit: 1,
+          worldUnitsPerVoxel: { x: 1, y: 1, z: 1 },
+        },
+        colorEncoding: 'srgb8-straight-alpha',
+        capabilities: ['geometry-resources', 'instance-batches'],
+        limits: {
+          maxResources: 16,
+          maxPaletteEntries: 256,
+          maxChunks: 4,
+          maxBatches: 8,
+          maxVoxelsPerChunk: 4096,
+          maxGeometryVertices: 65536,
+          maxGeometryIndices: 196608,
+          maxInstancesPerBatch: maxInstances,
+          maxTotalBytes: 256000000,
+        },
+      });
+
+      const instanceKeyAt = (index) => `instance:${index}`;
+
+      const instanceMatrix = (index, lift) => {
+        const column = index % 100;
+        const row = Math.floor(index / 100);
+        return [
+          1, 0, 0, 0,
+          0, 1 + (index % 5) * 0.35, 0, 0,
+          0, 0, 1, 0,
+          column * 2, lift, row * 2, 1,
+        ];
+      };
+
+      const instanceSnapshot = ({ worldId, epoch, revision, count }) => {
+        const matrices = new Float32Array(count * 16);
+        const colors = new Uint8Array(count * 4);
+        const instanceKeys = new Array(count);
+        for (let index = 0; index < count; index += 1) {
+          matrices.set(instanceMatrix(index, 0), index * 16);
+          colors[index * 4] = 120 + ((index * 13) % 100);
+          colors[index * 4 + 1] = 120 + ((index * 29) % 100);
+          colors[index * 4 + 2] = 140 + ((index * 7) % 80);
+          colors[index * 4 + 3] = 255;
+          instanceKeys[index] = instanceKeyAt(index);
+        }
+        return {
+          schemaVersion: 'voxel.render-snapshot/1',
+          descriptor: instanceDescriptor(worldId, epoch, Math.max(1024, count)),
+          revision,
+          resources: [
+            {
+              kind: 'geometry',
+              key: 'geometry:box',
+              incarnation: 1,
+              revision: 1,
+              topology: 'triangles',
+              positions: new Float32Array(BOX_POSITIONS),
+              normals: new Float32Array(BOX_NORMALS),
+              indices: new Uint32Array(BOX_INDICES),
+              groups: [{ start: 0, count: BOX_INDICES.length, materialKey: 'material:box' }],
+              bounds: { min: { x: -0.5, y: -0.5, z: -0.5 }, max: { x: 0.5, y: 0.5, z: 0.5 } },
+              pivot: { x: 0, y: 0, z: 0 },
+            },
+            {
+              kind: 'material',
+              key: 'material:box',
+              incarnation: 1,
+              revision: 1,
+              shading: 'lambert',
+              color: { r: 255, g: 255, b: 255, a: 255 },
+              vertexColors: false,
+              transparent: false,
+              opacity: 1,
+              doubleSided: false,
+              roughness: 1,
+              metalness: 0,
+            },
+          ],
+          chunks: [],
+          batches: [
+            {
+              key: 'batch:city',
+              incarnation: 1,
+              revision,
+              geometryKey: 'geometry:box',
+              materialKey: 'material:box',
+              instanceKeys,
+              matrices,
+              colors,
+            },
+          ],
+        };
+      };
+
+      /**
+       * The City-like sparse scene: N instances present once, then repeated
+       * 1%-sized keyed patches. The claim under measurement is D-04's — work
+       * proportional to touched instances — so matrix write counts are
+       * recorded beside the timings; N-proportional writes would show up as
+       * exactly N rather than the patch size.
+       */
+      const runInstanceScene = async ({ count, patches }) => {
+        const worldId = `world:city-${count}`;
+        const canvas = document.createElement('canvas');
+        document.body.appendChild(canvas);
+        const runtime = new ThreeRenderRuntime({
+          canvas, width: WIDTH, height: HEIGHT, pixelRatio: 1,
+          center: { x: 100, y: 2, z: Math.max(2, count / 100) }, zoom: 0.05,
+        });
+        try {
+          const coldStartedAt = performance.now();
+          const accepted = runtime.acceptSnapshot(instanceSnapshot({
+            worldId, epoch: 'epoch:one', revision: 1, count,
+          }));
+          if (accepted.status !== 'accepted') throw new Error(`rejected: ${accepted.code}`);
+          runtime.frame({ nowMs: 0, deltaMs: 16, frameIndex: 0 });
+          const coldMs = performance.now() - coldStartedAt;
+          const presentedBase = runtime.metrics();
+          if (presentedBase.presentedRevision !== 1) throw new Error('base never presented');
+
+          const patchSize = Math.max(1, Math.floor(count / 100));
+          const random = lcg(0xc17f00d);
+          const patchMs = [];
+          let matrixWritesBefore = presentedBase.instancePresentationMatrixWrites;
+          let matrixWritesPerPatch = null;
+          for (let patch = 1; patch <= patches; patch += 1) {
+            const revision = 1 + patch;
+            // A City-shaped patch is a neighborhood, not a uniform scatter: a
+            // contiguous run of keys starting at a seeded offset. Scattered
+            // keys legitimately widen the presenter's coalesced update ranges,
+            // which would measure the scatter, not the sparse path.
+            const start = Math.floor(random() * (count - patchSize));
+            const chosen = new Set();
+            for (let offset = 0; offset < patchSize; offset += 1) {
+              chosen.add(start + offset);
+            }
+            const instanceKeys = [];
+            const matrices = new Float32Array(patchSize * 16);
+            // The base batch declared a colors lane, and a patch must keep the
+            // declared lane layout, so every upsert carries colors too.
+            const colors = new Uint8Array(patchSize * 4);
+            let slot = 0;
+            for (const index of chosen) {
+              instanceKeys.push(instanceKeyAt(index));
+              matrices.set(instanceMatrix(index, (patch % 3) * 0.5), slot * 16);
+              colors[slot * 4] = 200;
+              colors[slot * 4 + 1] = 120 + (patch % 5) * 20;
+              colors[slot * 4 + 2] = 90;
+              colors[slot * 4 + 3] = 255;
+              slot += 1;
+            }
+            const startedAt = performance.now();
+            const patched = runtime.acceptDelta({
+              schemaVersion: 'voxel.render-delta/1',
+              worldId,
+              epoch: 'epoch:one',
+              baseRevision: revision - 1,
+              revision,
+              operations: [{
+                op: 'patch-batch-instances',
+                key: 'batch:city',
+                incarnation: 1,
+                revision,
+                removeInstanceKeys: [],
+                upserts: { instanceKeys, matrices, colors },
+              }],
+            });
+            if (patched.status !== 'accepted') {
+              throw new Error(`patch ${patch} rejected: ${patched.code}`);
+            }
+            runtime.frame({ nowMs: patch * 16, deltaMs: 16, frameIndex: patch });
+            patchMs.push(performance.now() - startedAt);
+            if (patch === 1) {
+              matrixWritesPerPatch = runtime.metrics().instancePresentationMatrixWrites
+                - matrixWritesBefore;
+            }
+          }
+          const metrics = runtime.metrics();
+          // The D-04 claim under measurement: presentation writes scale with
+          // the patch (allowing page-granular rounding), never with the batch.
+          const sparseWrites = matrixWritesPerPatch !== null
+            && matrixWritesPerPatch <= patchSize * 2 + 512
+            && matrixWritesPerPatch < count / 4;
+          return {
+            scene: `instances-city-${count}`,
+            instances: count,
+            patchSize,
+            coldFirstPresentMs: coldMs,
+            patch: summarize(patchMs),
+            drawCalls: metrics.drawCalls,
+            triangles: metrics.triangles,
+            matrixWritesFirstPatch: matrixWritesPerPatch,
+            correctness: {
+              ok: runtime.runtimeStatus().state === 'running'
+                && metrics.presentedRevision === 1 + patches
+                && metrics.triangles === count * 12
+                && sparseWrites,
+              presentedRevision: metrics.presentedRevision,
+              sparseWrites,
+            },
+          };
+        } finally {
+          runtime.dispose();
+          canvas.remove();
+        }
+      };
+
+      /**
+       * Combined picking over a world that presents both lanes at once. The
+       * rays are fixed, the results must be identical across two full sweeps,
+       * and the known centre ray must hit the known chunk — picking reads the
+       * presented frame, so determinism here is presented-state determinism.
+       */
+      const runPickingScene = async ({ rays }) => {
+        const profileSize = { x: 8, y: 5, z: 8 };
+        const base = chunkFieldSnapshot({
+          worldId: 'world:picking',
+          epoch: 'epoch:one',
+          revision: 1,
+          profileSize,
+          grid: 3,
+          source: CORPUS_SOURCES['aoe-like'],
+          paletteCount: 5,
+        });
+        const count = 1000;
+        const instances = instanceSnapshot({
+          worldId: 'world:picking', epoch: 'epoch:one', revision: 1, count,
+        });
+        const combined = {
+          ...base,
+          descriptor: {
+            ...base.descriptor,
+            capabilities: ['voxel-chunks', 'geometry-resources', 'instance-batches'],
+            limits: { ...base.descriptor.limits, maxInstancesPerBatch: count },
+          },
+          resources: [...base.resources, ...instances.resources],
+          batches: instances.batches.map((batch) => ({
+            ...batch,
+            matrices: (() => {
+              // The box field sits beside the terrain in z, never above it, so
+              // a terrain ray reaches terrain and an instance ray reaches
+              // instances — each lane's hits mean what the ray meant.
+              const shifted = new Float32Array(batch.matrices);
+              for (let index = 0; index < count; index += 1) {
+                shifted[index * 16 + 14] += 40;
+              }
+              return shifted;
+            })(),
+          })),
+        };
+
+        const canvas = document.createElement('canvas');
+        document.body.appendChild(canvas);
+        const runtime = new ThreeRenderRuntime({
+          canvas, width: WIDTH, height: HEIGHT, pixelRatio: 1,
+          center: { x: 12, y: 2, z: 12 }, zoom: 0.2,
+          voxelWorkers: { workerCount: 1 },
+        });
+        try {
+          if (runtime.acceptSnapshot(combined).status !== 'accepted') {
+            throw new Error('combined world rejected');
+          }
+          await framesUntilPresented(runtime, 1, 0, 800);
+
+          const rayAt = (index) => {
+            const lane = index % 3;
+            if (lane === 0) {
+              // Down onto the terrain grid.
+              const x = 0.5 + (index % 24);
+              const z = 0.5 + (Math.floor(index / 3) % 24);
+              return {
+                origin: { x, y: 40, z },
+                direction: { x: 0, y: -1, z: 0 },
+                maxDistance: 100,
+                maxHits: 4,
+                maxWork: { voxelSteps: 256, instanceCandidates: 4096, instancePrimitiveTests: 32768 },
+              };
+            }
+            if (lane === 1) {
+              // Down onto the shifted instance field.
+              const instance = (index * 7) % count;
+              const column = instance % 100;
+              const row = Math.floor(instance / 100);
+              return {
+                origin: { x: column * 2 + 0.5, y: 40, z: row * 2 + 40.5 },
+                direction: { x: 0, y: -1, z: 0 },
+                maxDistance: 100,
+                maxHits: 4,
+                maxWork: { voxelSteps: 256, instanceCandidates: 4096, instancePrimitiveTests: 32768 },
+              };
+            }
+            // A deliberate miss, angled away from everything.
+            return {
+              origin: { x: -50, y: 50, z: -50 },
+              direction: { x: 0, y: 1, z: 0 },
+              maxDistance: 60,
+              maxHits: 4,
+              maxWork: { voxelSteps: 256, instanceCandidates: 4096, instancePrimitiveTests: 32768 },
+            };
+          };
+
+          const sweep = () => {
+            const durations = [];
+            const outcomes = [];
+            let voxelHits = 0;
+            let instanceHits = 0;
+            let misses = 0;
+            for (let index = 0; index < rays; index += 1) {
+              const query = rayAt(index);
+              const startedAt = performance.now();
+              const result = runtime.pickPresented(query);
+              durations.push(performance.now() - startedAt);
+              if (result.status !== 'hits') throw new Error(`ray ${index}: ${result.status}`);
+              const first = result.hits[0] ?? null;
+              outcomes.push(first ? `${first.lane}:${String(first.distance)}` : 'miss');
+              if (!first) misses += 1;
+              else if (first.lane === 'voxel') voxelHits += 1;
+              else instanceHits += 1;
+            }
+            return { durations, outcomes, voxelHits, instanceHits, misses };
+          };
+
+          const first = sweep();
+          const second = sweep();
+          const deterministic = first.outcomes.join('|') === second.outcomes.join('|');
+
+          const centreProbe = runtime.pickPresented({
+            origin: { x: 4.5, y: 40, z: 4.5 },
+            direction: { x: 0, y: -1, z: 0 },
+            maxDistance: 100,
+            maxHits: 2,
+            maxWork: { voxelSteps: 256, instanceCandidates: 4096, instancePrimitiveTests: 32768 },
+          });
+          const centreHit = centreProbe.status === 'hits' && centreProbe.hits.length > 0
+            ? centreProbe.hits[0]
+            : null;
+
+          return {
+            scene: 'picking-combined',
+            rays,
+            query: summarize([...first.durations, ...second.durations]),
+            voxelHits: first.voxelHits,
+            instanceHits: first.instanceHits,
+            misses: first.misses,
+            correctness: {
+              ok: deterministic
+                && first.voxelHits > 0
+                && first.instanceHits > 0
+                && first.misses > 0
+                && centreHit !== null
+                && centreHit.lane === 'voxel'
+                && centreHit.presentedRevision === 1,
+              deterministic,
+              centreLane: centreHit ? centreHit.lane : null,
+            },
+          };
+        } finally {
+          runtime.dispose();
+          canvas.remove();
+        }
+      };
+
+      /**
+       * Teardown endurance as a named scene: full create/present/dispose
+       * cycles. The renderer's own live-geometry count after dispose is the
+       * ground truth; a cycle that leaves it above zero has leaked on real
+       * hardware no matter what any fake-renderer test believes.
+       */
+      const runTeardownScene = async ({ cycles }) => {
+        const cycleMs = [];
+        const disposeMs = [];
+        let geometriesAfterEveryDispose = true;
+        let liveGeometriesSeen = 0;
+        for (let cycle = 0; cycle < cycles; cycle += 1) {
+          const canvas = document.createElement('canvas');
+          document.body.appendChild(canvas);
+          const runtime = new ThreeRenderRuntime({
+            canvas, width: WIDTH, height: HEIGHT, pixelRatio: 1,
+            center: { x: 8, y: 2, z: 8 }, zoom: 0.4,
+            voxelWorkers: { workerCount: 1 },
+          });
+          const startedAt = performance.now();
+          try {
+            const accepted = runtime.acceptSnapshot(chunkFieldSnapshot({
+              worldId: 'world:teardown',
+              epoch: `epoch:${cycle}`,
+              revision: 1,
+              profileSize: { x: 8, y: 5, z: 8 },
+              grid: 2,
+              source: CORPUS_SOURCES['aoe-like'],
+              paletteCount: 5,
+            }));
+            if (accepted.status !== 'accepted') throw new Error(`cycle ${cycle} rejected`);
+            await framesUntilPresented(runtime, 1, 0, 800);
+            liveGeometriesSeen = Math.max(liveGeometriesSeen, runtime.metrics().rendererGeometries);
+            const disposeStartedAt = performance.now();
+            runtime.dispose();
+            disposeMs.push(performance.now() - disposeStartedAt);
+            if (runtime.metrics().rendererGeometries !== 0) geometriesAfterEveryDispose = false;
+          } finally {
+            canvas.remove();
+          }
+          cycleMs.push(performance.now() - startedAt);
+        }
+        return {
+          scene: 'teardown-endurance',
+          cycles,
+          cycle: summarize(cycleMs),
+          dispose: summarize(disposeMs),
+          liveGeometriesSeen,
+          correctness: {
+            ok: geometriesAfterEveryDispose && liveGeometriesSeen > 0,
+            geometriesAfterEveryDispose,
+          },
+        };
+      };
+
+      window.runReferenceScene = async (name) => {
+        switch (name) {
+          case 'chunk-staircase':
+            return runChunkScene({
+              name, profileSize: { x: 16, y: 16, z: 16 }, grid: 3,
+              source: CORPUS_SOURCES.staircase, paletteCount: 5,
+              warmRevisions: 8, center: { x: 24, y: 6, z: 24 }, zoom: 0.25,
+            });
+          case 'chunk-checkerboard':
+            return runChunkScene({
+              name, profileSize: { x: 8, y: 8, z: 8 }, grid: 3,
+              source: CORPUS_SOURCES.checkerboard, paletteCount: 5,
+              warmRevisions: 8, center: { x: 12, y: 3, z: 12 }, zoom: 0.5,
+            });
+          case 'terrain-aoe-like':
+            return runChunkScene({
+              name, profileSize: { x: 8, y: 5, z: 8 }, grid: 8,
+              source: CORPUS_SOURCES['aoe-like'], paletteCount: 5,
+              warmRevisions: 8, center: { x: 32, y: 2, z: 32 }, zoom: 0.15,
+            });
+          case 'edit-field-9x9':
+            return runEditFieldScene({ edits: 40 });
+          case 'instances-city-10k':
+            return runInstanceScene({ count: 10000, patches: 20 });
+          case 'instances-city-50k':
+            return runInstanceScene({ count: 50000, patches: 20 });
+          case 'picking-combined':
+            return runPickingScene({ rays: 300 });
+          case 'teardown-endurance':
+            return runTeardownScene({ cycles: 25 });
+          default:
+            throw new Error(`unknown scene '${name}'`);
+        }
+      };
+    </script>
+  </body>
+</html>
