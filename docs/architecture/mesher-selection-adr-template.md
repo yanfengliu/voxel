@@ -1,6 +1,6 @@
 # ADR template: production voxel mesher selection
 
-Status: template; copy this file for V-09 and replace every bracketed field.
+Status: template. V-09's accepted record is [mesher-selection.md](mesher-selection.md); copy this file for any future mesher ADR and replace every bracketed field.
 
 ## Decision record
 

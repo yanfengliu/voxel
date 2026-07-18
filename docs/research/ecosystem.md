@@ -1,6 +1,6 @@
 # Rendering and voxel ecosystem review
 
-Reviewed: 2026-07-13. Re-check versions, activity, licenses, and browser support before adding a dependency; this is a decision record, not a forever-current catalog.
+Reviewed: 2026-07-13. Re-check versions, activity, licenses, and browser support before adding a dependency; this is a decision record, not a forever-current catalog. Its central open question — whether to adopt an external mesher — was settled on 2026-07-15 by [the mesher selection ADR](../architecture/mesher-selection.md): both external candidates were rejected before benchmarking and the in-repo greedy mesher was accepted for production.
 
 ## What we should adopt
 

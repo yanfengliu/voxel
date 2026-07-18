@@ -1,6 +1,6 @@
 # Frame inspection and the model studio
 
-Status: design accepted 2026-07-15. Not yet implemented.
+Status: design accepted 2026-07-15; implemented. Frame inspection ships as `npm run inspect:frames` (`scripts/inspect-frames.mjs`), E-03's visual baselines live in `tests/browser/visual-baselines.spec.ts` with committed images under `tests/browser/baselines/`, and the model studio ships from this repository under `tools/studio/` (`npm run studio`), including models saved as recipes.
 
 ## Why this exists
 
@@ -94,11 +94,17 @@ screenshot that looks right proves nothing about topology, and topology that is
 right proves nothing about what a human sees; the tool reports both because
 neither substitutes for the other.
 
-## Open
+## Open — resolved
 
-- Sample-time selection for a multi-instance batch with different periods. The
-  honest unit is one period of the instance under inspection, not a fixed frame
-  count.
-- Baseline storage and tolerance policy for E-03.
-- Whether the UI ships from this repository at all, or only the core plus a
-  fixture. The non-goal argues for the latter.
+- Sample-time selection for a multi-instance batch with different periods
+  stays open in principle; the studio inspects one model at a time, where one
+  period of the inspected motion is the unit, so the question has not yet
+  arisen in practice.
+- Baseline storage and tolerance policy for E-03: decided and documented in
+  `tests/browser/visual-baselines.spec.ts` — committed images under
+  `tests/browser/baselines/`, one platform-agnostic set, 0.002
+  max-diff-pixel-ratio, updates only via `--update-snapshots` with the reason
+  in the commit.
+- The UI ships from this repository: the owner decided every game gets a model
+  studio and the engine owns the studio's reusable core (see the roadmap's
+  "Every game gets a model studio").

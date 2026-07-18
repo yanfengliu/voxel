@@ -36,7 +36,8 @@ performance assertion hides the regressions it exists to catch. Instead the
 assertion moved to the lane that can support it.
 
 `npm run benchmark:scenes` now enforces the 100 ms budget on named hardware,
-where it measures 28.5 ms p95 on an RTX 4090. The deterministic lane keeps a
+where the committed recordings measure 32.8 ms p95 (2026-07-16) and 28.8 ms
+p95 (2026-07-18) on an RTX 4090. The deterministic lane keeps a
 1,000 ms pathology ceiling, an order of magnitude above the hardware figure, so
 a startup regression measured in seconds still fails anywhere while ordinary
 host contention does not. That is the same principle the deterministic lane
@@ -161,5 +162,6 @@ independent of the rasteriser. The accepted-to-presented latencies (p50 11.8 ms,
 p95 12.8 ms warm) are **recorded, not asserted**: a software rasteriser cannot
 support a hardware frame-time claim, and the 30-percent end-to-end rule that
 governs an *external* candidate is moot here because no external candidate reached
-benchmarking. Named-hardware timings remain E-02's obligation, and the final
-release measurement must still run from the immutable RC commit.
+benchmarking. E-02's named-hardware corpus is recorded
+(`benchmarks/results/2026-07-18-named-hardware.json`); the final release
+measurement must still run from the immutable RC commit.

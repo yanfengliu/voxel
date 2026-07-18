@@ -1,6 +1,6 @@
 # Voxel 1.0 target architecture
 
-Status: target design from 2026-07-13. This document is normative for planned 1.0 work but does not claim that unmarked target APIs exist. The current executable surface remains described by [spec.md](spec.md), the package exports, and tests.
+Status: target design from 2026-07-13. This document is normative for planned 1.0 work but does not claim that unmarked target APIs exist. The current executable surface is described by the README, [the implementation plan's ledger](../plans/v1-implementation.md), the package exports, and tests; where a delivered API's final shape differs from a sketch here, the delivered shape is noted in place.
 
 The design is deliberately evolutionary. Existing 0.1 snapshot consumers remain source-compatible while opt-in contracts are added and proven before the 1.0 freeze.
 
@@ -472,7 +472,7 @@ PresentedVoxelStore swaps with chunk meshes and supplies occupancy to DDA. World
 
 Instance picking uses matrices actually uploaded for the last rendered frame, including procedural animation, and maps Three instance IDs through the presented key table. Begin with bounded Three raycasting and measured spatial shards. Add an acceleration dependency only if the named scene exceeds its p95 budget.
 
-ThreeRenderRuntime exposes pickPresentedRay for a caller-supplied world ray and pickPresentedNdc for normalized device coordinates. The NDC form derives its ray from the camera projection/world matrices and viewport captured by the last committed frame ticket. It never reads a mutable borrowed camera after commit. Hits also name committed frame time, device generation, and camera generation. Exhausting a traversal/candidate budget returns a typed budget-exceeded outcome rather than a false miss.
+As delivered, ThreeRenderRuntime exposes `pickPresented(query)` for a caller-supplied world ray against the committed frame; the projection helpers on the camera policies derive rays from screen coordinates when a consumer needs them. It never reads a mutable borrowed camera after commit. Hits name the full presented identity, and exhausting a traversal/candidate budget returns a typed budget-exceeded outcome rather than a false miss. (This section originally sketched a two-method `pickPresentedRay`/`pickPresentedNdc` shape; the single-query form shipped instead.)
 
 A future neutral proxy lane may add bounded AABB and sphere proxies attached to world or presented instances. It is accepted for 1.0 only if real AoE/City evidence shows voxel and instance geometry cannot express the required logical hit area; otherwise it remains a 1.x schema addition.
 

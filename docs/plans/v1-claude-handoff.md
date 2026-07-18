@@ -1,6 +1,12 @@
 # Voxel 1.0 Claude handoff
 
-Status snapshot: 2026-07-15
+Status snapshot: 2026-07-15. **Historical — do not follow.** Every "next step"
+below is delivered and every "current state" claim below is stale: the voxel
+worker option is public (`voxelWorkers`), the capability report advertises
+worker meshing, both picking lanes, and revision-aware capture, and the E
+milestones are complete. The live authority is
+[the implementation plan](v1-implementation.md); this file remains only as the
+record of what the 2026-07-15 handoff believed.
 
 ## Assignment
 

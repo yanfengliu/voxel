@@ -1,6 +1,6 @@
 # Voxel graphics engine design
 
-Status: the V1 vertical slice was implemented on 2026-07-11. This document records the original architecture and option analysis; it is not a claim that every proposed section exists. The shipped surface is bounded snapshots, an oracle mesher, a deterministic dense-chunk occupancy ray query, and a Three.js WebGL runtime, proven first through AoE2. Forward work toward a stable release is governed by the [1.0 roadmap](../plans/v1-roadmap.md), [target architecture](v1-architecture.md), and [implementation plan](../plans/v1-implementation.md).
+Status: the V1 vertical slice was implemented on 2026-07-11. This document records the original architecture and option analysis; it is not a claim that every proposed section exists, and it predates most of the delivered surface — the README and [the implementation plan's ledger](../plans/v1-implementation.md) describe what ships today (deltas, the production greedy worker pipeline, presented picking, revision-aware capture, embedded hosts, and both consumer proofs). Forward work toward the stable release is governed by the [1.0 roadmap](../plans/v1-roadmap.md), [target architecture](v1-architecture.md), and [implementation plan](../plans/v1-implementation.md).
 
 ## Decision summary
 

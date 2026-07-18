@@ -56,7 +56,7 @@ Exit gate: the named seed is playable under `?renderer=voxel`; selection, comman
 - [x] Compare controlled tick-one 800x600 before/after screenshots and structural metrics; the reviewed slice is nonblank and aligned on the flat input plane.
 - [x] Run adversarial code review and resolve every substantive finding; the animation review closed affine composition, Float32 headroom, workload caps, conservative bounds, full-versus-partial uploads, and sparse-range command bounds.
 - [x] Promote AoE to one standalone voxel-only Three host after raised-object picking, selection/commands, capture, context-loss, lifecycle, and browser gates pass; remove the renderer selector, Phaser source/dependency, and fallback canvas.
-- [ ] Integrate one City instance batch through embedded mode without replacing City's terrain or composition root.
+- [x] Integrate one City instance batch through embedded mode without replacing City's terrain or composition root; delivered as C-03 in [the 1.0 plan](v1-implementation.md) — City's building wall lane draws through embedded Voxel behind `?voxelWalls=1`.
 - [ ] Upgrade Townscaper to the tested Three line, then prove one geometry-resource/full-rebuild slice while its topology stays local.
 - [ ] Run the Voxelize versus `block-mesh-rs` mesher bake-off before implementing greedy meshing.
 

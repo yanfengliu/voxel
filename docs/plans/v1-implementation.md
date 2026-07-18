@@ -683,6 +683,25 @@ E exit gate: every support/performance claim has repeatable evidence, no leak or
 
 ### R-02: Migration and clean-consumer rehearsal
 
+- [x] Rehearsed 2026-07-18. The migration record is the foundation note
+  (`docs/guides/v0.2-foundations.md`, retitled to the 1.0 migration note at
+  release), the changelog, and D-01's migration examples; snapshot-only
+  consumers need no source change and every opt-in is documented. The packed
+  clean fixtures are `verify`'s own packaging suites (portable core-only,
+  mesh-worker, single-Three, and the exact 5.7/5.9/6.0 compiler matrix with
+  the City-shaped lane). Both authorized real consumers ran against this
+  package: AoE2's complete gate at its clean HEAD `061dc5d` — 2,149 unit
+  tests, 108 real-browser tests, typecheck, lint, build, content validation,
+  all green; and City rehearsed from an isolated clean checkout of the
+  committed HEADs of City (`bc820fe`), civ-engine, and this repository with
+  fresh installs — typecheck and build green, 361/362 tests green including
+  every voxel-lane suite (`voxel-walls-lane`, `voxel-walls-host`,
+  `voxel-three-identity`). The single failure is City-internal: its committed
+  recorder-benchmark evidence pins source bytes its own in-flight work
+  changed, which does not involve this package. City's live worktree was
+  deliberately not used: another session is mid-flight there, and a rehearsal
+  against uncommitted work measures nothing reproducible.
+
 - Document 0.1 snapshot compatibility, opt-in deltas/workers/picking/host changes, and any deprecation.
 - Install the packed RC into clean portable, AoE-shaped, and City-shaped fixtures and the authorized real consumers.
 
