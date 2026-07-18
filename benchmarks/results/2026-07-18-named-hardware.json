@@ -1,0 +1,236 @@
+{
+  "schema": "voxel.reference-scenes/1",
+  "lane": "named-hardware",
+  "recordedAtIso": "2026-07-18T06:16:22.099Z",
+  "package": {
+    "name": "voxel",
+    "version": "0.1.4",
+    "commit": "8ea3a2f08c6c65a6a486e7b2563b00387d05a571",
+    "worktreeClean": true
+  },
+  "host": {
+    "os": "win32 10.0.26100",
+    "arch": "x64",
+    "cpu": "13th Gen Intel(R) Core(TM) i9-13900KF",
+    "cpuCount": 32,
+    "totalMemoryBytes": 68423581696,
+    "node": "v22.14.0",
+    "browser": "chromium 147.0.7727.15",
+    "browserArgs": [
+      "--use-angle=d3d11"
+    ],
+    "headless": true
+  },
+  "device": {
+    "webgl2": true,
+    "renderer": "ANGLE (NVIDIA, NVIDIA GeForce RTX 4090 (0x00002684) Direct3D11 vs_5_0 ps_5_0, D3D11)",
+    "vendor": "Google Inc. (NVIDIA)",
+    "maxTextureSize": 16384
+  },
+  "viewport": {
+    "width": 640,
+    "height": 480,
+    "deviceScaleFactor": 1
+  },
+  "scenes": {
+    "atomic-cold-start": {
+      "samples": 20,
+      "coldP50Ms": 25.5,
+      "coldP95Ms": 28.80000001192093,
+      "coldMaxMs": 45.400000005960464
+    },
+    "atomic-warm-revision": {
+      "samples": 40,
+      "warmP50Ms": 11.700000002980232,
+      "warmP95Ms": 12.899999991059303,
+      "warmMaxMs": 13.599999994039536,
+      "presentedRevision": 41
+    },
+    "atomic-palette-swap": {
+      "correctness": {
+        "greenAcceptance": "accepted",
+        "redAcceptance": "accepted",
+        "presentedBeforeFirstFrame": null,
+        "greenDominantPixels": 16384,
+        "midFlightGreenDominantPixels": 16384,
+        "drawCalls": 1,
+        "triangles": 12
+      }
+    },
+    "chunk-staircase": {
+      "scene": "chunk-staircase",
+      "workerCount": 1,
+      "coldFirstPresentMs": 93.09999999403954,
+      "warm": {
+        "samples": 8,
+        "p50Ms": 61.29999999701977,
+        "p95Ms": 65.20000000298023,
+        "maxMs": 65.20000000298023
+      },
+      "triangles": 14796,
+      "drawCalls": 9,
+      "chunks": {
+        "loaded": 9,
+        "nonempty": 9,
+        "inFrustum": 9
+      },
+      "correctness": {
+        "ok": true,
+        "presentedRevision": 9,
+        "rebuiltTriangles": 14796,
+        "deterministicTopology": true
+      }
+    },
+    "chunk-checkerboard": {
+      "scene": "chunk-checkerboard",
+      "workerCount": 1,
+      "coldFirstPresentMs": 79.79999999701977,
+      "warm": {
+        "samples": 8,
+        "p50Ms": 62.8999999910593,
+        "p95Ms": 66.30000001192093,
+        "maxMs": 66.30000001192093
+      },
+      "triangles": 27648,
+      "drawCalls": 9,
+      "chunks": {
+        "loaded": 9,
+        "nonempty": 9,
+        "inFrustum": 9
+      },
+      "correctness": {
+        "ok": true,
+        "presentedRevision": 9,
+        "rebuiltTriangles": 27648,
+        "deterministicTopology": true
+      }
+    },
+    "terrain-aoe-like": {
+      "scene": "terrain-aoe-like",
+      "workerCount": 1,
+      "coldFirstPresentMs": 409.70000000298023,
+      "warm": {
+        "samples": 8,
+        "p50Ms": 407.5,
+        "p95Ms": 418.70000000298023,
+        "maxMs": 418.70000000298023
+      },
+      "triangles": 17568,
+      "drawCalls": 64,
+      "chunks": {
+        "loaded": 64,
+        "nonempty": 64,
+        "inFrustum": 64
+      },
+      "correctness": {
+        "ok": true,
+        "presentedRevision": 9,
+        "rebuiltTriangles": 17568,
+        "deterministicTopology": true
+      }
+    },
+    "edit-field-9x9": {
+      "scene": "edit-field-9x9",
+      "workerCount": 1,
+      "chunksLoaded": 81,
+      "coldFirstPresentMs": 526.3999999910593,
+      "edit": {
+        "samples": 40,
+        "p50Ms": 37.5,
+        "p95Ms": 39.3999999910593,
+        "maxMs": 92.69999998807907
+      },
+      "peakCpuStagingBytes": 1421568,
+      "peakGpuStagingBytes": 1866816,
+      "correctness": {
+        "ok": true,
+        "presentedRevision": 41
+      }
+    },
+    "instances-city-10k": {
+      "scene": "instances-city-10000",
+      "instances": 10000,
+      "patchSize": 100,
+      "coldFirstPresentMs": 31.900000005960464,
+      "patch": {
+        "samples": 20,
+        "p50Ms": 0.5,
+        "p95Ms": 1.199999988079071,
+        "maxMs": 2.2000000029802322
+      },
+      "drawCalls": 1,
+      "triangles": 120000,
+      "matrixWritesFirstPatch": 100,
+      "correctness": {
+        "ok": true,
+        "presentedRevision": 21,
+        "sparseWrites": true
+      }
+    },
+    "instances-city-50k": {
+      "scene": "instances-city-50000",
+      "instances": 50000,
+      "patchSize": 500,
+      "coldFirstPresentMs": 87.79999999701977,
+      "patch": {
+        "samples": 20,
+        "p50Ms": 1.2999999970197678,
+        "p95Ms": 1.5,
+        "maxMs": 1.7000000029802322
+      },
+      "drawCalls": 1,
+      "triangles": 600000,
+      "matrixWritesFirstPatch": 500,
+      "correctness": {
+        "ok": true,
+        "presentedRevision": 21,
+        "sparseWrites": true
+      }
+    },
+    "picking-combined": {
+      "scene": "picking-combined",
+      "rays": 300,
+      "query": {
+        "samples": 600,
+        "p50Ms": 0,
+        "p95Ms": 0.10000000894069672,
+        "maxMs": 1.7999999970197678
+      },
+      "voxelHits": 100,
+      "instanceHits": 100,
+      "misses": 100,
+      "correctness": {
+        "ok": true,
+        "deterministic": true,
+        "centreLane": "voxel"
+      }
+    },
+    "teardown-endurance": {
+      "scene": "teardown-endurance",
+      "cycles": 25,
+      "cycle": {
+        "samples": 25,
+        "p50Ms": 39.29999999701977,
+        "p95Ms": 42.29999999701977,
+        "maxMs": 44.70000000298023
+      },
+      "dispose": {
+        "samples": 25,
+        "p50Ms": 0.09999999403953552,
+        "p95Ms": 0.10000000894069672,
+        "maxMs": 0.19999998807907104
+      },
+      "liveGeometriesSeen": 4,
+      "correctness": {
+        "ok": true,
+        "geometriesAfterEveryDispose": true
+      }
+    }
+  },
+  "resources": {
+    "peakCpuStagingBytes": 768,
+    "peakGpuStagingBytes": 1008,
+    "peakQueuedJobs": 1,
+    "peakQueuedWorkerEvents": 1
+  }
+}

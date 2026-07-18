@@ -621,15 +621,11 @@ Dependencies: feature milestones.
 
 ### E-02: Named reference scenes
 
-- [~] The lane exists and the first named-hardware measurement is recorded; the scene corpus is partial.
+- [x] Complete. The scene corpus the earlier status named as missing is delivered and recorded on named hardware (`benchmarks/results/2026-07-18-named-hardware.json`, commit `8ea3a2f`, clean worktree, RTX 4090 via ANGLE D3D11): staircase and checkerboard chunk fields, AoE-like terrain, the 9x9 boundary edit field through the sparse delta path (p50 37.6 ms accept-to-presented per edit), City-like 10k/50k instance batches with contiguous keyed patches (p50 0.5/1.3 ms per patch, presentation writes pinned to the patch rather than the batch), combined two-lane picking (p50 under 0.1 ms per query, deterministic across sweeps), and teardown endurance (25 full lifecycle cycles, renderer geometry zero after every dispose). Every scene asserts its correctness in the same run that records its timings; a failed scene fails the recorder after the evidence is written. Solid-fill chunks are the atomic scenes already in this lane, and context-reconstruction cycling stays E-04's real-browser evidence rather than a timing scene.
 
 `npm run benchmark:scenes` records against the real device and refuses to record on a software rasteriser, because a silent fallback would write a file indistinguishable from a hardware run. The first recording (`benchmarks/results/2026-07-16-named-hardware.json`, commit `d18bf03`, clean worktree) covers the atomic cold-start, warm-revision, and palette-swap scenes on an NVIDIA RTX 4090 via ANGLE D3D11, Windows 11, i9-13900KF, headless Chromium, 640x480 at DPR 1: cold p50/p95/max 25.5/31.5/45.4 ms, warm 11.6/13.0/13.2 ms, 768/1008 peak CPU/GPU staging bytes, one draw call and twelve triangles, with the correctness result recorded beside the timings rather than separately -- 16,384 green-dominant pixels mid-flight is the same no-mixed-frame claim the SwiftShader lane asserts, now on hardware.
 
 That settles the question V-09 deferred here: the ADR's 100 ms cold budget holds on real hardware with room to spare, and the SwiftShader lane's 36.3 ms was pessimistic rather than flattering.
-
-Still open: the staircase and checkerboard chunk scenes, the 9x9 boundary edit field, AoE-like terrain, City-like 10k/50k sparse instances, combined picking, and teardown endurance as *named* scenes. Each exists as a correctness test already; what they lack is a recorded hardware measurement.
-
-Add fixed solid/staircase/checkerboard chunks, 9×9 boundary edit field, AoE-like terrain, City-like 10k/50k sparse instances, combined picking, context reconstruction, and teardown endurance scenes.
 
 Record browser, OS, hardware/GPU, viewport, DPR, clock, scene seed, package commit, draw/topology/resources, queue/staging/copy bytes, timings, correctness result, and capture identity.
 
@@ -779,9 +775,9 @@ real browser evidence. The critical path continues:
    capture. `revisionAwareCapture` had been false since before H-04 published
    it, which the flip also corrects.
 
-The critical path is clear. What remains for 1.0 is evidence and release work:
-E-02 named reference scenes on real hardware, E-03 visual baselines, E-05 the
-supply-chain and artifact audit, F-03 a first green remote CI run, D-05/D-06,
-and the R-series freeze, rehearsal, audit, and tag.
+The critical path is clear. What remains for 1.0 is E-03 visual baselines and
+the R-series freeze, rehearsal, adversarial review, immutable candidate, and
+tag; everything earlier in E, and all of F, D, V, P, H, and C, is delivered
+with evidence recorded in its own section.
 
 Each numbered step is split into minimal coherent verified commits and receives adversarial review as soon as its first public, async, presentation, or ownership boundary exists.
