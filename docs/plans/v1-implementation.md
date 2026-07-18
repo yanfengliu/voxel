@@ -764,15 +764,53 @@ E exit gate: every support/performance claim has repeatable evidence, no leak or
 
 ### R-04: Immutable candidate
 
-- Produce tarball, integrity hash, contents manifest, source commit, environment, audit results, and evidence index.
-- Tag a release candidate and run the complete supported matrix against that exact artifact from a clean checkout. Any public or correctness change afterwards requires a new candidate and a new run.
-- No calendar soak is required; see the roadmap's rationale. The accumulative-failure risk a soak covered belongs to E-04, which must be green against the candidate.
+- [x] Produced 2026-07-18 from source commit `cb221f4` ("release: voxel
+  1.0.0"), verified in a fresh `git clone` of that commit with a clean
+  worktree and `npm ci` — not from the development tree.
+
+  Artifact: `voxel-1.0.0.tgz`, 297 files, 267,620 packed bytes, 1,276,552
+  unpacked bytes.
+  - sha256 `e9c20d8ce365b84c68fd75f886cf88ec6571a4e165154795c0c58dfecaf282fa`
+  - shasum (npm) `49867bf5134ab03dc3643e701300badbef728c41`
+  - integrity `sha512-tlRBO1pr2MchoIFxb8TnohODoZyiJceRpIdlAIhqMx4EbC6T3zXBED7HcUOe5P+2a4NE1s3iMeyBjMs28AZkAQ==`
+
+  The complete gate passed from that clean checkout on Node v22.14.0,
+  Windows 11: 760 unit tests across 92 files, typecheck, lint, build, the
+  exact TypeScript 5.7.3/5.9.3/6.0.3 compatibility matrix with the City
+  embedded-host lane executing, the 55-declaration API report and its
+  self-test, the core-only/mesh-worker/three packaged-consumer checks, the
+  supply-chain audit, and 11 real-browser tests including the visual
+  baselines. The packed worker resolves offline without Three.js at 20
+  modules and 21,162 gzip bytes, inside its budget.
+
+  Consumer evidence at this line: AoE2's complete gate green (2,149 unit
+  tests, 108 real-browser tests) and City's rendering suite green including
+  all three voxel lanes, both against the reviewed package.
+
+- No calendar soak is required; see the roadmap's rationale. The accumulative-failure risk a soak covered belongs to E-04, which is green against this candidate.
 
 ### R-05: 1.0.0
 
-- Confirm every roadmap requirement and exit gate from live evidence.
-- Finalize changelog, support policy, migration guide, known limitations, and post-1.0 backlog.
-- Tag the verified commit and attach the reproducible private artifact. Registry publication remains separately authorized.
+- [x] Released 2026-07-18 at commit `cb221f4`, tagged `v1.0.0`.
+
+  Every roadmap requirement is met from live evidence recorded in its own
+  milestone section above: bounded snapshots plus atomic deltas (F, D);
+  indexed, worker-meshed, stale-guarded voxel presentation without mixed
+  seams (V); picking that reads the presented frame (P); explicit host,
+  camera, capture, and context lifecycle (H); AoE2 and City both on the
+  public package with one Three runtime (C); and repeatable fuzz,
+  endurance, named-hardware, visual, supply-chain, and CI evidence (E).
+  The changelog records what 1.0 contains, the support policy is in force
+  rather than proposed, the migration note covers 0.1 consumers, and the
+  known limitations are the roadmap's scope boundaries.
+
+  Post-1.0 backlog, unchanged from the roadmap's non-goals and decision
+  gates: WebGPU, LOD, streaming, smooth terrain, skeletal animation,
+  transparency-aware voxel merging, engine-owned shadow and post-processing
+  policy, transfer-owned ingest (D-06, reopens only on measured evidence),
+  pick proxies, Townscaper adoption, and registry publication.
+
+- Registry publication remains separately authorized and is not part of this release.
 
 R exit gate: no required item is incomplete, no substantive review issue is open, the complete supported matrix is green against the candidate from a clean checkout, and the artifact can be reproduced from the tag.
 
