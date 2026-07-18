@@ -164,6 +164,12 @@ export class StudioSession {
     };
   }
 
+  /** Follows the stage's size, so the picture is never cut by its own border. */
+  resize(width: number, height: number): void {
+    this.#assertLive();
+    this.#runtime.resize(Math.max(1, Math.floor(width)), Math.max(1, Math.floor(height)), 1);
+  }
+
   /** Study edges on (examining look) or off (the game look). Redraws. */
   setEdges(on: boolean): void {
     this.#assertLive();

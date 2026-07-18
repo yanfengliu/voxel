@@ -37,6 +37,7 @@ declare global {
 
 const VIEW_WIDTH = 640;
 const VIEW_HEIGHT = 440;
+// Replaced by the stage's real size once mounted; these only seed the first frame.
 const SWEEP_SAMPLES = 24;
 const DRAG_THRESHOLD_PIXELS = 4;
 
@@ -105,10 +106,12 @@ function mount(): void {
 
   const camera = new OrthographicCamera();
   let orbit: OrbitStateV1 = DEFAULT_ORBIT;
-  applyOrbit(camera, orbit, VIEW_WIDTH, VIEW_HEIGHT);
+  let viewW = VIEW_WIDTH;
+  let viewH = VIEW_HEIGHT;
+  applyOrbit(camera, orbit, viewW, viewH);
 
   let session = new StudioSession(createStarterModel(), {
-    canvas, width: VIEW_WIDTH, height: VIEW_HEIGHT, camera,
+    canvas, width: viewW, height: viewH, camera,
   });
   const player = new StudioPlayer(session.model.motion.periodMs);
   const noteStore = new NoteStore();
@@ -267,7 +270,7 @@ function mount(): void {
     replace(model: StudioModelV1) {
       session.dispose();
       session = new StudioSession(model, {
-        canvas, width: VIEW_WIDTH, height: VIEW_HEIGHT, camera,
+        canvas, width: viewW, height: viewH, camera,
       });
       refresh();
     },
@@ -286,7 +289,7 @@ function mount(): void {
     orbit: () => ({ ...orbit, described: describeOrbit(orbit) }),
     setOrbit(view) {
       orbit = clampOrbit({ ...orbit, ...view });
-      applyOrbit(camera, orbit, VIEW_WIDTH, VIEW_HEIGHT);
+      applyOrbit(camera, orbit, viewW, viewH);
       viewChip.textContent = describeOrbit(orbit);
       drawFrame(lastShownMs);
       return { ...orbit, described: describeOrbit(orbit) };
@@ -301,7 +304,7 @@ function mount(): void {
     // Reasserted every draw, not only on drag: the engine may touch the shared
     // camera, and the studio's view must win on every frame, not just the ones
     // after an interaction.
-    applyOrbit(camera, orbit, VIEW_WIDTH, VIEW_HEIGHT);
+    applyOrbit(camera, orbit, viewW, viewH);
     session.showAt(timeMs);
     const period = player.periodMs;
     if (period > 0) {
@@ -900,6 +903,20 @@ function mount(): void {
   const app = element('div', 'app');
   app.append(topBar, rail, stage, playerBar, inspector);
   root.appendChild(app);
+
+  // The picture fills the stage and follows the window, so zooming meets the
+  // window's edge, never an invisible border in the middle of the screen —
+  // which is exactly how the owner found it: "top and bottom clip".
+  const stageSize = new ResizeObserver(() => {
+    const rect = stage.getBoundingClientRect();
+    if (rect.width < 2 || rect.height < 2) return;
+    viewW = Math.floor(rect.width);
+    viewH = Math.floor(rect.height);
+    session.resize(viewW, viewH);
+    applyOrbit(camera, orbit, viewW, viewH);
+    drawFrame(lastShownMs);
+  });
+  stageSize.observe(stage);
 
   function tick(): void {
     if (player.playing) drawFrame(player.timeAt(performance.now()));
