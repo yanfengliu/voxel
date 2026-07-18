@@ -97,16 +97,24 @@ function mount(): void {
   const stageHint = element('span', 'stagehint');
   stageHint.textContent =
     'drag to turn · scroll to zoom · double-click to re-centre · click to pin a note';
-  const edgesToggle = element('button', 'toggle on');
-  edgesToggle.textContent = 'study edges';
-  const gameToggle = element('button', 'toggle');
-  gameToggle.textContent = 'game look';
+  // Exactly one of the two looks is ever true, so the control is one switch
+  // with two sides rather than two buttons that could both look pressed: the
+  // knob sits on the side that is on, and clicking slides it to the other.
+  const lookSwitch = element('button', 'switch');
+  lookSwitch.setAttribute('role', 'switch');
+  lookSwitch.title = 'Study edges draw dark lines where surfaces meet; the game look is exactly what players see.';
+  const lookThumb = element('span', 'thumb');
+  const edgesSide = element('span', 'side');
+  edgesSide.textContent = 'study edges';
+  const gameSide = element('span', 'side');
+  gameSide.textContent = 'game look';
+  lookSwitch.append(lookThumb, edgesSide, gameSide);
   const depthToggle = element('button', 'toggle');
   depthToggle.textContent = 'real depth';
   depthToggle.title = 'Nearer really is bigger. The flat view can read backwards — '
     + 'equal sizes at every distance look like they grow away from you.';
   const toggles = element('div', 'toggles');
-  toggles.append(edgesToggle, gameToggle, depthToggle);
+  toggles.append(lookSwitch, depthToggle);
   const stage = element('div', 'stage');
   stage.append(canvasWrap, viewChip, toggles, stageHint);
 
@@ -610,8 +618,10 @@ function mount(): void {
     for (const { spec, input } of amplitudeInputs) {
       input.value = String(Math.round(model.motion[spec.kind][spec.axis] / spec.scale));
     }
-    edgesToggle.classList.toggle('on', session.edges);
-    gameToggle.classList.toggle('on', !session.edges);
+    lookSwitch.dataset.side = session.edges ? 'left' : 'right';
+    lookSwitch.setAttribute('aria-checked', String(session.edges));
+    edgesSide.classList.toggle('on', session.edges);
+    gameSide.classList.toggle('on', !session.edges);
     depthToggle.classList.toggle('on', depthOn);
     viewChip.textContent = describeOrbit(orbit);
     buildSwatches();
@@ -684,8 +694,10 @@ function mount(): void {
   }, { passive: false });
   canvas.addEventListener('dblclick', () => { harness.setViewAngles(DEFAULT_ORBIT); });
 
-  edgesToggle.addEventListener('click', () => { harness.setEdges(true); refresh(); });
-  gameToggle.addEventListener('click', () => { harness.setEdges(false); refresh(); });
+  lookSwitch.addEventListener('click', () => {
+    harness.setEdges(!session.edges);
+    refresh();
+  });
   depthToggle.addEventListener('click', () => { setDepth(!depthOn); });
 
   /**
