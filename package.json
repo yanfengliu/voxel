@@ -1,6 +1,6 @@
 {
   "name": "voxel",
-  "version": "0.1.4",
+  "version": "1.0.0",
   "description": "Browser-first voxel and low-poly 3D rendering toolkit for strategy and building games.",
   "private": true,
   "license": "MIT",

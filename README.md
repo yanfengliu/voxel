@@ -40,11 +40,11 @@ The runtime is tested with `three@0.185.1` and `@types/three@0.185.0`. `three` i
 
 ## Status
 
-The 1.0 feature surface is complete and evidence-gated: foundations, atomic deltas, the production voxel pipeline, presented-state picking, host/camera/context lifecycle, and both consumer proofs — AoE2 standalone as its sole world renderer, City drawing its building wall lane through an embedded, borrowed-renderer runtime. Hardening evidence is recorded: a pinned hostile-input fuzz corpus, endurance runs that hold resource counts flat over 1,000 edits and repeated real context losses, visual baselines, a supply-chain gate, green Windows/Linux CI, and eight named reference scenes measured on named hardware ([benchmarks/results/](benchmarks/results/)) — a boundary edit through the worker path presents in ~38 ms p50, a 50k-instance sparse patch in ~1.3 ms, a pick query in ~0.1 ms on an RTX 4090.
+**Version 1.0.0** — stable. Foundations, atomic deltas, the production voxel pipeline, presented-state picking, host/camera/context lifecycle, and both consumer proofs are delivered: AoE2 runs Voxel standalone as its sole world renderer, and City draws its building wall lane through an embedded, borrowed-renderer runtime. Hardening evidence is recorded: 760 unit tests, 11 real-browser tests including visual baselines, a pinned hostile-input fuzz corpus, endurance runs that hold resource counts flat over 1,000 edits and 30 real device losses, a supply-chain gate, green Windows/Linux CI, and eight named reference scenes measured on named hardware ([benchmarks/results/](benchmarks/results/)) — a boundary edit through the worker path presents in ~38 ms p50, a 50k-instance sparse patch in ~1.3 ms, a pick query in ~0.1 ms on an RTX 4090.
 
-Release-candidate work — API/schema freeze, clean-consumer rehearsal, adversarial review, and the immutable tagged artifact — is governed by [the roadmap](docs/plans/v1-roadmap.md) and tracked in [the implementation plan](docs/plans/v1-implementation.md).
+Public declarations, schema literals, delta operation discriminants, and the support matrix are frozen; changing any of them means a major release. [The support policy](docs/policies/support.md) defines the supported platforms and the evidence each claim rests on, and [the changelog](CHANGELOG.md) records what 1.0 contains. Distribution is a private tag and packed artifact; registry publication is a separate decision.
 
-Deliberately out of 1.0: WebGPU, LOD, streaming, smooth terrain, skeletal animation, transparency-aware voxel merging, and public registry publication. The reasons are recorded in the roadmap's scope boundaries.
+Deliberately out of 1.0: WebGPU, LOD, streaming, smooth terrain, skeletal animation, transparency-aware voxel merging, engine-owned shadow or post-processing policy, and public registry publication. The reasons are recorded in [the roadmap's](docs/plans/v1-roadmap.md) scope boundaries.
 
 ## Getting started
 

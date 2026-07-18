@@ -1,6 +1,24 @@
 # Changelog
 
-## Unreleased
+## 1.0.0 — 2026-07-18
+
+The first stable release. Voxel is a browser-first, voxel-first rendering toolkit: a game sends bounded, versioned, structured-clone-safe data, and gets back WebGL frames through Three.js plus metrics, captures, and picking that always describe the frame the canvas actually showed.
+
+What 1.0 means, and the evidence behind it, is recorded in [the roadmap](docs/plans/v1-roadmap.md) and [the implementation plan](docs/plans/v1-implementation.md). In summary:
+
+- **Data plane.** Whole snapshots plus additive atomic deltas for resources, chunks, batches, and keyed instance patches, with one ownership copy on ordinary ingest, immutable canonical lanes, per-lane tombstones, and typed resync.
+- **Voxel pipeline.** Uniform chunk profiles, indexed adjacency and exact dirty closures, a deterministic visible-face oracle, and the measured greedy production mesher running in a packaged Three-free module worker behind a bounded scheduler with stale-result firewalls.
+- **Frame transaction.** Accepted state and presented state are separate; a revision commits across canvas, canonical state, and pick queries atomically or not at all, in standalone and embedded host modes alike.
+- **Picking and capture.** `pickPresented` and revision-aware capture read the same committed frame, never accepted-but-undrawn state.
+- **Lifecycle.** Explicit runtime states, real context loss and restoration, host-managed frame tickets, borrowed cameras and renderers that Voxel never mutates, and idempotent disposal everywhere.
+- **Consumers.** AoE2 runs Voxel standalone as its sole world renderer; City draws its building wall lane through an embedded, borrowed-renderer runtime. Neither game's types enter this package, and both resolve exactly one Three.js runtime.
+- **Evidence.** 760 unit tests, 11 real-browser tests including visual baselines, a pinned hostile-input fuzz corpus, endurance runs holding resource counts flat across 1,000 edits and 30 real device losses, eight named reference scenes measured on named hardware, a supply-chain gate with zero runtime dependencies, and green Windows/Linux CI.
+
+Deliberately not in 1.0: WebGPU, LOD, streaming, smooth terrain, skeletal animation, transparency-aware voxel merging, engine-owned shadow or post-processing policy, and public registry publication. The reasons are in the roadmap's scope boundaries.
+
+Consumers on 0.1 snapshots need no source change; every capability added since is opt-in. See [the migration note](docs/guides/v0.2-foundations.md).
+
+### Changes since 0.1.4
 
 - Fixed a release-candidate blocker in the revision-atomic frame transaction: a presentation waiter callback that reentrantly accepted a newer revision during canonical finalization passed admission, because the in-flight block covered only the swapped (drawing) window and not the published (finalizing) one. The reentrant acceptance retired the frame that was mid-commit — rolling the scene back to the prior revision, disposing the bundle the pick snapshot had just been published against, and terminally failing the runtime with all three lanes disagreeing. Admission is now refused for the whole transaction, exactly as mid-draw acceptance already was, and the acceptance succeeds when retried after the frame settles. Found by adversarial review; the contract's own flagship reentrancy case had coverage only at the stager layer, which bypassed the coordinator.
 - Fixed `metrics()` writing to a borrowed host camera. The in-frustum chunk count called `camera.updateMatrixWorld()`, which recomposes the matrix and clears the dirty flag the host's own update relies on — a write to host-owned state from a read-only call, in violation of the embedded ownership boundary. The frustum is now derived from the camera's matrices as they stand, into local scratch.
