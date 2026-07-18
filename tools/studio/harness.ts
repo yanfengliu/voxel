@@ -121,6 +121,15 @@ export interface VoxelStudioHarnessV1 {
 
   /** Where you stand: turn and height in degrees, and how much fits on screen. */
   viewState(): OrbitStateV1 & { readonly described: string };
+  /** Resizes the picture to match the stage. Returns the surface's real size. */
+  resizeStage(width: number, height: number): { readonly width: number; readonly height: number };
+  /**
+   * Real depth on (nearer is bigger) or off (the flat voxel view). The flat
+   * view has a known illusion — equal sizes at every distance can read as
+   * growing away from you — and this is the check against it.
+   */
+  setDepth(on: boolean): boolean;
+  depth(): boolean;
   /** Moves the viewpoint; the model itself never moves. Returns where you are. */
   setViewAngles(view: Partial<OrbitStateV1>): OrbitStateV1 & { readonly described: string };
   /** Study edges on (the examining look) or off (the game look). */
@@ -174,7 +183,10 @@ export interface HarnessHostV1 {
   notesChanged(): void;
   /** The stage viewpoint, owned by the page; setting it redraws. */
   orbit(): OrbitStateV1 & { readonly described: string };
+  resizeStage(width: number, height: number): { readonly width: number; readonly height: number };
   setOrbit(view: Partial<OrbitStateV1>): OrbitStateV1 & { readonly described: string };
+  setDepth(on: boolean): boolean;
+  depth(): boolean;
   catalog(): StudioCatalogV1;
 }
 
@@ -302,6 +314,9 @@ export function createStudioHarness(host: HarnessHostV1): VoxelStudioHarnessV1 {
       sendRequest(buildRequest(words, host.noteStore().list(), host.session().model)),
 
     viewState: () => host.orbit(),
+    resizeStage: (width, height) => host.resizeStage(width, height),
+    setDepth: (on) => host.setDepth(on),
+    depth: () => host.depth(),
     setViewAngles: (view) => host.setOrbit(view),
     setEdges(on) {
       host.session().setEdges(on);

@@ -1,4 +1,4 @@
-import { OrthographicCamera } from 'three';
+import { OrthographicCamera, PerspectiveCamera } from 'three';
 
 import { createStudioCatalog, createStarterModel } from './catalog.js';
 import { describeMotion, describePoseAt } from './describe.js';
@@ -92,6 +92,8 @@ function mount(): void {
   const canvasWrap = element('div', 'canvas-wrap');
   canvasWrap.append(canvas, marks);
   const viewChip = element('span', 'viewchip');
+  viewChip.title = "Sides are the model's own, like a person facing you: "
+    + 'their left appears on your right.';
   const stageHint = element('span', 'stagehint');
   stageHint.textContent =
     'drag to turn · scroll to zoom · double-click to re-centre · click to pin a note';
@@ -99,12 +101,19 @@ function mount(): void {
   edgesToggle.textContent = 'study edges';
   const gameToggle = element('button', 'toggle');
   gameToggle.textContent = 'game look';
+  const depthToggle = element('button', 'toggle');
+  depthToggle.textContent = 'real depth';
+  depthToggle.title = 'Nearer really is bigger. The flat view can read backwards — '
+    + 'equal sizes at every distance look like they grow away from you.';
   const toggles = element('div', 'toggles');
-  toggles.append(edgesToggle, gameToggle);
+  toggles.append(edgesToggle, gameToggle, depthToggle);
   const stage = element('div', 'stage');
   stage.append(canvasWrap, viewChip, toggles, stageHint);
 
-  const camera = new OrthographicCamera();
+  const flatCamera = new OrthographicCamera();
+  const depthCamera = new PerspectiveCamera();
+  let depthOn = false;
+  let camera: OrthographicCamera | PerspectiveCamera = flatCamera;
   let orbit: OrbitStateV1 = DEFAULT_ORBIT;
   let viewW = VIEW_WIDTH;
   let viewH = VIEW_HEIGHT;
@@ -287,6 +296,9 @@ function mount(): void {
       renderDots();
     },
     orbit: () => ({ ...orbit, described: describeOrbit(orbit) }),
+    resizeStage,
+    depth: () => depthOn,
+    setDepth,
     setOrbit(view) {
       orbit = clampOrbit({ ...orbit, ...view });
       applyOrbit(camera, orbit, viewW, viewH);
@@ -597,6 +609,7 @@ function mount(): void {
     }
     edgesToggle.classList.toggle('on', session.edges);
     gameToggle.classList.toggle('on', !session.edges);
+    depthToggle.classList.toggle('on', depthOn);
     viewChip.textContent = describeOrbit(orbit);
     buildSwatches();
     buildStack();
@@ -670,6 +683,25 @@ function mount(): void {
 
   edgesToggle.addEventListener('click', () => { harness.setEdges(true); refresh(); });
   gameToggle.addEventListener('click', () => { harness.setEdges(false); refresh(); });
+  depthToggle.addEventListener('click', () => { setDepth(!depthOn); });
+
+  /**
+   * Swapping cameras means rebuilding the drawing session around the other
+   * one; the model, notes, playback position, and edges choice all stay.
+   */
+  function setDepth(on: boolean): boolean {
+    if (on === depthOn) return depthOn;
+    depthOn = on;
+    camera = depthOn ? depthCamera : flatCamera;
+    applyOrbit(camera, orbit, viewW, viewH);
+    const model = session.model;
+    const edges = session.edges;
+    session.dispose();
+    session = new StudioSession(model, { canvas, width: viewW, height: viewH, camera });
+    session.setEdges(edges);
+    refresh();
+    return depthOn;
+  }
 
   // ---- wiring: notes and requests ----
   pinPlaceButton.addEventListener('click', () => {
@@ -907,18 +939,28 @@ function mount(): void {
   // The picture fills the stage and follows the window, so zooming meets the
   // window's edge, never an invisible border in the middle of the screen —
   // which is exactly how the owner found it: "top and bottom clip".
-  const stageSize = new ResizeObserver(() => {
-    const rect = stage.getBoundingClientRect();
-    if (rect.width < 2 || rect.height < 2) return;
-    viewW = Math.floor(rect.width);
-    viewH = Math.floor(rect.height);
+  function resizeStage(width: number, height: number): { width: number; height: number } {
+    viewW = Math.max(2, Math.floor(width));
+    viewH = Math.max(2, Math.floor(height));
     session.resize(viewW, viewH);
     applyOrbit(camera, orbit, viewW, viewH);
     drawFrame(lastShownMs);
-  });
-  stageSize.observe(stage);
+    return { width: canvas.width, height: canvas.height };
+  }
+  // Followed from the frame loop rather than a ResizeObserver: observers never
+  // fire in some embedded browsers (measured — a fresh observer on a laid-out
+  // element stayed silent), and a follow that only works in some browsers is
+  // not a follow. One rectangle read per frame is cheap; resizing only happens
+  // on real drift.
+  function followStage(): void {
+    const rect = stage.getBoundingClientRect();
+    if (rect.width < 2 || rect.height < 2) return;
+    if (Math.floor(rect.width) === viewW && Math.floor(rect.height) === viewH) return;
+    resizeStage(rect.width, rect.height);
+  }
 
   function tick(): void {
+    followStage();
     if (player.playing) drawFrame(player.timeAt(performance.now()));
     requestAnimationFrame(tick);
   }
@@ -926,6 +968,11 @@ function mount(): void {
   showTab('examine');
   renderNotes();
   refresh();
+  // Sized once immediately and on every window resize, besides the frame
+  // loop: the loop is throttled to nothing in background tabs, and the first
+  // paint must be sharp everywhere.
+  followStage();
+  window.addEventListener('resize', followStage);
   requestAnimationFrame(tick);
 }
 

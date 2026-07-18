@@ -1,4 +1,4 @@
-import { type OrthographicCamera } from 'three';
+import { PerspectiveCamera, type OrthographicCamera } from 'three';
 
 /**
  * The stage camera: circles the model at any angle while staying the flat,
@@ -56,9 +56,21 @@ export function zoomOrbit(state: OrbitStateV1, wheelSteps: number): OrbitStateV1
   return clampOrbit({ ...state, viewHeight: state.viewHeight * Math.pow(1.12, wheelSteps) });
 }
 
-/** Places the studio-owned camera for the given angles and screen shape. */
+/** With real depth, how wide the eye opens. Modest, so cubes stay readable. */
+const DEPTH_FOV_DEGREES = 35;
+
+/**
+ * Places the studio-owned camera for the given angles and screen shape.
+ *
+ * Works for both stage looks. Flat (no depth): the classic voxel view — equal
+ * sizes at every distance, drawn from far away. Real depth: nearer really is
+ * bigger; the eye stands at whatever distance makes the same amount of model
+ * fill the screen, so switching looks never jumps the framing. Flat rendering
+ * has a known illusion — equal sizes at all distances read as GROWING with
+ * distance — and the real-depth look exists to check a model against it.
+ */
 export function applyOrbit(
-  camera: OrthographicCamera,
+  camera: OrthographicCamera | PerspectiveCamera,
   state: OrbitStateV1,
   widthPixels: number,
   heightPixels: number,
@@ -66,27 +78,45 @@ export function applyOrbit(
   const clamped = clampOrbit(state);
   const yaw = (clamped.yawDegrees * Math.PI) / 180;
   const pitch = (clamped.pitchDegrees * Math.PI) / 180;
-  const flat = Math.cos(pitch) * EYE_DISTANCE;
+  const aspect = widthPixels / Math.max(1, heightPixels);
+  const half = clamped.viewHeight / 2;
+  const depth = camera instanceof PerspectiveCamera;
+  const distance = depth
+    ? half / Math.tan((DEPTH_FOV_DEGREES * Math.PI) / 360)
+    : EYE_DISTANCE;
+  const flat = Math.cos(pitch) * distance;
   camera.position.set(
     Math.sin(yaw) * flat,
-    Math.sin(pitch) * EYE_DISTANCE,
+    Math.sin(pitch) * distance,
     Math.cos(yaw) * flat,
   );
   camera.up.set(0, 1, 0);
   camera.lookAt(0, 0, 0);
-  const aspect = widthPixels / Math.max(1, heightPixels);
-  const half = clamped.viewHeight / 2;
-  camera.left = -half * aspect;
-  camera.right = half * aspect;
-  camera.top = half;
-  camera.bottom = -half;
-  camera.near = 0.1;
-  camera.far = EYE_DISTANCE * 2.5;
+  if (depth) {
+    camera.fov = DEPTH_FOV_DEGREES;
+    camera.aspect = aspect;
+    camera.near = Math.max(0.05, distance / 50);
+    camera.far = distance * 4;
+  } else {
+    camera.left = -half * aspect;
+    camera.right = half * aspect;
+    camera.top = half;
+    camera.bottom = -half;
+    camera.near = 0.1;
+    camera.far = EYE_DISTANCE * 2.5;
+  }
   camera.updateProjectionMatrix();
   camera.updateMatrixWorld(true);
 }
 
-/** The view named in words for the corner chip: "front-left · 30° up". */
+/**
+ * The view named in words for the corner chip: "front-left · 30° up".
+ *
+ * The convention, stated so it never feels mirrored: the model faces the
+ * default view, and sides are the MODEL's own — like a person facing you,
+ * their left appears on your right. "Front-left" means you are seeing the
+ * front and the model's left side.
+ */
 export function describeOrbit(state: OrbitStateV1): string {
   const yaw = clampOrbit(state).yawDegrees;
   const names = ['front', 'front-left', 'left', 'back-left', 'back', 'back-right', 'right', 'front-right'];

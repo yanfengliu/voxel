@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { OrthographicCamera, Vector3 } from 'three';
+import { OrthographicCamera, PerspectiveCamera, Vector3 } from 'three';
 
 import {
   applyOrbit,
@@ -64,5 +64,55 @@ describe('the stage camera', () => {
       .toBe('front-left · 30° up');
     expect(describeOrbit({ yawDegrees: 180, pitchDegrees: -15, viewHeight: 14 }))
       .toBe('back · 15° down');
+  });
+});
+
+describe('the real-depth camera', () => {
+  it('also always looks at the model', () => {
+    const camera = new PerspectiveCamera();
+    for (const yaw of [0, 120, 245]) {
+      applyOrbit(camera, { yawDegrees: yaw, pitchDegrees: 25, viewHeight: 14 }, 800, 600);
+      const forward = camera.getWorldDirection(new Vector3());
+      const toOrigin = camera.position.clone().negate().normalize();
+      expect(forward.x).toBeCloseTo(toOrigin.x, 5);
+      expect(forward.y).toBeCloseTo(toOrigin.y, 5);
+      expect(forward.z).toBeCloseTo(toOrigin.z, 5);
+    }
+  });
+
+  it('keeps the framing when switching looks', () => {
+    // The eye stands at whatever distance makes the same amount of model fill
+    // the screen, so toggling depth must not jump the zoom: a point at the top
+    // of the flat view stays at the top of the deep view.
+    const flat = new OrthographicCamera();
+    const deep = new PerspectiveCamera();
+    const state = { yawDegrees: 45, pitchDegrees: 30, viewHeight: 10 };
+    applyOrbit(flat, state, 800, 600);
+    applyOrbit(deep, state, 800, 600);
+    // A point exactly viewHeight/2 above the origin, in the view's own up
+    // direction, projects to the top edge in both.
+    const up = new Vector3(0, 1, 0).applyQuaternion(deep.quaternion).multiplyScalar(5);
+    const inFlat = up.clone().project(flat);
+    const inDeep = up.clone().project(deep);
+    expect(inFlat.y).toBeCloseTo(1, 3);
+    expect(inDeep.y).toBeCloseTo(1, 3);
+  });
+
+  it('makes nearer genuinely bigger, which the flat view cannot', () => {
+    // Two same-length bars, one near the eye and one far. Flat: identical on
+    // screen — the illusion the owner hit. Deep: the near one is wider.
+    const flat = new OrthographicCamera();
+    const deep = new PerspectiveCamera();
+    const state = { yawDegrees: 0, pitchDegrees: 0, viewHeight: 10 };
+    applyOrbit(flat, state, 800, 600);
+    applyOrbit(deep, state, 800, 600);
+    const widthOnScreen = (camera: OrthographicCamera | PerspectiveCamera, z: number) => {
+      const left = new Vector3(-1, 0, z).project(camera);
+      const right = new Vector3(1, 0, z).project(camera);
+      return right.x - left.x;
+    };
+    // Camera sits on +z looking back: z=+3 is nearer to it, z=-3 farther.
+    expect(widthOnScreen(flat, 3)).toBeCloseTo(widthOnScreen(flat, -3), 6);
+    expect(widthOnScreen(deep, 3)).toBeGreaterThan(widthOnScreen(deep, -3) * 1.2);
   });
 });

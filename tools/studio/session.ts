@@ -1,4 +1,4 @@
-import type { OrthographicCamera } from 'three';
+import type { Camera } from 'three';
 
 import { ThreeRenderRuntime } from '../../src/three/index.js';
 
@@ -49,7 +49,7 @@ export interface StudioSessionOptionsV1 {
    * lets a person drag to view the model from any angle — and the engine
    * simply draws with it, exactly as a game embedding the engine would.
    */
-  readonly camera?: OrthographicCamera;
+  readonly camera?: Camera;
 }
 
 const DEFAULT_WIDTH = 320;
@@ -77,7 +77,10 @@ export class StudioSession {
       // view into the shared camera, and whichever side wrote last would win —
       // which showed up as planar slices through the model at some angles.
       ...(options.camera
-        ? { camera: options.camera }
+        // The engine's borrowed-camera door takes any camera — flat or real
+        // depth — and 'host' projection ownership means the studio's settings
+        // are never rewritten by the engine.
+        ? { view: { kind: 'borrowed-camera' as const, camera: options.camera, projectionOwnership: 'host' as const } }
         : { center: { x: 0, y: 0, z: 0 }, zoom: options.zoom ?? DEFAULT_ZOOM }),
     });
     this.#accept(model);
