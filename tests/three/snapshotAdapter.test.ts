@@ -101,10 +101,26 @@ describe('snapshotToThreePresentation', () => {
     const resources = input.resources.map((resource) => resource.kind === 'material'
       ? { ...resource, transparent: true, opacity: 0.5 }
       : resource);
-    const validated = validateAndCopySnapshotV1({ ...input, resources });
-    if (!validated.ok) throw new Error(validated.issue.code);
 
-    expect(() => snapshotToThreePresentation(validated.value)).toThrow(
+    // Rejected before the adapter ever sees it: validation owns the
+    // opaque-only envelope now, and names the chunk that breaks it.
+    const validated = validateAndCopySnapshotV1({ ...input, resources });
+    expect(validated).toMatchObject({
+      ok: false,
+      issue: { code: 'chunk.material-not-opaque', path: 'chunks[0].materialKey' },
+    });
+
+    // The adapter keeps its own guard as defense in depth, reachable only by
+    // handing it a snapshot that never passed validation.
+    const opaque = validateAndCopySnapshotV1(validSnapshot(4));
+    if (!opaque.ok) throw new Error(opaque.issue.code);
+    const smuggled = {
+      ...opaque.value,
+      resources: opaque.value.resources.map((resource) => resource.kind === 'material'
+        ? { ...resource, transparent: true, opacity: 0.5 }
+        : resource),
+    } as typeof opaque.value;
+    expect(() => snapshotToThreePresentation(smuggled)).toThrow(
       /opaque voxel presentation path/,
     );
   });

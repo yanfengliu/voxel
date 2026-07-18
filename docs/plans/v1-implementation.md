@@ -678,6 +678,14 @@ E exit gate: every support/performance claim has repeatable evidence, no leak or
   exists on any entry surface. From this point, any public or schema change
   requires a new release candidate and a rerun of the complete matrix.
 
+  Re-taken after R-03: the adversarial review changed the surface — the
+  capture contract types are now exported from `voxel/three`,
+  `contextLoss.restoration` reads `'full-reconstruction'`, and voxel chunk
+  materials must be opaque — so the freeze above binds at the reviewed
+  commit rather than at its original one. The counts are unchanged: five
+  subpaths, 55 reachable declarations, ten schema literals, seven delta
+  operations.
+
 - Freeze public declarations, exports, schema literals, operation discriminants, stable result/diagnostic codes, support matrix, and ownership semantics.
 - Resolve every accidental API report difference and remove undocumented experimental exports.
 
@@ -706,6 +714,50 @@ E exit gate: every support/performance claim has repeatable evidence, no leak or
 - Install the packed RC into clean portable, AoE-shaped, and City-shaped fixtures and the authorized real consumers.
 
 ### R-03: Adversarial review
+
+- [x] Run 2026-07-18. Three independent reviewers attacked the release from
+  distinct lenses — async atomicity and races, resource ownership and host
+  mutation, and public contracts and unsupported claims — each instructed to
+  refute rather than summarize and to cite live code for every claim. Ten
+  findings survived their own verification; all substantive ones are fixed
+  and pinned by new tests, and the complete gate is green afterwards.
+
+  One blocker: a presentation waiter callback that reentrantly accepted a
+  newer revision during canonical finalization passed admission, because the
+  in-flight block covered only the swapped window and not the published one.
+  It retired the frame mid-commit — scene rolled back, the pick snapshot's
+  own bundle disposed, runtime terminally failed, all three lanes
+  disagreeing. The contract advertised exactly this reentrancy as supported,
+  and the only coverage was at the stager layer, which bypasses the
+  coordinator. Admission now refuses the whole transaction.
+
+  Substantive: `metrics()` recomposed a borrowed host camera; a dispose from
+  a waiter callback escaped as an internal aggregate error; picking resurfaced
+  the lost device's frame identity after restoration while capture had moved
+  on; the advertised opaque-only voxel envelope was unenforced, so a
+  transparent chunk material drew with opaque-culled interiors; snapshot
+  validation checked its schema literal last, after the full bounded copy;
+  the capture contract types were public method types that consumers could
+  not name; and `contextLoss.restoration` advertised a term defined nowhere
+  and stale since H-05.
+
+  Minor, accepted as-is with reasons recorded rather than fixed: the embedded
+  runtime calls `preventDefault()` on the host canvas's context-loss event
+  (required for the restoration state machine to work at all, pinned by the
+  embedded loss tests, and now called out for hosts); a borrowed renderer's
+  viewport is not restored on dispose (the host ceded viewport ownership, and
+  the documented restore-on-construction-failure behavior is unchanged); the
+  worker driver drops the queued event that threw (at-most-once consumption
+  is deliberate, and throwing there means an invariant is already broken);
+  `DaylightRig` never disposes its light (no shadow map is ever allocated
+  because the rig never sets `castShadow`); and `mesh-worker-entry.d.ts` is
+  outside the API report (it is a worker entry module, not a consumer import
+  surface, and its behavior is pinned by the packaged-worker browser tests).
+
+  The freeze in R-01 was taken before this review; the surface changed, so it
+  is re-taken at the reviewed commit: same five subpaths and 55 reachable
+  declarations, with the capture contract types now exported from
+  `voxel/three` and `contextLoss.restoration` reading `'full-reconstruction'`.
 
 - Review correctness, atomicity, stale races, seams, copy/transfer ownership, picking parity, host mutation, context restoration, leaks, API compatibility, supply chain, and unsupported claims.
 - Every substantive finding blocks the RC until fixed and reverified.

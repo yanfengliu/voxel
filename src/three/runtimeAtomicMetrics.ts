@@ -7,22 +7,26 @@ import type { ThreeAtomicPipelineMetricsV1 } from './runtimeTypes.js';
 /** Scratch for the read-time frustum test; metrics are read single-threaded. */
 const ATOMIC_FRUSTUM_INTERNAL = new Frustum();
 const ATOMIC_FRUSTUM_MATRIX_INTERNAL = new Matrix4();
+const ATOMIC_VIEW_MATRIX_INTERNAL = new Matrix4();
 
 /**
- * Chunks the camera can actually see. The frustum is derived from the live
- * camera at read time, which is the same test Three runs internally: the
- * renderer reports one total draw count and cannot attribute draws to this
- * lane, so this is the only way to report the lane's own culling.
+ * Chunks the camera can actually see. The frustum is derived from the
+ * camera's matrices as they stand — the same matrices the last draw used —
+ * without writing the camera: in embedded mode the camera is host-owned
+ * state, and a metrics read must never recompose it or clear its dirty
+ * flags. The world-matrix inverse is computed into local scratch rather than
+ * read from `camera.matrixWorldInverse` for the same reason: keeping that
+ * field fresh is the owner's job, not a side effect of being measured.
  */
 function inFrustumChunkCountInternal(
   bundle: { readonly chunkPresenterInternal: ChunkPresenter } | null | undefined,
   camera: Camera,
 ): number {
   if (!bundle) return 0;
-  camera.updateMatrixWorld();
+  ATOMIC_VIEW_MATRIX_INTERNAL.copy(camera.matrixWorld).invert();
   ATOMIC_FRUSTUM_MATRIX_INTERNAL.multiplyMatrices(
     camera.projectionMatrix,
-    camera.matrixWorldInverse,
+    ATOMIC_VIEW_MATRIX_INTERNAL,
   );
   ATOMIC_FRUSTUM_INTERNAL.setFromProjectionMatrix(ATOMIC_FRUSTUM_MATRIX_INTERNAL);
   return bundle.chunkPresenterInternal.inFrustumCountInternal(ATOMIC_FRUSTUM_INTERNAL);

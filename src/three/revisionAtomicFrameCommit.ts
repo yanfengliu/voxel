@@ -179,7 +179,11 @@ export class RevisionAtomicFrameCommitInternal {
       return this.#supersedeInternal('canonical-superseded', queryPublication);
     }
     // Step 5: irrevocable canonical commit. Waiter callbacks run synchronously
-    // here and may accept or present a newer revision reentrantly.
+    // here. At the runtime level, a reentrant acceptance from such a callback
+    // is refused as presentation-in-flight until this transaction settles —
+    // the coordinator blocks admission while its lease is swapped or
+    // published — while this layer itself stays tolerant of a nested
+    // successor, which the stager-level tests exercise directly.
     //
     // Rolling the scene back in this catch is sound only because a finalize
     // throw implies the ledger commit did not land: the post-markPresented

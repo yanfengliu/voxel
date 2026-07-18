@@ -812,11 +812,11 @@ function assertChunksDoNotOverlap(chunks: readonly VoxelChunkV1[]): void {
 
 function assertReferences(snapshot: OwnedRenderSnapshotV1): void {
   const palettes = new Map<string, PaletteResourceV1>();
-  const materials = new Set<string>();
+  const materials = new Map<string, Extract<RenderResourceV1, { readonly kind: 'material' }>>();
   const geometries = new Set<string>();
   snapshot.resources.forEach((resource) => {
     if (resource.kind === 'palette') palettes.set(resource.key, resource);
-    if (resource.kind === 'material') materials.add(resource.key);
+    if (resource.kind === 'material') materials.set(resource.key, resource);
     if (resource.kind === 'geometry') geometries.add(resource.key);
   });
   snapshot.resources.forEach((resource, resourceIndex) => {
@@ -828,7 +828,15 @@ function assertReferences(snapshot: OwnedRenderSnapshotV1): void {
   snapshot.chunks.forEach((chunk, chunkIndex) => {
     const palette = palettes.get(chunk.paletteKey);
     if (!palette) fail('reference.missing', `chunks[${String(chunkIndex)}].paletteKey`, 'Palette resource is missing.');
-    if (!materials.has(chunk.materialKey)) fail('reference.missing', `chunks[${String(chunkIndex)}].materialKey`, 'Material resource is missing.');
+    const material = materials.get(chunk.materialKey);
+    if (!material) fail('reference.missing', `chunks[${String(chunkIndex)}].materialKey`, 'Material resource is missing.');
+    // The capability report advertises opaque-only voxel chunks. A transparent
+    // chunk material would draw with opaque-culled interior faces — wrong in
+    // exactly the way the envelope exists to prevent — so it rejects instead
+    // of rendering outside the advertised envelope.
+    if (material.transparent || material.opacity !== 1) {
+      fail('chunk.material-not-opaque', `chunks[${String(chunkIndex)}].materialKey`, 'Voxel chunk materials must be opaque: transparent false and opacity 1.');
+    }
     chunk.voxels.forEach((paletteIndex, voxelIndex) => {
       if (paletteIndex >= palette.entries.length) fail('chunk.palette-index-out-of-range', `chunks[${String(chunkIndex)}].voxels[${String(voxelIndex)}]`, 'Voxel references a missing palette entry.');
     });
@@ -845,6 +853,10 @@ export function parseSnapshot(
   copyArrays = true,
 ): OwnedRenderSnapshotV1 {
   const input = record(value, '$');
+  // The schema literal gates everything else: an unknown version rejects as
+  // exactly that, before any deep parsing or budgeted copying runs over a
+  // payload whose shape this validator has no claim to understand.
+  const schemaVersion = literal(input.schemaVersion, RENDER_SNAPSHOT_SCHEMA_V1, 'schemaVersion');
   const descriptor = parseDescriptor(input.descriptor);
   const budget = new SnapshotByteBudgetInternal(
     descriptor.limits.maxTotalBytes,
@@ -898,7 +910,7 @@ export function parseSnapshot(
   assertUniqueKeys(batches, 'batches');
 
   const snapshot: OwnedRenderSnapshotV1 = {
-    schemaVersion: literal(input.schemaVersion, RENDER_SNAPSHOT_SCHEMA_V1, 'schemaVersion'),
+    schemaVersion,
     descriptor,
     revision: integer(input.revision, 'revision'),
     resources,

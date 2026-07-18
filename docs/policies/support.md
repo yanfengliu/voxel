@@ -1,6 +1,6 @@
 # Support, compatibility, and distribution policy
 
-Status: proposed 1.0 policy from 2026-07-13. Version 0.1.4 is a prerelease-quality private package and has only the evidence named in README and the implementation ledger. The broader matrix below becomes a support claim only when its implementation-plan gates are green.
+Status: the 1.0 policy, in force from 2026-07-18. The matrix below is a support claim: its implementation-plan gates are green, with the evidence recorded per milestone in [the implementation plan](../plans/v1-implementation.md) and the named-hardware measurements committed under `benchmarks/results/`. Surfaces marked unsupported stay unsupported until they carry the evidence their row names.
 
 ## Target 1.0 support matrix
 

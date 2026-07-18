@@ -272,6 +272,26 @@ describe('ThreeRenderRuntime atomic voxel pipeline', () => {
     runtime.dispose();
   });
 
+  it('reads metrics without writing the borrowed host camera', () => {
+    const host = createEmbeddedAtomicRuntime();
+    expect(host.runtime.acceptSnapshot(profiledSnapshot(1)).status).toBe('accepted');
+    hostFrameUntilPresented(host, 1, 0);
+
+    // The host has moved its camera but not recomposed it yet. That pending
+    // dirty state is the host's own; a metrics read may look at the camera's
+    // matrices as they stand, but consuming the recomposition — or clearing
+    // the flags the host's next update relies on — is a write to host state.
+    host.camera.position.set(5, 7, 40);
+    const localBefore = host.camera.matrix.toArray();
+    const worldBefore = host.camera.matrixWorld.toArray();
+
+    const metrics = host.runtime.metrics();
+    expect(metrics.atomic).not.toBeNull();
+    expect(host.camera.matrix.toArray()).toEqual(localBefore);
+    expect(host.camera.matrixWorld.toArray()).toEqual(worldBefore);
+    host.runtime.dispose();
+  });
+
   it('rejects unprofiled snapshots so one runtime never mixes presentation owners', () => {
     const { runtime } = createAtomicRuntime();
     const unprofiled = profiledSnapshot(1);
@@ -316,6 +336,127 @@ describe('ThreeRenderRuntime atomic voxel pipeline', () => {
     renderer.render.mockImplementation(() => undefined);
     expect(runtime.acceptSnapshot(profiledSnapshot(3, [3])).status).toBe('accepted');
     frameUntilPresented(runtime, 3, next + 4);
+    runtime.dispose();
+  });
+
+  it('blocks a reentrant acceptance from a waiter callback during finalization', () => {
+    // The commit settles presentation waiters while the drawn lease is
+    // published but not yet settled. An acceptance from that callback used to
+    // pass admission — the in-flight block only covered the swapped state —
+    // and retire the very frame being committed: scene rolled back, drawn
+    // bundle disposed, runtime terminally failed, three lanes disagreeing.
+    // The window is now refused exactly like mid-draw acceptance.
+    const { runtime, atomicRoot } = createAtomicRuntime();
+    expect(runtime.acceptSnapshot(profiledSnapshot(1)).status).toBe('accepted');
+
+    let reentrantResult: unknown;
+    let invoked = false;
+    const hostileSignal = {
+      aborted: false,
+      addEventListener: () => undefined,
+      removeEventListener: () => {
+        if (invoked) return;
+        invoked = true;
+        reentrantResult = runtime.acceptSnapshot(profiledSnapshot(2, [2]));
+      },
+    };
+    const settled = runtime.awaitPresented(
+      { worldId: 'world:test', epoch: 'epoch:runtime-atomic', revision: 1 },
+      { signal: hostileSignal },
+    );
+
+    const next = frameUntilPresented(runtime, 1, 0);
+    expect(invoked).toBe(true);
+    expect(reentrantResult).toMatchObject({
+      status: 'rejected',
+      code: 'three.voxel-presentation-in-flight',
+    });
+    // The committed frame stood: still running, revision 1 on the canvas,
+    // its root still attached, and the pick lane agreeing with the scene.
+    expect(runtime.runtimeStatus().state).toBe('running');
+    expect(runtime.metrics().presentedRevision).toBe(1);
+    expect(atomicRoot.children.length).toBe(1);
+
+    // The refused revision is accepted normally after the frame settles.
+    expect(runtime.acceptSnapshot(profiledSnapshot(2, [2])).status).toBe('accepted');
+    frameUntilPresented(runtime, 2, next);
+    runtime.dispose();
+    return settled;
+  });
+
+  it('ends the committing frame quietly when a waiter callback disposes the runtime', () => {
+    // The canonical commit is irrevocable by the time waiter callbacks run;
+    // a dispose from one tears the retirement owners down mid-commit. That
+    // must end like any post-commit ending — a quiet undefined — not escape
+    // as an internal aggregate error.
+    const { runtime } = createAtomicRuntime();
+    expect(runtime.acceptSnapshot(profiledSnapshot(1)).status).toBe('accepted');
+
+    let invoked = false;
+    const hostileSignal = {
+      aborted: false,
+      addEventListener: () => undefined,
+      removeEventListener: () => {
+        if (invoked) return;
+        invoked = true;
+        runtime.dispose();
+      },
+    };
+    const settled = runtime.awaitPresented(
+      { worldId: 'world:test', epoch: 'epoch:runtime-atomic', revision: 1 },
+      { signal: hostileSignal },
+    );
+
+    // The presenting frame is the one whose commit settles the waiter; the
+    // frames before it merely advance the pipeline. The loop stops at the
+    // dispose the callback performs, since a disposed runtime refuses frames.
+    let manifest;
+    for (let frameIndex = 0; frameIndex < 8; frameIndex += 1) {
+      if (runtime.metrics().state === 'disposed') break;
+      manifest = runtime.frame({ nowMs: frameIndex * 16, deltaMs: 16, frameIndex });
+    }
+    expect(invoked).toBe(true);
+    expect(manifest).toBeUndefined();
+    expect(runtime.metrics().state).toBe('disposed');
+    // Dispose stays idempotent after the mid-commit teardown.
+    runtime.dispose();
+    return settled;
+  });
+
+  it('reports no presented frame for picking after a device loss until a new commit', () => {
+    // The committed pick snapshot is stamped with the lost device's frame
+    // identity. Restoration re-presents the displayed content, but capture's
+    // manifest moves to the new device generation — so picking must go
+    // typed-unavailable rather than resurface a frame identity the canvas no
+    // longer has, and return with the first commit on the new device.
+    const { runtime, renderer } = createAtomicRuntime();
+    const ray = {
+      origin: { x: 0.5, y: 5, z: 0.5 },
+      direction: { x: 0, y: -1, z: 0 },
+      maxDistance: 20,
+      maxHits: 4,
+      maxWork: { voxelSteps: 64, instanceCandidates: 16, instancePrimitiveTests: 16 },
+    };
+    expect(runtime.acceptSnapshot(profiledSnapshot(1)).status).toBe('accepted');
+    const next = frameUntilPresented(runtime, 1, 0);
+    expect(runtime.pickPresented(ray)).toMatchObject({ status: 'hits' });
+
+    renderer.emit('webglcontextlost');
+    expect(runtime.pickPresented(ray)).toMatchObject({ status: 'unavailable' });
+    renderer.emit('webglcontextrestored');
+    runtime.frame({ nowMs: next * 16, deltaMs: 16, frameIndex: next });
+    expect(runtime.runtimeStatus().state).toBe('running');
+    expect(runtime.pickPresented(ray)).toEqual({
+      status: 'unavailable',
+      reason: 'no-presented-frame',
+    });
+
+    expect(runtime.acceptSnapshot(profiledSnapshot(2, [2])).status).toBe('accepted');
+    frameUntilPresented(runtime, 2, next + 1);
+    const restored = runtime.pickPresented(ray);
+    expect(restored).toMatchObject({ status: 'hits' });
+    if (restored.status !== 'hits') throw new Error('Expected hits after the new commit.');
+    expect(restored.hits[0]).toMatchObject({ presentedRevision: 2 });
     runtime.dispose();
   });
 

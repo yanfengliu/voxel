@@ -127,11 +127,11 @@ export function validateDeltaFinalGraphInternal(
   if (overlap) return overlap;
 
   const palettes = new Map<string, Extract<RenderResourceV1, { readonly kind: 'palette' }>>();
-  const materials = new Set<string>();
+  const materials = new Map<string, Extract<RenderResourceV1, { readonly kind: 'material' }>>();
   const geometries = new Set<string>();
   resources.forEach((resource) => {
     if (resource.kind === 'palette') palettes.set(resource.key, resource);
-    if (resource.kind === 'material') materials.add(resource.key);
+    if (resource.kind === 'material') materials.set(resource.key, resource);
     if (resource.kind === 'geometry') geometries.add(resource.key);
   });
   for (let resourceIndex = 0; resourceIndex < resources.length; resourceIndex += 1) {
@@ -151,8 +151,18 @@ export function validateDeltaFinalGraphInternal(
     const chunk = chunks[chunkIndex]!;
     const palette = palettes.get(chunk.paletteKey);
     if (!palette) return issue('reference.missing', `chunks[${String(chunkIndex)}].paletteKey`, 'Palette resource is missing.');
-    if (!materials.has(chunk.materialKey)) {
+    const material = materials.get(chunk.materialKey);
+    if (!material) {
       return issue('reference.missing', `chunks[${String(chunkIndex)}].materialKey`, 'Material resource is missing.');
+    }
+    // Same envelope as snapshot ingest: the capability report advertises
+    // opaque-only voxel chunks, so a transparent chunk material rejects.
+    if (material.transparent || material.opacity !== 1) {
+      return issue(
+        'chunk.material-not-opaque',
+        `chunks[${String(chunkIndex)}].materialKey`,
+        'Voxel chunk materials must be opaque: transparent false and opacity 1.',
+      );
     }
     for (let voxelIndex = 0; voxelIndex < chunk.voxels.length; voxelIndex += 1) {
       if (chunk.voxels[voxelIndex]! >= palette.entries.length) {

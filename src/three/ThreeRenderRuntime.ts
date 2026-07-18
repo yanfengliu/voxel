@@ -180,6 +180,11 @@ export class ThreeRenderRuntime {
     // is already gone. An orphaned atomic frame is settled here because its
     // host can no longer complete the ticket in either direction.
     if (invalidated) discardAtomicHostFrameInternal(this.atomicFrames, invalidated);
+    // The committed pick snapshot carries the lost device's frame identity;
+    // restoration re-presents content but never that exact frame, so picking
+    // reports no-presented-frame until a revision commits on the new device —
+    // keeping pick and capture describing the same frame or none at all.
+    this.atomic?.queries.invalidateForDeviceTransitionInternal();
   };
   private readonly handleContextRestored = (): void => {
     if (this.lifecycleState !== 'lost') return;
@@ -295,8 +300,12 @@ export class ThreeRenderRuntime {
   /**
    * Queries the exact frame the canvas last presented. The result reads only
    * committed state: never accepted-but-unpresented revisions, pending edits,
-   * the mutable camera, or live presenter objects. Runtimes without the voxel
-   * worker pipeline report `no-presented-frame`.
+   * the mutable camera, or live presenter objects. Committed pick state
+   * exists only for worlds presented through the worker pipeline — a
+   * descriptor with `chunkProfile` on a runtime constructed with
+   * `voxelWorkers`; every other world, including pure-instance worlds on the
+   * synchronous path, reports `no-presented-frame`. After a device loss the
+   * same reason is reported until the first commit on the restored device.
    */
   pickPresented(query: PickQueryV1): PickPresentedResultV1 {
     return pickCommittedPresentedRayForLifecycleInternal(

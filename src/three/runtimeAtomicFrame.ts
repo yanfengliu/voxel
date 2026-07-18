@@ -500,8 +500,12 @@ export class RuntimeAtomicFrameCoordinatorInternal {
     } catch (error) {
       const cleanup = this.settleLeaseInternal(lease);
       if (frameCommit.phaseInternal === 'committed') {
-        // The canonical commit is irrevocable; only retirement failed. The
-        // frame stands and the failure surfaces as a terminal runtime error.
+        // The canonical commit is irrevocable; only retirement failed. When
+        // the runtime itself ended inside a waiter callback — dispose tears
+        // the owners down mid-commit — disposal already settled every lane,
+        // so the frame ends the same quiet way as any post-commit ending.
+        // Otherwise the failure surfaces as a terminal runtime error.
+        if (this.ops.hasRuntimeEndedAfterCallbacks()) return undefined;
         if (this.ops.isRunningAttempt(generation)) {
           this.ops.transitionToFailed('commit', combineAtomicFrameErrors(error, cleanup));
         }
@@ -515,6 +519,7 @@ export class RuntimeAtomicFrameCoordinatorInternal {
     }
     const settleErrors = this.settleLeaseInternal(lease);
     if (settleErrors.length > 0) {
+      if (this.ops.hasRuntimeEndedAfterCallbacks()) return undefined;
       this.ops.transitionToFailed(
         'commit',
         combineAtomicFrameErrors(settleErrors[0], settleErrors.slice(1)),

@@ -16,12 +16,24 @@ export interface ThreeRuntimeCapabilitiesV1 {
   readonly sceneOwnership: readonly ['owned', 'borrowed'];
   readonly viewportOwnership: readonly ['runtime', 'host'];
   readonly captureOwnership: readonly ['runtime', 'host'];
+  /**
+   * Lanes the committed pick path can answer. Executable only for worlds
+   * presented through the worker pipeline — a descriptor with `chunkProfile`
+   * on a runtime constructed with `voxelWorkers`; every other world reports
+   * `no-presented-frame`. This is the backend's ceiling, not a per-instance
+   * or per-world claim.
+   */
   readonly pickingLanes: readonly ['voxel', 'instance'];
+  /** Reachable through `ThreeRenderRuntimeOptions.voxelWorkers`; a runtime
+   * constructed without it keeps the synchronous presentation path. */
   readonly workerMeshing: true;
   readonly revisionAwareCapture: true;
   readonly contextLoss: Readonly<{
     fenced: true;
-    restoration: 'event-resize-only';
+    /** Restoration rebuilds renderer-owned GPU state from canonical CPU
+     * state and reports running only after a successful draw acknowledges
+     * the rebuilt scene, in standalone and embedded hosts alike. */
+    restoration: 'full-reconstruction';
   }>;
   readonly alpha: Readonly<{
     voxelChunks: 'opaque-only';
@@ -52,15 +64,18 @@ const THREE_RUNTIME_CAPABILITIES_V1: ThreeRuntimeCapabilitiesV1 = Object.freeze(
   captureOwnership: Object.freeze(['runtime', 'host'] as const),
   // Reachable from `ThreeRenderRuntimeOptions.voxelWorkers` and proven end to
   // end in real Chromium: a packaged module worker meshes chunked worlds and a
-  // WebGL2 draw commits each revision. Picking reads the same presented bundle
-  // the canvas shows, and capture is fenced to the presented manifest, so all
-  // three describe one revision rather than three different ones.
+  // WebGL2 draw commits each revision. For worlds presented through that
+  // pipeline, picking reads the same presented bundle the canvas shows and
+  // capture is fenced to the presented manifest, so all three describe one
+  // revision rather than three different ones; worlds outside it — no
+  // `chunkProfile`, or no `voxelWorkers` — report `no-presented-frame` from
+  // the pick path.
   pickingLanes: Object.freeze(['voxel', 'instance'] as const),
   workerMeshing: true,
   revisionAwareCapture: true,
   contextLoss: Object.freeze({
     fenced: true,
-    restoration: 'event-resize-only',
+    restoration: 'full-reconstruction',
   }),
   alpha: Object.freeze({
     voxelChunks: 'opaque-only',

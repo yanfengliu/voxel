@@ -23,7 +23,7 @@ describe('Three runtime capabilities', () => {
       revisionAwareCapture: true,
       contextLoss: {
         fenced: true,
-        restoration: 'event-resize-only',
+        restoration: 'full-reconstruction',
       },
       alpha: {
         voxelChunks: 'opaque-only',

@@ -35,6 +35,28 @@ export {
   type ThreeRuntimeCapabilitiesV1,
 } from './capabilities.js';
 export {
+  HARD_MAX_CAPTURE_DATA_URL_CHARACTERS_V1,
+  HARD_MAX_CAPTURE_RESOURCE_ENTRIES_V1,
+  THREE_CAPTURE_MANIFEST_SCHEMA_V1,
+  ThreeCaptureLeaseCleanupError,
+  ThreeCaptureProtocolError,
+  type ThreeCaptureDetailV1,
+  type ThreeCaptureManifestV1,
+  type ThreeCaptureOptionsV1,
+  type ThreeCapturePixelDimensionsV1,
+  type ThreeCaptureProtocolErrorCodeV1,
+  type ThreeCaptureReadbackRequestV1,
+  type ThreeCaptureReadbackV1,
+  type ThreeCaptureResourceEntryV1,
+  type ThreeCaptureResourceLaneV1,
+  type ThreeCaptureTargetClassificationV1,
+  type ThreeCaptureUnavailableReasonV1,
+  type ThreeCaptureWhenPresentedOptionsV1,
+  type ThreeCaptureWhenPresentedResultV1,
+  type ThreeCaptureWithManifestResultV1,
+  type ThreeHostCaptureReadbackLeaseV1,
+} from './revisionCaptureContracts.js';
+export {
   configureIsometricOrthographicView,
   createIsometricOrthographicCamera,
   projectWorldToViewport,

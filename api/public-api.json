@@ -320,7 +320,7 @@
       ]
     },
     "dist/three/capabilities.d.ts": {
-      "sha256": "000f2338a78debf83e93b77eee4d521d75818ee11ec812ff12681f21ecd5a4af",
+      "sha256": "60d80e1569e0d98f89311f7453e132bf1cb2e3a1d1922f4c0c5499f9215141ea",
       "reachableFrom": [
         "./three"
       ]
@@ -338,7 +338,7 @@
       ]
     },
     "dist/three/index.d.ts": {
-      "sha256": "7b7498c0afb749cb8421aa13e3e7eaa8157652033f8debdd5f04c77ac600d979",
+      "sha256": "e5b3a46b57ea1eadd17fa94196f6bfb00d52fec2b39ec6fa9cc75d4854142bfe",
       "reachableFrom": [
         "./three"
       ]
@@ -386,7 +386,7 @@
       ]
     },
     "dist/three/ThreeRenderRuntime.d.ts": {
-      "sha256": "62369832ce1051755663916ac6a69eb54cb38595ef3cb3a0ea6df35f50a1e747",
+      "sha256": "d900b63f729285cd14d1c488b65b25779c363112655e5191150791202e441643",
       "reachableFrom": [
         "./three"
       ]

@@ -116,6 +116,23 @@ export class CommittedPresentedQueryAuthorityInternal {
     });
   }
 
+  /**
+   * Drops the committed snapshot at a device transition. The canvas is about
+   * to be reconstructed from canonical state, and a snapshot stamped with the
+   * lost device's generation must not resurface as "the frame the canvas
+   * shows" once the runtime runs again — picking would then describe a frame
+   * capture no longer agrees exists. Queries report no-presented-frame until
+   * the next revision commits after restoration.
+   */
+  invalidateForDeviceTransitionInternal(): void {
+    this.#operate(() => {
+      if (this.#lifecycle !== 'active') return;
+      const current = this.#current;
+      this.#current = null;
+      this.#retire(current);
+    });
+  }
+
   retryRetiredInternal(): number {
     return this.#operate(() => {
       this.#assertActive();

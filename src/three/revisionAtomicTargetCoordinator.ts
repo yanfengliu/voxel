@@ -141,7 +141,13 @@ export class RevisionAtomicTargetCoordinatorInternal {
     this.#supersedeReservationInternal();
     this.#retryRetiringInternal();
     const target = plan.target;
-    if (this.#current?.lease?.stateInternal === 'swapped') {
+    // The in-flight window spans the whole presentation transaction: swapped
+    // covers the draw, and published covers canonical finalization — whose
+    // synchronous waiter callbacks can reenter acceptance. Admitting during
+    // either would retire the very frame being committed, so both are
+    // refused; the acceptance succeeds retried after the frame settles.
+    if (this.#current?.lease?.stateInternal === 'swapped'
+      || this.#current?.lease?.stateInternal === 'published') {
       return Object.freeze({
         status: 'blocked',
         target,
@@ -210,7 +216,10 @@ export class RevisionAtomicTargetCoordinatorInternal {
     this.#reservation = null;
     const plan = reservation.plan;
     const target = plan.target;
-    if (this.#current?.lease?.stateInternal === 'swapped') {
+    // Same window as reservation: swapped or published means a presentation
+    // transaction is between its draw and its settlement.
+    if (this.#current?.lease?.stateInternal === 'swapped'
+      || this.#current?.lease?.stateInternal === 'published') {
       this.#releaseReservationInternal(reservation, 'blocked');
       return Object.freeze({
         status: 'blocked',

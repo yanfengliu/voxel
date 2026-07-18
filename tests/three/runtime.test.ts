@@ -874,10 +874,16 @@ describe('ThreeRenderRuntime', () => {
       width: 100,
       height: 100,
     });
+    // Per-instance alpha is representable portable data that this backend's
+    // InstancedMesh path cannot draw, so it is the genuine backend-only
+    // rejection: portable validation accepts it and the backend guard is what
+    // refuses it. (Transparent chunk materials now reject earlier, in core
+    // validation — covered below.)
     const input = validSnapshot(1, 'epoch-a');
-    input.resources = input.resources.map((resource) => resource.kind === 'material'
-      ? { ...resource, transparent: true, opacity: 0.5 }
-      : resource);
+    input.batches = input.batches.map((batch) => ({
+      ...batch,
+      colors: new Uint8Array([255, 64, 32, 128]),
+    }));
 
     expect(runtime.acceptSnapshot(input)).toMatchObject({
       status: 'rejected',
@@ -889,6 +895,36 @@ describe('ThreeRenderRuntime', () => {
       presentedRevision: null,
     });
     expect(() => runtime.frame({ nowMs: 10, deltaMs: 10, frameIndex: 1 })).not.toThrow();
+    runtime.dispose();
+  });
+
+  it('rejects a transparent chunk material in core, naming the chunk that carries it', () => {
+    // The capability report advertises opaque-only voxel chunks. Rejection
+    // belongs in portable validation rather than the backend guard: the
+    // meshing that would misdraw is portable too, and rejecting there names
+    // the exact chunk instead of failing the whole snapshot at `$`.
+    const renderer = new FakeRenderer();
+    const runtime = new ThreeRenderRuntime({
+      renderer,
+      rendererOwnership: 'borrowed',
+      width: 100,
+      height: 100,
+    });
+    const input = validSnapshot(1, 'epoch-a');
+    input.resources = input.resources.map((resource) => resource.kind === 'material'
+      ? { ...resource, transparent: true, opacity: 0.5 }
+      : resource);
+
+    expect(runtime.acceptSnapshot(input)).toMatchObject({
+      status: 'rejected',
+      code: 'chunk.material-not-opaque',
+      path: 'chunks[0].materialKey',
+    });
+    expect(runtime.metrics()).toMatchObject({
+      acceptedRevision: null,
+      presentedRevision: null,
+    });
+    runtime.dispose();
   });
 
   it('validates view options before allocating an owned renderer', () => {

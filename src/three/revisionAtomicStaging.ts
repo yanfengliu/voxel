@@ -321,7 +321,14 @@ export class RevisionAtomicPresentationStagerInternal {
       const presentationRestorationPending = [...this.#leases].some((lease) =>
         lease.stateInternal === 'swapped' || lease.stateInternal === 'published');
       if (this.#displayedBundle && !presentationRestorationPending) {
-        try { this.#displayedBundle.dispose(); } catch (error) { errors.push(error); }
+        try {
+          this.#displayedBundle.dispose();
+        } catch (error) {
+          // Retain the debt like every sibling owner: a repeated dispose can
+          // then retry the bundle instead of losing its only reference.
+          this.#retired.add(this.#displayedBundle);
+          errors.push(error);
+        }
         this.#displayedBundle = null;
         this.#displayedTarget = null;
       }
