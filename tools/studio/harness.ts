@@ -7,6 +7,7 @@ import {
   stopMotion,
 } from './edit.js';
 import { validateModelV1, type ModelMotionV1, type StudioModelV1 } from './model.js';
+import { buildRecipeStages, type RecipeStageV1 } from './recipe.js';
 import type { NoteStore, StudioNoteV1 } from './notes.js';
 import type { StudioPlayer } from './player.js';
 import { buildRequest, sendRequest, type SendResult } from './requests.js';
@@ -140,7 +141,32 @@ export interface VoxelStudioHarnessV1 {
   /** Opens a model from the shelf by its id. */
   openFromShelf(id: string): ReturnType<StudioSession['describe']>;
 
+  /**
+   * How the open model is made, one entry per step of its recipe, starting
+   * from the empty grid. Empty for a model authored by hand, which is an
+   * answer rather than an error: not every model has a recipe.
+   */
+  buildSteps(): readonly StudioBuildStepV1[];
+  /**
+   * Shows the model as it stood at one construction step. This is a preview:
+   * the open model is unchanged, and `showFinished` puts the picture back.
+   */
+  showBuildStep(index: number): ReturnType<StudioSession['describe']>;
+  /** Returns the picture to the finished model. */
+  showFinished(): ReturnType<StudioSession['describe']>;
+  /** Which step is being previewed, or null when the finished model shows. */
+  shownBuildStep(): number | null;
+
   validate(value: unknown): readonly { readonly path: string; readonly message: string }[];
+}
+
+/** One step of a model's construction, as plain data an agent can assert on. */
+export interface StudioBuildStepV1 {
+  /** 0 is the empty grid it starts from; step n is after the recipe's step n. */
+  readonly index: number;
+  readonly summary: string;
+  readonly voxelsAfter: number;
+  readonly voxelsAdded: number;
 }
 
 export interface PlayerReportV1 {
@@ -195,8 +221,44 @@ export function createStudioHarness(host: HarnessHostV1): VoxelStudioHarnessV1 {
     host.update(next);
     return host.session().describe();
   };
+
+  // Construction preview state. `restoreModel` holds whatever was open when
+  // the preview began -- the edited model, not the recipe's output -- so
+  // watching how a model was made never costs a person their edits.
+  let shownStep: number | null = null;
+  let restoreModel: StudioModelV1 | null = null;
+  let cachedStages: { readonly id: string; readonly stages: readonly RecipeStageV1[] } | null = null;
+
+  /**
+   * The construction of the shelf model the open model came from, matched by
+   * id. A model made with New or Copy matches nothing and has no recipe,
+   * which is an empty answer rather than an error.
+   */
+  function stagesForOpenModel(): readonly RecipeStageV1[] {
+    const id = restoreModel?.id ?? host.session().model.id;
+    if (cachedStages?.id === id) return cachedStages.stages;
+    for (const section of host.catalog().sections) {
+      for (const entry of section.models) {
+        if (entry.id !== id || !entry.howItsMade) continue;
+        const made = entry.howItsMade();
+        const stages = buildRecipeStages(made.recipe, made.parts);
+        cachedStages = { id, stages };
+        return stages;
+      }
+    }
+    cachedStages = { id, stages: [] };
+    return [];
+  }
+
+  /** Ends a preview without redrawing, for paths that replace the model. */
+  function dropPreview(): void {
+    shownStep = null;
+    restoreModel = null;
+  }
+
   return {
     load(model) {
+      dropPreview();
       const issues = validateModelV1(model);
       if (issues.length > 0) {
         throw new Error(
@@ -332,6 +394,7 @@ export function createStudioHarness(host: HarnessHostV1): VoxelStudioHarnessV1 {
       for (const section of host.catalog().sections) {
         for (const entry of section.models) {
           if (entry.id === id) {
+            dropPreview();
             host.replace(entry.load());
             return host.session().describe();
           }
@@ -339,6 +402,38 @@ export function createStudioHarness(host: HarnessHostV1): VoxelStudioHarnessV1 {
       }
       throw new Error(`No model on the shelf is called ${id}.`);
     },
+
+    buildSteps: () => stagesForOpenModel().map((stage) => ({
+      index: stage.index,
+      summary: stage.summary,
+      voxelsAfter: stage.voxelsAfter,
+      voxelsAdded: stage.voxelsAdded,
+    })),
+    showBuildStep(index) {
+      const stages = stagesForOpenModel();
+      const stage = stages[index];
+      if (!stage) {
+        throw new Error(
+          stages.length === 0
+            ? 'This model was authored by hand, so there are no steps to show.'
+            : `This model has no construction step ${String(index)}.`,
+        );
+      }
+      // The first preview remembers what to come back to; later ones must not
+      // overwrite it with an earlier stage, or Finished would restore a
+      // half-built model.
+      restoreModel ??= host.session().model;
+      shownStep = index;
+      host.update(stage.model);
+      return host.session().describe();
+    },
+    showFinished() {
+      const restore = restoreModel;
+      dropPreview();
+      if (restore) host.update(restore);
+      return host.session().describe();
+    },
+    shownBuildStep: () => shownStep,
 
     validate: (value) => validateModelV1(value),
   };

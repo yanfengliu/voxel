@@ -455,6 +455,76 @@ export function buildRecipe(recipe: RecipeV1, parts: PartShelfV1): BuiltRecipeV1
   return { model, placedBy };
 }
 
+/**
+ * One moment in a model's construction: the grid as it stood after a step,
+ * and plain words for what that step did.
+ */
+export interface RecipeStageV1 {
+  /** 0 is the empty grid; stage n is the model after step n-1 has run. */
+  readonly index: number;
+  readonly step: RecipeStepV1 | null;
+  readonly summary: string;
+  readonly model: StudioModelV1;
+  readonly voxelsAfter: number;
+  /** Change from the previous stage. Zero when a step only repaints. */
+  readonly voxelsAdded: number;
+}
+
+/** What a step does, in words a person reads rather than a shape they decode. */
+export function describeRecipeStepV1(step: RecipeStepV1): string {
+  switch (step.kind) {
+    case 'voxels': {
+      let placed = 0;
+      for (const slot of step.voxels) if (slot !== 0) placed += 1;
+      return `Places ${String(placed)} cube${placed === 1 ? '' : 's'} by hand`;
+    }
+    case 'part':
+      return `Adds the ${step.part} part`;
+    case 'mirror':
+      return step.axis === 'x' ? 'Mirrors left to right' : 'Mirrors front to back';
+  }
+}
+
+function countFilledInternal(model: StudioModelV1): number {
+  let filled = 0;
+  for (const slot of model.voxels) if (slot !== 0) filled += 1;
+  return filled;
+}
+
+/**
+ * The whole construction, one stage per step, for watching a model being
+ * made.
+ *
+ * Each stage replays the recipe from the start rather than masking the
+ * finished grid by which step placed each voxel: a later step may repaint an
+ * earlier one, and masking would erase the earlier state that was genuinely
+ * there. Replaying is the only way to show what the model actually looked
+ * like at that moment. Recipes are small and the builder is pure, so the
+ * repeated work is cheap and the result is identical every time.
+ */
+export function buildRecipeStages(
+  recipe: RecipeV1,
+  parts: PartShelfV1,
+): readonly RecipeStageV1[] {
+  const stages: RecipeStageV1[] = [];
+  let previousVoxels = 0;
+  for (let count = 0; count <= recipe.steps.length; count += 1) {
+    const built = buildRecipe({ ...recipe, steps: recipe.steps.slice(0, count) }, parts);
+    const step = count === 0 ? null : recipe.steps[count - 1] ?? null;
+    const voxelsAfter = countFilledInternal(built.model);
+    stages.push({
+      index: count,
+      step,
+      summary: step ? describeRecipeStepV1(step) : 'Starts with an empty grid',
+      model: built.model,
+      voxelsAfter,
+      voxelsAdded: voxelsAfter - previousVoxels,
+    });
+    previousVoxels = voxelsAfter;
+  }
+  return stages;
+}
+
 function checkFragment(
   fragment: PartFragmentV1,
   part: string,

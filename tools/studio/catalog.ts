@@ -1,5 +1,8 @@
 import { addPaletteColor, createEmptyModel, setMotion, setVoxel } from './edit.js';
 import type { StudioModelV1 } from './model.js';
+import { createStudioParts } from './parts.js';
+import type { PartShelfV1, RecipeV1 } from './recipe.js';
+import { createBrickWallRecipe, createStarterRecipe } from './recipes.js';
 
 /**
  * The shelf: which models this studio offers, organized into collapsible
@@ -9,10 +12,23 @@ import type { StudioModelV1 } from './model.js';
  * The studio itself only knows that sections contain models.
  */
 
+/** A model's recipe together with the parts it calls, so it can be rebuilt. */
+export interface ShelfRecipeV1 {
+  readonly recipe: RecipeV1;
+  readonly parts: PartShelfV1;
+}
+
 export interface ShelfModelV1 {
   readonly id: string;
   readonly label: string;
   load(): StudioModelV1;
+  /**
+   * How this model is made, when it is made from a recipe. The studio replays
+   * it step by step so the construction can be watched rather than imagined.
+   * A hand-authored model omits this, and the studio says so plainly instead
+   * of inventing a story about steps that never existed.
+   */
+  howItsMade?(): ShelfRecipeV1;
 }
 
 export interface ShelfSectionV1 {
@@ -103,11 +119,21 @@ export function createStudioCatalog(): StudioCatalogV1 {
     sections: [
       {
         name: 'Shapes',
-        models: [{ id: 'studio:starter', label: 'Starter', load: createStarterModel }],
+        models: [{
+          id: 'studio:starter',
+          label: 'Starter',
+          load: createStarterModel,
+          howItsMade: () => ({ recipe: createStarterRecipe(), parts: createStudioParts() }),
+        }],
       },
       {
         name: 'Walls',
-        models: [{ id: 'studio:brick-wall', label: 'Brick wall', load: createBrickWallModel }],
+        models: [{
+          id: 'studio:brick-wall',
+          label: 'Brick wall',
+          load: createBrickWallModel,
+          howItsMade: () => ({ recipe: createBrickWallRecipe(), parts: createStudioParts() }),
+        }],
       },
     ],
   };

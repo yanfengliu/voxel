@@ -32,6 +32,14 @@ const OUTLINE_COLOR = { r: 24, g: 26, b: 30 };
 export interface BuildOptionsV1 {
   /** Distinguishes revisions of the same model. Must rise on every edit. */
   readonly revision: number;
+  /**
+   * Which life of the geometry this is. It must rise whenever the geometry
+   * comes back after a snapshot that had none: the engine tombstones a
+   * removed key and refuses to see it reused at the same incarnation, which
+   * is how it catches a stale resource pretending to be the current one.
+   * Defaults to the first life.
+   */
+  readonly incarnation?: number;
   /** Separates lineages so one runtime never mixes unrelated models. */
   readonly epoch?: string;
   /**
@@ -50,6 +58,36 @@ export class ModelBuildError extends Error {
   }
 }
 
+/** One world description, shared by the drawn and the empty paths. */
+function describeWorld(epoch: string): RenderSnapshotV1['descriptor'] {
+  return {
+    schemaVersion: 'voxel.world/1',
+    worldId: WORLD_ID,
+    epoch,
+    coordinates: {
+      handedness: 'right',
+      upAxis: '+y',
+      forwardAxis: '-z',
+      chunkRounding: 'floor',
+      metersPerWorldUnit: 1,
+      worldUnitsPerVoxel: { x: 1, y: 1, z: 1 },
+    },
+    colorEncoding: 'srgb8-straight-alpha',
+    capabilities: ['geometry-resources', 'instance-batches'],
+    limits: {
+      maxResources: 16,
+      maxPaletteEntries: 256,
+      maxChunks: 4,
+      maxBatches: 4,
+      maxVoxelsPerChunk: 262_144,
+      maxGeometryVertices: 262_144,
+      maxGeometryIndices: 786_432,
+      maxInstancesPerBatch: 1_024,
+      maxTotalBytes: 32_000_000,
+    },
+  };
+}
+
 export function buildSnapshot(
   model: StudioModelV1,
   options: BuildOptionsV1,
@@ -62,6 +100,7 @@ export function buildSnapshot(
 
   const [sx, sy, sz] = model.size;
   const revision = options.revision;
+  const incarnation = options.incarnation ?? 1;
   const epoch = options.epoch ?? `epoch:${model.id}`;
 
   // The model and the chunk disagree on byte order: the model stores
@@ -85,6 +124,23 @@ export function buildSnapshot(
     new DensePaletteChunk({ origin: { x: 0, y: 0, z: 0 }, size: { x: sx, y: sy, z: sz }, voxels }),
     { positionSpace: 'source-local' },
   );
+
+  // Nothing filled means nothing to draw. An empty model is an ordinary
+  // thing -- the New button starts one, and every recipe's construction
+  // begins from one -- but a geometry resource whose only group covers zero
+  // indices is not, and the engine rejects it. So send an empty world: valid,
+  // acceptable, and honest about having no geometry rather than shipping an
+  // empty group and being refused at the boundary.
+  if (bare.indices.length === 0) {
+    return {
+      schemaVersion: 'voxel.render-snapshot/1',
+      descriptor: describeWorld(epoch),
+      revision,
+      resources: [],
+      chunks: [],
+      batches: [],
+    };
+  }
 
   // Dark lines where surfaces turn or change colour, so the eye can tell the
   // top of a model from its side — flat unlit colour gives it nothing else to
@@ -147,38 +203,13 @@ export function buildSnapshot(
 
   return {
     schemaVersion: 'voxel.render-snapshot/1',
-    descriptor: {
-      schemaVersion: 'voxel.world/1',
-      worldId: WORLD_ID,
-      epoch,
-      coordinates: {
-        handedness: 'right',
-        upAxis: '+y',
-        forwardAxis: '-z',
-        chunkRounding: 'floor',
-        metersPerWorldUnit: 1,
-        worldUnitsPerVoxel: { x: 1, y: 1, z: 1 },
-      },
-      colorEncoding: 'srgb8-straight-alpha',
-      capabilities: ['geometry-resources', 'instance-batches'],
-      limits: {
-        maxResources: 16,
-        maxPaletteEntries: 256,
-        maxChunks: 4,
-        maxBatches: 4,
-        maxVoxelsPerChunk: 262_144,
-        maxGeometryVertices: 262_144,
-        maxGeometryIndices: 786_432,
-        maxInstancesPerBatch: 1_024,
-        maxTotalBytes: 32_000_000,
-      },
-    },
+    descriptor: describeWorld(epoch),
     revision,
     resources: [
       {
         kind: 'geometry',
         key: GEOMETRY_KEY,
-        incarnation: 1,
+        incarnation,
         revision,
         topology: 'triangles',
         positions: centred,
@@ -193,7 +224,7 @@ export function buildSnapshot(
       {
         kind: 'material',
         key: MATERIAL_KEY,
-        incarnation: 1,
+        incarnation,
         revision: 1,
         // Unlit: the studio judges the model, not a lighting rig. A lambert
         // surface would make every frame a claim about lights the games have
@@ -212,7 +243,7 @@ export function buildSnapshot(
     batches: [
       {
         key: BATCH_KEY,
-        incarnation: 1,
+        incarnation,
         revision,
         geometryKey: GEOMETRY_KEY,
         materialKey: MATERIAL_KEY,

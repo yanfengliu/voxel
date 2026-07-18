@@ -60,6 +60,9 @@ export class StudioSession {
   readonly #runtime: ThreeRenderRuntime;
   #model: StudioModelV1;
   #revision = 0;
+  #incarnation = 1;
+  /** Whether the last accepted snapshot carried geometry at all. */
+  #hadGeometry = true;
   #frameIndex = 0;
   #disposed = false;
   #edges = true;
@@ -218,8 +221,18 @@ export class StudioSession {
 
   #accept(model: StudioModelV1): void {
     this.#revision += 1;
+    // An empty model sends no geometry, which removes the key. The engine
+    // tombstones a removed key and refuses to see it come back at the same
+    // incarnation -- that rule is what catches a stale resource claiming to be
+    // current -- so geometry returning after an empty model is a new life.
+    // Reachable whenever someone clears a model, presses New, or walks a
+    // construction from its empty first step.
+    const filled = filledVoxelCount(model) > 0;
+    if (filled && !this.#hadGeometry) this.#incarnation += 1;
+    this.#hadGeometry = filled;
     const result = this.#runtime.acceptSnapshot(buildSnapshot(model, {
       revision: this.#revision,
+      incarnation: this.#incarnation,
       epoch: `epoch:${model.id}`,
       edges: this.#edges,
     }));

@@ -59,6 +59,22 @@ function model(): StudioModelV1 {
 }
 
 describe('building a model into a voxel snapshot', () => {
+  it('draws nothing for an empty model instead of refusing to build', () => {
+    // Reachable two ways a person actually uses: the New button starts an
+    // empty grid, and the first stage of a construction is the empty grid a
+    // recipe begins from. An empty mesh has no triangles, and a geometry
+    // group of zero is something the engine rightly rejects -- so an empty
+    // model must send nothing to draw rather than an empty group.
+    const empty = createEmptyModel({ id: 'test:empty', size: [4, 4, 4] });
+    const snapshot = buildSnapshot(empty, { revision: 1 });
+    expect(snapshot.resources).toEqual([]);
+    expect(snapshot.batches).toEqual([]);
+
+    const world = new RenderWorld();
+    expect(world.acceptSnapshot(snapshot)).toMatchObject({ status: 'accepted' });
+    world.dispose();
+  });
+
   it('is accepted by the engine that will actually draw it', () => {
     const world = new RenderWorld();
     // The point of building an engine snapshot rather than our own mesh: the

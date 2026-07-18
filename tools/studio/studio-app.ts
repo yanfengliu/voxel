@@ -1,6 +1,7 @@
 import { OrthographicCamera, PerspectiveCamera } from 'three';
 
 import type { StudioCatalogV1 } from './catalog.js';
+import { createConstructionPanel } from './construction.js';
 import { describeMotion, describePoseAt } from './describe.js';
 import { createStudioHarness, type VoxelStudioHarnessV1 } from './harness.js';
 import { createEmptyModel } from './edit.js';
@@ -645,6 +646,10 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
   function refresh(): void {
     const model = harness.model();
     const described = harness.describe();
+    // The step list belongs to whichever model is open, so opening another
+    // one from the shelf must not leave the previous model's steps sitting
+    // there looking current.
+    construction.refresh();
     player.setPeriod(model.motion.periodMs, performance.now());
     syncPlayButton();
     const period = player.periodMs;
@@ -943,7 +948,17 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
   transport.append(stepBack, playButton, stepForward, speedSelect);
   playerBar.append(transport, timelineWrap, timeLabel);
 
-  const tabNames = ['examine', 'edit', 'motion', 'notes'] as const;
+  // Watching a model get made. Its previews go through the harness, so the
+  // agent walks the same construction the panel shows.
+  const construction = createConstructionPanel({
+    harness,
+    onChanged: () => {
+      refresh();
+      drawFrame(lastShownMs);
+    },
+  });
+
+  const tabNames = ['examine', 'build', 'edit', 'motion', 'notes'] as const;
   const tabButtons = new Map<string, HTMLElement>();
   const tabPanes = new Map<string, HTMLElement>();
   const tabsRow = element('div', 'tabs');
@@ -955,8 +970,13 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
     tabsRow.appendChild(tab);
   }
   function showTab(name: string): void {
+    // Leaving the Build tab puts the finished model back, so no other tab can
+    // ever be looking at a half-built preview -- editing or sending a request
+    // against a partial model would be a silent trap.
+    if (name !== 'build') construction.leave();
     for (const [key, tab] of tabButtons) tab.classList.toggle('active', key === name);
     for (const [key, pane] of tabPanes) pane.hidden = key !== name;
+    if (name === 'build') construction.refresh();
   }
 
   const examinePane = element('div', 'pane');
@@ -997,8 +1017,9 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
   notesPane.append(noteHint, noteEditor, notesList, pinPlaceButton, requestBox, sendButton, requestStatus);
 
   const inspector = element('div', 'inspector');
-  inspector.append(tabsRow, examinePane, editPane, motionPane, notesPane);
+  inspector.append(tabsRow, examinePane, construction.element, editPane, motionPane, notesPane);
   tabPanes.set('examine', examinePane);
+  tabPanes.set('build', construction.element);
   tabPanes.set('edit', editPane);
   tabPanes.set('motion', motionPane);
   tabPanes.set('notes', notesPane);
@@ -1059,6 +1080,7 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
       if (disposed) return;
       disposed = true;
       cancelAnimationFrame(frameHandle);
+      construction.dispose();
       window.removeEventListener('resize', followStage);
       session.dispose();
       if (options.publishHarness !== false && window.voxelStudio === harness) {

@@ -102,6 +102,40 @@ The full design, including how craft lessons and parts are shared between
 games, is in
 [model recipes and shared parts](../superpowers/specs/2026-07-17-model-recipes-and-shared-parts-design.md).
 
+## Watching a model get made
+
+A model whose catalog entry declares `howItsMade` shows its construction in
+the studio's **Build** tab: the empty grid it starts from, then the model
+after each step, with plain words for what the step did and how many cubes it
+added. Play it, step through it, or click any step to see the model as it
+stood then.
+
+```ts
+{
+  id: 'harbor:boat',
+  label: 'Fishing boat',
+  load: createBoat,
+  howItsMade: () => ({ recipe: boatRecipe, parts: harborParts }),
+}
+```
+
+Each stage replays the recipe from the beginning rather than hiding voxels
+from the finished grid. That matters: a later step may repaint an earlier
+one, and hiding would show a hole where the model genuinely had paint.
+
+Previewing a step never costs edits. The studio remembers the model that was
+open and puts it back when you press **Finished model** or leave the tab, so
+no other tab is ever looking at a half-built model — editing or sending a
+request against a partial model would be a silent trap.
+
+`npm run studio:build [modelId] [page]` does the same walk headlessly and
+writes the stages tiled into one image, plus a screenshot of the panel. It is
+worth running on any recipe you have only read: watching the Harbor boat get
+made is what revealed that its hand-placed oar was landing on cells the hull
+had already filled, adding nothing, and that its mirror step was duplicating
+the mast rather than the oars. Both were invisible in the finished model and
+in every passing test.
+
 ## Driving it from an agent
 
 Everything the buttons do exists on `window.voxelStudio` first. An agent can

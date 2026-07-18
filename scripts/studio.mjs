@@ -292,6 +292,133 @@ const COMMANDS = {
   },
 
   /**
+   * The construction of a model, tiled into one sheet: empty grid first, then
+   * the model after each recipe step, ending on the finished model.
+   *
+   * Watching it in the page is the point of the Build tab; this is the same
+   * walk written down, so a construction can be looked at in one glance and
+   * kept as evidence.
+   */
+  async build() {
+    const modelId = process.argv[3];
+    const pagePath = process.argv[4] ?? '';
+    const file = join(OUTPUT_DIR, 'construction.png');
+    const panelFile = join(OUTPUT_DIR, 'build-panel.png');
+    const report = await withStudio(async (page) => {
+      const walked = await page.evaluate(async (id) => {
+      const studio = window.voxelStudio;
+      if (!studio) throw new Error('the studio harness is unavailable');
+      if (id) studio.openFromShelf(id);
+      const steps = studio.buildSteps();
+      if (steps.length === 0) {
+        throw new Error(`${studio.model().label} was authored by hand; it has no steps to show`);
+      }
+      // Walk the construction through the same harness calls the panel makes,
+      // capturing each stage as it is shown.
+      const images = [];
+      for (const step of steps) {
+        studio.showBuildStep(step.index);
+        images.push(studio.sampleAt(0).image);
+      }
+      const finished = studio.showFinished();
+
+      // Tiled in the page, where the stage images already live: shipping a
+      // dozen data URLs out through evaluate to paste them together outside
+      // would move megabytes to save nothing.
+      const loaded = await Promise.all(images.map((source) => new Promise((resolve, reject) => {
+        const image = new Image();
+        image.onload = () => { resolve(image); };
+        image.onerror = () => { reject(new Error('a stage image failed to load')); };
+        image.src = source;
+      })));
+      const columns = Math.min(4, loaded.length);
+      const rows = Math.ceil(loaded.length / columns);
+      const first = loaded[0];
+      const canvas = document.createElement('canvas');
+      canvas.width = first.width * columns;
+      canvas.height = first.height * rows;
+      const context = canvas.getContext('2d');
+      context.fillStyle = '#0f1214';
+      context.fillRect(0, 0, canvas.width, canvas.height);
+      loaded.forEach((image, index) => {
+        context.drawImage(
+          image,
+          (index % columns) * first.width,
+          Math.floor(index / columns) * first.height,
+        );
+      });
+
+      return {
+        label: studio.model().label,
+        steps: steps.map((step) => ({
+          index: step.index,
+          summary: step.summary,
+          voxelsAfter: step.voxelsAfter,
+          voxelsAdded: step.voxelsAdded,
+        })),
+        dataUrl: canvas.toDataURL('image/png'),
+        finishedVoxels: finished.filledVoxels,
+        shownAfterFinish: studio.shownBuildStep(),
+      };
+      }, modelId);
+
+      // The panel is the feature; the sheet is only its record. Open the tab
+      // a person opens and photograph it mid-build, so the controls are
+      // reviewed as laid out rather than as written.
+      await page.getByRole('button', { name: 'Build', exact: true }).click();
+      const middle = Math.max(1, Math.floor((walked.steps.length - 1) / 2));
+      await page.locator('.step-row button').nth(middle).click();
+      await mkdir(OUTPUT_DIR, { recursive: true });
+      await page.screenshot({ path: panelFile, fullPage: false });
+      const panel = await page.evaluate(() => ({
+        rows: document.querySelectorAll('.step-row').length,
+        active: document.querySelectorAll('.step-row.active').length,
+        shown: window.voxelStudio?.shownBuildStep() ?? null,
+      }));
+      return { ...walked, panel };
+    }, pagePath);
+    const dataUrl = report.dataUrl;
+
+    await writeFile(file, Buffer.from(dataUrl.slice(dataUrl.indexOf(',') + 1), 'base64'));
+
+    console.log(`${LOG_PREFIX} ${report.label}: ${String(report.steps.length - 1)} steps`);
+    for (const step of report.steps) {
+      console.log(`${LOG_PREFIX}   ${String(step.index)}. ${step.summary} `
+        + `(${step.voxelsAdded >= 0 ? '+' : ''}${String(step.voxelsAdded)} → ${String(step.voxelsAfter)} cubes)`);
+    }
+    console.log(`${LOG_PREFIX} wrote ${relative(PROJECT_ROOT, file)} and `
+      + `${relative(PROJECT_ROOT, panelFile)}`);
+    console.log(`${LOG_PREFIX} panel: ${String(report.panel.rows)} rows, `
+      + `showing step ${String(report.panel.shown)}`);
+
+    const failures = [];
+    const last = report.steps[report.steps.length - 1];
+    if (report.steps[0]?.voxelsAfter !== 0) failures.push('the construction did not start empty');
+    // The panel must list every step and mark exactly the one on screen, or
+    // the picture and the list are telling different stories.
+    if (report.panel.rows !== report.steps.length) {
+      failures.push(`the panel lists ${String(report.panel.rows)} steps for a `
+        + `${String(report.steps.length)}-step construction`);
+    }
+    if (report.panel.active !== 1) {
+      failures.push(`${String(report.panel.active)} steps are marked as showing`);
+    }
+    if (last?.voxelsAfter !== report.finishedVoxels) {
+      failures.push(`the last step has ${String(last?.voxelsAfter)} cubes but the finished model has `
+        + `${String(report.finishedVoxels)}`);
+    }
+    // Finishing must put the real model back, or a preview would quietly
+    // become the model a person then edits or sends.
+    if (report.shownAfterFinish !== null) failures.push('the finished model was not restored');
+    if (failures.length > 0) {
+      for (const failure of failures) console.error(`${LOG_PREFIX} ${failure}`);
+      process.exitCode = 1;
+      return;
+    }
+    console.log(`${LOG_PREFIX} the construction ends on exactly the finished model`);
+  },
+
+  /**
    * A screenshot of the studio itself, not of a model. Reviewing a UI from its
    * source is the same mistake as judging a render from its metrics: the layout
    * is only real once something has laid it out.

@@ -407,3 +407,40 @@ input[type="color"] {
   border-radius: 5px;
   background: var(--sunk);
 }
+
+/* ---- build: watching a model get made ---- */
+.steps {
+  list-style: none;
+  margin: 10px 0 0;
+  padding: 0;
+  display: grid;
+  gap: 4px;
+}
+.step-row > button {
+  width: 100%;
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 10px;
+  align-items: center;
+  text-align: left;
+  padding: 7px 9px;
+  font-size: 12.5px;
+}
+.step-row.active > button {
+  border-color: var(--accent);
+  color: var(--text);
+}
+.step-num {
+  font-family: ui-monospace, "Cascadia Code", "SF Mono", Menlo, monospace;
+  font-size: 10.5px;
+  min-width: 16px;
+  text-align: center;
+  color: var(--muted);
+}
+.step-row.active .step-num { color: var(--accent); }
+.step-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.step-count {
+  font-family: ui-monospace, "Cascadia Code", "SF Mono", Menlo, monospace;
+  font-size: 10.5px;
+  color: var(--muted);
+}

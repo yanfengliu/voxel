@@ -17,6 +17,7 @@ export { mountStudio, type StudioMountOptionsV1, type StudioHandleV1 } from './s
 
 export type {
   ShelfModelV1,
+  ShelfRecipeV1,
   ShelfSectionV1,
   StudioCatalogV1,
 } from './catalog.js';
@@ -46,11 +47,14 @@ export {
 // model, which is how a recipe reaches the shelf.
 export {
   buildRecipe,
+  buildRecipeStages,
+  describeRecipeStepV1,
   mixSeed,
   RecipeBuildError,
   validateRecipeV1,
   VOXEL_RECIPE_SCHEMA_V1,
   type BuiltRecipeV1,
+  type RecipeStageV1,
   type MirrorStepV1,
   type PartFragmentV1,
   type PartSettingsV1,

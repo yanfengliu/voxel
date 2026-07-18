@@ -6,6 +6,8 @@ import { createBrickWallModel, createStarterModel } from './catalog.js';
 import { createStudioParts } from './parts.js';
 import {
   buildRecipe,
+  buildRecipeStages,
+  describeRecipeStepV1,
   mixSeed,
   RecipeBuildError,
   validateRecipeV1,
@@ -223,6 +225,74 @@ describe('building a recipe into a model', () => {
   it('will not build a recipe that fails validation', () => {
     const broken = { ...createStarterRecipe(), roles: ['body', 'empty', 'cap'] };
     expect(() => buildRecipe(broken, createStudioParts())).toThrow(RecipeBuildError);
+  });
+});
+
+describe('watching a model being made', () => {
+  it('gives one stage per step, plus the empty grid it starts from', () => {
+    const recipe = createStarterRecipe();
+    const stages = buildRecipeStages(recipe, createStudioParts());
+    expect(stages.length).toBe(recipe.steps.length + 1);
+    expect(stages[0]?.step).toBeNull();
+    expect(stages[0]?.voxelsAfter).toBe(0);
+    expect(stages[0]?.summary).toBe('Starts with an empty grid');
+  });
+
+  it('ends on exactly the finished model', () => {
+    const stages = buildRecipeStages(createStarterRecipe(), createStudioParts());
+    expect(stages[stages.length - 1]?.model).toEqual(createStarterModel());
+  });
+
+  it('grows the model one step at a time', () => {
+    const stages = buildRecipeStages(createStarterRecipe(), createStudioParts());
+    // The starter is a body then a cap: each step adds cubes, and the running
+    // total is what the panel counts up.
+    expect(stages.map((stage) => stage.voxelsAfter)).toEqual([0, 48, 52]);
+    expect(stages.map((stage) => stage.voxelsAdded)).toEqual([0, 48, 4]);
+  });
+
+  it('replays rather than masking, so a repaint shows its earlier state', () => {
+    // Step 0 paints the row; step 1 repaints one cell of it. Masking the
+    // finished grid by which step placed each voxel would show a hole at
+    // stage 1, where the model genuinely had paint.
+    const stages = buildRecipeStages(smallRecipe([
+      { kind: 'voxels', at: [0, 0, 0], size: [2, 1, 1], voxels: [1, 1] },
+      { kind: 'voxels', at: [0, 0, 0], size: [1, 1, 1], voxels: [2] },
+    ]), createStudioParts());
+    expect(stages[1]?.model.voxels[0]).toBe(1);
+    expect(stages[2]?.model.voxels[0]).toBe(2);
+    // A pure repaint changes no count, which the panel shows honestly.
+    expect(stages[2]?.voxelsAdded).toBe(0);
+  });
+
+  it('says what each kind of step does, in plain words', () => {
+    const stages = buildRecipeStages(smallRecipe([
+      { kind: 'part', part: 'box', at: [0, 0, 0], settings: { sizeX: 1, sizeY: 1, sizeZ: 1, role: 'paint' } },
+      { kind: 'voxels', at: [1, 0, 0], size: [2, 1, 1], voxels: [1, 0] },
+      { kind: 'mirror', axis: 'x' },
+    ]), createStudioParts());
+    expect(stages.map((stage) => stage.summary)).toEqual([
+      'Starts with an empty grid',
+      'Adds the box part',
+      'Places 1 cube by hand',
+      'Mirrors left to right',
+    ]);
+  });
+
+  it('describes a front-to-back mirror as its own direction', () => {
+    expect(describeRecipeStepV1({ kind: 'mirror', axis: 'z' })).toBe('Mirrors front to back');
+  });
+
+  it('builds the same stages every time', () => {
+    const first = buildRecipeStages(createBrickWallRecipe(), createStudioParts());
+    const again = buildRecipeStages(createBrickWallRecipe(), createStudioParts());
+    expect(again).toEqual(first);
+  });
+
+  it('refuses a recipe that cannot build, rather than showing half a story', () => {
+    expect(() => buildRecipeStages(smallRecipe([
+      { kind: 'part', part: 'chimney', at: [0, 0, 0], settings: {} },
+    ]), createStudioParts())).toThrow(RecipeBuildError);
   });
 });
 

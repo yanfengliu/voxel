@@ -99,7 +99,12 @@ function createFishingBoatRecipe(): RecipeV1 {
     id: 'harbor:fishing-boat',
     label: 'Fishing boat',
     seed: 11,
-    size: [14, 12, 8],
+    // Odd across z so the middle is a real cell: a mast one voxel wide can
+    // then sit on the centre line, where mirroring maps it onto itself. On an
+    // even width there is no centre cell, and the mirror step quietly gives
+    // the boat a second mast -- which watching the construction is exactly
+    // how this was caught.
+    size: [14, 12, 9],
     roles: [...HARBOR_ROLES],
     palette: [
       { r: 0, g: 0, b: 0 },
@@ -108,11 +113,14 @@ function createFishingBoatRecipe(): RecipeV1 {
       { r: 176, g: 96, b: 62 },
     ],
     steps: [
-      { kind: 'part', part: 'hull', at: [0, 0, 0], settings: { sizeX: 14, sizeY: 5, sizeZ: 8 } },
+      { kind: 'part', part: 'hull', at: [0, 0, 0], settings: { sizeX: 14, sizeY: 5, sizeZ: 9 } },
       { kind: 'part', part: 'mast', at: [5, 5, 4], settings: { height: 7 } },
       // One oar, placed by hand where no part reaches, then mirrored to the
-      // other side: the whole point of keeping raw voxels as a step.
-      { kind: 'voxels', at: [4, 4, 0], size: [4, 1, 1], voxels: [3, 3, 3, 3] },
+      // other side: the whole point of keeping raw voxels as a step. It sits
+      // a level above the deck, clear of the hull's own rim -- placed level
+      // with it, the step landed on cells the hull already filled and added
+      // nothing at all.
+      { kind: 'voxels', at: [4, 5, 0], size: [4, 1, 1], voxels: [3, 3, 3, 3] },
       { kind: 'mirror', axis: 'z' },
     ],
     motion: {
@@ -155,7 +163,17 @@ export function createHarborCatalog(): StudioCatalogV1 {
     sections: [
       {
         name: 'Boats',
-        models: [{ id: 'harbor:fishing-boat', label: 'Fishing boat', load: createFishingBoat }],
+        models: [{
+          id: 'harbor:fishing-boat',
+          label: 'Fishing boat',
+          load: createFishingBoat,
+          // Saved as the way it is made, so the studio can replay its
+          // construction and so improving the hull improves every boat.
+          howItsMade: () => ({
+            recipe: createFishingBoatRecipe(),
+            parts: createHarborParts(),
+          }),
+        }],
       },
       {
         name: 'Dockside',
