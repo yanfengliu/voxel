@@ -298,6 +298,10 @@ function mount(): void {
   // ---- drawing and readouts ----
   function drawFrame(timeMs: number): void {
     lastShownMs = timeMs;
+    // Reasserted every draw, not only on drag: the engine may touch the shared
+    // camera, and the studio's view must win on every frame, not just the ones
+    // after an interaction.
+    applyOrbit(camera, orbit, VIEW_WIDTH, VIEW_HEIGHT);
     session.showAt(timeMs);
     const period = player.periodMs;
     if (period > 0) {

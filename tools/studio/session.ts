@@ -72,10 +72,13 @@ export class StudioSession {
       height: options.height ?? DEFAULT_HEIGHT,
       pixelRatio: 1,
       // The mesh is centred on its own middle, so the model is at the origin
-      // and the camera looks there.
-      center: { x: 0, y: 0, z: 0 },
-      zoom: options.zoom ?? DEFAULT_ZOOM,
-      ...(options.camera ? { camera: options.camera } : {}),
+      // and the camera looks there. With a studio-owned camera the legacy
+      // centre/zoom must NOT be sent: the engine would write its own diagonal
+      // view into the shared camera, and whichever side wrote last would win —
+      // which showed up as planar slices through the model at some angles.
+      ...(options.camera
+        ? { camera: options.camera }
+        : { center: { x: 0, y: 0, z: 0 }, zoom: options.zoom ?? DEFAULT_ZOOM }),
     });
     this.#accept(model);
   }

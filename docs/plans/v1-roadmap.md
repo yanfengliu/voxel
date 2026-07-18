@@ -43,6 +43,25 @@ sections the game names and orders -- characters, buildings, items, and so on.
 The section list is part of the catalog a game provides, never a vocabulary
 the studio invents; the studio only knows "sections contain models".
 
+## Models keep the way they were made
+
+Direction set 2026-07-17 by the owner. A studio model gains a saved recipe --
+the ordered steps that made it: hand-placed voxels, parts run with settings
+and a seed, mirrors. Running a recipe rebuilds the exact grid, so improving a
+part can improve every model that uses it. The baked grid stays saved beside
+the recipe as the record of what was accepted: improving a part changes no
+game's art by itself, and a shelf rebuild is an explicit act judged by
+looking at before/after sheets. Parts are earned on second use, never
+invented ahead of need.
+
+Lessons that are not code aggregate in one shared cookbook at the fleet root
+(`github/voxel-craft.md`); a part proven by a second game graduates into one
+shared content repository beside the games, created when the first part earns
+it. The engine repo owns only the mechanism -- recipe schema and runner, part
+interface, sameness and preview fixtures, rebuild-and-compare -- as studio
+tooling, so the published package stays free of authoring. Full design:
+[model recipes and shared parts](../superpowers/specs/2026-07-17-model-recipes-and-shared-parts-design.md).
+
 ## City art direction: voxel
 
 Decided 2026-07-15 by the owner. City renders low-poly primitives today -- its
