@@ -89,6 +89,6 @@ Record the source, version, license, and redistribution requirements for importe
 
 Keep `README.md` truthful about implemented status and keep `docs/design/spec.md` aligned with architectural contracts and delivery gates. Update consumer integration notes when a public API or supported Three.js range changes. Add heavier devlog, decision-log, or progress trees only when recurring implementation work makes them useful.
 
-Preserve unrelated work, stage only coherent requested changes, and never discard user changes. Follow the task's authority for commits, pushes, releases, and sibling-repository edits; when delivery is authorized, land only after the applicable gates pass.
+Preserve unrelated work, stage only coherent requested changes, and never discard user changes. Concurrent agent sessions share one worktree and one index, so commit by explicit pathspec — stage exactly the intended files and run `git commit -- <files>` — and never use `git commit -a`, `git add -A`, or `git add .`; a sweeping commit captures whatever another session has staged. Follow the task's authority for commits, pushes, releases, and sibling-repository edits; when delivery is authorized, land only after the applicable gates pass.
 
 Temporary captures, traces, benchmark output, and renderer dumps belong in ignored output directories. Commit only durable fixtures, concise evidence, and documentation useful to a future maintainer.
