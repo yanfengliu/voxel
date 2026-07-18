@@ -34,6 +34,11 @@ export interface BuildOptionsV1 {
   readonly revision: number;
   /** Separates lineages so one runtime never mixes unrelated models. */
   readonly epoch?: string;
+  /**
+   * Study edges on or off. On is the studio's examining look; off is the game
+   * look — games never draw edges, so off shows exactly what players see.
+   */
+  readonly edges?: boolean;
 }
 
 export class ModelBuildError extends Error {
@@ -87,7 +92,9 @@ export function buildSnapshot(
   // model's own colours: it is presentation, not part of the model, so saving
   // or copying a model never carries it.
   const outlineSlot = model.palette.length;
-  const mesh = addFaceOutlines(bare, { paletteIndex: outlineSlot });
+  const mesh = options.edges === false
+    ? { ...bare, paletteIndices: bare.paletteIndices }
+    : addFaceOutlines(bare, { paletteIndex: outlineSlot });
 
   // Per-vertex colour resolved from the palette here, because a geometry
   // resource carries colours while a chunk carries palette indices. Same

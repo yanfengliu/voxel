@@ -6,105 +6,292 @@
     <style>
       :root {
         color-scheme: dark;
-        --ground: #14171a;
-        --panel: #1b1f23;
-        --line: #2a3038;
-        --text: #e6edf3;
-        --muted: #8b98a5;
-        --accent: #5ac878;
+        --bg: #0f1214;
+        --rail: #14181b;
+        --panel: #191e22;
+        --sunk: #101315;
+        --line: #262c33;
+        --line-soft: #1f242a;
+        --text: #e8eef4;
+        --muted: #93a0ac;
+        --faint: #5c6873;
+        --accent: #56c980;
         --bad: #e5786a;
-        --check-a: #24292e;
-        --check-b: #1b1f23;
+        --pin: #e2b93b;
       }
-      /* The hidden attribute works by a default display:none, which loses to
-         any of this page's own display rules; without this, "hidden" panels
-         with flex or grid layouts show anyway. */
+      * { box-sizing: border-box; }
+      /* hidden must beat any pane's own display rule, as this page learned. */
       [hidden] { display: none !important; }
+      html, body { height: 100%; }
       body {
         margin: 0;
-        background: var(--ground);
+        background: var(--bg);
         color: var(--text);
-        font: 15px/1.55 system-ui, -apple-system, "Segoe UI", sans-serif;
+        font: 13.5px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
       }
-      #studio {
-        max-width: 900px;
-        margin: 0 auto;
-        padding: 24px 20px 48px;
+      #studio { height: 100%; }
+      .app {
+        height: 100%;
         display: grid;
-        gap: 16px;
+        grid-template-rows: 48px 1fr 60px;
+        grid-template-columns: 200px 1fr 320px;
+        grid-template-areas:
+          "top top top"
+          "rail stage inspector"
+          "rail player inspector";
+        min-height: 0;
       }
-      h1 {
-        font-size: 18px;
-        font-weight: 600;
-        margin: 0;
-        letter-spacing: -0.01em;
+      /* ---- top bar ---- */
+      .top {
+        grid-area: top;
+        display: flex;
+        align-items: center;
+        gap: 14px;
+        padding: 0 14px;
+        border-bottom: 1px solid var(--line);
+        background: var(--rail);
       }
-      .stage {
-        /* These captures carry alpha; transparency is read against a checker in
-           every compositor, so the model's silhouette is legible at its edges. */
-        background-image:
-          linear-gradient(45deg, var(--check-b) 25%, transparent 25%),
-          linear-gradient(-45deg, var(--check-b) 25%, transparent 25%),
-          linear-gradient(45deg, transparent 75%, var(--check-b) 75%),
-          linear-gradient(-45deg, transparent 75%, var(--check-b) 75%);
-        background-size: 16px 16px;
-        background-position: 0 0, 0 8px, 8px -8px, -8px 0;
-        background-color: var(--check-a);
+      .name { font-weight: 600; font-size: 14px; letter-spacing: -0.01em; }
+      .status {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        font-size: 12px;
+        color: var(--muted);
+      }
+      .status::before {
+        content: "";
+        width: 7px; height: 7px;
+        border-radius: 50%;
+        background: var(--accent);
+      }
+      .grow { flex: 1; }
+      button {
+        font: inherit;
+        font-size: 12.5px;
+        color: var(--text);
+        background: transparent;
         border: 1px solid var(--line);
         border-radius: 6px;
+        padding: 5px 12px;
+        cursor: pointer;
+      }
+      button:hover { border-color: var(--accent); }
+      button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+      button:disabled { opacity: 0.45; cursor: default; }
+      .primary { border-color: var(--accent); }
+      /* ---- shelf ---- */
+      .rail {
+        grid-area: rail;
+        background: var(--rail);
+        border-right: 1px solid var(--line);
+        padding: 12px 8px;
+        overflow-y: auto;
+      }
+      .rail h2 {
+        font-size: 10.5px;
+        letter-spacing: 0.1em;
+        text-transform: uppercase;
+        color: var(--faint);
+        margin: 0 6px 8px;
+        font-weight: 600;
+      }
+      .section-head {
+        display: block;
+        width: 100%;
+        text-align: left;
+        border: 0;
+        background: transparent;
+        font-size: 11.5px;
+        color: var(--muted);
+        padding: 6px 6px 4px;
+      }
+      .section-head:hover { color: var(--text); border: 0; }
+      .model-row {
+        display: flex;
+        width: 100%;
+        text-align: left;
+        align-items: center;
+        gap: 8px;
+        padding: 6px 10px;
+        border-radius: 6px;
+        border: 1px solid transparent;
+        background: transparent;
+        color: var(--muted);
+      }
+      .model-row:hover { background: var(--panel); color: var(--text); }
+      .model-row.active { background: var(--panel); border-color: var(--line); color: var(--text); }
+      .railnote { font-size: 11px; color: var(--faint); margin: 12px 8px 0; line-height: 1.45; }
+      /* ---- stage ---- */
+      .stage {
+        grid-area: stage;
+        position: relative;
+        min-height: 0;
+        background: radial-gradient(1100px 480px at 50% 32%, #171c20 0%, #101416 72%);
         display: grid;
         place-items: center;
-        padding: 12px;
+        overflow: hidden;
       }
-      canvas {
-        display: block;
-        image-rendering: pixelated;
-        max-width: 100%;
+      .canvas-wrap { position: relative; }
+      canvas { display: block; max-width: 100%; cursor: grab; }
+      canvas:active { cursor: grabbing; }
+      .marks { position: absolute; inset: 0; pointer-events: none; }
+      .ring {
+        position: absolute;
+        width: 26px; height: 26px;
+        border: 2px solid var(--pin);
+        border-radius: 50%;
+        transform: translate(-50%, -50%);
+        box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.4);
       }
-      .columns {
-        display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
-        gap: 14px;
-        align-items: start;
+      .ring.active { border-style: dashed; }
+      .viewchip {
+        position: absolute;
+        top: 10px; left: 12px;
+        font-size: 11.5px;
+        color: var(--muted);
+        background: rgba(15, 18, 20, 0.72);
+        border: 1px solid var(--line-soft);
+        border-radius: 6px;
+        padding: 4px 10px;
+        pointer-events: none;
       }
-      .card {
-        display: grid;
-        gap: 10px;
+      .stagehint {
+        position: absolute;
+        bottom: 10px; left: 12px;
+        font-size: 11.5px;
+        color: var(--faint);
+        pointer-events: none;
+      }
+      .toggles { position: absolute; top: 10px; right: 12px; display: flex; gap: 6px; }
+      .toggle {
+        font-size: 11.5px;
+        padding: 4px 10px;
+        border-radius: 6px;
+        border: 1px solid var(--line-soft);
+        color: var(--muted);
+        background: rgba(15, 18, 20, 0.72);
+      }
+      .toggle.on { color: var(--accent); border-color: var(--accent); }
+      /* ---- player ---- */
+      .player {
+        grid-area: player;
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding: 0 14px;
+        border-top: 1px solid var(--line);
+        background: var(--rail);
+        min-width: 0;
+      }
+      .transport { display: flex; gap: 6px; }
+      .step { min-width: 38px; }
+      .play { min-width: 92px; }
+      .speed {
+        font: inherit;
+        font-size: 12.5px;
         background: var(--panel);
+        color: var(--text);
         border: 1px solid var(--line);
         border-radius: 6px;
-        padding: 14px;
+        padding: 5px 8px;
       }
-      .card h2 {
-        font-size: 11px;
-        text-transform: uppercase;
-        letter-spacing: 0.09em;
-        color: var(--muted);
-        margin: 0;
-        font-weight: 600;
+      .timeline-wrap { position: relative; flex: 1; min-width: 160px; }
+      .timeline { width: 100%; accent-color: var(--accent); margin: 0; }
+      .dots { position: absolute; left: 0; right: 0; top: -7px; height: 10px; pointer-events: none; }
+      .dot {
+        position: absolute;
+        width: 10px; height: 10px;
+        padding: 0;
+        border-radius: 50%;
+        border: 1px solid var(--bg);
+        background: var(--pin);
+        transform: translateX(-50%);
+        pointer-events: auto;
       }
-      .field { display: grid; gap: 4px; font-size: 12.5px; color: var(--muted); }
-      .field small { color: var(--muted); opacity: 0.75; font-size: 11.5px; line-height: 1.4; }
-      .layer-label {
+      .time-label {
         font-family: ui-monospace, "Cascadia Code", "SF Mono", Menlo, monospace;
         font-size: 11.5px;
         color: var(--muted);
         font-variant-numeric: tabular-nums;
+        white-space: nowrap;
+        /* Shrinks with the bar instead of pushing the page wider; the ellipsis
+           drops the pose words first, never the frame number. */
+        flex: 0 1 auto;
+        overflow: hidden;
+        text-overflow: ellipsis;
       }
-      .slider { width: 100%; accent-color: var(--accent); }
+      /* ---- inspector ---- */
+      .inspector {
+        grid-area: inspector;
+        border-left: 1px solid var(--line);
+        background: var(--rail);
+        display: grid;
+        grid-template-rows: auto 1fr;
+        min-height: 0;
+      }
+      .tabs { display: flex; border-bottom: 1px solid var(--line); }
+      .tab {
+        flex: 1;
+        text-align: center;
+        font-size: 12px;
+        color: var(--faint);
+        padding: 10px 0 9px;
+        border: 0;
+        border-bottom: 2px solid transparent;
+        border-radius: 0;
+        background: transparent;
+      }
+      .tab:hover { color: var(--text); border-bottom-color: var(--line); }
+      .tab.active { color: var(--text); border-bottom-color: var(--accent); }
+      .pane {
+        padding: 14px;
+        overflow-y: auto;
+        display: grid;
+        gap: 12px;
+        align-content: start;
+        min-height: 0;
+      }
+      .motion { margin: 0; font-size: 13px; line-height: 1.55; }
+      .factline {
+        margin: 0;
+        font-family: ui-monospace, "Cascadia Code", "SF Mono", Menlo, monospace;
+        font-size: 11.5px;
+        color: var(--muted);
+      }
+      .verdict { margin: 0; font-size: 12.5px; color: var(--muted); }
+      .verdict[data-tone="ok"] { color: var(--accent); }
+      .verdict[data-tone="bad"] { color: var(--bad); }
+      .row { display: flex; gap: 8px; flex-wrap: wrap; }
+      .field { display: grid; gap: 4px; font-size: 12.5px; color: var(--muted); }
+      .field small { color: var(--muted); opacity: 0.75; font-size: 11.5px; line-height: 1.4; }
+      .slider { width: 100%; accent-color: var(--accent); margin: 0; }
+      .grouphead {
+        font-size: 10.5px;
+        letter-spacing: 0.1em;
+        text-transform: uppercase;
+        color: var(--faint);
+        font-weight: 600;
+        margin: 4px 0 0;
+      }
+      .hint { margin: 0; font-size: 12px; color: var(--faint); line-height: 1.5; }
+      .layer-label {
+        font-family: ui-monospace, "Cascadia Code", "SF Mono", Menlo, monospace;
+        font-size: 11px;
+        color: var(--muted);
+        font-variant-numeric: tabular-nums;
+      }
       .swatches { display: flex; flex-wrap: wrap; gap: 5px; }
       .swatch {
-        width: 26px;
-        height: 26px;
-        border-radius: 4px;
+        width: 26px; height: 26px;
+        border-radius: 5px;
         border: 1px solid var(--line);
-        cursor: pointer;
         color: var(--muted);
         font-size: 12px;
         padding: 0;
       }
       .swatch[aria-pressed="true"] { outline: 2px solid var(--accent); outline-offset: 1px; }
-      .swatch.add { background: var(--ground); color: var(--text); }
+      .swatch.add { background: var(--sunk); color: var(--text); }
       .stack { display: grid; gap: 3px; }
       .floor {
         display: grid;
@@ -115,11 +302,10 @@
         background: transparent;
         border: 1px solid transparent;
         border-radius: 4px;
-        cursor: pointer;
         text-align: left;
       }
       .floor:hover { border-color: var(--line); }
-      .floor[aria-current="true"] { border-color: var(--accent); background: var(--sunk, #101315); }
+      .floor[aria-current="true"] { border-color: var(--accent); background: var(--sunk); }
       .floor span {
         font-family: ui-monospace, "Cascadia Code", "SF Mono", Menlo, monospace;
         font-size: 10px;
@@ -127,60 +313,17 @@
         font-variant-numeric: tabular-nums;
       }
       .mini { display: grid; gap: 1px; }
-      .mini i { aspect-ratio: 1; border-radius: 1px; outline: 1px solid rgba(255,255,255,0.04); }
+      .mini i { aspect-ratio: 1; border-radius: 1px; outline: 1px solid rgba(255, 255, 255, 0.04); }
       .grid { display: grid; gap: 2px; }
       .cell {
         aspect-ratio: 1;
         border: 1px solid var(--line);
         border-radius: 2px;
         padding: 0;
-        cursor: pointer;
         min-width: 0;
       }
       .cell:hover { border-color: var(--accent); }
-      .primary { border-color: var(--accent); }
-      .playerbar {
-        display: flex;
-        align-items: center;
-        gap: 10px;
-        flex-wrap: wrap;
-      }
-      .play { min-width: 96px; }
-      .step { min-width: 40px; }
-      .speed { font: inherit; background: var(--panel); color: var(--text);
-        border: 1px solid var(--line); border-radius: 5px; padding: 5px 8px; }
-      .timeline-wrap { position: relative; flex: 1; min-width: 220px; }
-      .timeline { width: 100%; accent-color: var(--accent); }
-      .dots { position: absolute; left: 0; right: 0; top: -7px; height: 10px; }
-      .dot {
-        position: absolute;
-        width: 10px; height: 10px;
-        padding: 0;
-        border-radius: 50%;
-        border: 1px solid var(--ground);
-        background: #e2b93b;
-        transform: translateX(-50%);
-        cursor: pointer;
-      }
-      .time-label {
-        display: block;
-        font-family: ui-monospace, "Cascadia Code", "SF Mono", Menlo, monospace;
-        font-size: 12px;
-        color: var(--muted);
-        font-variant-numeric: tabular-nums;
-      }
-      .motion { margin: 0; color: var(--text); font-size: 13.5px; line-height: 1.5; }
-      .canvas-wrap { position: relative; display: inline-block; }
-      .marks { position: absolute; inset: 0; pointer-events: none; }
-      .ring {
-        position: absolute;
-        width: 26px; height: 26px;
-        border: 2px solid #e2b93b;
-        border-radius: 50%;
-        transform: translate(-50%, -50%);
-        box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.4);
-      }
-      .ring.active { border-style: dashed; }
+      .cell.flash { outline: 3px solid var(--pin); outline-offset: 1px; }
       .notes { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
       .note-row {
         display: grid;
@@ -191,109 +334,58 @@
       }
       .note-where {
         font-family: ui-monospace, "Cascadia Code", "SF Mono", Menlo, monospace;
-        font-size: 11px;
+        font-size: 10.5px;
         padding: 3px 7px;
+        color: var(--pin);
       }
       .note-text { color: var(--text); }
       .note-remove { padding: 2px 8px; color: var(--muted); }
       .note-editor { display: flex; gap: 6px; }
-      .note-input { flex: 1; font: inherit; font-size: 12.5px; background: var(--sunk, #101315);
-        color: var(--text); border: 1px solid var(--accent); border-radius: 5px; padding: 6px 8px; }
-      .request {
-        width: 100%;
-        box-sizing: border-box;
+      .note-input {
+        flex: 1;
         font: inherit;
         font-size: 12.5px;
-        background: var(--sunk, #101315);
+        background: var(--sunk);
         color: var(--text);
-        border: 1px solid var(--line);
-        border-radius: 5px;
-        padding: 8px;
-        resize: vertical;
+        border: 1px solid var(--accent);
+        border-radius: 6px;
+        padding: 6px 8px;
       }
-      .armed { border-color: #e2b93b; color: #e2b93b; }
-      .edit summary {
-        cursor: pointer;
-        font-size: 11px;
-        text-transform: uppercase;
-        letter-spacing: 0.09em;
-        color: var(--muted);
-        font-weight: 600;
-      }
-      .edit-body { display: grid; gap: 10px; margin-top: 10px; }
-      .motion-fields { display: grid; gap: 8px; }
-      .cell.flash { outline: 3px solid #e2b93b; outline-offset: 1px; }
-      .row { display: flex; gap: 6px; flex-wrap: wrap; }
-      .model {
+      .armed { border-color: var(--pin); color: var(--pin); }
+      .request, .model {
         width: 100%;
-        box-sizing: border-box;
-        font-family: ui-monospace, "Cascadia Code", "SF Mono", Menlo, monospace;
-        font-size: 11.5px;
-        background: var(--sunk, #101315);
+        font: inherit;
+        font-size: 12px;
+        background: var(--sunk);
         color: var(--text);
         border: 1px solid var(--line);
-        border-radius: 5px;
+        border-radius: 6px;
         padding: 8px;
         resize: vertical;
+      }
+      .model {
+        font-family: ui-monospace, "Cascadia Code", "SF Mono", Menlo, monospace;
+        font-size: 11px;
       }
       .sheet {
         width: 100%;
         border: 1px solid var(--line);
         border-radius: 6px;
-        background: var(--sunk, #101315);
+        background: var(--sunk);
         image-rendering: pixelated;
       }
-      button {
-        font: inherit;
-        font-size: 13px;
-        padding: 6px 12px;
-        border-radius: 5px;
+      input[type="color"] {
+        width: 100%;
+        height: 26px;
+        padding: 0;
         border: 1px solid var(--line);
-        background: var(--panel);
-        color: var(--text);
-        cursor: pointer;
-      }
-      button:hover { border-color: var(--accent); }
-      button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-      .scrub { flex: 1; min-width: 160px; accent-color: var(--accent); }
-      .readout {
-        margin: 0;
-        font-family: ui-monospace, "Cascadia Code", "SF Mono", Menlo, monospace;
-        font-size: 12.5px;
-        font-variant-numeric: tabular-nums;
-        color: var(--muted);
-        white-space: pre;
-        overflow-x: auto;
-      }
-      .verdict {
-        margin: 0;
-        font-size: 13px;
-        border-left: 2px solid var(--line);
-        padding-left: 12px;
-        color: var(--muted);
-      }
-      .verdict[data-tone="ok"] { border-left-color: var(--accent); color: var(--text); }
-      .verdict[data-tone="bad"] { border-left-color: var(--bad); color: var(--text); }
-      .hint {
-        margin: 0;
-        font-size: 12.5px;
-        color: var(--muted);
-      }
-      code {
-        font-family: ui-monospace, "Cascadia Code", "SF Mono", Menlo, monospace;
-        color: var(--text);
+        border-radius: 5px;
+        background: var(--sunk);
       }
     </style>
   </head>
   <body>
-    <div id="studio">
-      <h1>voxel model studio</h1>
-      <p class="hint">
-        Every control here calls <code>window.voxelStudio</code> &mdash; the same
-        API the agent drives headlessly. Nothing this page can do is invisible to
-        it.
-      </p>
-    </div>
+    <div id="studio"></div>
     <script type="module" src="./main.ts"></script>
   </body>
 </html>

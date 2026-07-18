@@ -1,3 +1,5 @@
+import type { OrthographicCamera } from 'three';
+
 import { ThreeRenderRuntime } from '../../src/three/index.js';
 
 import { buildSnapshot, filledVoxelCount } from './build.js';
@@ -42,6 +44,12 @@ export interface StudioSessionOptionsV1 {
    * nothing.
    */
   readonly zoom?: number;
+  /**
+   * A studio-owned camera. When given, the studio positions it — that is what
+   * lets a person drag to view the model from any angle — and the engine
+   * simply draws with it, exactly as a game embedding the engine would.
+   */
+  readonly camera?: OrthographicCamera;
 }
 
 const DEFAULT_WIDTH = 320;
@@ -54,6 +62,7 @@ export class StudioSession {
   #revision = 0;
   #frameIndex = 0;
   #disposed = false;
+  #edges = true;
 
   constructor(model: StudioModelV1, options: StudioSessionOptionsV1) {
     this.#model = model;
@@ -66,6 +75,7 @@ export class StudioSession {
       // and the camera looks there.
       center: { x: 0, y: 0, z: 0 },
       zoom: options.zoom ?? DEFAULT_ZOOM,
+      ...(options.camera ? { camera: options.camera } : {}),
     });
     this.#accept(model);
   }
@@ -151,6 +161,18 @@ export class StudioSession {
     };
   }
 
+  /** Study edges on (examining look) or off (the game look). Redraws. */
+  setEdges(on: boolean): void {
+    this.#assertLive();
+    if (this.#edges === on) return;
+    this.#edges = on;
+    this.#accept(this.#model);
+  }
+
+  get edges(): boolean {
+    return this.#edges;
+  }
+
   /** What the studio knows about the model without drawing it. */
   describe(): {
     readonly id: string;
@@ -187,6 +209,7 @@ export class StudioSession {
     const result = this.#runtime.acceptSnapshot(buildSnapshot(model, {
       revision: this.#revision,
       epoch: `epoch:${model.id}`,
+      edges: this.#edges,
     }));
     if (result.status !== 'accepted') {
       // The engine refused a model the editors produced. That is an invariant

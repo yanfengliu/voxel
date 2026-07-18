@@ -1,7 +1,6 @@
 import {
   addPaletteColor,
   clearVoxel,
-  createEmptyModel,
   setMotion,
   setPaletteColor,
   setVoxel,
@@ -11,6 +10,8 @@ import { validateModelV1, type ModelMotionV1, type StudioModelV1 } from './model
 import type { NoteStore, StudioNoteV1 } from './notes.js';
 import type { StudioPlayer } from './player.js';
 import { buildRequest, sendRequest, type SendResult } from './requests.js';
+import type { StudioCatalogV1 } from './catalog.js';
+import type { OrbitStateV1 } from './orbit.js';
 import { composeSpriteSheet, type SpriteSheetPlanV1 } from './sheet.js';
 import { nearestFrame, stepFrame, type FrameStepV1 } from './sweep.js';
 import type { StudioSession, StudioSweepResultV1 } from './session.js';
@@ -118,6 +119,18 @@ export interface VoxelStudioHarnessV1 {
    */
   sendRequest(words: string): Promise<SendResult>;
 
+  /** Where you stand: turn and height in degrees, and how much fits on screen. */
+  viewState(): OrbitStateV1 & { readonly described: string };
+  /** Moves the viewpoint; the model itself never moves. Returns where you are. */
+  setViewAngles(view: Partial<OrbitStateV1>): OrbitStateV1 & { readonly described: string };
+  /** Study edges on (the examining look) or off (the game look). */
+  setEdges(on: boolean): boolean;
+  edges(): boolean;
+  /** The shelf: this studio's sections of models. */
+  shelf(): readonly { readonly name: string; readonly models: readonly { readonly id: string; readonly label: string }[] }[];
+  /** Opens a model from the shelf by its id. */
+  openFromShelf(id: string): ReturnType<StudioSession['describe']>;
+
   validate(value: unknown): readonly { readonly path: string; readonly message: string }[];
 }
 
@@ -159,6 +172,10 @@ export interface HarnessHostV1 {
   drawAt(timeMs: number): void;
   /** Tells the UI the notes changed, so lists and timeline dots catch up. */
   notesChanged(): void;
+  /** The stage viewpoint, owned by the page; setting it redraws. */
+  orbit(): OrbitStateV1 & { readonly described: string };
+  setOrbit(view: Partial<OrbitStateV1>): OrbitStateV1 & { readonly described: string };
+  catalog(): StudioCatalogV1;
 }
 
 export function createStudioHarness(host: HarnessHostV1): VoxelStudioHarnessV1 {
@@ -284,6 +301,30 @@ export function createStudioHarness(host: HarnessHostV1): VoxelStudioHarnessV1 {
     sendRequest: (words) =>
       sendRequest(buildRequest(words, host.noteStore().list(), host.session().model)),
 
+    viewState: () => host.orbit(),
+    setViewAngles: (view) => host.setOrbit(view),
+    setEdges(on) {
+      host.session().setEdges(on);
+      host.drawAt(host.player().timeAt(host.now()));
+      return host.session().edges;
+    },
+    edges: () => host.session().edges,
+    shelf: () => host.catalog().sections.map((section) => ({
+      name: section.name,
+      models: section.models.map((entry) => ({ id: entry.id, label: entry.label })),
+    })),
+    openFromShelf(id) {
+      for (const section of host.catalog().sections) {
+        for (const entry of section.models) {
+          if (entry.id === id) {
+            host.replace(entry.load());
+            return host.session().describe();
+          }
+        }
+      }
+      throw new Error(`No model on the shelf is called ${id}.`);
+    },
+
     validate: (value) => validateModelV1(value),
   };
 
@@ -298,27 +339,4 @@ export function createStudioHarness(host: HarnessHostV1): VoxelStudioHarnessV1 {
   }
 }
 
-/** A small model that is obviously a model, so the studio never opens on noise. */
-export function createStarterModel(): StudioModelV1 {
-  let model = createEmptyModel({ id: 'studio:starter', label: 'Starter', size: [6, 6, 6] });
-  const body = addPaletteColor(model, { r: 90, g: 200, b: 120 });
-  model = body.model;
-  const accent = addPaletteColor(model, { r: 230, g: 190, b: 90 });
-  model = accent.model;
-
-  for (let x = 1; x < 5; x += 1) {
-    for (let z = 1; z < 5; z += 1) {
-      for (let y = 0; y < 3; y += 1) model = setVoxel(model, x, y, z, body.paletteIndex);
-    }
-  }
-  for (let x = 2; x < 4; x += 1) {
-    for (let z = 2; z < 4; z += 1) {
-      model = setVoxel(model, x, 3, z, accent.paletteIndex);
-    }
-  }
-  return setMotion(model, {
-    periodMs: 1_000,
-    translation: [0, 0.6, 0],
-    rotationRadians: [0, Math.PI / 6, 0],
-  });
-}
+export { createStarterModel } from './catalog.js';

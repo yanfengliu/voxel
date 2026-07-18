@@ -1,16 +1,27 @@
-import { createStarterModel, createStudioHarness, type VoxelStudioHarnessV1 } from './harness.js';
+import { OrthographicCamera } from 'three';
+
+import { createStudioCatalog, createStarterModel } from './catalog.js';
+import { describeMotion, describePoseAt } from './describe.js';
+import { createStudioHarness, type VoxelStudioHarnessV1 } from './harness.js';
 import type { StudioModelV1 } from './model.js';
 import { voxelIndex } from './model.js';
-import { describeMotion, describePoseAt } from './describe.js';
 import { NoteStore, type StudioNoteV1 } from './notes.js';
+import {
+  applyOrbit,
+  clampOrbit,
+  DEFAULT_ORBIT,
+  describeOrbit,
+  dragOrbit,
+  zoomOrbit,
+  type OrbitStateV1,
+} from './orbit.js';
 import { StudioPlayer } from './player.js';
 import { StudioSession } from './session.js';
 
 /**
- * The studio, player first. Its resting state is watching: a big picture with
- * play, pause, speed, and a timeline under it. Notes pin the owner's words to
- * a moment or a place; a request bundles words, notes, and the model into a
- * file an agent picks up. Editing lives in a panel that opens when wanted.
+ * The studio as an app: shelf on the left, the stage in the middle, one
+ * inspector on the right, the player docked underneath. Its resting state is
+ * watching; drag the picture to walk around the model.
  *
  * Every control calls the harness rather than reaching into the session, so
  * anything a person can do here, the agent can do and check. A control with no
@@ -24,9 +35,10 @@ declare global {
   }
 }
 
-const VIEW_WIDTH = 560;
-const VIEW_HEIGHT = 400;
+const VIEW_WIDTH = 640;
+const VIEW_HEIGHT = 440;
 const SWEEP_SAMPLES = 24;
+const DRAG_THRESHOLD_PIXELS = 4;
 
 function element<K extends keyof HTMLElementTagNameMap>(
   tag: K,
@@ -71,36 +83,60 @@ function mount(): void {
   const root = document.getElementById('studio');
   if (!root) throw new Error('The studio needs a #studio host element.');
 
-  // ---- the picture ----
+  // ---- stage ----
   const canvas = element('canvas');
   canvas.width = VIEW_WIDTH;
   canvas.height = VIEW_HEIGHT;
   const marks = element('div', 'marks');
   const canvasWrap = element('div', 'canvas-wrap');
   canvasWrap.append(canvas, marks);
+  const viewChip = element('span', 'viewchip');
+  const stageHint = element('span', 'stagehint');
+  stageHint.textContent =
+    'drag to turn · scroll to zoom · double-click to re-centre · click to pin a note';
+  const edgesToggle = element('button', 'toggle on');
+  edgesToggle.textContent = 'study edges';
+  const gameToggle = element('button', 'toggle');
+  gameToggle.textContent = 'game look';
+  const toggles = element('div', 'toggles');
+  toggles.append(edgesToggle, gameToggle);
   const stage = element('div', 'stage');
-  stage.appendChild(canvasWrap);
+  stage.append(canvasWrap, viewChip, toggles, stageHint);
+
+  const camera = new OrthographicCamera();
+  let orbit: OrbitStateV1 = DEFAULT_ORBIT;
+  applyOrbit(camera, orbit, VIEW_WIDTH, VIEW_HEIGHT);
 
   let session = new StudioSession(createStarterModel(), {
-    canvas,
-    width: VIEW_WIDTH,
-    height: VIEW_HEIGHT,
-    zoom: 1,
+    canvas, width: VIEW_WIDTH, height: VIEW_HEIGHT, camera,
   });
   const player = new StudioPlayer(session.model.motion.periodMs);
   const noteStore = new NoteStore();
+  const catalog = createStudioCatalog();
   let selectedSlot = 1;
   let layer = 0;
   let pending: PendingAnchor | null = null;
   let armedForPlace = false;
   let lastShownMs = 0;
 
+  // ---- top bar ----
+  const modelName = element('span', 'name');
+  const statusChip = element('span', 'status');
+  const openButton = element('button');
+  openButton.textContent = 'Open…';
+  const newButton = element('button');
+  newButton.textContent = 'New';
+  const copyButton = element('button');
+  copyButton.textContent = 'Copy';
+  const requestShortcut = element('button', 'primary');
+  requestShortcut.textContent = 'Send request';
+
   // ---- player bar ----
-  const playButton = element('button', 'primary play');
-  playButton.textContent = '▶ Play';
   const stepBack = element('button', 'step');
   stepBack.textContent = '◀';
   stepBack.title = 'One frame back (left arrow)';
+  const playButton = element('button', 'primary play');
+  playButton.textContent = '▶ Play';
   const stepForward = element('button', 'step');
   stepForward.textContent = '▶';
   stepForward.title = 'One frame forward (right arrow)';
@@ -122,22 +158,21 @@ function mount(): void {
   timelineWrap.append(timeline, dots);
   const timeLabel = element('span', 'time-label');
 
+  // ---- inspector: examine ----
   const motionText = element('p', 'motion');
-  const modelLine = element('p', 'hint');
+  const modelLine = element('p', 'factline');
   const engineWarning = element('p', 'verdict');
   engineWarning.hidden = true;
-
   const sweepButton = element('button');
   sweepButton.textContent = 'Check the movement';
   const sheetButton = element('button');
   sheetButton.textContent = 'All frames';
   const verdict = element('p', 'verdict');
-
   const sheetImage = element('img', 'sheet');
   sheetImage.alt = 'Every frame of the movement, in time order';
   sheetImage.hidden = true;
 
-  // ---- notes and requests ----
+  // ---- inspector: notes ----
   const notesList = element('ul', 'notes');
   const noteInput = element('input', 'note-input');
   noteInput.type = 'text';
@@ -160,7 +195,7 @@ function mount(): void {
   sendButton.textContent = 'Send request';
   const requestStatus = element('p', 'verdict');
 
-  // ---- editing panel (existing editors, out of the way while judging) ----
+  // ---- inspector: edit ----
   const swatches = element('div', 'swatches');
   const colorInput = element('input');
   colorInput.type = 'color';
@@ -168,17 +203,18 @@ function mount(): void {
   const layerLabel = element('span', 'layer-label');
   const grid = element('div', 'grid');
   const stackHint = element('p', 'hint');
-  stackHint.textContent = 'Your model is a stack of floors, shown top to bottom. Pick one to edit below.';
+  stackHint.textContent = 'Your model is a stack of floors, tallest first. Pick one to edit below.';
+  const modelText = element('textarea', 'model');
+  modelText.rows = 5;
+  modelText.spellcheck = false;
+  const modelStatus = element('p', 'verdict');
+  const sizeInput = element('input', 'slider');
+  sizeInput.type = 'range';
+  sizeInput.min = '2';
+  sizeInput.max = '24';
+  sizeInput.value = '8';
 
-  const periodInput = element('input', 'slider');
-  periodInput.type = 'range';
-  periodInput.min = '0';
-  periodInput.max = '4000';
-  periodInput.step = '50';
-  const phaseInput = element('input', 'slider');
-  phaseInput.type = 'range';
-  phaseInput.min = '-180';
-  phaseInput.max = '180';
+  // ---- inspector: motion ----
   const styleSelect = element('select', 'speed');
   for (const [value, label] of [
     ['swing', 'Swings back and forth'],
@@ -189,20 +225,26 @@ function mount(): void {
     option.textContent = label;
     styleSelect.appendChild(option);
   }
-  styleSelect.addEventListener('change', () => {
-    harness.animate({ rotationStyle: styleSelect.value === 'turn' ? 'turn' : 'swing' });
-  });
+  const periodInput = element('input', 'slider');
+  periodInput.type = 'range';
+  periodInput.min = '0';
+  periodInput.max = '4000';
+  periodInput.step = '50';
+  const phaseInput = element('input', 'slider');
+  phaseInput.type = 'range';
+  phaseInput.min = '-180';
+  phaseInput.max = '180';
 
   const AMPLITUDES = [
-    { kind: 'rotationRadians', axis: 0, label: 'Pitch', unit: '°', max: 180, scale: Math.PI / 180 },
-    { kind: 'rotationRadians', axis: 1, label: 'Rock', unit: '°', max: 180, scale: Math.PI / 180 },
-    { kind: 'rotationRadians', axis: 2, label: 'Roll', unit: '°', max: 180, scale: Math.PI / 180 },
-    { kind: 'translation', axis: 0, label: 'Slide x', unit: 'levels', max: 40, scale: 0.1 },
-    { kind: 'translation', axis: 1, label: 'Bob', unit: 'levels', max: 40, scale: 0.1 },
-    { kind: 'translation', axis: 2, label: 'Slide z', unit: 'levels', max: 40, scale: 0.1 },
-    { kind: 'scale', axis: 0, label: 'Stretch x', unit: '%', max: 100, scale: 0.01 },
-    { kind: 'scale', axis: 1, label: 'Stretch y', unit: '%', max: 100, scale: 0.01 },
-    { kind: 'scale', axis: 2, label: 'Stretch z', unit: '%', max: 100, scale: 0.01 },
+    { kind: 'rotationRadians', axis: 0, group: 'Turn', label: 'Pitch', unit: '°', max: 180, scale: Math.PI / 180 },
+    { kind: 'rotationRadians', axis: 1, group: 'Turn', label: 'Rock', unit: '°', max: 180, scale: Math.PI / 180 },
+    { kind: 'rotationRadians', axis: 2, group: 'Turn', label: 'Roll', unit: '°', max: 180, scale: Math.PI / 180 },
+    { kind: 'translation', axis: 0, group: 'Slide', label: 'Sideways', unit: 'levels', max: 40, scale: 0.1 },
+    { kind: 'translation', axis: 1, group: 'Slide', label: 'Up and down', unit: 'levels', max: 40, scale: 0.1 },
+    { kind: 'translation', axis: 2, group: 'Slide', label: 'In and out', unit: 'levels', max: 40, scale: 0.1 },
+    { kind: 'scale', axis: 0, group: 'Stretch', label: 'Width', unit: '%', max: 100, scale: 0.01 },
+    { kind: 'scale', axis: 1, group: 'Stretch', label: 'Height', unit: '%', max: 100, scale: 0.01 },
+    { kind: 'scale', axis: 2, group: 'Stretch', label: 'Depth', unit: '%', max: 100, scale: 0.01 },
   ] as const;
 
   const amplitudeInputs = AMPLITUDES.map((spec) => {
@@ -219,23 +261,13 @@ function mount(): void {
     return { spec, input };
   });
 
-  const modelText = element('textarea', 'model');
-  modelText.rows = 6;
-  modelText.spellcheck = false;
-  const modelStatus = element('p', 'verdict');
-  const sizeInput = element('input', 'slider');
-  sizeInput.type = 'range';
-  sizeInput.min = '2';
-  sizeInput.max = '24';
-  sizeInput.value = '8';
-
   // ---- the harness: the one surface both the buttons and the agent use ----
   const harness = createStudioHarness({
     session: () => session,
     replace(model: StudioModelV1) {
       session.dispose();
       session = new StudioSession(model, {
-        canvas, width: VIEW_WIDTH, height: VIEW_HEIGHT, zoom: 1,
+        canvas, width: VIEW_WIDTH, height: VIEW_HEIGHT, camera,
       });
       refresh();
     },
@@ -251,6 +283,15 @@ function mount(): void {
       renderNotes();
       renderDots();
     },
+    orbit: () => ({ ...orbit, described: describeOrbit(orbit) }),
+    setOrbit(view) {
+      orbit = clampOrbit({ ...orbit, ...view });
+      applyOrbit(camera, orbit, VIEW_WIDTH, VIEW_HEIGHT);
+      viewChip.textContent = describeOrbit(orbit);
+      drawFrame(lastShownMs);
+      return { ...orbit, described: describeOrbit(orbit) };
+    },
+    catalog: () => catalog,
   });
   window.voxelStudio = harness;
 
@@ -260,13 +301,13 @@ function mount(): void {
     session.showAt(timeMs);
     const period = player.periodMs;
     if (period > 0) {
-      const at = harness.frameAt();
+      const frame = harness.frameAt();
       timeLabel.textContent =
-        `frame ${String(at.frame)} of ${String(at.frameCount)} · `
+        `frame ${String(frame.frame)} / ${String(frame.frameCount)} · `
         + `${String(Math.round(timeMs))} ms of ${String(period)} · `
         + describePoseAt(harness.model().motion, timeMs);
     } else {
-      timeLabel.textContent = 'still';
+      timeLabel.textContent = 'still · one frame';
     }
     if (document.activeElement !== timeline) timeline.value = String(Math.round(timeMs));
     positionRings();
@@ -276,7 +317,6 @@ function mount(): void {
     playButton.textContent = player.playing ? '⏸ Pause' : '▶ Play';
   }
 
-  /** Rings on the picture: the pending anchor, plus saved notes near this moment. */
   function positionRings(): void {
     marks.replaceChildren();
     const nearMs = 40;
@@ -285,9 +325,7 @@ function mount(): void {
       if (Math.abs(note.timeMs - lastShownMs) > nearMs) continue;
       marks.appendChild(ringAt(note.spot.u, note.spot.v, false));
     }
-    if (pending?.kind === 'moment') {
-      marks.appendChild(ringAt(pending.u, pending.v, true));
-    }
+    if (pending?.kind === 'moment') marks.appendChild(ringAt(pending.u, pending.v, true));
   }
 
   function ringAt(u: number, v: number, active: boolean): HTMLElement {
@@ -345,7 +383,7 @@ function mount(): void {
       harness.seek(note.timeMs);
       return;
     }
-    editPanel.open = true;
+    showTab('edit');
     if (layer !== note.voxel.y) {
       layer = note.voxel.y;
       buildStack();
@@ -363,6 +401,7 @@ function mount(): void {
   }
 
   function openNoteEditor(hint: string): void {
+    showTab('notes');
     noteEditor.hidden = false;
     noteHint.hidden = true;
     noteInput.placeholder = hint;
@@ -379,7 +418,7 @@ function mount(): void {
     renderNotes();
   }
 
-  // ---- swatches, floors, grid (the editors, unchanged in spirit) ----
+  // ---- editors ----
   function buildSwatches(): void {
     const model = harness.model();
     swatches.replaceChildren();
@@ -484,7 +523,39 @@ function mount(): void {
     }
   }
 
-  // ---- refresh: one place where the page catches up with the model ----
+  // ---- the shelf ----
+  const shelf = element('div', 'rail-body');
+  const folded = new Set<string>();
+  function buildShelf(): void {
+    shelf.replaceChildren();
+    const currentId = harness.model().id;
+    for (const section of harness.shelf()) {
+      const head = element('button', 'section-head');
+      head.textContent = `${folded.has(section.name) ? '▸' : '▾'} ${section.name}`;
+      head.addEventListener('click', () => {
+        if (folded.has(section.name)) folded.delete(section.name);
+        else folded.add(section.name);
+        buildShelf();
+      });
+      shelf.appendChild(head);
+      if (folded.has(section.name)) continue;
+      for (const entry of section.models) {
+        const row = element('button', 'model-row');
+        row.classList.toggle('active', entry.id === currentId);
+        const label = element('span');
+        label.textContent = entry.label;
+        row.appendChild(label);
+        row.addEventListener('click', () => { harness.openFromShelf(entry.id); });
+        shelf.appendChild(row);
+      }
+    }
+    const note = element('p', 'railnote');
+    note.textContent =
+      'One studio per game, each with its own shelf. This one belongs to the engine.';
+    shelf.appendChild(note);
+  }
+
+  // ---- refresh ----
   function refresh(): void {
     const model = harness.model();
     const described = harness.describe();
@@ -492,12 +563,18 @@ function mount(): void {
     syncPlayButton();
     const period = player.periodMs;
     playButton.disabled = period <= 0;
+    stepBack.disabled = period <= 0;
+    stepForward.disabled = period <= 0;
     timeline.disabled = period <= 0;
     timeline.max = String(Math.max(period - 1, 0));
+    modelName.textContent = described.label;
+    statusChip.textContent = described.state === 'running'
+      ? 'drawing normally'
+      : `engine reports "${described.state}"`;
     motionText.textContent = describeMotion(model.motion);
     modelLine.textContent =
-      `${described.label} · ${described.size.join('×')} · `
-      + `${String(described.filledVoxels)} cubes · ${String(described.paletteEntries - 1)} colours`;
+      `${described.size.join('×')} · ${String(described.filledVoxels)} cubes · `
+      + `${String(described.paletteEntries - 1)} colours`;
     engineWarning.hidden = described.state === 'running';
     engineWarning.dataset.tone = 'bad';
     engineWarning.textContent = `Something is wrong underneath: the engine reports "${described.state}".`;
@@ -505,46 +582,68 @@ function mount(): void {
       colorInput.value = rgbHex(model.palette[selectedSlot] ?? { r: 0, g: 0, b: 0 });
     }
     if (layer > model.size[1] - 1) layer = 0;
-    periodInput.value = String(model.motion.periodMs);
     styleSelect.value = model.motion.rotationStyle === 'turn' ? 'turn' : 'swing';
+    periodInput.value = String(model.motion.periodMs);
     phaseInput.value = String(Math.round((model.motion.phaseRadians * 180) / Math.PI));
     for (const { spec, input } of amplitudeInputs) {
       input.value = String(Math.round(model.motion[spec.kind][spec.axis] / spec.scale));
     }
+    edgesToggle.classList.toggle('on', session.edges);
+    gameToggle.classList.toggle('on', !session.edges);
+    viewChip.textContent = describeOrbit(orbit);
     buildSwatches();
     buildStack();
     updateLayerLabel();
     buildGrid();
+    buildShelf();
     renderDots();
-    // The old sheet describes the model before this change.
     sheetImage.hidden = true;
     verdict.dataset.tone = 'idle';
     verdict.textContent = '';
     drawFrame(Math.min(lastShownMs, Math.max(period - 1, 0)));
   }
 
-  // ---- wiring ----
+  // ---- wiring: player ----
   playButton.addEventListener('click', () => {
     if (player.playing) harness.pause(); else harness.play();
     syncPlayButton();
   });
-  stepBack.addEventListener('click', () => {
-    harness.step(-1);
-    syncPlayButton();
-  });
-  stepForward.addEventListener('click', () => {
-    harness.step(1);
-    syncPlayButton();
-  });
-  speedSelect.addEventListener('change', () => {
-    harness.setSpeed(Number(speedSelect.value));
-  });
-  timeline.addEventListener('input', () => {
-    harness.seek(Number(timeline.value));
-  });
+  stepBack.addEventListener('click', () => { harness.step(-1); syncPlayButton(); });
+  stepForward.addEventListener('click', () => { harness.step(1); syncPlayButton(); });
+  speedSelect.addEventListener('change', () => { harness.setSpeed(Number(speedSelect.value)); });
+  timeline.addEventListener('input', () => { harness.seek(Number(timeline.value)); });
 
-  canvas.addEventListener('click', (event) => {
-    // Clicking the picture is pointing at something seen; freeze that moment.
+  // ---- wiring: stage (orbit vs pin) ----
+  let dragging = false;
+  let moved = false;
+  let lastX = 0;
+  let lastY = 0;
+  canvas.addEventListener('pointerdown', (event) => {
+    dragging = true;
+    moved = false;
+    lastX = event.clientX;
+    lastY = event.clientY;
+    canvas.setPointerCapture(event.pointerId);
+  });
+  canvas.addEventListener('pointermove', (event) => {
+    if (!dragging) return;
+    const dx = event.clientX - lastX;
+    const dy = event.clientY - lastY;
+    if (!moved && Math.hypot(event.clientX - lastX, event.clientY - lastY) < DRAG_THRESHOLD_PIXELS) {
+      return;
+    }
+    moved = true;
+    lastX = event.clientX;
+    lastY = event.clientY;
+    harness.setViewAngles(dragOrbit(orbit, dx, dy));
+  });
+  canvas.addEventListener('pointerup', (event) => {
+    canvas.releasePointerCapture(event.pointerId);
+    const wasDrag = moved;
+    dragging = false;
+    moved = false;
+    if (wasDrag) return;
+    // A clean click is pointing at something seen; freeze that moment.
     if (player.playing) {
       harness.pause();
       syncPlayButton();
@@ -556,19 +655,27 @@ function mount(): void {
     positionRings();
     openNoteEditor(`Pinned at ${String(Math.round(player.timeAt(performance.now())))} ms — say what you see…`);
   });
+  canvas.addEventListener('wheel', (event) => {
+    event.preventDefault();
+    harness.setViewAngles(zoomOrbit(orbit, Math.sign(event.deltaY)));
+  }, { passive: false });
+  canvas.addEventListener('dblclick', () => { harness.setViewAngles(DEFAULT_ORBIT); });
 
+  edgesToggle.addEventListener('click', () => { harness.setEdges(true); refresh(); });
+  gameToggle.addEventListener('click', () => { harness.setEdges(false); refresh(); });
+
+  // ---- wiring: notes and requests ----
   pinPlaceButton.addEventListener('click', () => {
     armedForPlace = !armedForPlace;
     pinPlaceButton.classList.toggle('armed', armedForPlace);
     if (armedForPlace) {
-      editPanel.open = true;
+      showTab('edit');
       noteHint.hidden = false;
-      noteHint.textContent = 'Now click a floor square in the editing panel below.';
+      noteHint.textContent = 'Now click a floor square in the Edit tab.';
     } else {
       noteHint.textContent = 'Pause and click the picture to pin a note to that moment.';
     }
   });
-
   noteSave.addEventListener('click', () => {
     if (!pending) return;
     const text = noteInput.value;
@@ -590,7 +697,6 @@ function mount(): void {
     if (event.key === 'Enter') noteSave.click();
     if (event.key === 'Escape') closeNoteEditor();
   });
-
   sendButton.addEventListener('click', () => {
     sendButton.disabled = true;
     requestStatus.dataset.tone = 'idle';
@@ -611,7 +717,12 @@ function mount(): void {
       requestStatus.textContent = String(error);
     });
   });
+  requestShortcut.addEventListener('click', () => {
+    showTab('notes');
+    requestBox.focus();
+  });
 
+  // ---- wiring: examine ----
   sweepButton.addEventListener('click', () => {
     const summary = harness.sweep({ samplesPerPeriod: SWEEP_SAMPLES });
     verdict.dataset.tone = summary.ok ? 'ok' : 'bad';
@@ -621,7 +732,6 @@ function mount(): void {
       : summary.issues.map((issue) => issue.message).join(' ');
     drawFrame(lastShownMs);
   });
-
   sheetButton.addEventListener('click', () => {
     void (async () => {
       const sheet = await harness.spriteSheet({ samplesPerPeriod: SWEEP_SAMPLES });
@@ -630,7 +740,13 @@ function mount(): void {
     })();
   });
 
-  // ---- model open/copy/new ----
+  // ---- wiring: edit (open/copy/new) ----
+  openButton.addEventListener('click', () => {
+    showTab('edit');
+    modelText.focus();
+    modelStatus.dataset.tone = 'idle';
+    modelStatus.textContent = 'Paste a model file below, then press "Open this model".';
+  });
   const loadButton = element('button');
   loadButton.textContent = 'Open this model';
   loadButton.addEventListener('click', () => {
@@ -652,16 +768,13 @@ function mount(): void {
     modelStatus.dataset.tone = 'ok';
     modelStatus.textContent = `Opened ${harness.model().label}.`;
   });
-  const copyButton = element('button');
-  copyButton.textContent = 'Copy this model';
   copyButton.addEventListener('click', () => {
+    showTab('edit');
     modelText.value = JSON.stringify(harness.model(), null, 2);
     modelText.select();
     modelStatus.dataset.tone = 'idle';
     modelStatus.textContent = 'The model is in the box, ready to copy or edit.';
   });
-  const newButton = element('button');
-  newButton.textContent = 'New empty model';
   newButton.addEventListener('click', () => {
     const size = Number(sizeInput.value);
     harness.load({
@@ -680,16 +793,16 @@ function mount(): void {
         scale: [0, 0, 0],
       },
     });
+    showTab('edit');
     modelStatus.dataset.tone = 'idle';
     modelStatus.textContent = 'Empty model. Paint a floor to begin.';
   });
-  const starterButton = element('button');
-  starterButton.textContent = 'Starter';
-  starterButton.addEventListener('click', () => { harness.load(createStarterModel()); });
 
-  periodInput.addEventListener('input', () => {
-    harness.animate({ periodMs: Number(periodInput.value) });
+  // ---- wiring: motion ----
+  styleSelect.addEventListener('change', () => {
+    harness.animate({ rotationStyle: styleSelect.value === 'turn' ? 'turn' : 'swing' });
   });
+  periodInput.addEventListener('input', () => { harness.animate({ periodMs: Number(periodInput.value) }); });
   phaseInput.addEventListener('input', () => {
     harness.animate({ phaseRadians: (Number(phaseInput.value) * Math.PI) / 180 });
   });
@@ -698,81 +811,98 @@ function mount(): void {
   });
   document.addEventListener('keydown', (event) => {
     if (event.key === 'Escape' && (pending || armedForPlace)) closeNoteEditor();
-    // Arrow keys step frames anywhere except while typing or on a control
-    // that already owns arrows, like a slider.
-    const target = event.target;
-    const typing = target instanceof HTMLInputElement
-      || target instanceof HTMLTextAreaElement
-      || target instanceof HTMLSelectElement;
+    const typing = event.target instanceof HTMLInputElement
+      || event.target instanceof HTMLTextAreaElement;
     if (typing) return;
-    if (event.key === 'ArrowRight') {
-      event.preventDefault();
-      harness.step(1);
-      syncPlayButton();
-    } else if (event.key === 'ArrowLeft') {
-      event.preventDefault();
-      harness.step(-1);
-      syncPlayButton();
-    }
+    if (event.key === 'ArrowLeft') { harness.step(-1); syncPlayButton(); }
+    if (event.key === 'ArrowRight') { harness.step(1); syncPlayButton(); }
   });
 
   // ---- assembly ----
-  const playerBar = element('div', 'playerbar');
-  playerBar.append(stepBack, playButton, stepForward, speedSelect, timelineWrap);
+  const topBar = element('div', 'top');
+  const grow = element('span', 'grow');
+  topBar.append(modelName, statusChip, grow, openButton, newButton, copyButton, requestShortcut);
+
+  const rail = element('div', 'rail');
+  const railTitle = element('h2');
+  railTitle.textContent = "This studio's shelf";
+  rail.append(railTitle, shelf);
+
+  const playerBar = element('div', 'player');
+  const transport = element('div', 'transport');
+  transport.append(stepBack, playButton, stepForward, speedSelect);
+  playerBar.append(transport, timelineWrap, timeLabel);
+
+  const tabNames = ['examine', 'edit', 'motion', 'notes'] as const;
+  const tabButtons = new Map<string, HTMLElement>();
+  const tabPanes = new Map<string, HTMLElement>();
+  const tabsRow = element('div', 'tabs');
+  for (const name of tabNames) {
+    const tab = element('button', 'tab');
+    tab.textContent = name.charAt(0).toUpperCase() + name.slice(1);
+    tab.addEventListener('click', () => { showTab(name); });
+    tabButtons.set(name, tab);
+    tabsRow.appendChild(tab);
+  }
+  function showTab(name: string): void {
+    for (const [key, tab] of tabButtons) tab.classList.toggle('active', key === name);
+    for (const [key, pane] of tabPanes) pane.hidden = key !== name;
+  }
+
+  const examinePane = element('div', 'pane');
   const checkRow = element('div', 'row');
   checkRow.append(sweepButton, sheetButton);
-  const playerCard = element('div', 'card');
-  playerCard.append(playerBar, timeLabel, motionText, modelLine, engineWarning, checkRow, verdict);
+  examinePane.append(motionText, modelLine, engineWarning, checkRow, verdict, sheetImage);
 
-  const notesCard = element('div', 'card');
-  const notesTitle = element('h2');
-  notesTitle.textContent = 'Notes & requests';
-  notesCard.append(notesTitle, noteHint, noteEditor, notesList, pinPlaceButton,
-    requestBox, sendButton, requestStatus);
-
-  const editPanel = element('details', 'card edit');
-  const editSummary = element('summary');
-  editSummary.textContent = 'Edit the model';
-  const editBody = element('div', 'edit-body');
+  const editPane = element('div', 'pane');
   const modelButtons = element('div', 'row');
-  modelButtons.append(starterButton, newButton, copyButton, loadButton);
-  const motionFields = element('div', 'motion-fields');
-  motionFields.append(
+  modelButtons.append(loadButton);
+  editPane.append(
+    swatches,
+    labelled('Colour', colorInput, 'Recolours every voxel using this swatch.'),
+    stackHint, stack, layerLabel, grid,
+    labelled('New model size', sizeInput, 'Used by the New button in the top bar.'),
+    modelButtons, modelText, modelStatus,
+  );
+
+  const motionPane = element('div', 'pane');
+  motionPane.append(
     labelled('Movement style', styleSelect,
-      'Swinging goes out and comes back; turning goes all the way around. '
-      + 'Turning uses the Pitch, Rock, and Roll amounts as how far around to go: '
-      + 'set 360° for a full turn each cycle.'),
+      'Swinging goes out and comes back; turning goes all the way around, using the Turn amounts as how far.'),
     labelled('Period', periodInput, 'How long one full round trip takes. Zero is still.'),
     labelled('Phase', phaseInput, 'Where in the cycle time zero starts.'),
   );
+  let currentGroup = '';
   for (const { spec, input } of amplitudeInputs) {
-    motionFields.append(labelled(`${spec.label} (${spec.unit})`, input));
+    if (spec.group !== currentGroup) {
+      currentGroup = spec.group;
+      const head = element('p', 'grouphead');
+      head.textContent = spec.group;
+      motionPane.appendChild(head);
+    }
+    motionPane.append(labelled(`${spec.label} (${spec.unit})`, input));
   }
-  editBody.append(
-    swatches,
-    labelled('Colour', colorInput, 'Recolours every voxel using this swatch.'),
-    stackHint,
-    stack,
-    layerLabel,
-    grid,
-    motionFields,
-    labelled('New model size', sizeInput, 'Cubes, for now. Any size a model declares will open.'),
-    modelButtons,
-    modelText,
-    modelStatus,
-  );
-  editPanel.append(editSummary, editBody);
 
-  const columns = element('div', 'columns');
-  columns.append(notesCard, editPanel);
-  root.append(stage, playerCard, columns, sheetImage);
+  const notesPane = element('div', 'pane');
+  notesPane.append(noteHint, noteEditor, notesList, pinPlaceButton, requestBox, sendButton, requestStatus);
 
-  // ---- the loop: while playing, follow the clock ----
+  const inspector = element('div', 'inspector');
+  inspector.append(tabsRow, examinePane, editPane, motionPane, notesPane);
+  tabPanes.set('examine', examinePane);
+  tabPanes.set('edit', editPane);
+  tabPanes.set('motion', motionPane);
+  tabPanes.set('notes', notesPane);
+
+  const app = element('div', 'app');
+  app.append(topBar, rail, stage, playerBar, inspector);
+  root.appendChild(app);
+
   function tick(): void {
     if (player.playing) drawFrame(player.timeAt(performance.now()));
     requestAnimationFrame(tick);
   }
 
+  showTab('examine');
   renderNotes();
   refresh();
   requestAnimationFrame(tick);
