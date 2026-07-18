@@ -2,9 +2,12 @@
 
 Status: direction agreed 2026-07-17 by the owner — models keep the way they
 were made, craft lessons aggregate in one shared place, and parts are shared
-by graduation. The step kinds, schema sketch, and build order below are this
-document's proposal for the first implementation. Nothing in this document
-exists in code yet.
+by graduation. Step 1 of the build order landed 2026-07-17:
+`tools/studio/recipe.ts` (schema, validation, builder with per-voxel
+provenance), `tools/studio/parts.ts` (the box and brick-wall parts),
+`tools/studio/recipes.ts` (the shelf models as recipes), pinned cell for cell
+by `tools/studio/recipe.test.ts` and `tools/studio/parts.test.ts`, and
+rendered for a look by `npm run studio:recipes`. Steps 2–6 remain open.
 
 ## Why
 
@@ -136,10 +139,16 @@ rediscovered per model. That needs per-group motion in the engine first, so
 it is stage two. Recipe v1 does not reserve fields for it; when per-group
 motion exists, the recipe schema versions forward.
 
-## Recipe sketch — not implemented
+## Recipe sketch — the pre-implementation record
+
+The live authority is `tools/studio/recipe.ts`. The implementation kept this
+shape and added what building taught: `motion` is required (a recipe rebuilds
+the whole model, not just its voxels), `roles[0]` is pinned to `'empty'`
+everywhere, `seedSalt` is optional and defaults to 0 so identical steps are
+identical on purpose, and build errors report every bad step at once.
 
 ```ts
-// Sketch only. Names and bounds settle with the first implementation.
+// The original sketch, kept as the record of what was proposed.
 // Same ground rules as StudioModelV1: plain data, JSON-safe, no functions.
 export const VOXEL_RECIPE_SCHEMA_V1 = 'studio.voxel-recipe/1';
 
