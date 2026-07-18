@@ -633,9 +633,7 @@ Dependencies: V, P, H, C.
 
 ### E-03: Visual regression
 
-- [ ] Open. Depends on E-02.
-
-Use fixed camera, viewport, DPR, injected clock, and controlled Chromium lane. Keep structural geometry assertions authoritative and use documented screenshot tolerances for raster evidence.
+- [x] Delivered in `tests/browser/visual-baselines.spec.ts`: four fixed scenes — staircase and checkerboard chunk fields, AoE-like terrain, and the 10k-instance City field — present revision 1 under fixed camera, 640x480 viewport, DPR 1, and the injected frame clock in the SwiftShader lane, and compare the presented canvas readback against committed baselines under `tests/browser/baselines/`. Structural assertions stay authoritative: each scene's exact greedy-mesher triangle count is pinned as an equality beside the raster. The tolerance policy is documented in the spec — `maxDiffPixelRatio` 0.002 absorbs driver rounding drift, far below what a one-voxel change moves — and a baseline update is a reviewed act via `--update-snapshots` with the reason stated in the commit. One platform-agnostic baseline set exists on purpose: the SwiftShader lane is pinned so the raster is the same everywhere, and `snapshotPathTemplate` drops Playwright's platform suffix so no platform is silently exempt.
 
 Dependencies: E-02.
 
@@ -775,9 +773,8 @@ real browser evidence. The critical path continues:
    capture. `revisionAwareCapture` had been false since before H-04 published
    it, which the flip also corrects.
 
-The critical path is clear. What remains for 1.0 is E-03 visual baselines and
-the R-series freeze, rehearsal, adversarial review, immutable candidate, and
-tag; everything earlier in E, and all of F, D, V, P, H, and C, is delivered
-with evidence recorded in its own section.
+The critical path is clear. What remains for 1.0 is the R-series: freeze,
+rehearsal, adversarial review, immutable candidate, and tag. All of F, D, V,
+P, H, C, and E is delivered with evidence recorded in its own section.
 
 Each numbered step is split into minimal coherent verified commits and receives adversarial review as soon as its first public, async, presentation, or ownership boundary exists.

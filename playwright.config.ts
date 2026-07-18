@@ -7,6 +7,10 @@ export default defineConfig({
   workers: 1,
   reporter: 'line',
   outputDir: './output/playwright/test-results',
+  // One baseline set for every platform: the SwiftShader lane exists exactly
+  // so the raster is the same everywhere, and a platform-suffixed snapshot
+  // would silently exempt every platform that never recorded one.
+  snapshotPathTemplate: '{testDir}/baselines/{arg}{ext}',
   timeout: 60_000,
   use: {
     browserName: 'chromium',

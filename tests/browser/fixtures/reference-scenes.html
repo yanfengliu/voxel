@@ -837,6 +837,74 @@
         };
       };
 
+      /**
+       * E-03's capture entry: build one named scene, present exactly revision
+       * 1 under the injected frame clock, read the presented canvas back, and
+       * tear down. The raster goes to the visual-baseline comparison; the
+       * structural numbers stay the authoritative claim beside it.
+       */
+      window.captureReferenceScene = async (name) => {
+        const scenes = {
+          'chunk-staircase': {
+            snapshot: () => chunkFieldSnapshot({
+              worldId: 'world:capture-staircase', epoch: 'epoch:one', revision: 1,
+              profileSize: { x: 16, y: 16, z: 16 }, grid: 3,
+              source: CORPUS_SOURCES.staircase, paletteCount: 5,
+            }),
+            center: { x: 24, y: 6, z: 24 }, zoom: 0.25, workers: 1,
+          },
+          'chunk-checkerboard': {
+            snapshot: () => chunkFieldSnapshot({
+              worldId: 'world:capture-checkerboard', epoch: 'epoch:one', revision: 1,
+              profileSize: { x: 8, y: 8, z: 8 }, grid: 3,
+              source: CORPUS_SOURCES.checkerboard, paletteCount: 5,
+            }),
+            center: { x: 12, y: 3, z: 12 }, zoom: 0.5, workers: 1,
+          },
+          'terrain-aoe-like': {
+            snapshot: () => chunkFieldSnapshot({
+              worldId: 'world:capture-terrain', epoch: 'epoch:one', revision: 1,
+              profileSize: { x: 8, y: 5, z: 8 }, grid: 8,
+              source: CORPUS_SOURCES['aoe-like'], paletteCount: 5,
+            }),
+            center: { x: 32, y: 2, z: 32 }, zoom: 0.15, workers: 1,
+          },
+          'instances-city-10k': {
+            snapshot: () => instanceSnapshot({
+              worldId: 'world:capture-city', epoch: 'epoch:one', revision: 1, count: 10000,
+            }),
+            center: { x: 100, y: 2, z: 100 }, zoom: 0.05, workers: 0,
+          },
+        };
+        const scene = scenes[name];
+        if (!scene) throw new Error(`no capture scene '${name}'`);
+
+        const canvas = document.createElement('canvas');
+        document.body.appendChild(canvas);
+        const runtime = new ThreeRenderRuntime({
+          canvas, width: WIDTH, height: HEIGHT, pixelRatio: 1,
+          center: scene.center, zoom: scene.zoom,
+          ...(scene.workers > 0 ? { voxelWorkers: { workerCount: scene.workers } } : {}),
+        });
+        try {
+          const accepted = runtime.acceptSnapshot(scene.snapshot());
+          if (accepted.status !== 'accepted') throw new Error(`rejected: ${accepted.code}`);
+          await framesUntilPresented(runtime, 1, 0, 800);
+          const capture = runtime.capture();
+          const metrics = runtime.metrics();
+          return {
+            dataUrl: capture.dataUrl,
+            presentedRevision: metrics.presentedRevision,
+            triangles: metrics.triangles,
+            drawCalls: metrics.drawCalls,
+            state: runtime.runtimeStatus().state,
+          };
+        } finally {
+          runtime.dispose();
+          canvas.remove();
+        }
+      };
+
       window.runReferenceScene = async (name) => {
         switch (name) {
           case 'chunk-staircase':
