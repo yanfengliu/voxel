@@ -1,8 +1,12 @@
 import { addPaletteColor, createEmptyModel, setMotion, setVoxel } from './edit.js';
 import type { StudioModelV1 } from './model.js';
 import { createStudioParts } from './parts.js';
-import type { PartShelfV1, RecipeV1 } from './recipe.js';
-import { createBrickWallRecipe, createStarterRecipe } from './recipes.js';
+import { buildRecipe, type PartShelfV1, type RecipeV1 } from './recipe.js';
+import {
+  createBrickWallRecipe,
+  createSandstoneWallRecipe,
+  createStarterRecipe,
+} from './recipes.js';
 
 /**
  * The shelf: which models this studio offers, organized into collapsible
@@ -128,12 +132,23 @@ export function createStudioCatalog(): StudioCatalogV1 {
       },
       {
         name: 'Walls',
-        models: [{
-          id: 'studio:brick-wall',
-          label: 'Brick wall',
-          load: createBrickWallModel,
-          howItsMade: () => ({ recipe: createBrickWallRecipe(), parts: createStudioParts() }),
-        }],
+        models: [
+          {
+            id: 'studio:brick-wall',
+            label: 'Brick wall',
+            load: createBrickWallModel,
+            howItsMade: () => ({ recipe: createBrickWallRecipe(), parts: createStudioParts() }),
+          },
+          {
+            // The same courses with different numbers and a different palette:
+            // longer bricks, a stack bond, sandstone colours. No new part and
+            // no new code, which is the point of it being on the shelf.
+            id: 'studio:sandstone-wall',
+            label: 'Sandstone wall',
+            load: () => buildRecipe(createSandstoneWallRecipe(), createStudioParts()).model,
+            howItsMade: () => ({ recipe: createSandstoneWallRecipe(), parts: createStudioParts() }),
+          },
+        ],
       },
     ],
   };

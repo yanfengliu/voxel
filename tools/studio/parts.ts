@@ -27,6 +27,23 @@ function intSetting(
   return Math.min(MAX_PART_DIMENSION, Math.max(1, Math.round(value)));
 }
 
+/**
+ * A count that may legitimately be none. Separate from `intSetting`, which
+ * floors at one because a size of zero is a mistake -- but a course with no
+ * bed joint, or no bond shift, is an ordinary thing to ask for. Sharing the
+ * one clamp silently turned "no bed joint" into one, and the top course of
+ * every wall grew a row of mortar with nothing bedded on it.
+ */
+function countSetting(
+  settings: PartSettingsV1,
+  key: string,
+  fallback: number,
+): number {
+  const value = settings[key];
+  if (typeof value !== 'number' || !Number.isFinite(value)) return fallback;
+  return Math.min(MAX_PART_DIMENSION, Math.max(0, Math.round(value)));
+}
+
 function nameSetting(
   settings: PartSettingsV1,
   key: string,
@@ -54,38 +71,63 @@ export function boxPart(settings: PartSettingsV1): PartFragmentV1 {
 }
 
 /**
- * A brick wall: offset courses, mortar joints, three brick tints chosen by a
- * fixed rule. Extracted from the catalog's brick wall — the pattern below is
- * that model's pattern, cell for cell, and the parity test holds this part to
- * it. It proves that "texture" in this art style is pattern plus variation,
- * and that a pattern worth keeping belongs in a part, not in one model.
+ * One course of brickwork: a single horizontal row of bricks with the head
+ * joints between them and, usually, the bed joint of mortar above.
  *
- * The tint rule is arithmetic rather than seeded for now; when a wall earns
- * real variation, the seed is already in the part's hands.
+ * A course rather than a whole wall, because a course is the unit a wall is
+ * actually built from and the unit where every masonry decision lives -- how
+ * long a brick is, how thick the joints are, and how far this course is
+ * shifted from the one below, which is the entire difference between one bond
+ * and another. A wall is then a recipe that stacks courses, so the bond is
+ * visible in the recipe and watchable in the studio.
+ *
+ * The earlier version of this was one `brick-wall` part that generated every
+ * course itself. It produced the same wall, but the knowledge was sealed
+ * inside a function body: nothing could be varied without editing code, and
+ * the construction was a single step with nothing to watch. What a part hides
+ * is what nobody can learn from -- so a part should be the smallest piece
+ * that is still worth naming.
  */
-export function brickWallPart(settings: PartSettingsV1): PartFragmentV1 {
-  const sx = intSetting(settings, 'sizeX', 16);
-  const sy = intSetting(settings, 'sizeY', 10);
-  const sz = intSetting(settings, 'sizeZ', 2);
-  const voxels = new Array<number>(sx * sy * sz).fill(0);
-  for (let z = 0; z < sz; z += 1) {
-    for (let y = 0; y < sy; y += 1) {
-      for (let x = 0; x < sx; x += 1) {
-        const mortarRow = y % 3 === 2;
-        const offset = Math.floor(y / 3) % 2 === 0 ? 0 : 2;
-        const mortarJoint = (x + offset) % 4 === 3;
-        const cell = x + sx * (y + sy * z);
-        if (mortarRow || mortarJoint) {
+export function brickCoursePart(settings: PartSettingsV1): PartFragmentV1 {
+  const length = intSetting(settings, 'length', 16);
+  const depth = intSetting(settings, 'depth', 2);
+  const brickLength = intSetting(settings, 'brickLength', 3);
+  const jointWidth = intSetting(settings, 'jointWidth', 1);
+  const rows = intSetting(settings, 'rows', 2);
+  // The bed joint on top. The topmost course of a wall leaves it off, or the
+  // wall ends in a row of mortar with nothing bedded on it.
+  const bed = countSetting(settings, 'bed', 1);
+  // How far this course is shifted along its length. Half a brick makes a
+  // running bond; zero makes a stack bond, where every joint lines up.
+  const offset = countSetting(settings, 'offset', 0);
+  // Which course this is, counted from the bottom. It only varies the brick
+  // shades, so courses do not repeat identically up the wall.
+  const course = countSetting(settings, 'course', 0);
+
+  const height = rows + bed;
+  const period = brickLength + jointWidth;
+  const voxels = new Array<number>(length * height * depth).fill(0);
+  for (let z = 0; z < depth; z += 1) {
+    for (let y = 0; y < height; y += 1) {
+      for (let x = 0; x < length; x += 1) {
+        const cell = x + length * (y + height * z);
+        const inBed = y >= rows;
+        const shifted = x + offset;
+        const headJoint = shifted % period >= brickLength;
+        if (inBed || headJoint) {
           voxels[cell] = 1;
           continue;
         }
-        const brick = Math.floor((x + offset) / 4) * 31 + Math.floor(y / 3) * 17;
-        voxels[cell] = 2 + (brick % 3);
+        // Three shades, chosen by which brick this is and which course it sits
+        // in. Arithmetic rather than seeded: the same wall must come back the
+        // same way, and a wall's variation is a pattern, not a roll.
+        const shade = Math.floor(shifted / period) * 31 + course * 17;
+        voxels[cell] = 2 + (shade % 3);
       }
     }
   }
   return {
-    size: [sx, sy, sz],
+    size: [length, height, depth],
     roles: ['empty', 'mortar', 'brick-a', 'brick-b', 'brick-c'],
     voxels,
   };
@@ -95,6 +137,6 @@ export function brickWallPart(settings: PartSettingsV1): PartFragmentV1 {
 export function createStudioParts(): PartShelfV1 {
   return {
     box: boxPart,
-    'brick-wall': brickWallPart,
+    'brick-course': brickCoursePart,
   };
 }

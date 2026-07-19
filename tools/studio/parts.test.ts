@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
 
 import { createBrickWallModel } from './catalog.js';
-import { boxPart, brickWallPart, createStudioParts } from './parts.js';
+import { boxPart, brickCoursePart, createStudioParts } from './parts.js';
+import { buildRecipe } from './recipe.js';
+import { createBrickWallRecipe } from './recipes.js';
 
 describe('the studio parts', () => {
   it('box fills its size with its role', () => {
@@ -19,22 +21,57 @@ describe('the studio parts', () => {
     expect(fragment.roles[1]).toBe('box');
   });
 
-  it('brick wall at the shelf size is the shelf wall, cell for cell', () => {
-    // The extraction claim itself: the part's role slots and the catalog
-    // palette line up by construction, so the grids must be identical — the
-    // pattern moved into the part, it did not get reinvented.
-    const fragment = brickWallPart({ sizeX: 16, sizeY: 10, sizeZ: 2 });
-    expect(fragment.size).toEqual([16, 10, 2]);
-    expect(fragment.voxels).toEqual(createBrickWallModel().voxels);
+  it('a course is brick rows with a bed joint of mortar above', () => {
+    const fragment = brickCoursePart({ length: 8, depth: 1, rows: 2, bed: 1 });
+    expect(fragment.size).toEqual([8, 3, 1]);
+    // Top row is mortar all the way across; the rows below are brickwork.
+    for (let x = 0; x < 8; x += 1) expect(fragment.voxels[x + 8 * 2]).toBe(1);
+    expect(fragment.voxels[0]).not.toBe(1);
   });
 
-  it('a wall of another size keeps its courses and joints', () => {
-    const fragment = brickWallPart({ sizeX: 9, sizeY: 7, sizeZ: 1 });
-    // Every third row is mortar all the way across.
-    for (let x = 0; x < 9; x += 1) expect(fragment.voxels[x + 9 * 2]).toBe(1);
-    // The bottom course is bricks with a joint every fourth cell.
-    expect(fragment.voxels[3]).toBe(1);
-    expect(fragment.voxels[0]).not.toBe(1);
+  it('leaves the bed joint off when asked, because nothing beds on a wall top', () => {
+    // Zero is a real answer here, and the size must shrink to match. A clamp
+    // that floored this at one gave every wall a mortar row on top with
+    // nothing resting on it, and pushed the top course out of the grid.
+    const fragment = brickCoursePart({ length: 4, depth: 1, rows: 1, bed: 0 });
+    expect(fragment.size).toEqual([4, 1, 1]);
+    expect(fragment.voxels.includes(1)).toBe(true);
+  });
+
+  it('puts a head joint after every brick, wherever the bond shifts it', () => {
+    const straight = brickCoursePart({ length: 8, depth: 1, rows: 1, bed: 0, brickLength: 3 });
+    // Bricks are three long, so every fourth cell is the joint between them.
+    expect(straight.voxels[3]).toBe(1);
+    expect(straight.voxels[7]).toBe(1);
+    expect(straight.voxels[0]).not.toBe(1);
+
+    // Shifting the course moves the joints with it: that shift is the entire
+    // difference between one bond and another.
+    const shifted = brickCoursePart({
+      length: 8, depth: 1, rows: 1, bed: 0, brickLength: 3, offset: 2,
+    });
+    expect(shifted.voxels[1]).toBe(1);
+    expect(shifted.voxels[3]).not.toBe(1);
+  });
+
+  it('makes longer bricks when asked, without a new part', () => {
+    const fragment = brickCoursePart({ length: 12, depth: 1, rows: 1, bed: 0, brickLength: 5 });
+    expect(fragment.voxels[5]).toBe(1);
+    expect(fragment.voxels[11]).toBe(1);
+    expect(fragment.voxels[4]).not.toBe(1);
+  });
+
+  it('varies the shades by course, so a wall does not repeat up its height', () => {
+    const lower = brickCoursePart({ length: 8, depth: 1, rows: 1, bed: 0, course: 0 });
+    const upper = brickCoursePart({ length: 8, depth: 1, rows: 1, bed: 0, course: 1 });
+    expect(upper.voxels).not.toEqual(lower.voxels);
+  });
+
+  it('stacks into exactly the shelf wall, cell for cell', () => {
+    // The claim that decomposing changed nothing: the wall built from courses
+    // is the same wall the shelf has always had.
+    const built = buildRecipe(createBrickWallRecipe(), createStudioParts()).model;
+    expect(built.voxels).toEqual(createBrickWallModel().voxels);
   });
 
   it('same settings, same seed, same fragment, always', () => {
