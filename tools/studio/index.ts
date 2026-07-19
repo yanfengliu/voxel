@@ -67,6 +67,12 @@ export {
   type VoxelsStepV1,
 } from './recipe.js';
 
+// Ways of arranging parts, and the patterns built on them. These are the
+// principles a later design borrows instead of rediscovering: general
+// arrangement first, then masonry as a worked example of using it.
+export { alternate, stackSteps, type StackOptionsV1 } from './compose.js';
+export { wallRecipe, type WallRecipeOptionsV1 } from './recipes.js';
+
 export { buildSnapshot, filledVoxelCount, ModelBuildError } from './build.js';
 export { describeMotion, describePoseAt } from './describe.js';
 export type { VoxelStudioHarnessV1 } from './harness.js';

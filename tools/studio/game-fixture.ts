@@ -5,6 +5,7 @@ import {
   mountStudio,
   setMotion,
   setVoxel,
+  stackSteps,
   type PartFragmentV1,
   type PartSettingsV1,
   type PartShelfV1,
@@ -88,8 +89,74 @@ function mastPart(settings: PartSettingsV1): PartFragmentV1 {
   };
 }
 
+/** A flat slab: decking, a lid, a floor. Whatever it is asked to paint. */
+function plankPart(settings: PartSettingsV1): PartFragmentV1 {
+  const length = intSetting(settings, 'length', 8);
+  const thickness = intSetting(settings, 'thickness', 1);
+  const depth = intSetting(settings, 'depth', 4);
+  return {
+    size: [length, thickness, depth],
+    roles: ['empty', 'trim'],
+    voxels: new Array<number>(length * thickness * depth).fill(1),
+  };
+}
+
 function createHarborParts(): PartShelfV1 {
-  return { hull: hullPart, mast: mastPart };
+  return { hull: hullPart, mast: mastPart, plank: plankPart };
+}
+
+/**
+ * A jetty: two rows of posts driven at a regular spacing, with decking laid
+ * over them.
+ *
+ * This is the borrowing the whole design is for. Nothing about a dock is in
+ * the engine, and nothing about masonry is here -- but "repeat a part along a
+ * line, varying it as you go" is the same idea that stacks courses up a wall,
+ * so the game takes `stackSteps` from the studio and spends its own effort on
+ * what a jetty actually is.
+ */
+function createJettyRecipe(): RecipeV1 {
+  const POSTS = 4;
+  const postRow = (z: number, side: string) => stackSteps({
+    part: 'mast',
+    count: POSTS,
+    at: [1, 0, z],
+    spacing: [6, 0, 0],
+    settings: () => ({ height: 5 }),
+    note: (index) => `Drives ${side} post ${String(index + 1)} of ${String(POSTS)}`,
+  });
+  return {
+    schemaVersion: 'studio.voxel-recipe/1',
+    id: 'harbor:jetty',
+    label: 'Jetty',
+    seed: 3,
+    size: [20, 6, 5],
+    roles: ['empty', 'hull', 'mast', 'trim'],
+    palette: [
+      { r: 0, g: 0, b: 0 },
+      { r: 122, g: 82, b: 52 },
+      { r: 138, g: 116, b: 92 },
+      { r: 176, g: 146, b: 104 },
+    ],
+    steps: [
+      ...postRow(1, 'near'),
+      ...postRow(3, 'far'),
+      {
+        kind: 'part',
+        part: 'plank',
+        at: [0, 5, 0],
+        settings: { length: 20, thickness: 1, depth: 5 },
+        note: 'Lays the decking across every post',
+      },
+    ],
+    motion: {
+      periodMs: 0,
+      phaseRadians: 0,
+      translation: [0, 0, 0],
+      rotationRadians: [0, 0, 0],
+      scale: [0, 0, 0],
+    },
+  };
 }
 
 /** A boat, saved as the way it is made: two parts, one hand-placed oar, mirrored. */
@@ -177,7 +244,18 @@ export function createHarborCatalog(): StudioCatalogV1 {
       },
       {
         name: 'Dockside',
-        models: [{ id: 'harbor:crate', label: 'Crate', load: createCrate }],
+        models: [
+          {
+            id: 'harbor:jetty',
+            label: 'Jetty',
+            load: () => buildRecipe(createJettyRecipe(), createHarborParts()).model,
+            howItsMade: () => ({
+              recipe: createJettyRecipe(),
+              parts: createHarborParts(),
+            }),
+          },
+          { id: 'harbor:crate', label: 'Crate', load: createCrate },
+        ],
       },
     ],
   };

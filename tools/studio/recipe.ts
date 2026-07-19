@@ -57,6 +57,8 @@ export type PartShelfV1 = Readonly<Record<string, PartV1>>;
  * recipe's own role slots; 0 leaves whatever is already there. */
 export interface VoxelsStepV1 {
   readonly kind: 'voxels';
+  /** Plain words for what this step is for; shown while the model builds. */
+  readonly note?: string;
   readonly at: readonly [number, number, number];
   readonly size: readonly [number, number, number];
   readonly voxels: readonly number[];
@@ -64,6 +66,8 @@ export interface VoxelsStepV1 {
 
 export interface PartStepV1 {
   readonly kind: 'part';
+  /** Plain words for what this step is for; shown while the model builds. */
+  readonly note?: string;
   readonly part: string;
   readonly at: readonly [number, number, number];
   readonly settings: PartSettingsV1;
@@ -76,6 +80,8 @@ export interface PartStepV1 {
  * Cells that are already filled win over their mirrored twin. */
 export interface MirrorStepV1 {
   readonly kind: 'mirror';
+  /** Plain words for what this step is for; shown while the model builds. */
+  readonly note?: string;
   readonly axis: 'x' | 'z';
 }
 
@@ -104,6 +110,8 @@ export interface RecipeV1 {
 const STEP_KINDS = ['voxels', 'part', 'mirror'] as const;
 const MAX_STEPS = 256;
 const MAX_PART_DIMENSION = 64;
+/** A step label is a line, not a paragraph; it has to read in a list. */
+const MAX_NOTE = 120;
 
 /**
  * Folds a per-step salt into the recipe seed. The formula is part of the
@@ -217,6 +225,13 @@ export function validateRecipeV1(value: unknown): readonly GenomeIssueV1[] {
       return;
     }
     const step = entry as Record<string, unknown>;
+    if (step.note !== undefined
+      && (typeof step.note !== 'string' || step.note.length === 0 || step.note.length > MAX_NOTE)) {
+      issues.push({
+        path: `${path}.note`,
+        message: `Expected a non-empty label of at most ${String(MAX_NOTE)} characters.`,
+      });
+    }
     switch (step.kind) {
       case 'voxels': {
         const atOk = checkPlacement(step.at, `${path}.at`, issues);
@@ -472,6 +487,11 @@ export interface RecipeStageV1 {
 
 /** What a step does, in words a person reads rather than a shape they decode. */
 export function describeRecipeStepV1(step: RecipeStepV1): string {
+  // The author's own words win. A generated summary can only say what a step
+  // does mechanically -- "adds the brick-course part", four times over -- while
+  // a note says which course and how far it shifts, which is the thing worth
+  // watching. A recipe that explains itself is one a later design can borrow.
+  if (step.note !== undefined && step.note.length > 0) return step.note;
   switch (step.kind) {
     case 'voxels': {
       let placed = 0;
