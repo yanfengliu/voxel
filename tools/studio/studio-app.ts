@@ -14,6 +14,7 @@ import {
   DEFAULT_ORBIT,
   describeOrbit,
   dragOrbit,
+  fitViewHeight,
   zoomOrbit,
   type OrbitStateV1,
 } from './orbit.js';
@@ -183,12 +184,18 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
   // the default and flat is the deliberate choice.
   let depthOn = true;
   let camera: OrthographicCamera | PerspectiveCamera = depthCamera;
-  let orbit: OrbitStateV1 = DEFAULT_ORBIT;
+  const firstModel = openingModel(catalog, options.openModelId);
+  // Fitted to the model it opens on, for the same reason every later open is:
+  // a shelf's models are not one size.
+  let orbit: OrbitStateV1 = clampOrbit({
+    ...DEFAULT_ORBIT,
+    viewHeight: fitViewHeight(firstModel.size),
+  });
   let viewW = VIEW_WIDTH;
   let viewH = VIEW_HEIGHT;
   applyOrbit(camera, orbit, viewW, viewH);
 
-  let session = new StudioSession(openingModel(catalog, options.openModelId), {
+  let session = new StudioSession(firstModel, {
     canvas, width: viewW, height: viewH, camera,
   });
   const player = new StudioPlayer(session.model.motion.periodMs);
@@ -349,6 +356,13 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
       session = new StudioSession(model, {
         canvas, width: viewW, height: viewH, camera,
       });
+      // Opening a model fits the view to it, because a shelf holds a game's
+      // whole asset set and those are not one size. Only on open: an edit
+      // must not re-zoom under your hands, and a construction's stages must
+      // keep the frame the finished model set.
+      orbit = clampOrbit({ ...orbit, viewHeight: fitViewHeight(model.size) });
+      applyOrbit(camera, orbit, viewW, viewH);
+      viewChip.textContent = describeOrbit(orbit);
       refresh();
     },
     update(model: StudioModelV1) {

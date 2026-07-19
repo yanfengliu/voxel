@@ -56,6 +56,32 @@ good arrangements, not from a rich step language. If the steps grow into a
 little programming language, sculpting by hand wins and the system dies;
 adding a step kind is an owner decision.
 
+**A fourth step kind: place a recipe (owner decision, 2026-07-18).** The
+owner directed that every asset have a recipe and that recipes be reusable
+at any level — "if two houses have the same roof but different walls, then
+at least they can share the roof recipe." Nothing in the three-step menu
+could express that: a shared roof had to be copied into both houses, so
+improving it meant editing every copy, which is the one-shot failure this
+design exists to end. So a step may now place another recipe, by id, from a
+book of recipes the build is given.
+
+It does not make the steps a programming language: it has no settings, no
+condition, and no loop. Repeat along a line and the rest of the menu stay
+unbuilt, and `stackSteps` shows they are better served by helpers that
+*write* steps than by new kinds of step.
+
+**Parts vary; recipes repeat.** The two kinds of reuse are now both real,
+and the line between them is worth keeping sharp. A part is a function:
+settings in, fragment out, so it makes roofs of many sizes. A recipe is a
+value: it is the same thing everywhere it appears, so one roof lands on two
+houses. Wanting three sizes of roof means a roof part; wanting one roof on
+three houses means a roof recipe. Both paint in roles, so whoever places
+them decides the colours.
+
+Provenance follows the deepest owner: a voxel from a shared roof names the
+roof recipe even inside a house, so a note pinned on it routes the fix to
+where every user benefits rather than to one borrower.
+
 **Raw voxels are a step, not a failure.** Hand-sculpted detail layers on
 top of generated parts inside the recipe. Without this, the first corner no
 part can express forces the model back to a plain grid and out of the

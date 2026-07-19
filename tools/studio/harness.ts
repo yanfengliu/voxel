@@ -242,7 +242,7 @@ export function createStudioHarness(host: HarnessHostV1): VoxelStudioHarnessV1 {
       for (const entry of section.models) {
         if (entry.id !== id || !entry.howItsMade) continue;
         const made = entry.howItsMade();
-        const stages = buildRecipeStages(made.recipe, made.parts);
+        const stages = buildRecipeStages(made.recipe, made.parts, made.book ?? {});
         cachedStages = { id, stages };
         return stages;
       }

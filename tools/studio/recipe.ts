@@ -85,7 +85,45 @@ export interface MirrorStepV1 {
   readonly axis: 'x' | 'z';
 }
 
-export type RecipeStepV1 = VoxelsStepV1 | PartStepV1 | MirrorStepV1;
+/**
+ * Places another recipe inside this one. Two houses with the same roof share
+ * the roof recipe; improving it improves both, and neither owns it.
+ *
+ * A sub-recipe is placed as it is, with no settings. That is the line between
+ * the two kinds of reuse and it is worth keeping sharp: a *part* is a
+ * function, so it varies by its settings; a *recipe* is a value, so it is the
+ * same thing everywhere it appears. Wanting a roof in three sizes means a
+ * roof part; wanting one roof on three houses means a roof recipe.
+ *
+ * It paints in roles, exactly as a part does, so the recipe placing it
+ * decides the colours. The same roof lands red on a brick cottage and grey on
+ * a sandstone one without either owning a copy.
+ */
+export interface SubRecipeStepV1 {
+  readonly kind: 'recipe';
+  /** Plain words for what this step is for; shown while the model builds. */
+  readonly note?: string;
+  /** Which recipe, by its id, from the book the build was given. */
+  readonly recipe: string;
+  readonly at: readonly [number, number, number];
+  /**
+   * Varies a seeded sub-recipe between its uses. Omitted means the sub-recipe
+   * builds exactly as it does on its own, which is what sharing usually
+   * means: the same roof, not a roof of the same kind.
+   */
+  readonly seedSalt?: number;
+}
+
+export type RecipeStepV1 = VoxelsStepV1 | PartStepV1 | MirrorStepV1 | SubRecipeStepV1;
+
+/**
+ * The recipes a build may place inside other recipes, by id.
+ *
+ * A game's book is its own; the engine never holds one. Sharing happens by a
+ * game putting a recipe in its book and more than one of its recipes naming
+ * it — at any level, since a shared recipe may itself be composed.
+ */
+export type RecipeBookV1 = Readonly<Record<string, RecipeV1>>;
 
 export interface RecipeV1 {
   readonly schemaVersion: typeof VOXEL_RECIPE_SCHEMA_V1;
@@ -107,7 +145,9 @@ export interface RecipeV1 {
 /** The step-kind menu is deliberately capped: power lives in parts and
  * arrangement, not in a rich step language. Adding a kind is an owner
  * decision, recorded in the design doc, never a convenience. */
-const STEP_KINDS = ['voxels', 'part', 'mirror'] as const;
+const STEP_KINDS = ['voxels', 'part', 'mirror', 'recipe'] as const;
+/** How deep composition may nest before it is treated as a mistake. */
+const MAX_RECIPE_DEPTH = 8;
 const MAX_STEPS = 256;
 const MAX_PART_DIMENSION = 64;
 /** A step label is a line, not a paragraph; it has to read in a list. */
@@ -304,6 +344,17 @@ export function validateRecipeV1(value: unknown): readonly GenomeIssueV1[] {
         }
         break;
       }
+      case 'recipe': {
+        if (typeof step.recipe !== 'string' || step.recipe.length === 0) {
+          issues.push({ path: `${path}.recipe`, message: 'Expected the id of a recipe to place.' });
+        }
+        checkPlacement(step.at, `${path}.at`, issues);
+        if (step.seedSalt !== undefined
+          && (typeof step.seedSalt !== 'number' || !Number.isInteger(step.seedSalt))) {
+          issues.push({ path: `${path}.seedSalt`, message: 'Expected an integer.' });
+        }
+        break;
+      }
       default:
         issues.push({ path: `${path}.kind`, message: `Expected one of: ${STEP_KINDS.join(', ')}.` });
     }
@@ -329,6 +380,14 @@ export interface BuiltRecipeV1 {
    * fixing the part heals both sides, and the mirror has nothing to fix.
    */
   readonly placedBy: readonly number[];
+  /**
+   * For every grid cell, the id of the recipe that actually placed its voxel;
+   * empty string where nothing did. For a voxel from a sub-recipe this is the
+   * sub-recipe, however deeply nested — so a note pinned on a shared roof
+   * names the roof recipe rather than the house that borrowed it, and the fix
+   * lands where every user of it benefits.
+   */
+  readonly placedByRecipe: readonly string[];
 }
 
 /**
@@ -341,13 +400,33 @@ export interface BuiltRecipeV1 {
  * list is thrown at the end, because a caller fixing a recipe file wants
  * everything that is wrong, not the first thing.
  */
-export function buildRecipe(recipe: RecipeV1, parts: PartShelfV1): BuiltRecipeV1 {
+export function buildRecipe(
+  recipe: RecipeV1,
+  parts: PartShelfV1,
+  book: RecipeBookV1 = {},
+): BuiltRecipeV1 {
+  return buildRecipeInternal(recipe, parts, book, []);
+}
+
+/**
+ * `ancestry` is the chain of recipe ids being built, innermost last. It is
+ * what makes a cycle a named error rather than a stack overflow: a recipe
+ * that reaches itself, directly or through others, is a mistake in the book
+ * and the message has to say which loop.
+ */
+function buildRecipeInternal(
+  recipe: RecipeV1,
+  parts: PartShelfV1,
+  book: RecipeBookV1,
+  ancestry: readonly string[],
+): BuiltRecipeV1 {
   const recipeIssues = validateRecipeV1(recipe);
   if (recipeIssues.length > 0) throw new RecipeBuildError(recipeIssues);
 
   const [sx, sy, sz] = recipe.size;
   const voxels = new Array<number>(sx * sy * sz).fill(0);
   const placedBy = new Array<number>(sx * sy * sz).fill(-1);
+  const placedByRecipe = new Array<string>(sx * sy * sz).fill('');
   const grid = (x: number, y: number, z: number): number => x + sx * (y + sy * z);
   const issues: GenomeIssueV1[] = [];
 
@@ -364,6 +443,7 @@ export function buildRecipe(recipe: RecipeV1, parts: PartShelfV1): BuiltRecipeV1
             const cell = grid(ax + x, ay + y, az + z);
             voxels[cell] = slot;
             placedBy[cell] = stepIndex;
+            placedByRecipe[cell] = recipe.id;
           }
         }
       }
@@ -421,16 +501,115 @@ export function buildRecipe(recipe: RecipeV1, parts: PartShelfV1): BuiltRecipeV1
             const cell = grid(ax + x, ay + y, az + z);
             voxels[cell] = slots[role] ?? 0;
             placedBy[cell] = stepIndex;
+            placedByRecipe[cell] = recipe.id;
           }
         }
       }
       return;
     }
+    if (step.kind === 'recipe') {
+      const sub = book[step.recipe];
+      if (!sub) {
+        issues.push({
+          path: `${path}.recipe`,
+          message: `No recipe in the book is called '${step.recipe}'.`,
+        });
+        return;
+      }
+      // A recipe that reaches itself would recur forever. Naming the loop is
+      // the only useful thing to say about it.
+      if (step.recipe === recipe.id || ancestry.includes(step.recipe)) {
+        issues.push({
+          path,
+          message: `'${step.recipe}' contains itself: `
+            + `${[...ancestry, recipe.id, step.recipe].join(' -> ')}.`,
+        });
+        return;
+      }
+      if (ancestry.length + 1 > MAX_RECIPE_DEPTH) {
+        issues.push({
+          path,
+          message: `Recipes nest deeper than ${String(MAX_RECIPE_DEPTH)}; this is a mistake, not a model.`,
+        });
+        return;
+      }
+
+      const salt = step.seedSalt ?? 0;
+      // Salt 0 builds the sub-recipe exactly as it builds alone, so a shared
+      // roof on a house is the same roof the shelf shows.
+      const seeded = salt === 0 ? sub : { ...sub, seed: mixSeed(sub.seed, salt) };
+      let built: BuiltRecipeV1;
+      try {
+        built = buildRecipeInternal(seeded, parts, book, [...ancestry, recipe.id]);
+      } catch (error) {
+        if (error instanceof RecipeBuildError) {
+          // Carry the inner findings out under a path that says which step
+          // reached them, so a broken shared recipe is traceable from the
+          // model that failed rather than only from itself.
+          for (const issue of error.issues) {
+            issues.push({
+              path: `${path} -> ${step.recipe}${issue.path.replace(/^\$/, '')}`,
+              message: issue.message,
+            });
+          }
+          return;
+        }
+        throw error;
+      }
+
+      const [ax, ay, az] = step.at;
+      const [bx, by, bz] = built.model.size;
+      if (ax + bx > sx || ay + by > sy || az + bz > sz) {
+        issues.push({
+          path: `${path}.at`,
+          message: `The recipe '${step.recipe}' is ${String(bx)}x${String(by)}x${String(bz)} `
+            + 'and reaches outside the grid.',
+        });
+        return;
+      }
+
+      // Roles again, exactly as for a part: the sub-recipe's palette is not
+      // used, so the recipe placing it decides every colour.
+      const slots = new Array<number>(sub.roles.length).fill(0);
+      const missing: string[] = [];
+      for (let role = 1; role < sub.roles.length; role += 1) {
+        const name = sub.roles[role] ?? '';
+        const slot = recipe.roles.indexOf(name);
+        if (slot < 0) missing.push(name);
+        else slots[role] = slot;
+      }
+      if (missing.length > 0) {
+        issues.push({
+          path,
+          message: `The recipe '${step.recipe}' uses roles this recipe does not colour: ${missing.join(', ')}.`,
+        });
+        return;
+      }
+
+      for (let z = 0; z < bz; z += 1) {
+        for (let y = 0; y < by; y += 1) {
+          for (let x = 0; x < bx; x += 1) {
+            const subCell = x + bx * (y + by * z);
+            const role = built.model.voxels[subCell] ?? 0;
+            if (role === 0) continue;
+            const cell = grid(ax + x, ay + y, az + z);
+            voxels[cell] = slots[role] ?? 0;
+            placedBy[cell] = stepIndex;
+            // The deepest owner wins, so a voxel from a roof inside a house
+            // still names the roof.
+            placedByRecipe[cell] = built.placedByRecipe[subCell] ?? sub.id;
+          }
+        }
+      }
+      return;
+    }
+
     // Mirror reads a snapshot of the grid as it stood, so the result is the
     // simultaneous union — filled cells win over their mirrored twin, and
     // running the same mirror twice changes nothing more.
     const before = voxels.slice();
     const beforePlaced = placedBy.slice();
+    const beforeOwner = placedByRecipe.slice();
     for (let z = 0; z < sz; z += 1) {
       for (let y = 0; y < sy; y += 1) {
         for (let x = 0; x < sx; x += 1) {
@@ -441,6 +620,7 @@ export function buildRecipe(recipe: RecipeV1, parts: PartShelfV1): BuiltRecipeV1
           if (slot === 0) continue;
           voxels[cell] = slot;
           placedBy[cell] = beforePlaced[twin] ?? -1;
+          placedByRecipe[cell] = beforeOwner[twin] ?? '';
         }
       }
     }
@@ -467,7 +647,7 @@ export function buildRecipe(recipe: RecipeV1, parts: PartShelfV1): BuiltRecipeV1
   // rather than hand a misbuilt model onward.
   const modelIssues = validateModelV1(model);
   if (modelIssues.length > 0) throw new RecipeBuildError(modelIssues);
-  return { model, placedBy };
+  return { model, placedBy, placedByRecipe };
 }
 
 /**
@@ -502,6 +682,8 @@ export function describeRecipeStepV1(step: RecipeStepV1): string {
       return `Adds the ${step.part} part`;
     case 'mirror':
       return step.axis === 'x' ? 'Mirrors left to right' : 'Mirrors front to back';
+    case 'recipe':
+      return `Adds the ${step.recipe} recipe`;
   }
 }
 
@@ -525,11 +707,12 @@ function countFilledInternal(model: StudioModelV1): number {
 export function buildRecipeStages(
   recipe: RecipeV1,
   parts: PartShelfV1,
+  book: RecipeBookV1 = {},
 ): readonly RecipeStageV1[] {
   const stages: RecipeStageV1[] = [];
   let previousVoxels = 0;
   for (let count = 0; count <= recipe.steps.length; count += 1) {
-    const built = buildRecipe({ ...recipe, steps: recipe.steps.slice(0, count) }, parts);
+    const built = buildRecipe({ ...recipe, steps: recipe.steps.slice(0, count) }, parts, book);
     const step = count === 0 ? null : recipe.steps[count - 1] ?? null;
     const voxelsAfter = countFilledInternal(built.model);
     stages.push({

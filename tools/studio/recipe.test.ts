@@ -12,9 +12,16 @@ import {
   RecipeBuildError,
   validateRecipeV1,
   type PartShelfV1,
+  type RecipeBookV1,
   type RecipeV1,
 } from './recipe.js';
-import { createBrickWallRecipe, createStarterRecipe } from './recipes.js';
+import {
+  createBrickCottageRecipe,
+  createBrickWallRecipe,
+  createSandstoneCottageRecipe,
+  createStarterRecipe,
+  createStudioRecipeBook,
+} from './recipes.js';
 
 /**
  * A tiny recipe for probing step semantics. One row of four cells deep two
@@ -44,9 +51,13 @@ function smallRecipe(steps: RecipeV1['steps']): RecipeV1 {
   };
 }
 
-function failure(recipe: RecipeV1, parts: PartShelfV1 = createStudioParts()): RecipeBuildError {
+function failure(
+  recipe: RecipeV1,
+  parts: PartShelfV1 = createStudioParts(),
+  book: RecipeBookV1 = {},
+): RecipeBuildError {
   try {
-    buildRecipe(recipe, parts);
+    buildRecipe(recipe, parts, book);
   } catch (error) {
     if (error instanceof RecipeBuildError) return error;
     throw error;
@@ -225,6 +236,158 @@ describe('building a recipe into a model', () => {
   it('will not build a recipe that fails validation', () => {
     const broken = { ...createStarterRecipe(), roles: ['body', 'empty', 'cap'] };
     expect(() => buildRecipe(broken, createStudioParts())).toThrow(RecipeBuildError);
+  });
+});
+
+describe('recipes made of recipes', () => {
+  /** A one-cube recipe, the smallest thing worth sharing. */
+  function cubeRecipe(id: string, role: string): RecipeV1 {
+    return {
+      schemaVersion: 'studio.voxel-recipe/1',
+      id,
+      label: id,
+      seed: 5,
+      size: [1, 1, 1],
+      roles: ['empty', role],
+      palette: [{ r: 0, g: 0, b: 0 }, { r: 10, g: 20, b: 30 }],
+      steps: [{ kind: 'part', part: 'box', at: [0, 0, 0], settings: { role } }],
+      motion: {
+        periodMs: 0,
+        phaseRadians: 0,
+        translation: [0, 0, 0],
+        rotationRadians: [0, 0, 0],
+        scale: [0, 0, 0],
+      },
+    };
+  }
+
+  it('places a shared recipe, and the parent colours it', () => {
+    const book = { 'test:cube': cubeRecipe('test:cube', 'paint') };
+    const built = buildRecipe(smallRecipe([
+      { kind: 'recipe', recipe: 'test:cube', at: [1, 0, 0] },
+    ]), createStudioParts(), book);
+    // The sub-recipe's own palette is not used: it painted the role 'paint',
+    // and this recipe decides what 'paint' looks like.
+    expect(built.model.voxels[1]).toBe(1);
+    expect(built.model.palette[1]).toEqual({ r: 200, g: 90, b: 60 });
+  });
+
+  it('is the same wherever it is placed, which is what sharing means', () => {
+    const book = { 'test:cube': cubeRecipe('test:cube', 'paint') };
+    const twice = buildRecipe(smallRecipe([
+      { kind: 'recipe', recipe: 'test:cube', at: [0, 0, 0] },
+      { kind: 'recipe', recipe: 'test:cube', at: [2, 0, 0] },
+    ]), createStudioParts(), book);
+    expect(twice.model.voxels[0]).toBe(twice.model.voxels[2]);
+  });
+
+  it('names the recipe that placed each voxel, however deep', () => {
+    // A note pinned on a shared roof must reach the roof, not the house that
+    // borrowed it -- otherwise the fix lands in one house and the other keeps
+    // the flaw.
+    const inner = cubeRecipe('test:inner', 'paint');
+    const middle: RecipeV1 = {
+      ...cubeRecipe('test:middle', 'paint'),
+      size: [2, 1, 1],
+      steps: [{ kind: 'recipe', recipe: 'test:inner', at: [1, 0, 0] }],
+    };
+    const built = buildRecipe(smallRecipe([
+      { kind: 'voxels', at: [0, 0, 0], size: [1, 1, 1], voxels: [1] },
+      { kind: 'recipe', recipe: 'test:middle', at: [1, 0, 0] },
+    ]), createStudioParts(), { 'test:inner': inner, 'test:middle': middle });
+    expect(built.placedByRecipe[0]).toBe('test:small');
+    expect(built.placedByRecipe[2]).toBe('test:inner');
+  });
+
+  it('refuses a recipe the book does not have, and says its name', () => {
+    const error = failure(smallRecipe([
+      { kind: 'recipe', recipe: 'test:missing', at: [0, 0, 0] },
+    ]));
+    expect(error.message).toContain("'test:missing'");
+  });
+
+  it('refuses a recipe that contains itself, naming the loop', () => {
+    const loop: RecipeV1 = {
+      ...cubeRecipe('test:loop', 'paint'),
+      size: [2, 1, 1],
+      steps: [{ kind: 'recipe', recipe: 'test:loop', at: [0, 0, 0] }],
+    };
+    let thrown: RecipeBuildError | null = null;
+    try {
+      buildRecipe(loop, createStudioParts(), { 'test:loop': loop });
+    } catch (error) {
+      if (error instanceof RecipeBuildError) thrown = error;
+    }
+    expect(thrown?.message).toContain('contains itself');
+    expect(thrown?.message).toContain('test:loop -> test:loop');
+  });
+
+  it('refuses a loop that runs through another recipe', () => {
+    const a: RecipeV1 = {
+      ...cubeRecipe('test:a', 'paint'),
+      size: [2, 1, 1],
+      steps: [{ kind: 'recipe', recipe: 'test:b', at: [0, 0, 0] }],
+    };
+    const b: RecipeV1 = {
+      ...cubeRecipe('test:b', 'paint'),
+      size: [2, 1, 1],
+      steps: [{ kind: 'recipe', recipe: 'test:a', at: [0, 0, 0] }],
+    };
+    expect(() => buildRecipe(a, createStudioParts(), { 'test:a': a, 'test:b': b }))
+      .toThrow(/contains itself/);
+  });
+
+  it('refuses roles the placing recipe does not colour', () => {
+    const book = { 'test:cube': cubeRecipe('test:cube', 'chrome') };
+    const error = failure(smallRecipe([
+      { kind: 'recipe', recipe: 'test:cube', at: [0, 0, 0] },
+    ]), createStudioParts(), book);
+    expect(error.message).toContain('does not colour: chrome');
+  });
+
+  it('refuses a sub-recipe that reaches outside the grid', () => {
+    const book = {
+      'test:wide': { ...cubeRecipe('test:wide', 'paint'), size: [4, 1, 1] as const },
+    };
+    const error = failure(smallRecipe([
+      { kind: 'recipe', recipe: 'test:wide', at: [2, 0, 0] },
+    ]), createStudioParts(), book);
+    expect(error.message).toContain('outside the grid');
+  });
+
+  it('reports a broken shared recipe through the step that reached it', () => {
+    const broken: RecipeV1 = {
+      ...cubeRecipe('test:broken', 'paint'),
+      steps: [{ kind: 'part', part: 'chimney', at: [0, 0, 0], settings: {} }],
+    };
+    const error = failure(smallRecipe([
+      { kind: 'recipe', recipe: 'test:broken', at: [0, 0, 0] },
+    ]), createStudioParts(), { 'test:broken': broken });
+    expect(error.message).toContain('test:broken');
+    expect(error.message).toContain("'chimney'");
+  });
+
+  it('builds the two cottages, sharing one roof between them', () => {
+    // The claim the whole feature exists for: one roof recipe, two houses.
+    const parts = createStudioParts();
+    const book = createStudioRecipeBook();
+    const brick = buildRecipe(createBrickCottageRecipe(), parts, book);
+    const sandstone = buildRecipe(createSandstoneCottageRecipe(), parts, book);
+
+    const roofCells = (built: typeof brick) => built.placedByRecipe
+      .map((owner, cell) => (owner === 'studio:cottage-roof' ? cell : -1))
+      .filter((cell) => cell >= 0);
+    // The roof occupies exactly the same cells in both, because it is the
+    // same recipe rather than two copies that happen to agree today.
+    expect(roofCells(brick)).toEqual(roofCells(sandstone));
+    expect(roofCells(brick).length).toBeGreaterThan(0);
+
+    // The walls genuinely differ. Not in how many cells they fill — both are
+    // the same footprint and mortar fills every joint, so both are solid —
+    // but in what is in them: a different bond and different brick lengths.
+    const wallVoxels = (built: typeof brick) => built.placedByRecipe
+      .map((owner, cell) => (owner.endsWith('-wall') ? built.model.voxels[cell] : -1));
+    expect(wallVoxels(brick)).not.toEqual(wallVoxels(sandstone));
   });
 });
 

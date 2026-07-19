@@ -1,11 +1,14 @@
 import { addPaletteColor, createEmptyModel, setMotion, setVoxel } from './edit.js';
 import type { StudioModelV1 } from './model.js';
 import { createStudioParts } from './parts.js';
-import { buildRecipe, type PartShelfV1, type RecipeV1 } from './recipe.js';
+import { buildRecipe, type PartShelfV1, type RecipeBookV1, type RecipeV1 } from './recipe.js';
 import {
+  createBrickCottageRecipe,
   createBrickWallRecipe,
+  createSandstoneCottageRecipe,
   createSandstoneWallRecipe,
   createStarterRecipe,
+  createStudioRecipeBook,
 } from './recipes.js';
 
 /**
@@ -20,6 +23,8 @@ import {
 export interface ShelfRecipeV1 {
   readonly recipe: RecipeV1;
   readonly parts: PartShelfV1;
+  /** Recipes this one may place inside itself, by id. Omitted when it uses none. */
+  readonly book?: RecipeBookV1;
 }
 
 export interface ShelfModelV1 {
@@ -147,6 +152,37 @@ export function createStudioCatalog(): StudioCatalogV1 {
             label: 'Sandstone wall',
             load: () => buildRecipe(createSandstoneWallRecipe(), createStudioParts()).model,
             howItsMade: () => ({ recipe: createSandstoneWallRecipe(), parts: createStudioParts() }),
+          },
+        ],
+      },
+      {
+        // Two cottages that share one roof recipe and differ only in the wall
+        // they name. Improving the roof improves both, and neither owns it.
+        name: 'Cottages',
+        models: [
+          {
+            id: 'studio:brick-cottage',
+            label: 'Brick cottage',
+            load: () => buildRecipe(
+              createBrickCottageRecipe(), createStudioParts(), createStudioRecipeBook(),
+            ).model,
+            howItsMade: () => ({
+              recipe: createBrickCottageRecipe(),
+              parts: createStudioParts(),
+              book: createStudioRecipeBook(),
+            }),
+          },
+          {
+            id: 'studio:sandstone-cottage',
+            label: 'Sandstone cottage',
+            load: () => buildRecipe(
+              createSandstoneCottageRecipe(), createStudioParts(), createStudioRecipeBook(),
+            ).model,
+            howItsMade: () => ({
+              recipe: createSandstoneCottageRecipe(),
+              parts: createStudioParts(),
+              book: createStudioRecipeBook(),
+            }),
           },
         ],
       },

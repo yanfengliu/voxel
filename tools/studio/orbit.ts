@@ -39,6 +39,26 @@ export function clampOrbit(state: OrbitStateV1): OrbitStateV1 {
   };
 }
 
+/**
+ * How much of the world to show so a model of this size fits with room to
+ * spare, whatever angle it is seen from.
+ *
+ * A shelf holds a game's whole asset set, and those are not all one size — a
+ * doorframe and a cathedral sit next to each other. One fixed view height
+ * either buries the small models or crops the large ones, so opening a model
+ * fits the view to it. Turning still changes nothing but where you stand: the
+ * fit is taken once, from the model, not continuously from what is on screen.
+ *
+ * The model's diagonal rather than its height, because a model turns: a long
+ * wall seen end-on is as tall as it is long, and fitting only its height
+ * would crop it the moment you orbit.
+ */
+export function fitViewHeight(size: readonly [number, number, number]): number {
+  const [sx, sy, sz] = size;
+  const diagonal = Math.sqrt(sx * sx + sy * sy + sz * sz);
+  return clampOrbit({ ...DEFAULT_ORBIT, viewHeight: diagonal * 1.15 }).viewHeight;
+}
+
 /** Moves a drag into angle space: pixels to degrees, up-drag looks higher. */
 export function dragOrbit(
   state: OrbitStateV1,
