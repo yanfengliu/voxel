@@ -7,6 +7,7 @@ import {
   stopMotion,
 } from './edit.js';
 import { validateModelV1, type ModelMotionV1, type StudioModelV1 } from './model.js';
+import { modelCenterV1 } from './build.js';
 import { buildRecipeStages, type RecipeStageV1 } from './recipe.js';
 import type { NoteStore, StudioNoteV1 } from './notes.js';
 import type { StudioPlayer } from './player.js';
@@ -424,12 +425,18 @@ export function createStudioHarness(host: HarnessHostV1): VoxelStudioHarnessV1 {
       // half-built model.
       restoreModel ??= host.session().model;
       shownStep = index;
+      // Every stage is framed on the finished model, so the picture holds
+      // still while the model grows into it. Framed on itself, a single post
+      // would sit dead centre and the next stage would shove it aside.
+      const finished = stages[stages.length - 1];
+      if (finished) host.session().setFrameCenter(modelCenterV1(finished.model));
       host.update(stage.model);
       return host.session().describe();
     },
     showFinished() {
       const restore = restoreModel;
       dropPreview();
+      host.session().setFrameCenter(null);
       if (restore) host.update(restore);
       return host.session().describe();
     },

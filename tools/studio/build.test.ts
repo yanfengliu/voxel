@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { RenderWorld } from '../../src/core/index.js';
 
-import { buildSnapshot, filledVoxelCount, ModelBuildError } from './build.js';
+import { buildSnapshot, filledVoxelCount, modelCenterV1, ModelBuildError } from './build.js';
 import {
   addPaletteColor,
   createEmptyModel,
@@ -73,6 +73,56 @@ describe('building a model into a voxel snapshot', () => {
     const world = new RenderWorld();
     expect(world.acceptSnapshot(snapshot)).toMatchObject({ status: 'accepted' });
     world.dispose();
+  });
+
+  it('frames a partial model on a fixed middle so a construction holds still', () => {
+    // Two models of the same grid: one filled at both ends, one only at the
+    // low end — the shape of any construction part-way through.
+    const whole = (() => {
+      let model = addPaletteColor(
+        createEmptyModel({ id: 'test:frame', size: [8, 1, 1] }),
+        { r: 200, g: 90, b: 60 },
+      ).model;
+      model = setVoxel(model, 0, 0, 0, 1);
+      return setVoxel(model, 7, 0, 0, 1);
+    })();
+    const partial = (() => {
+      const model = addPaletteColor(
+        createEmptyModel({ id: 'test:frame', size: [8, 1, 1] }),
+        { r: 200, g: 90, b: 60 },
+      ).model;
+      return setVoxel(model, 0, 0, 0, 1);
+    })();
+
+    expect(modelCenterV1(whole)).toMatchObject({ x: 4 });
+    expect(modelCenterV1(partial)).toMatchObject({ x: 0.5 });
+
+    // Framed on itself, the partial model sits dead centre — which is exactly
+    // why a construction appears to slide around as it grows.
+    const ownMiddle = geometry(buildSnapshot(partial, { revision: 1 }));
+    expect((ownMiddle.bounds.min.x + ownMiddle.bounds.max.x) / 2).toBeCloseTo(0);
+
+    // Pinned to the finished model's middle, it sits where it really is.
+    const pinned = geometry(buildSnapshot(partial, {
+      revision: 1,
+      centerOn: modelCenterV1(whole),
+    }));
+    expect((pinned.bounds.min.x + pinned.bounds.max.x) / 2).toBeCloseTo(-3.5);
+
+    // And the finished model pinned to its own middle sits where it always
+    // did, so a construction's last stage matches the model itself.
+    //
+    // The two middles are the same place but not the same float: the drawn
+    // bounds include the outline pass's epsilon, while the voxel middle is
+    // exact. The gap is about 2e-7 of a voxel — far below anything a pixel
+    // can show, and not worth changing how every model is framed.
+    const finished = geometry(buildSnapshot(whole, {
+      revision: 1,
+      centerOn: modelCenterV1(whole),
+    }));
+    const plain = geometry(buildSnapshot(whole, { revision: 1 }));
+    expect((finished.bounds.min.x + finished.bounds.max.x) / 2).toBeCloseTo(0, 5);
+    expect((plain.bounds.min.x + plain.bounds.max.x) / 2).toBeCloseTo(0, 5);
   });
 
   it('is accepted by the engine that will actually draw it', () => {

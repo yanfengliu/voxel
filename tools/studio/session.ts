@@ -61,6 +61,8 @@ export class StudioSession {
   #model: StudioModelV1;
   #revision = 0;
   #incarnation = 1;
+  /** A frame pinned to another model's middle; null means centre on itself. */
+  #frameCenter: { readonly x: number; readonly y: number; readonly z: number } | null = null;
   /** Whether the last accepted snapshot carried geometry at all. */
   #hadGeometry = true;
   #frameIndex = 0;
@@ -188,6 +190,27 @@ export class StudioSession {
     return this.#edges;
   }
 
+  /**
+   * Holds the picture still on a fixed middle, or releases it back to the
+   * model's own. Used while watching a construction, where every stage is
+   * framed on the finished model so the thing being built grows into a
+   * steady frame instead of sliding around as it changes shape.
+   */
+  setFrameCenter(
+    center: { readonly x: number; readonly y: number; readonly z: number } | null,
+  ): void {
+    this.#assertLive();
+    const same = center === null
+      ? this.#frameCenter === null
+      : this.#frameCenter !== null
+        && this.#frameCenter.x === center.x
+        && this.#frameCenter.y === center.y
+        && this.#frameCenter.z === center.z;
+    if (same) return;
+    this.#frameCenter = center === null ? null : { x: center.x, y: center.y, z: center.z };
+    this.#accept(this.#model);
+  }
+
   /** What the studio knows about the model without drawing it. */
   describe(): {
     readonly id: string;
@@ -235,6 +258,7 @@ export class StudioSession {
       incarnation: this.#incarnation,
       epoch: `epoch:${model.id}`,
       edges: this.#edges,
+      ...(this.#frameCenter === null ? {} : { centerOn: this.#frameCenter }),
     }));
     if (result.status !== 'accepted') {
       // The engine refused a model the editors produced. That is an invariant

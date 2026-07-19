@@ -40,6 +40,17 @@ export interface BuildOptionsV1 {
    * Defaults to the first life.
    */
   readonly incarnation?: number;
+  /**
+   * Centre the picture on this point instead of on the model's own middle.
+   *
+   * A model is normally centred on itself, which is right when you are
+   * looking at one model. It is wrong when you are watching one being built:
+   * every stage would centre on whatever exists so far, so the model slides
+   * around the screen as it grows and no two stages can be compared. Pinning
+   * every stage to the finished model's middle holds the frame still and lets
+   * the model grow into it.
+   */
+  readonly centerOn?: { readonly x: number; readonly y: number; readonly z: number };
   /** Separates lineages so one runtime never mixes unrelated models. */
   readonly epoch?: string;
   /**
@@ -56,6 +67,45 @@ export class ModelBuildError extends Error {
     );
     this.name = 'ModelBuildError';
   }
+}
+
+/**
+ * The middle of what a model actually fills, in the model's own coordinates.
+ *
+ * Computed from the grid rather than from a mesh, so a caller can ask where a
+ * model's middle will be without building it — which is what pinning a
+ * construction's frame needs, since the frame comes from the finished model
+ * while the stage being drawn is a partial one. It matches the middle the
+ * mesher's own bounds produce: a filled cell spans one unit, so the extent
+ * runs from its low corner to one past its high corner.
+ */
+export function modelCenterV1(
+  model: StudioModelV1,
+): { readonly x: number; readonly y: number; readonly z: number } {
+  const [sx, sy, sz] = model.size;
+  let minX = Infinity; let minY = Infinity; let minZ = Infinity;
+  let maxX = -Infinity; let maxY = -Infinity; let maxZ = -Infinity;
+  for (let z = 0; z < sz; z += 1) {
+    for (let y = 0; y < sy; y += 1) {
+      for (let x = 0; x < sx; x += 1) {
+        if ((model.voxels[x + sx * (y + sy * z)] ?? 0) === 0) continue;
+        if (x < minX) minX = x;
+        if (y < minY) minY = y;
+        if (z < minZ) minZ = z;
+        if (x > maxX) maxX = x;
+        if (y > maxY) maxY = y;
+        if (z > maxZ) maxZ = z;
+      }
+    }
+  }
+  // An empty model has no filled middle; the grid's own middle is the only
+  // answer that keeps a frame stable across an empty first stage.
+  if (minX === Infinity) return { x: sx / 2, y: sy / 2, z: sz / 2 };
+  return {
+    x: (minX + maxX + 1) / 2,
+    y: (minY + maxY + 1) / 2,
+    z: (minZ + maxZ + 1) / 2,
+  };
 }
 
 /** One world description, shared by the drawn and the empty paths. */
@@ -179,7 +229,7 @@ export function buildSnapshot(
   // exactly that. Measuring the rendered centroid of a pure spin is what caught
   // that: 39 px of drift where zero was the whole claim.
   const raw = boundsOf(mesh.positions, sx, sy, sz);
-  const middle = {
+  const middle = options.centerOn ?? {
     x: (raw.min.x + raw.max.x) / 2,
     y: (raw.min.y + raw.max.y) / 2,
     z: (raw.min.z + raw.max.z) / 2,
