@@ -4,8 +4,13 @@ import type { StudioCatalogV1 } from './catalog.js';
 import { createConstructionPanel } from './construction.js';
 import {
   connectModelStudioShell,
+  connectModelStudioShellV2,
   renderModelStudioShell,
+  renderModelStudioShellV2,
   type ModelStudioShellHandleV1,
+  type ModelStudioShellHandleV2,
+  type ModelStudioShellOptionsV2,
+  type ModelStudioShellProfileV2,
   type ModelStudioTabId,
 } from './shared-ui/index.js';
 import { describeMotion, describePoseAt } from './describe.js';
@@ -72,6 +77,11 @@ export interface StudioMountOptionsV1 {
    * one page turns it off for the second.
    */
   readonly publishHarness?: boolean;
+  /**
+   * Opts this grid-renderer adapter into the configurable V2 inspector shell.
+   * Omit it to preserve the exact five-tab V1 workbench.
+   */
+  readonly shellProfileV2?: ModelStudioShellProfileV2;
 }
 
 export interface StudioHandleV1 {
@@ -148,6 +158,11 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
   const root = options.root ?? document.getElementById('studio');
   if (!root) throw new Error('The studio needs a #studio host element.');
   const catalog = options.catalog;
+  const configuredCoreTabs = options.shellProfileV2?.coreTabs;
+  const supportsCoreTab = (tab: ModelStudioTabId): boolean =>
+    configuredCoreTabs === undefined || configuredCoreTabs.includes(tab);
+  const supportsEdit = supportsCoreTab('edit');
+  const supportsNotes = supportsCoreTab('notes');
 
   // ---- stage ----
   const canvas = element('canvas');
@@ -221,6 +236,12 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
   copyButton.textContent = 'Copy';
   const requestShortcut = element('button', 'primary');
   requestShortcut.textContent = 'Send request';
+  for (const command of [openButton, newButton, copyButton]) {
+    command.hidden = !supportsEdit;
+    command.disabled = !supportsEdit;
+  }
+  requestShortcut.hidden = !supportsNotes;
+  requestShortcut.disabled = !supportsNotes;
 
   // ---- player bar ----
   const stepBack = element('button', 'step');
@@ -279,6 +300,8 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
   noteHint.textContent = 'Pause and click the picture to pin a note to that moment.';
   const pinPlaceButton = element('button');
   pinPlaceButton.textContent = 'Pin to a spot on the model';
+  pinPlaceButton.hidden = !supportsEdit;
+  pinPlaceButton.disabled = !supportsEdit;
   const requestBox = element('textarea', 'request');
   requestBox.rows = 3;
   requestBox.placeholder = 'What should change? Your notes travel with this.';
@@ -469,6 +492,10 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
       const where = element('button', 'note-where');
       where.textContent = describeNoteAnchor(note);
       where.title = 'Show me';
+      if (note.kind === 'place' && !supportsEdit) {
+        where.disabled = true;
+        where.title = 'Place notes need the Edit tools omitted by this Studio profile.';
+      }
       where.addEventListener('click', () => { showNote(note); });
       const text = element('span', 'note-text');
       text.textContent = note.text;
@@ -488,6 +515,7 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
       harness.seek(note.timeMs);
       return;
     }
+    if (!supportsEdit) return;
     showTab('edit');
     if (layer !== note.voxel.y) {
       layer = note.voxel.y;
@@ -506,6 +534,7 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
   }
 
   function openNoteEditor(hint: string): void {
+    if (!supportsNotes) return;
     showTab('notes');
     noteEditor.hidden = false;
     noteHint.hidden = true;
@@ -760,7 +789,7 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
     const wasDrag = moved;
     dragging = false;
     moved = false;
-    if (wasDrag) return;
+    if (wasDrag || !supportsNotes) return;
     // A clean click is pointing at something seen; freeze that moment.
     if (player.playing) {
       harness.pause();
@@ -805,6 +834,7 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
 
   // ---- wiring: notes and requests ----
   pinPlaceButton.addEventListener('click', () => {
+    if (!supportsEdit) return;
     armedForPlace = !armedForPlace;
     pinPlaceButton.classList.toggle('armed', armedForPlace);
     if (armedForPlace) {
@@ -857,6 +887,7 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
     });
   });
   requestShortcut.addEventListener('click', () => {
+    if (!supportsNotes) return;
     showTab('notes');
     requestBox.focus();
   });
@@ -881,6 +912,7 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
 
   // ---- wiring: edit (open/copy/new) ----
   openButton.addEventListener('click', () => {
+    if (!supportsEdit) return;
     showTab('edit');
     modelText.focus();
     modelStatus.dataset.tone = 'idle';
@@ -908,6 +940,7 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
     modelStatus.textContent = `Opened ${harness.model().label}.`;
   });
   copyButton.addEventListener('click', () => {
+    if (!supportsEdit) return;
     showTab('edit');
     modelText.value = JSON.stringify(harness.model(), null, 2);
     modelText.select();
@@ -915,6 +948,7 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
     modelStatus.textContent = 'The model is in the box, ready to copy or edit.';
   });
   newButton.addEventListener('click', () => {
+    if (!supportsEdit) return;
     const size = Number(sizeInput.value);
     harness.load({
       schemaVersion: 'studio.voxel-model/1',
@@ -1013,19 +1047,37 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
   const notesPane = element('div', 'pane');
   notesPane.append(noteHint, noteEditor, notesList, pinPlaceButton, requestBox, sendButton, requestStatus);
 
-  root.innerHTML = renderModelStudioShell({
-    panels: { examine: '', build: '', edit: '', motion: '', notes: '' },
-  });
-  const studioShell: ModelStudioShellHandleV1 = connectModelStudioShell(root, {
+  const shellOptions: ModelStudioShellOptionsV2 = {
     beforeSelect: (name) => {
       // Leaving Build puts the finished model back, so no other tab can ever
       // inspect or edit a half-built preview.
       if (name !== 'build') construction.leave();
       if (name === 'build') construction.refresh();
     },
-  });
+  };
+  let studioShell: ModelStudioShellHandleV1 | ModelStudioShellHandleV2;
+  if (options.shellProfileV2) {
+    root.innerHTML = renderModelStudioShellV2({
+      ...options.shellProfileV2,
+      panels: { examine: '', build: '', edit: '', motion: '', notes: '' },
+    });
+    const shellRoot = root.firstElementChild;
+    if (!(shellRoot instanceof HTMLElement)) {
+      throw new Error('The V2 Model Studio shell did not render an HTML root.');
+    }
+    studioShell = connectModelStudioShellV2(shellRoot, shellOptions);
+  } else {
+    root.innerHTML = renderModelStudioShell({
+      panels: { examine: '', build: '', edit: '', motion: '', notes: '' },
+    });
+    studioShell = connectModelStudioShell(root, shellOptions);
+  }
+  const hasStudioTab = (name: ModelStudioTabId): boolean =>
+    'hasTab' in studioShell ? studioShell.hasTab(name) : true;
+  const studioPanel = (name: ModelStudioTabId): HTMLElement =>
+    'panel' in studioShell ? studioShell.panel(name) : studioShell.panels[name];
   function showTab(name: ModelStudioTabId): void {
-    studioShell.selectTab(name);
+    studioShell.selectTab(hasStudioTab(name) ? name : 'examine');
   }
 
   studioShell.regions.top.append(
@@ -1035,11 +1087,11 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
   const stage = studioShell.regions.stage;
   stage.append(canvasWrap, viewChip, toggles, stageHint);
   studioShell.regions.player.append(transport, timelineWrap, timeLabel);
-  studioShell.panels.examine.append(...Array.from(examinePane.childNodes));
-  studioShell.panels.build.append(...Array.from(construction.element.childNodes));
-  studioShell.panels.edit.append(...Array.from(editPane.childNodes));
-  studioShell.panels.motion.append(...Array.from(motionPane.childNodes));
-  studioShell.panels.notes.append(...Array.from(notesPane.childNodes));
+  if (hasStudioTab('examine')) studioPanel('examine').append(...Array.from(examinePane.childNodes));
+  if (hasStudioTab('build')) studioPanel('build').append(...Array.from(construction.element.childNodes));
+  if (hasStudioTab('edit')) studioPanel('edit').append(...Array.from(editPane.childNodes));
+  if (hasStudioTab('motion')) studioPanel('motion').append(...Array.from(motionPane.childNodes));
+  if (hasStudioTab('notes')) studioPanel('notes').append(...Array.from(notesPane.childNodes));
 
   // The picture fills the stage and follows the window, so zooming meets the
   // window's edge, never an invisible border in the middle of the screen —
@@ -1080,7 +1132,11 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
   // A recipe-backed model opens on Build, whose first section is its recipe
   // parts list. Construction used to be hidden behind Examine on every open,
   // which made the parts effectively invisible until someone knew to look.
-  showTab(harness.buildSteps().length > 0 ? 'build' : 'examine');
+  if (options.shellProfileV2?.initialTab !== undefined && 'hasTab' in studioShell) {
+    studioShell.selectTab(options.shellProfileV2.initialTab);
+  } else {
+    showTab(harness.buildSteps().length > 0 ? 'build' : 'examine');
+  }
   renderNotes();
   refresh();
   // Sized once immediately and on every window resize, besides the frame

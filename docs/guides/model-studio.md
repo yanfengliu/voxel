@@ -11,10 +11,13 @@ two-file setup and the boundary between them.
 ## What each side owns
 
 The engine owns one Three-free UI package at `tools/studio/shared-ui`: the exact
-top/shelf/stage/player/inspector grid, scoped visual tokens, the fixed
+top/shelf/stage/player/inspector grid, scoped visual tokens, the standard
 **Examine / Build / Edit / Motion / Notes** vocabulary, tab accessibility and
-keyboard behavior, disposal, and the normalized browser baseline. A UI change
-belongs there, so every mounted game receives it.
+keyboard behavior, disposal, and the normalized browser baseline. V1 keeps the
+original five-tab workbench unchanged. The parallel V2 descriptor keeps
+Examine mandatory, permits explicit omission of unadopted standard features,
+and appends namespaced game add-ons after the enabled standards. A reusable UI
+change belongs here, so every mounted game can receive it without a shell fork.
 
 Voxel's grid adapter owns the viewer and orbiting stage, playback and timeline,
 frame checks and sprite sheet, voxel editing, notes and requests, recipe
@@ -91,14 +94,25 @@ narrow Three.js peer never enters the shared shell.
 
 ## A game with its own renderer
 
-Add `@voxel/model-studio-ui` as a file dev dependency, import
-`renderModelStudioShell` for the five game-content slots, import the scoped
-`@voxel/model-studio-ui/style.css`, and call `connectModelStudioShell` after
-mounting the markup. The returned handle exposes the five regions and panels,
-`selectTab`, `activeTab`, and idempotent `dispose`. Do not copy the template,
-tab list, or outer CSS into the game. Adapter-only controls stay inside the
-same five panes; an unavailable capability keeps its pane and a nonempty
-accessible explanation rather than disappearing into a forked UI.
+Add `@voxel/model-studio-ui` as a file dev dependency and import the scoped
+`@voxel/model-studio-ui/style.css`. A fixed-profile game may continue to call
+`renderModelStudioShell` and `connectModelStudioShell`; that V1 pair returns the
+five regions and five standard panels exactly as before.
+
+A configurable game calls `renderModelStudioShellV2` with a stable unique
+kebab-case `instanceId`, a canonical-order `coreTabs` subsequence containing
+`examine`, and any declarative add-ons. Add-on ids use lowercase
+`game:addon-name` namespaces and always follow the standards. Mount the
+returned markup, then pass its exact shell root to `connectModelStudioShellV2`.
+The V2 handle exposes the same five regions plus `tabIds`, `hasTab`, dynamic
+`panel(id)` lookup, focus-aware `selectTab`, and idempotent `dispose`.
+
+Do not copy the template, tab list, controller, or outer CSS into the game. A
+feature the game never adopts may be omitted in V2; a supported feature that is
+temporarily unavailable for one model remains present with a nonempty
+accessible explanation. Game add-ons own only their panel semantics and
+harness commands. If a capability becomes useful to multiple games, promote it
+into the shared package instead of reimplementing it.
 
 ## Saving models
 

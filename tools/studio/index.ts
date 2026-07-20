@@ -16,6 +16,12 @@
 export { mountStudio, type StudioMountOptionsV1, type StudioHandleV1 } from './studio-app.js';
 
 export type {
+  ModelStudioAddonTabV2,
+  ModelStudioShellProfileV2,
+  ModelStudioTabIdV2,
+} from './shared-ui/index.js';
+
+export type {
   ShelfModelV1,
   ShelfRecipeV1,
   ShelfSectionV1,

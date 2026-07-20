@@ -3,13 +3,27 @@ import { resolve } from 'node:path';
 import { expect, test } from '@playwright/test';
 import { createServer, type ViteDevServer } from 'vite';
 import type { StudioHandleV1, StudioMountOptionsV1 } from '../../tools/studio/studio-app.js';
+import type {
+  ModelStudioShellHandleV2,
+  ModelStudioShellMarkupV2,
+  ModelStudioShellOptionsV2,
+} from '../../tools/studio/shared-ui/index.js';
 
 interface BrowserStudioModule {
   readonly mountStudio: (options: StudioMountOptionsV1) => StudioHandleV1;
 }
 
+interface BrowserSharedUiModule {
+  readonly connectModelStudioShellV2: (
+    root: HTMLElement,
+    options?: ModelStudioShellOptionsV2,
+  ) => ModelStudioShellHandleV2;
+  readonly renderModelStudioShellV2: (markup: ModelStudioShellMarkupV2) => string;
+}
+
 const STUDIO_ROOT = resolve('tools/studio');
 const TAB_IDS = ['examine', 'build', 'edit', 'motion', 'notes'] as const;
+const HARBOR_TAB_IDS = ['examine', 'build', 'edit', 'notes', 'harbor:review'] as const;
 const NORMALIZE_SHELL_CSS = `
   [data-model-studio-shell] *, [data-model-studio-shell] *::before,
   [data-model-studio-shell] *::after { animation: none !important; transition: none !important; caret-color: transparent !important; }
@@ -42,19 +56,34 @@ test.afterAll(async () => {
   await ownedServer?.close();
 });
 
-for (const pagePath of ['', 'game-fixture.html']) {
-  test(`${pagePath || 'engine Studio'} mounts the exact shared workbench contract`, async ({ page }) => {
+for (const profile of [
+  {
+    pagePath: '',
+    label: 'engine Studio',
+    version: 'voxel.model-studio-ui/1',
+    tabIds: TAB_IDS,
+    focusTab: 'motion',
+  },
+  {
+    pagePath: 'game-fixture.html',
+    label: 'game fixture',
+    version: 'voxel.model-studio-ui/2',
+    tabIds: HARBOR_TAB_IDS,
+    focusTab: 'harbor:review',
+  },
+] as const) {
+  test(`${profile.label} mounts the exact shared workbench contract`, async ({ page }) => {
     await page.setViewportSize({ width: 1280, height: 800 });
     const errors: string[] = [];
     page.on('pageerror', (error) => errors.push(error.message));
     page.on('console', (message) => {
       if (message.type() === 'error') errors.push(message.text());
     });
-    const response = await page.goto(new URL(pagePath, studioOrigin).toString(), { waitUntil: 'load' });
+    const response = await page.goto(new URL(profile.pagePath, studioOrigin).toString(), { waitUntil: 'load' });
     expect(response?.ok()).toBe(true);
     await page.waitForFunction(() => typeof window.voxelStudio === 'object');
 
-    const shell = page.locator('[data-model-studio-shell="voxel.model-studio-ui/1"]');
+    const shell = page.locator(`[data-model-studio-shell="${profile.version}"]`);
     await expect(shell).toHaveCount(1);
     await expect(shell.getByRole('heading', { level: 1 })).toHaveCount(1);
     await expect(shell.getByRole('heading', { level: 1 })).not.toBeEmpty();
@@ -99,12 +128,16 @@ for (const pagePath of ['', 'game-fixture.html']) {
     });
 
     expect(evidence.regions).toEqual(['top', 'shelf', 'stage', 'player', 'inspector']);
-    expect(evidence.tabs.map(({ id }) => id)).toEqual(TAB_IDS);
-    expect(evidence.panels.map(({ id }) => id)).toEqual(TAB_IDS);
-    for (const [index, id] of TAB_IDS.entries()) {
+    expect(evidence.tabs.map(({ id }) => id)).toEqual(profile.tabIds);
+    expect(evidence.panels.map(({ id }) => id)).toEqual(profile.tabIds);
+    for (const [index] of profile.tabIds.entries()) {
       const tab = evidence.tabs[index]!;
       const panel = evidence.panels[index]!;
-      expect(tab.elementId).toMatch(new RegExp(`^studio-shell-\\d+-tab-${id}$`));
+      if (profile.version === 'voxel.model-studio-ui/1') {
+        expect(tab.elementId).toMatch(/^studio-shell-\d+-tab-/);
+      } else {
+        expect(tab.elementId).toBe(`harbor-studio-tab-${String(index + 1)}`);
+      }
       expect(tab.controls).toBe(tab.elementId.replace('-tab-', '-panel-'));
       expect(panel.elementId).toBe(tab.controls);
       expect(panel.labelledBy).toBe(tab.elementId);
@@ -123,30 +156,51 @@ for (const pagePath of ['', 'game-fixture.html']) {
 
     const examineTab = page.locator('[data-studio-tab="examine"]');
     await page.evaluate(() => {
-      const scope = window as unknown as { studioTabArrowBubbles: number };
-      scope.studioTabArrowBubbles = 0;
+      const scope = window as unknown as {
+        studioTabArrowBubbles: { horizontal: number; vertical: number };
+      };
+      scope.studioTabArrowBubbles = { horizontal: 0, vertical: 0 };
       document.addEventListener('keydown', (event) => {
         if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') {
-          scope.studioTabArrowBubbles += 1;
+          scope.studioTabArrowBubbles.horizontal += 1;
+        }
+        if (event.key === 'ArrowUp' || event.key === 'ArrowDown') {
+          scope.studioTabArrowBubbles.vertical += 1;
         }
       });
     });
     await examineTab.focus();
     await page.keyboard.press('End');
-    await expect(page.locator('[data-studio-tab="notes"]')).toHaveAttribute('aria-selected', 'true');
+    await expect(page.locator(`[data-studio-tab="${profile.tabIds.at(-1)!}"]`))
+      .toHaveAttribute('aria-selected', 'true');
     await page.keyboard.press('Home');
     await expect(examineTab).toHaveAttribute('aria-selected', 'true');
     await page.keyboard.press('ArrowLeft');
-    await expect(page.locator('[data-studio-tab="notes"]')).toHaveAttribute('aria-selected', 'true');
+    await expect(page.locator(`[data-studio-tab="${profile.tabIds.at(-1)!}"]`))
+      .toHaveAttribute('aria-selected', 'true');
     await page.keyboard.press('ArrowRight');
     await expect(examineTab).toHaveAttribute('aria-selected', 'true');
     expect(await page.evaluate(() =>
-      (window as unknown as { studioTabArrowBubbles?: number }).studioTabArrowBubbles)).toBe(0);
-    const motionTab = page.locator('[data-studio-tab="motion"]');
-    await motionTab.click();
+      (window as unknown as {
+        studioTabArrowBubbles?: { horizontal: number };
+      }).studioTabArrowBubbles?.horizontal)).toBe(0);
+    if (profile.version === 'voxel.model-studio-ui/2') {
+      await examineTab.focus();
+      await page.keyboard.press('ArrowUp');
+      await expect(examineTab).toHaveAttribute('aria-selected', 'true');
+      expect(await page.evaluate(() =>
+        (window as unknown as {
+          studioTabArrowBubbles?: { vertical: number };
+        }).studioTabArrowBubbles?.vertical)).toBe(1);
+    }
+    const focusTab = page.locator(`[data-studio-tab="${profile.focusTab}"]`);
+    await focusTab.click();
     await page.keyboard.press('Tab');
-    await expect(page.locator('[data-studio-panel="motion"]')).toBeFocused();
-    if (pagePath === 'game-fixture.html') {
+    await expect(page.locator(`[data-studio-panel="${profile.focusTab}"]`)).toBeFocused();
+    if (profile.pagePath === 'game-fixture.html') {
+      await expect(page.locator('[data-studio-tab="motion"]')).toHaveCount(0);
+      await expect(page.locator('[data-studio-panel="harbor:review"]'))
+        .toContainText('Harbor review');
       const recipeCoverage = await page.evaluate(() => {
         const studio = window.voxelStudio!;
         return studio.shelf().flatMap((section) => section.models).map((entry) => {
@@ -164,6 +218,304 @@ for (const pagePath of ['', 'game-fixture.html']) {
     expect(errors).toEqual([]);
   });
 }
+
+test('the six-tab Harbor profile keeps V2 tabs on one horizontally scrollable row', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await page.goto(new URL('game-fixture.html?profile=all-tabs', studioOrigin).toString(), {
+    waitUntil: 'load',
+  });
+  await page.waitForFunction(() => typeof window.voxelStudio === 'object');
+
+  const shell = page.locator('[data-model-studio-shell="voxel.model-studio-ui/2"]');
+  const tabs = shell.locator('[data-studio-tab]');
+  await expect(tabs).toHaveCount(6);
+  expect(await tabs.evaluateAll((nodes) => nodes.map((node) =>
+    (node as HTMLElement).dataset.studioTab))).toEqual([
+    'examine', 'build', 'edit', 'motion', 'notes', 'harbor:review',
+  ]);
+  const measurements = await shell.locator('[role="tablist"]').evaluate((tabList) => {
+    const boxes = Array.from(tabList.querySelectorAll<HTMLElement>('[role="tab"]'))
+      .map((tab) => tab.getBoundingClientRect());
+    return {
+      topEdges: [...new Set(boxes.map(({ top }) => Math.round(top)))],
+      scrollWidth: tabList.scrollWidth,
+      clientWidth: tabList.clientWidth,
+      rootOverflowX: (tabList.closest<HTMLElement>('[data-model-studio-shell]')!).scrollWidth
+        - (tabList.closest<HTMLElement>('[data-model-studio-shell]')!).clientWidth,
+      documentOverflowX: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+    };
+  });
+  expect(measurements.topEdges).toHaveLength(1);
+  expect(measurements.scrollWidth).toBeGreaterThan(measurements.clientWidth);
+  expect(measurements.rootOverflowX).toBe(0);
+  expect(measurements.documentOverflowX).toBe(0);
+
+  const scrollRight = shell.getByRole('button', { name: 'Scroll Studio tools right' });
+  const scrollLeft = shell.getByRole('button', { name: 'Scroll Studio tools left' });
+  await expect(scrollRight).toBeVisible();
+  await expect(scrollLeft).toBeHidden();
+  await scrollRight.click();
+  expect(await shell.locator('[data-studio-tab="harbor:review"]').evaluate((tab) => {
+    const tabBounds = tab.getBoundingClientRect();
+    const listBounds = tab.parentElement!.getBoundingClientRect();
+    return tabBounds.left >= listBounds.left && tabBounds.right <= listBounds.right + 1;
+  })).toBe(true);
+  await expect(scrollLeft).toBeVisible();
+  await expect(scrollRight).toBeHidden();
+  await scrollLeft.click();
+
+  await tabs.first().focus();
+  await page.keyboard.press('End');
+  await expect(shell.locator('[data-studio-tab="harbor:review"]')).toBeFocused();
+  await page.keyboard.press('Tab');
+  await expect(shell.locator('[data-studio-panel="harbor:review"]')).toBeFocused();
+});
+
+test('V2 connection is exact-root, instance-scoped, reconnectable, and focus-aware', async ({ page }) => {
+  await page.goto(studioOrigin, { waitUntil: 'load' });
+
+  const evidence = await page.evaluate(async () => {
+    const moduleUrl = new URL('shared-ui/index.ts', window.location.href).href;
+    const shared = await import(moduleUrl) as unknown as BrowserSharedUiModule;
+    const outside = document.createElement('button');
+    outside.textContent = 'Outside';
+    const firstHost = document.createElement('div');
+    const secondHost = document.createElement('div');
+    firstHost.innerHTML = shared.renderModelStudioShellV2({
+      instanceId: 'browser-first',
+      coreTabs: ['examine', 'edit'],
+      addons: [{ id: 'harbor:review', label: 'Review', panel: '<p>Ready</p>' }],
+    });
+    secondHost.innerHTML = shared.renderModelStudioShellV2({
+      instanceId: 'browser-second',
+      coreTabs: ['examine', 'notes'],
+    });
+    document.body.append(outside, firstHost, secondHost);
+    const firstRoot = firstHost.firstElementChild as HTMLElement;
+    const secondRoot = secondHost.firstElementChild as HTMLElement;
+    let exactRootError = '';
+    try {
+      shared.connectModelStudioShellV2(firstHost);
+    } catch (error) {
+      exactRootError = String(error);
+    }
+    const first = shared.connectModelStudioShellV2(firstRoot);
+    const second = shared.connectModelStudioShellV2(secondRoot);
+    const firstElementIds = Array.from(firstRoot.querySelectorAll<HTMLElement>('[id]'))
+      .map(({ id }) => id);
+    const secondElementIds = new Set(Array.from(secondRoot.querySelectorAll<HTMLElement>('[id]'))
+      .map(({ id }) => id));
+    let doubleConnectError = '';
+    try {
+      shared.connectModelStudioShellV2(firstRoot);
+    } catch (error) {
+      doubleConnectError = String(error);
+    }
+    const duplicateHost = document.createElement('div');
+    duplicateHost.innerHTML = shared.renderModelStudioShellV2({
+      instanceId: 'browser-second',
+    });
+    document.body.append(duplicateHost);
+    let duplicateInstanceError = '';
+    try {
+      shared.connectModelStudioShellV2(duplicateHost.firstElementChild as HTMLElement);
+    } catch (error) {
+      duplicateInstanceError = String(error);
+    }
+    duplicateHost.remove();
+
+    const invalidIdHost = document.createElement('div');
+    invalidIdHost.innerHTML = shared.renderModelStudioShellV2({
+      instanceId: 'browser-invalid-id',
+      coreTabs: ['examine', 'edit'],
+    });
+    const invalidIdRoot = invalidIdHost.firstElementChild as HTMLElement;
+    invalidIdRoot.querySelectorAll<HTMLElement>('[data-studio-tab]')[1]!
+      .dataset.studioTab = 'bogus';
+    invalidIdRoot.querySelectorAll<HTMLElement>('[data-studio-panel]')[1]!
+      .dataset.studioPanel = 'bogus';
+    document.body.append(invalidIdHost);
+    let invalidLogicalIdError = '';
+    try {
+      shared.connectModelStudioShellV2(invalidIdRoot);
+    } catch (error) {
+      invalidLogicalIdError = String(error);
+    }
+    invalidIdHost.remove();
+
+    const wrongOrderHost = document.createElement('div');
+    wrongOrderHost.innerHTML = shared.renderModelStudioShellV2({
+      instanceId: 'browser-wrong-order',
+      coreTabs: ['examine', 'edit'],
+      addons: [{ id: 'harbor:review', label: 'Review', panel: '' }],
+    });
+    const wrongOrderRoot = wrongOrderHost.firstElementChild as HTMLElement;
+    wrongOrderRoot.querySelectorAll<HTMLElement>('[data-studio-tab]')[1]!
+      .dataset.studioTab = 'harbor:review';
+    wrongOrderRoot.querySelectorAll<HTMLElement>('[data-studio-tab]')[2]!
+      .dataset.studioTab = 'edit';
+    wrongOrderRoot.querySelectorAll<HTMLElement>('[data-studio-panel]')[1]!
+      .dataset.studioPanel = 'harbor:review';
+    wrongOrderRoot.querySelectorAll<HTMLElement>('[data-studio-panel]')[2]!
+      .dataset.studioPanel = 'edit';
+    document.body.append(wrongOrderHost);
+    let coreAfterAddonError = '';
+    try {
+      shared.connectModelStudioShellV2(wrongOrderRoot);
+    } catch (error) {
+      coreAfterAddonError = String(error);
+    }
+    wrongOrderHost.remove();
+
+    const overflowHost = document.createElement('div');
+    overflowHost.innerHTML = shared.renderModelStudioShellV2({
+      instanceId: 'browser-overflow',
+      addons: [{ id: 'harbor:review', label: 'Review', panel: '' }],
+    });
+    const overflowRoot = overflowHost.firstElementChild as HTMLElement;
+    const overflowList = overflowRoot.querySelector<HTMLElement>('[role="tablist"]')!;
+    overflowList.style.width = '320px';
+    document.body.append(overflowHost);
+    const overflow = shared.connectModelStudioShellV2(overflowRoot);
+    const reviewTab = overflowRoot.querySelector<HTMLElement>('[data-studio-tab="harbor:review"]')!;
+    const reviewIsVisible = (): boolean => {
+      const tabBounds = reviewTab.getBoundingClientRect();
+      const listBounds = overflowList.getBoundingClientRect();
+      return tabBounds.left >= listBounds.left && tabBounds.right <= listBounds.right + 1;
+    };
+    overflowList.scrollLeft = 0;
+    overflow.selectTab('harbor:review');
+    const preserveSelectionRevealed = reviewIsVisible();
+    overflow.selectTab('examine');
+    overflowList.scrollLeft = 0;
+    overflow.selectTab('harbor:review', { focus: 'panel' });
+    const panelSelectionRevealed = reviewIsVisible();
+    overflow.dispose();
+    overflowHost.remove();
+
+    outside.focus();
+    first.selectTab('edit');
+    const preservedFocus = document.activeElement === outside;
+    first.selectTab('harbor:review', { focus: 'panel' });
+    const panelFocused = document.activeElement === first.panel('harbor:review');
+    const secondBefore = second.activeTab();
+    first.dispose();
+    first.dispose();
+    first.selectTab('examine', { focus: 'tab' });
+    const disposedSelection = first.activeTab();
+    const secondAfter = second.activeTab();
+    const reconnected = shared.connectModelStudioShellV2(firstRoot);
+    reconnected.selectTab('edit', { focus: 'tab' });
+    const tabFocused = document.activeElement?.getAttribute('data-studio-tab');
+    reconnected.dispose();
+    second.dispose();
+
+    return {
+      exactRootError,
+      doubleConnectError,
+      duplicateInstanceError,
+      invalidLogicalIdError,
+      coreAfterAddonError,
+      elementIdsAreDisjoint: firstElementIds.every((id) => !secondElementIds.has(id)),
+      firstTabs: first.tabIds,
+      firstHasReview: first.hasTab('harbor:review'),
+      firstHasMotion: first.hasTab('motion'),
+      preservedFocus,
+      panelFocused,
+      disposedSelection,
+      secondBefore,
+      secondAfter,
+      tabFocused,
+      preserveSelectionRevealed,
+      panelSelectionRevealed,
+    };
+  });
+
+  expect(evidence.exactRootError).toContain('exact V2 shell root');
+  expect(evidence.doubleConnectError).toContain('already connected');
+  expect(evidence.duplicateInstanceError).toContain('not unique');
+  expect(evidence.invalidLogicalIdError).toContain('invalid logical tab ID');
+  expect(evidence.coreAfterAddonError).toContain('core tab before add-ons');
+  expect(evidence.elementIdsAreDisjoint).toBe(true);
+  expect(evidence.firstTabs).toEqual(['examine', 'edit', 'harbor:review']);
+  expect(evidence.firstHasReview).toBe(true);
+  expect(evidence.firstHasMotion).toBe(false);
+  expect(evidence.preservedFocus).toBe(true);
+  expect(evidence.panelFocused).toBe(true);
+  expect(evidence.disposedSelection).toBe('harbor:review');
+  expect(evidence.secondBefore).toBe('examine');
+  expect(evidence.secondAfter).toBe('examine');
+  expect(evidence.tabFocused).toBe('edit');
+  expect(evidence.preserveSelectionRevealed).toBe(true);
+  expect(evidence.panelSelectionRevealed).toBe(true);
+});
+
+test('the grid adapter hides commands whose core capability was omitted', async ({ page }) => {
+  await page.goto(studioOrigin, { waitUntil: 'load' });
+  await page.waitForFunction(() => typeof window.voxelStudio === 'object');
+
+  const commandStates = await page.evaluate(async () => {
+    const moduleUrl = new URL('studio-app.ts', window.location.href).href;
+    const { mountStudio } = await import(moduleUrl) as unknown as BrowserStudioModule;
+    const root = document.createElement('div');
+    document.body.append(root);
+    const studio = mountStudio({
+      root,
+      catalog: { sections: [] },
+      publishHarness: false,
+      shellProfileV2: {
+        instanceId: 'fallback-studio',
+        coreTabs: ['examine'],
+      },
+    });
+    const states: Record<string, { disabled: boolean; hidden: boolean }> = {};
+    for (const label of ['Open', 'Copy', 'New', 'Send request']) {
+      const button = Array.from(root.querySelectorAll('button'))
+        .find((candidate) => candidate.textContent.startsWith(label));
+      if (!button) throw new Error(`Missing ${label} action.`);
+      states[label] = { disabled: button.disabled, hidden: button.hidden };
+    }
+    studio.dispose();
+    root.remove();
+
+    const notesRoot = document.createElement('div');
+    document.body.append(notesRoot);
+    const notesStudio = mountStudio({
+      root: notesRoot,
+      catalog: { sections: [] },
+      publishHarness: false,
+      shellProfileV2: {
+        instanceId: 'notes-without-edit-studio',
+        coreTabs: ['examine', 'notes'],
+      },
+    });
+    const placeButton = Array.from(notesRoot.querySelectorAll('button'))
+      .find((candidate) => candidate.textContent.startsWith('Pin to a spot'));
+    const requestButton = Array.from(notesRoot.querySelectorAll('button'))
+      .find((candidate) => candidate.textContent.startsWith('Send request'));
+    if (!placeButton || !requestButton) throw new Error('Missing Notes capability controls.');
+    const notesWithoutEdit = {
+      place: { disabled: placeButton.disabled, hidden: placeButton.hidden },
+      request: { disabled: requestButton.disabled, hidden: requestButton.hidden },
+    };
+    notesStudio.dispose();
+    notesRoot.remove();
+    return { notesWithoutEdit, top: states };
+  });
+
+  expect(commandStates).toEqual({
+    top: {
+      Open: { disabled: true, hidden: true },
+      Copy: { disabled: true, hidden: true },
+      New: { disabled: true, hidden: true },
+      'Send request': { disabled: true, hidden: true },
+    },
+    notesWithoutEdit: {
+      place: { disabled: true, hidden: true },
+      request: { disabled: false, hidden: false },
+    },
+  });
+});
 
 test('document shortcuts belong to one Studio and are removed on disposal', async ({ page }) => {
   await page.goto(studioOrigin, { waitUntil: 'load' });

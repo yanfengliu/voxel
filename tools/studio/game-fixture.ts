@@ -290,4 +290,24 @@ export function createHarborCatalog(): StudioCatalogV1 {
   };
 }
 
-mountStudio({ catalog: createHarborCatalog() });
+const allTabs = new URLSearchParams(window.location.search).get('profile') === 'all-tabs';
+
+mountStudio({
+  catalog: createHarborCatalog(),
+  shellProfileV2: {
+    instanceId: 'harbor-studio',
+    coreTabs: allTabs
+      ? ['examine', 'build', 'edit', 'motion', 'notes']
+      : ['examine', 'build', 'edit', 'notes'],
+    addons: [{
+      id: 'harbor:review',
+      label: 'Harbor review',
+      panel: `
+        <section class="harbor-review">
+          <h2>Harbor review</h2>
+          <p>Game-owned review guidance lives beside the shared tools without forking them.</p>
+        </section>
+      `,
+    }],
+  },
+});
