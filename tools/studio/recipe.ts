@@ -6,6 +6,16 @@ import {
   type ModelMotionV1,
   type StudioModelV1,
 } from './model.js';
+import {
+  describeRecipeStepV1,
+  listRecipeComponentsV1,
+  listRecipePartsInternalV1,
+  type RecipeComponentV1,
+  type RecipePartV1,
+} from './recipe-inspection.js';
+
+export { describeRecipeStepV1, listRecipeComponentsV1 };
+export type { RecipeComponentV1, RecipePartV1 };
 
 /**
  * A recipe is how a model was made: an ordered list of steps — hand-placed
@@ -518,11 +528,11 @@ function buildRecipeInternal(
       }
       // A recipe that reaches itself would recur forever. Naming the loop is
       // the only useful thing to say about it.
-      if (step.recipe === recipe.id || ancestry.includes(step.recipe)) {
+      if (sub.id === recipe.id || ancestry.includes(sub.id)) {
         issues.push({
           path,
-          message: `'${step.recipe}' contains itself: `
-            + `${[...ancestry, recipe.id, step.recipe].join(' -> ')}.`,
+          message: `'${sub.id}' contains itself: `
+            + `${[...ancestry, recipe.id, sub.id].join(' -> ')}.`,
         });
         return;
       }
@@ -665,26 +675,22 @@ export interface RecipeStageV1 {
   readonly voxelsAdded: number;
 }
 
-/** What a step does, in words a person reads rather than a shape they decode. */
-export function describeRecipeStepV1(step: RecipeStepV1): string {
-  // The author's own words win. A generated summary can only say what a step
-  // does mechanically -- "adds the brick-course part", four times over -- while
-  // a note says which course and how far it shifts, which is the thing worth
-  // watching. A recipe that explains itself is one a later design can borrow.
-  if (step.note !== undefined && step.note.length > 0) return step.note;
-  switch (step.kind) {
-    case 'voxels': {
-      let placed = 0;
-      for (const slot of step.voxels) if (slot !== 0) placed += 1;
-      return `Places ${String(placed)} cube${placed === 1 ? '' : 's'} by hand`;
-    }
-    case 'part':
-      return `Adds the ${step.part} part`;
-    case 'mirror':
-      return step.axis === 'x' ? 'Mirrors left to right' : 'Mirrors front to back';
-    case 'recipe':
-      return `Adds the ${step.recipe} recipe`;
-  }
+/**
+ * Returns an aggregated list of contributing recipe parts. Occurrence
+ * ownership follows the built voxels through overwrites and mirrors, so an
+ * erased step or a mirror that fills no new voxel adds no item. Repeated
+ * sub-recipes are grouped by identity, so the dining set says Chair ×6 instead
+ * of three chairs plus a mirror operation. Children remain the reusable
+ * recipe's own inventory, scaled by surviving assembly count; parent-level
+ * overlap does not mutate that saved recipe. Procedural operations remain
+ * visible in the construction stages.
+ */
+export function listRecipePartsV1(
+  recipe: RecipeV1,
+  parts: PartShelfV1,
+  book: RecipeBookV1 = {},
+): readonly RecipePartV1[] {
+  return listRecipePartsInternalV1(recipe, parts, book, { buildRecipe, mixSeed });
 }
 
 function countFilledInternal(model: StudioModelV1): number {

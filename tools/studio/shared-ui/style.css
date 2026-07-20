@@ -1,0 +1,536 @@
+[data-model-studio-shell] {
+  --bg: #0f1214;
+  --rail: #14181b;
+  --panel: #191e22;
+  --panel-strong: #1c2227;
+  --surface: #101315;
+  --surface-hover: #20272d;
+  --sunk: #101315;
+  --line: #262c33;
+  --line-soft: #1f242a;
+  --line-strong: #343c45;
+  --text: #e8eef4;
+  --ink: #e8eef4;
+  --muted: #93a0ac;
+  --faint: #7f8b96;
+  --accent: #56c980;
+  --accent-dark: #3ba766;
+  --bad: #e5786a;
+  --pin: #e2b93b;
+  --gold: #e2b93b;
+  --green: #56c980;
+  --ring: rgba(86, 201, 128, 0.38);
+  --shadow-soft: none;
+  --shadow-panel: none;
+  width: 100%;
+  height: 100%;
+  min-width: 760px;
+  min-height: 560px;
+  overflow: hidden;
+  background: var(--bg);
+  color: var(--text);
+  color-scheme: dark;
+  font: 13.5px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
+[data-model-studio-shell],
+[data-model-studio-shell] * {
+  box-sizing: border-box;
+}
+
+[data-model-studio-shell][hidden],
+[data-model-studio-shell] [hidden] {
+  display: none !important;
+}
+
+[data-model-studio-shell].app {
+  display: grid;
+  gap: 0;
+  padding: 0;
+  grid-template-rows: 48px minmax(0, 1fr) 60px;
+  grid-template-columns: 200px minmax(240px, 1fr) 320px;
+  grid-template-areas:
+    "top top top"
+    "rail stage inspector"
+    "rail player inspector";
+}
+
+[data-model-studio-shell] .top {
+  grid-area: top;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-width: 0;
+  padding: 0 14px;
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  border-radius: 0;
+  background: var(--rail);
+  box-shadow: none;
+}
+
+[data-model-studio-shell] .name {
+  margin: 0;
+  overflow: hidden;
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+[data-model-studio-shell] .status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+[data-model-studio-shell] .status::before {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--accent);
+  content: "";
+}
+
+[data-model-studio-shell] .studio-action-status {
+  min-width: 0;
+  min-height: 0;
+  max-width: min(34vw, 360px);
+  margin: 0;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+[data-model-studio-shell] .grow { flex: 1; }
+
+[data-model-studio-shell] button,
+[data-model-studio-shell] select,
+[data-model-studio-shell] input,
+[data-model-studio-shell] textarea {
+  font: inherit;
+}
+
+[data-model-studio-shell] button,
+[data-model-studio-shell] .studio-back {
+  min-height: 30px;
+  padding: 5px 12px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text);
+  font-size: 12.5px;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+[data-model-studio-shell] button:hover,
+[data-model-studio-shell] .studio-back:hover {
+  border-color: var(--accent);
+  background: var(--surface-hover);
+  color: var(--text);
+}
+[data-model-studio-shell] select:hover {
+  border-color: var(--accent);
+  background: var(--surface-hover);
+  color: var(--text);
+}
+[data-model-studio-shell] button:focus-visible,
+[data-model-studio-shell] .studio-back:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+[data-model-studio-shell] button:disabled { opacity: 0.45; cursor: default; }
+[data-model-studio-shell] .primary,
+[data-model-studio-shell] .studio-primary { border-color: var(--accent); }
+
+[data-model-studio-shell] .rail {
+  grid-area: rail;
+  min-height: 0;
+  padding: 12px 8px;
+  overflow-y: auto;
+  border: 0;
+  border-right: 1px solid var(--line);
+  border-radius: 0;
+  background: var(--rail);
+  box-shadow: none;
+}
+
+[data-model-studio-shell] .rail h2,
+[data-model-studio-shell] .grouphead,
+[data-model-studio-shell] .studio-kicker {
+  margin: 0 6px 8px;
+  color: var(--faint);
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+[data-model-studio-shell] .section-head {
+  display: block;
+  width: 100%;
+  min-height: 0;
+  padding: 6px 6px 4px;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font-size: 11.5px;
+  text-align: left;
+}
+
+[data-model-studio-shell] .section-head:hover {
+  border: 0;
+  color: var(--text);
+}
+
+[data-model-studio-shell] .model-row {
+  display: flex;
+  width: 100%;
+  min-height: 0;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  padding-inline-start: 28px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  text-align: left;
+}
+
+[data-model-studio-shell] .model-row:hover {
+  border-color: transparent;
+  background: var(--panel);
+  color: var(--text);
+}
+
+[data-model-studio-shell] .model-row.active {
+  border-color: var(--line);
+  background: var(--panel);
+  color: var(--text);
+}
+
+[data-model-studio-shell] .stage {
+  grid-area: stage;
+  position: relative;
+  display: block;
+  min-height: 0;
+  padding: 0;
+  overflow: hidden;
+  border: 0;
+  border-radius: 0;
+  background: radial-gradient(1100px 480px at 50% 32%, #171c20 0%, #101416 72%);
+  box-shadow: none;
+}
+
+[data-model-studio-shell] .studio-stage-toolbar {
+  position: absolute;
+  z-index: 4;
+  top: 10px;
+  right: 12px;
+  left: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  pointer-events: none;
+}
+
+[data-model-studio-shell] .studio-button-group {
+  display: flex;
+  gap: 5px;
+  padding: 4px;
+  border: 1px solid var(--line-soft);
+  border-radius: 6px;
+  background: rgba(15, 18, 20, 0.78);
+  pointer-events: auto;
+}
+
+[data-model-studio-shell] .studio-button-group button {
+  min-height: 26px;
+  padding: 3px 8px;
+}
+
+[data-model-studio-shell] .studio-canvas-wrap {
+  position: absolute;
+  inset: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
+[data-model-studio-shell] .studio-canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+[data-model-studio-shell] .player {
+  grid-area: player;
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 12px;
+  border: 0;
+  border-top: 1px solid var(--line);
+  border-radius: 0;
+  background: var(--rail);
+}
+
+[data-model-studio-shell] .player label { color: var(--muted); }
+
+[data-model-studio-shell] .inspector {
+  grid-area: inspector;
+  display: grid;
+  min-height: 0;
+  grid-template-rows: auto minmax(0, 1fr);
+  padding: 0;
+  overflow: hidden;
+  border: 0;
+  border-left: 1px solid var(--line);
+  border-radius: 0;
+  background: var(--rail);
+  box-shadow: none;
+}
+
+[data-model-studio-shell] .tabs {
+  display: flex;
+  border-bottom: 1px solid var(--line);
+}
+
+[data-model-studio-shell] .tab {
+  flex: 1;
+  min-width: 0;
+  padding: 10px 0 9px;
+  overflow: hidden;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  border-radius: 0;
+  background: transparent;
+  color: var(--faint);
+  font-size: 12px;
+  text-align: center;
+  text-overflow: ellipsis;
+}
+
+[data-model-studio-shell] .tab:hover {
+  border-bottom-color: var(--line);
+  color: var(--text);
+}
+
+[data-model-studio-shell] .tab.active,
+[data-model-studio-shell] .tab[aria-selected="true"] {
+  border-bottom-color: var(--accent);
+  color: var(--text);
+}
+
+[data-model-studio-shell] .pane {
+  display: grid;
+  min-height: 0;
+  align-content: start;
+  gap: 12px;
+  padding: 14px;
+  overflow-y: auto;
+}
+
+[data-model-studio-shell] select,
+[data-model-studio-shell] textarea,
+[data-model-studio-shell] input:not([type="checkbox"]):not([type="range"]):not([type="color"]) {
+  border: 1px solid var(--line-strong);
+  border-radius: 6px;
+  background: var(--sunk);
+  color: var(--text);
+}
+
+[data-model-studio-shell] .studio-category-tabs {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 5px;
+  margin-bottom: 12px;
+}
+
+[data-model-studio-shell] .studio-category-tabs button:last-child { grid-column: 1 / -1; }
+[data-model-studio-shell] .studio-category-tabs button.is-active,
+[data-model-studio-shell] button[aria-pressed="true"] {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 15%, transparent);
+  color: var(--accent);
+}
+
+[data-model-studio-shell] .studio-field {
+  display: grid;
+  gap: 5px;
+  margin-top: 10px;
+  color: var(--muted);
+  font-size: 11.5px;
+  font-weight: 600;
+}
+
+[data-model-studio-shell] .studio-field select { width: 100%; padding: 6px 8px; }
+
+[data-model-studio-shell] .studio-variation-card,
+[data-model-studio-shell] .studio-source-card,
+[data-model-studio-shell] .studio-construction-card,
+[data-model-studio-shell] .studio-metrics-card,
+[data-model-studio-shell] .studio-review-card {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  color: var(--text);
+}
+
+[data-model-studio-shell] .studio-inspector .studio-metrics-card,
+[data-model-studio-shell] .studio-inspector .studio-review-card {
+  min-height: 0;
+  margin: 0;
+  overflow: visible;
+}
+
+[data-model-studio-shell] .studio-panel-heading {
+  display: grid;
+  gap: 3px;
+}
+
+[data-model-studio-shell] .studio-panel-heading strong { color: var(--text); }
+
+[data-model-studio-shell] .studio-panel-heading .studio-kicker,
+[data-model-studio-shell] .studio-construction-card > .studio-kicker,
+[data-model-studio-shell] .studio-source-card > .studio-kicker {
+  margin: 0;
+}
+
+[data-model-studio-shell] .studio-skip-to-review,
+[data-model-studio-shell] .studio-standard-parts code,
+[data-model-studio-shell] .studio-construction-steps code,
+[data-model-studio-shell] .studio-source-list code {
+  color: var(--accent);
+}
+
+[data-model-studio-shell] .studio-metrics {
+  display: grid;
+  gap: 5px;
+  margin: 8px 0 0;
+}
+
+[data-model-studio-shell] .studio-metrics > div {
+  display: grid;
+  grid-template-columns: 72px minmax(0, 1fr);
+  gap: 8px;
+  padding-bottom: 5px;
+  border-bottom: 1px solid var(--line-soft);
+}
+
+[data-model-studio-shell] .studio-metrics dt,
+[data-model-studio-shell] .studio-part-count,
+[data-model-studio-shell] .studio-standard-parts span,
+[data-model-studio-shell] .studio-construction-steps small,
+[data-model-studio-shell] .studio-variation-card p,
+[data-model-studio-shell] .studio-construction-summary,
+[data-model-studio-shell] .studio-part-list small,
+[data-model-studio-shell] .studio-motion-summary {
+  color: var(--muted);
+}
+
+[data-model-studio-shell] .studio-metrics dd { margin: 0; color: var(--text); }
+
+[data-model-studio-shell] .studio-part-list {
+  display: grid;
+  min-height: 90px;
+  align-content: start;
+  gap: 6px;
+  margin-top: 10px;
+  overflow-y: auto;
+}
+
+[data-model-studio-shell] .studio-part-section,
+[data-model-studio-shell] .studio-construction-disclosure {
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--sunk);
+}
+
+[data-model-studio-shell] .studio-part-section summary,
+[data-model-studio-shell] .studio-construction-disclosure > summary,
+[data-model-studio-shell] .studio-sub-recipe > details > summary {
+  color: var(--text);
+}
+
+[data-model-studio-shell] .studio-part-section[open] summary {
+  border-bottom: 1px solid var(--line);
+  background: var(--panel-strong);
+}
+
+[data-model-studio-shell] .studio-part-list button[data-selected-part="true"],
+[data-model-studio-shell] .studio-part-list button[data-selected-part="true"]:hover:not(:disabled) {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 22%, var(--panel));
+  color: var(--text);
+}
+
+[data-model-studio-shell] .studio-standard-parts li,
+[data-model-studio-shell] .studio-construction-steps li:not(.studio-sub-recipe) {
+  background: var(--sunk);
+  color: var(--text);
+}
+
+[data-model-studio-shell] .studio-status-pill,
+[data-model-studio-shell] .studio-status-pill.is-proposal,
+[data-model-studio-shell] .studio-step-index,
+[data-model-studio-shell] .studio-recipe-badge {
+  background: color-mix(in srgb, var(--accent) 15%, transparent);
+  color: var(--accent);
+}
+
+[data-model-studio-shell] .studio-focus-tags label {
+  border-color: var(--line);
+  background: var(--sunk);
+  color: var(--muted);
+}
+
+[data-model-studio-shell] .studio-focus-tags legend,
+[data-model-studio-shell] .studio-review-status { color: var(--muted); }
+
+[data-model-studio-shell] .studio-review-card textarea {
+  background: var(--sunk);
+  color: var(--text);
+}
+
+[data-model-studio-shell] .studio-review-footer {
+  background: linear-gradient(180deg, rgba(20, 24, 27, 0.9), var(--rail) 28%);
+}
+
+[data-model-studio-shell] .studio-review-actions .studio-primary {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 18%, var(--panel));
+  color: var(--text);
+}
+
+[data-model-studio-shell] .studio-source-list li { border-bottom-color: var(--line-soft); }
+[data-model-studio-shell] .studio-motion-summary { margin: 0; line-height: 1.5; }
+
+[data-model-studio-shell] .studio-capability-unavailable {
+  margin: 0;
+  padding: 10px;
+  border: 1px dashed var(--line-strong);
+  border-radius: 6px;
+  color: var(--muted);
+}
+
+@media (max-width: 899px) {
+  [data-model-studio-shell].app {
+    grid-template-columns: 180px minmax(240px, 1fr) 280px;
+  }
+}

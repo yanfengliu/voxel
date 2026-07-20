@@ -1,11 +1,18 @@
 import { alternate, stackSteps } from './compose.js';
+import {
+  createChairRecipe,
+  createDiningSetRecipe,
+  createTableRecipe,
+} from './furniture-recipes.js';
 import type { GenomeColorV1 } from './model.js';
 import type { RecipeBookV1, RecipeV1 } from './recipe.js';
 
+export { createChairRecipe, createDiningSetRecipe, createTableRecipe };
+
 /**
  * The studio's shelf models, saved as the way they are made. Each recipe here
- * rebuilds its catalog model cell for cell — `recipe.test.ts` pins that, and
- * `npm run studio:recipes` renders both for a look — so they are the parity
+ * rebuilds its catalog model cell for cell — tests pin that, and
+ * `npm run studio:recipes` renders every shelf recipe for a look — so they are the parity
  * proof for the whole recipe mechanism, and the shape a game copies when it
  * starts saving recipes of its own.
  */
@@ -57,6 +64,178 @@ const STILL = {
   rotationRadians: [0, 0, 0],
   scale: [0, 0, 0],
 } as const;
+
+/**
+ * One small flower, kept whole so a garden can place it repeatedly without
+ * copying either its shape or the order in which it grows.
+ */
+export function createFlowerRecipe(): RecipeV1 {
+  return {
+    schemaVersion: 'studio.voxel-recipe/1',
+    id: 'studio:flower',
+    label: 'Flower',
+    seed: 1,
+    size: [3, 7, 3],
+    roles: ['empty', 'stem', 'leaf', 'petal', 'center'],
+    palette: [
+      { r: 0, g: 0, b: 0 },
+      { r: 59, g: 122, b: 72 },
+      { r: 83, g: 164, b: 92 },
+      { r: 220, g: 76, b: 102 },
+      { r: 245, g: 190, b: 62 },
+    ],
+    steps: [
+      {
+        kind: 'part',
+        part: 'box',
+        at: [1, 0, 1],
+        settings: { sizeX: 1, sizeY: 5, sizeZ: 1, role: 'stem' },
+        note: 'Grows the stem',
+      },
+      {
+        kind: 'voxels',
+        at: [0, 2, 0],
+        size: [3, 2, 3],
+        voxels: [
+          2, 0, 0, 0, 0, 0,
+          2, 0, 0, 0, 0, 2,
+          0, 0, 0, 0, 0, 2,
+        ],
+        note: 'Unfurls two leaves',
+      },
+      {
+        kind: 'part',
+        part: 'box',
+        at: [1, 5, 1],
+        settings: { sizeX: 1, sizeY: 1, sizeZ: 1, role: 'center' },
+        note: 'Sets the golden center',
+      },
+      {
+        kind: 'voxels',
+        at: [0, 5, 0],
+        size: [3, 2, 3],
+        voxels: [
+          0, 3, 0, 0, 0, 0,
+          3, 0, 3, 0, 3, 0,
+          0, 3, 0, 0, 0, 0,
+        ],
+        note: 'Opens five petals',
+      },
+    ],
+    motion: { ...STILL },
+  };
+}
+
+/**
+ * A broad terracotta pot whose last step fills the open rim with soil. It is
+ * deliberately a recipe of its own: anything plant-like can reuse the pot
+ * without inheriting the flowers that happen to use it first.
+ */
+export function createPotRecipe(): RecipeV1 {
+  const rim = Array.from({ length: 9 * 7 }, (_, cell) => {
+    const x = cell % 9;
+    const z = Math.floor(cell / 9);
+    return x === 0 || x === 8 || z === 0 || z === 6 ? 2 : 0;
+  });
+  return {
+    schemaVersion: 'studio.voxel-recipe/1',
+    id: 'studio:pot',
+    label: 'Pot',
+    seed: 1,
+    size: [9, 4, 7],
+    roles: ['empty', 'clay', 'rim', 'soil'],
+    palette: [
+      { r: 0, g: 0, b: 0 },
+      { r: 166, g: 78, b: 47 },
+      { r: 214, g: 116, b: 68 },
+      { r: 74, g: 49, b: 37 },
+    ],
+    steps: [
+      {
+        kind: 'part',
+        part: 'box',
+        at: [2, 0, 2],
+        settings: { sizeX: 5, sizeY: 1, sizeZ: 3, role: 'clay' },
+        note: 'Shapes the narrow clay foot',
+      },
+      {
+        kind: 'part',
+        part: 'box',
+        at: [1, 1, 1],
+        settings: { sizeX: 7, sizeY: 2, sizeZ: 5, role: 'clay' },
+        note: 'Builds the tapered clay body',
+      },
+      {
+        kind: 'voxels',
+        at: [0, 3, 0],
+        size: [9, 1, 7],
+        voxels: rim,
+        note: 'Lays the wide rim',
+      },
+      {
+        kind: 'part',
+        part: 'box',
+        at: [1, 3, 1],
+        settings: { sizeX: 7, sizeY: 1, sizeZ: 5, role: 'soil' },
+        note: 'Fills the pot with dark soil',
+      },
+    ],
+    motion: { ...STILL },
+  };
+}
+
+/**
+ * Composition as the test: the finished arrangement contains no copied pot
+ * or flower steps. It places the two reusable recipes and only owns where
+ * they go.
+ */
+export function createThreeFlowerPotRecipe(): RecipeV1 {
+  return {
+    schemaVersion: 'studio.voxel-recipe/1',
+    id: 'studio:three-flower-pot',
+    label: 'Pot of three flowers',
+    seed: 1,
+    size: [9, 11, 7],
+    roles: ['empty', 'clay', 'rim', 'soil', 'stem', 'leaf', 'petal', 'center'],
+    palette: [
+      { r: 0, g: 0, b: 0 },
+      { r: 166, g: 78, b: 47 },
+      { r: 214, g: 116, b: 68 },
+      { r: 74, g: 49, b: 37 },
+      { r: 59, g: 122, b: 72 },
+      { r: 83, g: 164, b: 92 },
+      { r: 220, g: 76, b: 102 },
+      { r: 245, g: 190, b: 62 },
+    ],
+    steps: [
+      {
+        kind: 'recipe',
+        recipe: 'studio:pot',
+        at: [0, 0, 0],
+        note: 'Sets down the reusable pot',
+      },
+      {
+        kind: 'recipe',
+        recipe: 'studio:flower',
+        at: [0, 4, 2],
+        note: 'Plants the left flower',
+      },
+      {
+        kind: 'recipe',
+        recipe: 'studio:flower',
+        at: [3, 4, 0],
+        note: 'Plants the front flower',
+      },
+      {
+        kind: 'recipe',
+        recipe: 'studio:flower',
+        at: [6, 4, 2],
+        note: 'Plants the right flower',
+      },
+    ],
+    motion: { ...STILL },
+  };
+}
 
 /**
  * Any wall of any masonry: courses stacked to a height, each shifted from the
@@ -139,12 +318,10 @@ export function wallRecipe(options: WallRecipeOptionsV1): RecipeV1 {
 }
 
 /**
- * A pitched roof, built by stacking shorter and shorter rows.
+ * A shallow pitched-roof study, built by stacking shorter and shorter rows.
  *
- * Reused by every cottage rather than copied into each: it is a recipe, so it
- * is the same roof everywhere it appears, and improving it improves every
- * house that uses it. Wanting roofs of several sizes would make it a part
- * instead — that is the whole difference between the two kinds of reuse.
+ * Reused by each wall-and-roof composition rather than copied into it. This is
+ * intentionally only a short slice, not a claim that a complete house exists.
  */
 export function createCottageRoofRecipe(): RecipeV1 {
   const SPAN = 18;
@@ -152,7 +329,7 @@ export function createCottageRoofRecipe(): RecipeV1 {
   return {
     schemaVersion: 'studio.voxel-recipe/1',
     id: 'studio:cottage-roof',
-    label: 'Cottage roof',
+    label: 'Pitched roof slice',
     seed: 1,
     size: [SPAN, PITCH, 4],
     roles: ['empty', 'roof'],
@@ -175,13 +352,11 @@ export function createCottageRoofRecipe(): RecipeV1 {
 }
 
 /**
- * A cottage: a wall with a roof on it, both borrowed whole from other
- * recipes.
+ * A composition study: one wall with a shallow roof slice, both borrowed
+ * whole from other recipes. It proves nested reuse but is not a house.
  *
- * This is composition doing the thing it exists for. Two cottages differ only
- * in which wall they name; the roof is one recipe shared between them, so a
- * better roof is one edit rather than two. Neither cottage owns the roof, and
- * the roof knows nothing about cottages.
+ * The two studies differ only in which wall they name; the roof slice is one
+ * recipe shared between them, so improving it remains one edit.
  */
 export function cottageRecipe(options: {
   readonly id: string;
@@ -205,13 +380,13 @@ export function cottageRecipe(options: {
         kind: 'recipe',
         recipe: options.wall,
         at: [1, 0, 1],
-        note: 'Stands up the front wall',
+        note: 'Stands up the reusable wall',
       },
       {
         kind: 'recipe',
         recipe: 'studio:cottage-roof',
         at: [0, 10, 0],
-        note: 'Sets the shared roof on top, overhanging on every side',
+        note: 'Caps it with the reusable pitched roof slice',
       },
     ],
     motion: { ...STILL },
@@ -221,7 +396,7 @@ export function cottageRecipe(options: {
 export function createBrickCottageRecipe(): RecipeV1 {
   return cottageRecipe({
     id: 'studio:brick-cottage',
-    label: 'Brick cottage',
+    label: 'Brick wall + roof slice',
     wall: 'studio:brick-wall',
     palette: [
       { r: 0, g: 0, b: 0 },
@@ -237,7 +412,7 @@ export function createBrickCottageRecipe(): RecipeV1 {
 export function createSandstoneCottageRecipe(): RecipeV1 {
   return cottageRecipe({
     id: 'studio:sandstone-cottage',
-    label: 'Sandstone cottage',
+    label: 'Sandstone wall + roof slice',
     wall: 'studio:sandstone-wall',
     palette: [
       { r: 0, g: 0, b: 0 },
@@ -256,6 +431,10 @@ export function createStudioRecipeBook(): RecipeBookV1 {
     'studio:brick-wall': createBrickWallRecipe(),
     'studio:sandstone-wall': createSandstoneWallRecipe(),
     'studio:cottage-roof': createCottageRoofRecipe(),
+    'studio:flower': createFlowerRecipe(),
+    'studio:pot': createPotRecipe(),
+    'studio:chair': createChairRecipe(),
+    'studio:table': createTableRecipe(),
   };
 }
 

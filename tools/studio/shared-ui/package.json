@@ -1,0 +1,14 @@
+{
+  "name": "@voxel/model-studio-ui",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./index.ts",
+    "./style.css": "./style.css"
+  },
+  "files": [
+    "index.ts",
+    "style.css"
+  ]
+}

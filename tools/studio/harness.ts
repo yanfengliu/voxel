@@ -8,11 +8,18 @@ import {
 } from './edit.js';
 import { validateModelV1, type ModelMotionV1, type StudioModelV1 } from './model.js';
 import { modelCenterV1 } from './build.js';
-import { buildRecipeStages, type RecipeStageV1 } from './recipe.js';
+import {
+  buildRecipeStages,
+  listRecipeComponentsV1,
+  listRecipePartsV1,
+  type RecipeComponentV1,
+  type RecipePartV1,
+  type RecipeStageV1,
+} from './recipe.js';
 import type { NoteStore, StudioNoteV1 } from './notes.js';
 import type { StudioPlayer } from './player.js';
 import { buildRequest, sendRequest, type SendResult } from './requests.js';
-import type { StudioCatalogV1 } from './catalog.js';
+import type { ShelfRecipeV1, StudioCatalogV1 } from './catalog.js';
 import type { OrbitStateV1 } from './orbit.js';
 import { composeSpriteSheet, type SpriteSheetPlanV1 } from './sheet.js';
 import { nearestFrame, stepFrame, type FrameStepV1 } from './sweep.js';
@@ -144,10 +151,22 @@ export interface VoxelStudioHarnessV1 {
 
   /**
    * How the open model is made, one entry per step of its recipe, starting
-   * from the empty grid. Empty for a model authored by hand, which is an
-   * answer rather than an error: not every model has a recipe.
+   * from the empty grid. Empty only when no catalog model is open; every shelf
+   * model is required to provide a recipe.
    */
   buildSteps(): readonly StudioBuildStepV1[];
+  /**
+   * Every component in the open recipe, preserving nested recipe instances
+   * and their internal parts as a recursive tree. Empty for a hand-built
+   * model, just like `buildSteps`.
+   */
+  buildComponents(): readonly RecipeComponentV1[];
+  /**
+   * The contributing bill of materials for the open recipe. Repeated and
+   * mirrored occurrences are aggregated; nested rows describe each saved
+   * reusable recipe, and layout operations are omitted.
+   */
+  buildParts(): readonly RecipePartV1[];
   /**
    * Shows the model as it stood at one construction step. This is a preview:
    * the open model is unchanged, and `showFinished` puts the picture back.
@@ -229,6 +248,22 @@ export function createStudioHarness(host: HarnessHostV1): VoxelStudioHarnessV1 {
   let shownStep: number | null = null;
   let restoreModel: StudioModelV1 | null = null;
   let cachedStages: { readonly id: string; readonly stages: readonly RecipeStageV1[] } | null = null;
+  let cachedRecipe: { readonly id: string; readonly source: ShelfRecipeV1 | null } | null = null;
+
+  function recipeForOpenModel(): ShelfRecipeV1 | null {
+    const id = restoreModel?.id ?? host.session().model.id;
+    if (cachedRecipe?.id === id) return cachedRecipe.source;
+    for (const section of host.catalog().sections) {
+      for (const entry of section.models) {
+        if (entry.id !== id) continue;
+        const source = entry.howItsMade();
+        cachedRecipe = { id, source };
+        return source;
+      }
+    }
+    cachedRecipe = { id, source: null };
+    return null;
+  }
 
   /**
    * The construction of the shelf model the open model came from, matched by
@@ -238,14 +273,11 @@ export function createStudioHarness(host: HarnessHostV1): VoxelStudioHarnessV1 {
   function stagesForOpenModel(): readonly RecipeStageV1[] {
     const id = restoreModel?.id ?? host.session().model.id;
     if (cachedStages?.id === id) return cachedStages.stages;
-    for (const section of host.catalog().sections) {
-      for (const entry of section.models) {
-        if (entry.id !== id || !entry.howItsMade) continue;
-        const made = entry.howItsMade();
-        const stages = buildRecipeStages(made.recipe, made.parts, made.book ?? {});
-        cachedStages = { id, stages };
-        return stages;
-      }
+    const made = recipeForOpenModel();
+    if (made) {
+      const stages = buildRecipeStages(made.recipe, made.parts, made.book ?? {});
+      cachedStages = { id, stages };
+      return stages;
     }
     cachedStages = { id, stages: [] };
     return [];
@@ -410,13 +442,21 @@ export function createStudioHarness(host: HarnessHostV1): VoxelStudioHarnessV1 {
       voxelsAfter: stage.voxelsAfter,
       voxelsAdded: stage.voxelsAdded,
     })),
+    buildComponents() {
+      const made = recipeForOpenModel();
+      return made ? listRecipeComponentsV1(made.recipe, made.book ?? {}) : [];
+    },
+    buildParts() {
+      const made = recipeForOpenModel();
+      return made ? listRecipePartsV1(made.recipe, made.parts, made.book ?? {}) : [];
+    },
     showBuildStep(index) {
       const stages = stagesForOpenModel();
       const stage = stages[index];
       if (!stage) {
         throw new Error(
           stages.length === 0
-            ? 'This model was authored by hand, so there are no steps to show.'
+            ? 'No catalog recipe is open, so there are no steps to show.'
             : `This model has no construction step ${String(index)}.`,
         );
       }

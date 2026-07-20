@@ -322,6 +322,17 @@ describe('recipes made of recipes', () => {
     expect(thrown?.message).toContain('test:loop -> test:loop');
   });
 
+  it('names a self-cycle reached through an aliased recipe-book key', () => {
+    const loop: RecipeV1 = {
+      ...cubeRecipe('test:aliased-loop', 'paint'),
+      size: [2, 1, 1],
+      steps: [{ kind: 'recipe', recipe: 'alias', at: [0, 0, 0] }],
+    };
+
+    expect(() => buildRecipe(loop, createStudioParts(), { alias: loop }))
+      .toThrow(/test:aliased-loop -> test:aliased-loop.*contains itself|contains itself.*test:aliased-loop -> test:aliased-loop/);
+  });
+
   it('refuses a loop that runs through another recipe', () => {
     const a: RecipeV1 = {
       ...cubeRecipe('test:a', 'paint'),
@@ -367,8 +378,8 @@ describe('recipes made of recipes', () => {
     expect(error.message).toContain("'chimney'");
   });
 
-  it('builds the two cottages, sharing one roof between them', () => {
-    // The claim the whole feature exists for: one roof recipe, two houses.
+  it('builds two wall-and-roof studies that share one roof slice', () => {
+    // The claim the whole feature exists for: one roof recipe, two compositions.
     const parts = createStudioParts();
     const book = createStudioRecipeBook();
     const brick = buildRecipe(createBrickCottageRecipe(), parts, book);
@@ -377,8 +388,8 @@ describe('recipes made of recipes', () => {
     const roofCells = (built: typeof brick) => built.placedByRecipe
       .map((owner, cell) => (owner === 'studio:cottage-roof' ? cell : -1))
       .filter((cell) => cell >= 0);
-    // The roof occupies exactly the same cells in both, because it is the
-    // same recipe rather than two copies that happen to agree today.
+    // The roof slice occupies exactly the same cells in both, because it is
+    // the same recipe rather than two copies that happen to agree today.
     expect(roofCells(brick)).toEqual(roofCells(sandstone));
     expect(roofCells(brick).length).toBeGreaterThan(0);
 

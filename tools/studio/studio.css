@@ -108,6 +108,7 @@ button:disabled { opacity: 0.45; cursor: default; }
   align-items: center;
   gap: 8px;
   padding: 6px 10px;
+  padding-inline-start: 28px;
   border-radius: 6px;
   border: 1px solid transparent;
   background: transparent;
@@ -409,6 +410,60 @@ input[type="color"] {
 }
 
 /* ---- build: watching a model get made ---- */
+.component-hint { margin-top: -7px; }
+.components,
+.component-children {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 5px;
+}
+.component-line {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: start;
+  padding: 7px 8px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--sunk);
+}
+summary.component-line { cursor: pointer; }
+summary.component-line:hover { border-color: var(--muted); }
+.component-kind {
+  margin-top: 1px;
+  padding: 2px 4px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  font-family: ui-monospace, "Cascadia Code", "SF Mono", Menlo, monospace;
+  font-size: 8.5px;
+  line-height: 1;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.component-kind.kind-recipe { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 45%, var(--line)); }
+.component-copy { min-width: 0; display: grid; gap: 2px; }
+.component-name { font-size: 12px; font-weight: 600; color: var(--text); }
+.component-purpose,
+.component-detail { font-size: 10.5px; line-height: 1.35; color: var(--muted); }
+.component-detail {
+  overflow-wrap: anywhere;
+  font-family: ui-monospace, "Cascadia Code", "SF Mono", Menlo, monospace;
+  color: var(--faint);
+}
+.component-open {
+  padding: 3px 6px;
+  font-size: 10.5px;
+  color: var(--accent);
+}
+.component-children {
+  margin: 5px 0 2px 15px;
+  padding-left: 8px;
+  border-left: 1px solid var(--line);
+}
 .steps {
   list-style: none;
   margin: 10px 0 0;

@@ -2,6 +2,12 @@ import { OrthographicCamera, PerspectiveCamera } from 'three';
 
 import type { StudioCatalogV1 } from './catalog.js';
 import { createConstructionPanel } from './construction.js';
+import {
+  connectModelStudioShell,
+  renderModelStudioShell,
+  type ModelStudioShellHandleV1,
+  type ModelStudioTabId,
+} from './shared-ui/index.js';
 import { describeMotion, describePoseAt } from './describe.js';
 import { createStudioHarness, type VoxelStudioHarnessV1 } from './harness.js';
 import { createEmptyModel } from './edit.js';
@@ -174,8 +180,6 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
     + 'equal sizes at every distance look like they grow away from you.';
   const toggles = element('div', 'toggles');
   toggles.append(lookSwitch, depthToggle);
-  const stage = element('div', 'stage');
-  stage.append(canvasWrap, viewChip, toggles, stageHint);
 
   const flatCamera = new OrthographicCamera();
   const depthCamera = new PerspectiveCamera();
@@ -207,7 +211,7 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
   let lastShownMs = 0;
 
   // ---- top bar ----
-  const modelName = element('span', 'name');
+  const modelName = element('h1', 'name');
   const statusChip = element('span', 'status');
   const openButton = element('button');
   openButton.textContent = 'Open…';
@@ -631,22 +635,28 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
     shelf.replaceChildren();
     const currentId = harness.model().id;
     for (const section of harness.shelf()) {
+      const isFolded = folded.has(section.name);
       const head = element('button', 'section-head');
-      head.textContent = `${folded.has(section.name) ? '▸' : '▾'} ${section.name}`;
+      head.textContent = `${isFolded ? '▸' : '▾'} ${section.name}`;
+      head.setAttribute('aria-expanded', String(!isFolded));
+      head.setAttribute('aria-label', section.name);
       head.addEventListener('click', () => {
         if (folded.has(section.name)) folded.delete(section.name);
         else folded.add(section.name);
         buildShelf();
       });
       shelf.appendChild(head);
-      if (folded.has(section.name)) continue;
+      if (isFolded) continue;
       for (const entry of section.models) {
         const row = element('button', 'model-row');
         row.classList.toggle('active', entry.id === currentId);
         const label = element('span');
         label.textContent = entry.label;
         row.appendChild(label);
-        row.addEventListener('click', () => { harness.openFromShelf(entry.id); });
+        row.addEventListener('click', () => {
+          harness.openFromShelf(entry.id);
+          showTab(harness.buildSteps().length > 0 ? 'build' : 'examine');
+        });
         shelf.appendChild(row);
       }
     }
@@ -938,29 +948,23 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
   colorInput.addEventListener('input', () => {
     if (selectedSlot > 0) harness.recolor(selectedSlot, hexRgb(colorInput.value));
   });
-  document.addEventListener('keydown', (event) => {
+  const onDocumentKeyDown = (event: KeyboardEvent): void => {
+    if (!(event.target instanceof Node) || !root.contains(event.target)) return;
     if (event.key === 'Escape' && (pending || armedForPlace)) closeNoteEditor();
     const typing = event.target instanceof HTMLInputElement
       || event.target instanceof HTMLTextAreaElement;
     if (typing) return;
     if (event.key === 'ArrowLeft') { harness.step(-1); syncPlayButton(); }
     if (event.key === 'ArrowRight') { harness.step(1); syncPlayButton(); }
-  });
+  };
+  document.addEventListener('keydown', onDocumentKeyDown);
 
   // ---- assembly ----
-  const topBar = element('div', 'top');
   const grow = element('span', 'grow');
-  topBar.append(modelName, statusChip, grow, openButton, newButton, copyButton, requestShortcut);
-
-  const rail = element('div', 'rail');
   const railTitle = element('h2');
   railTitle.textContent = "This studio's shelf";
-  rail.append(railTitle, shelf);
-
-  const playerBar = element('div', 'player');
   const transport = element('div', 'transport');
   transport.append(stepBack, playButton, stepForward, speedSelect);
-  playerBar.append(transport, timelineWrap, timeLabel);
 
   // Watching a model get made. Its previews go through the harness, so the
   // agent walks the same construction the panel shows.
@@ -971,27 +975,6 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
       drawFrame(lastShownMs);
     },
   });
-
-  const tabNames = ['examine', 'build', 'edit', 'motion', 'notes'] as const;
-  const tabButtons = new Map<string, HTMLElement>();
-  const tabPanes = new Map<string, HTMLElement>();
-  const tabsRow = element('div', 'tabs');
-  for (const name of tabNames) {
-    const tab = element('button', 'tab');
-    tab.textContent = name.charAt(0).toUpperCase() + name.slice(1);
-    tab.addEventListener('click', () => { showTab(name); });
-    tabButtons.set(name, tab);
-    tabsRow.appendChild(tab);
-  }
-  function showTab(name: string): void {
-    // Leaving the Build tab puts the finished model back, so no other tab can
-    // ever be looking at a half-built preview -- editing or sending a request
-    // against a partial model would be a silent trap.
-    if (name !== 'build') construction.leave();
-    for (const [key, tab] of tabButtons) tab.classList.toggle('active', key === name);
-    for (const [key, pane] of tabPanes) pane.hidden = key !== name;
-    if (name === 'build') construction.refresh();
-  }
 
   const examinePane = element('div', 'pane');
   const checkRow = element('div', 'row');
@@ -1030,17 +1013,33 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
   const notesPane = element('div', 'pane');
   notesPane.append(noteHint, noteEditor, notesList, pinPlaceButton, requestBox, sendButton, requestStatus);
 
-  const inspector = element('div', 'inspector');
-  inspector.append(tabsRow, examinePane, construction.element, editPane, motionPane, notesPane);
-  tabPanes.set('examine', examinePane);
-  tabPanes.set('build', construction.element);
-  tabPanes.set('edit', editPane);
-  tabPanes.set('motion', motionPane);
-  tabPanes.set('notes', notesPane);
+  root.innerHTML = renderModelStudioShell({
+    panels: { examine: '', build: '', edit: '', motion: '', notes: '' },
+  });
+  const studioShell: ModelStudioShellHandleV1 = connectModelStudioShell(root, {
+    beforeSelect: (name) => {
+      // Leaving Build puts the finished model back, so no other tab can ever
+      // inspect or edit a half-built preview.
+      if (name !== 'build') construction.leave();
+      if (name === 'build') construction.refresh();
+    },
+  });
+  function showTab(name: ModelStudioTabId): void {
+    studioShell.selectTab(name);
+  }
 
-  const app = element('div', 'app');
-  app.append(topBar, rail, stage, playerBar, inspector);
-  root.appendChild(app);
+  studioShell.regions.top.append(
+    modelName, statusChip, grow, openButton, newButton, copyButton, requestShortcut,
+  );
+  studioShell.regions.shelf.append(railTitle, shelf);
+  const stage = studioShell.regions.stage;
+  stage.append(canvasWrap, viewChip, toggles, stageHint);
+  studioShell.regions.player.append(transport, timelineWrap, timeLabel);
+  studioShell.panels.examine.append(...Array.from(examinePane.childNodes));
+  studioShell.panels.build.append(...Array.from(construction.element.childNodes));
+  studioShell.panels.edit.append(...Array.from(editPane.childNodes));
+  studioShell.panels.motion.append(...Array.from(motionPane.childNodes));
+  studioShell.panels.notes.append(...Array.from(notesPane.childNodes));
 
   // The picture fills the stage and follows the window, so zooming meets the
   // window's edge, never an invisible border in the middle of the screen —
@@ -1078,7 +1077,10 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
     frameHandle = requestAnimationFrame(tick);
   }
 
-  showTab('examine');
+  // A recipe-backed model opens on Build, whose first section is its recipe
+  // parts list. Construction used to be hidden behind Examine on every open,
+  // which made the parts effectively invisible until someone knew to look.
+  showTab(harness.buildSteps().length > 0 ? 'build' : 'examine');
   renderNotes();
   refresh();
   // Sized once immediately and on every window resize, besides the frame
@@ -1095,6 +1097,8 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
       disposed = true;
       cancelAnimationFrame(frameHandle);
       construction.dispose();
+      studioShell.dispose();
+      document.removeEventListener('keydown', onDocumentKeyDown);
       window.removeEventListener('resize', followStage);
       session.dispose();
       if (options.publishHarness !== false && window.voxelStudio === harness) {

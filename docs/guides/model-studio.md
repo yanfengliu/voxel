@@ -1,8 +1,8 @@
 # Giving a game its own model studio
 
-Status: current from 2026-07-18. The mount seam is proven by the Harbor
-fixture (`tools/studio/game-fixture.ts`) and its headless check,
-`npm run studio:game`.
+Status: current from 2026-07-20. The renderer-neutral shell is consumed by
+Harborform, while Voxel's own page and the Harbor fixture
+(`tools/studio/game-fixture.ts`) prove the grid-renderer adapter.
 
 The model studio is the pattern every game using this engine gets. The engine
 owns the reusable half; each game brings its own models. This guide is the
@@ -10,10 +10,18 @@ two-file setup and the boundary between them.
 
 ## What each side owns
 
-The engine owns the mechanism: the viewer and the orbiting stage, playback and
-the timeline, the frame checks and the sprite sheet, notes and requests, the
-recipe runner and the part contract, and the agent-facing harness on
-`window.voxelStudio`.
+The engine owns one Three-free UI package at `tools/studio/shared-ui`: the exact
+top/shelf/stage/player/inspector grid, scoped visual tokens, the fixed
+**Examine / Build / Edit / Motion / Notes** vocabulary, tab accessibility and
+keyboard behavior, disposal, and the normalized browser baseline. A UI change
+belongs there, so every mounted game receives it.
+
+Voxel's grid adapter owns the viewer and orbiting stage, playback and timeline,
+frame checks and sprite sheet, voxel editing, notes and requests, recipe
+runner, and the agent-facing harness on `window.voxelStudio`. A game with a
+different renderer supplies its own stage/player/pane content to the shared
+shell without importing `StudioSession`, `StudioModelV1`, Three.js, or the grid
+editor. Harborform proves that boundary across the 0.166/0.185 Three.js split.
 
 A game owns its content: which models exist and what they are called, the
 sections its shelf is organized into, its parts, its recipes, its palettes,
@@ -34,6 +42,7 @@ repository.
     <meta charset="utf-8" />
     <title>harbor model studio</title>
     <link rel="stylesheet" href="../../voxel/tools/studio/studio.css" />
+    <link rel="stylesheet" href="../../voxel/tools/studio/shared-ui/style.css" />
   </head>
   <body>
     <div id="studio"></div>
@@ -47,34 +56,56 @@ repository.
 ```ts
 import { mountStudio, type StudioCatalogV1 } from '../../voxel/tools/studio/index.js';
 
-import { createBoat, createCrate } from './models.js';
+import { boatRecipe, createBoat, harborParts } from './models.js';
 
 const catalog: StudioCatalogV1 = {
   sections: [
-    { name: 'Boats', models: [{ id: 'harbor:boat', label: 'Fishing boat', load: createBoat }] },
-    { name: 'Dockside', models: [{ id: 'harbor:crate', label: 'Crate', load: createCrate }] },
+    {
+      name: 'Boats',
+      models: [{
+        id: 'harbor:boat',
+        label: 'Fishing boat',
+        load: createBoat,
+        howItsMade: () => ({ recipe: boatRecipe, parts: harborParts }),
+      }],
+    },
   ],
 };
 
-mountStudio({ catalog });
+const studio = mountStudio({ catalog });
+window.addEventListener('pagehide', (event) => {
+  if (!event.persisted) studio.dispose();
+});
 ```
 
 That is the whole integration. `mountStudio` returns a handle carrying the
 harness and an idempotent `dispose()`, for a game that mounts the studio
 inside its own page rather than on a page of its own.
 
-The import path is a relative path into the engine repository, not a package
-subpath. This is deliberate: the studio is dev-time tooling, and the published
-`voxel` package stays free of authoring — a renderer that shipped a studio
-would be the asset-authoring tool the engine's non-goals rule out. Games in
-this fleet already link the engine by path, so the studio comes along with it.
+The grid adapter import path is relative to the engine repository, not a
+published runtime subpath. The UI-only boundary is a private file package,
+`@voxel/model-studio-ui`, which renderer-neutral games link from
+`file:../voxel/tools/studio/shared-ui`. Both are deliberate dev-time tooling;
+the published `voxel` runtime package remains free of authoring UI and its
+narrow Three.js peer never enters the shared shell.
+
+## A game with its own renderer
+
+Add `@voxel/model-studio-ui` as a file dev dependency, import
+`renderModelStudioShell` for the five game-content slots, import the scoped
+`@voxel/model-studio-ui/style.css`, and call `connectModelStudioShell` after
+mounting the markup. The returned handle exposes the five regions and panels,
+`selectTab`, `activeTab`, and idempotent `dispose`. Do not copy the template,
+tab list, or outer CSS into the game. Adapter-only controls stay inside the
+same five panes; an unavailable capability keeps its pane and a nonempty
+accessible explanation rather than disappearing into a forked UI.
 
 ## Saving models
 
 The studio edits a model in memory and sends requests; it does not decide
-where a game's models live. A game's `load()` returns whatever it wants —
-a model built from a recipe, a model read from its own files, or one authored
-by hand:
+where a game's models live. A game's `load()` may build from a recipe or read
+an accepted artifact from its own files, but every catalog entry also supplies
+`howItsMade` so the accepted model can be reconstructed from zero:
 
 ```ts
 import { buildRecipe } from '../../voxel/tools/studio/index.js';
@@ -104,11 +135,20 @@ games, is in
 
 ## Watching a model get made
 
-A model whose catalog entry declares `howItsMade` shows its construction in
-the studio's **Build** tab: the empty grid it starts from, then the model
+Every catalog model declares `howItsMade` and shows its construction in the
+studio's **Build** tab: the empty grid it starts from, then the model
 after each step, with plain words for what the step did and how many cubes it
 added. Play it, step through it, or click any step to see the model as it
 stood then.
+
+Recipe-backed models open on **Build**, whose first section is the recipe parts
+list. Final ownership removes erased placements and no-op mirrors from the
+top-level counts — for example, one table and six chairs — while mirrors remain
+in the construction stages instead of pretending to be parts. Expanding an
+assembly shows that reusable recipe's saved contents, scaled by the number of
+surviving assembly occurrences; a parent recipe does not silently rewrite its
+child recipe when their voxels overlap. When the child recipe is also a shelf
+model, **Open** shows it on its own.
 
 ```ts
 {
@@ -129,8 +169,9 @@ no other tab is ever looking at a half-built model — editing or sending a
 request against a partial model would be a silent trap.
 
 `npm run studio:build [modelId] [page]` does the same walk headlessly and
-writes the stages tiled into one image, plus a screenshot of the panel. It is
-worth running on any recipe you have only read: watching the Harbor boat get
+writes the stages tiled into one image, plus a screenshot of the **Build**
+panel with its parts list. It is worth running on any recipe you have only
+read: watching the Harbor boat get
 made is what revealed that its hand-placed oar was landing on cells the hull
 had already filled, adding nothing, and that its mirror step was duplicating
 the mast rather than the oars. Both were invisible in the finished model and
@@ -150,3 +191,10 @@ exists to remove.
 into a single image, `recipes` rebuilds recipe-backed models and compares them
 against their saved grids, and `game` drives the Harbor fixture. A game's own
 driver is the same shape pointed at its own page.
+
+`tests/browser/model-studio-shell.spec.ts` is the inheritance gate. It runs
+the engine page and game fixture through the same marker, region geometry,
+five-tab ARIA/keyboard contract, overflow checks, and required-recipe sweep,
+then compares normalized workbench chrome against one committed pixel
+baseline. Consumer browser checks must assert the same shell contract before
+their renderer- and content-specific behavior.

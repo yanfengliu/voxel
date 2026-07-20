@@ -1,10 +1,6 @@
 import {
-  addPaletteColor,
   buildRecipe,
-  createEmptyModel,
   mountStudio,
-  setMotion,
-  setVoxel,
   stackSteps,
   type PartFragmentV1,
   type PartSettingsV1,
@@ -101,8 +97,26 @@ function plankPart(settings: PartSettingsV1): PartFragmentV1 {
   };
 }
 
+/** A complete crate shell, reusable anywhere the harbor needs storage. */
+function cratePart(): PartFragmentV1 {
+  const size = 5;
+  const voxels = new Array<number>(size * size * size).fill(0);
+  for (let x = 0; x < size; x += 1) {
+    for (let y = 0; y < size; y += 1) {
+      for (let z = 0; z < size; z += 1) {
+        const shell = x === 0 || y === 0 || z === 0
+          || x === size - 1 || y === size - 1 || z === size - 1;
+        if (!shell) continue;
+        const edge = [x, y, z].filter((axis) => axis === 0 || axis === size - 1).length >= 2;
+        voxels[x + size * (y + size * z)] = edge ? 2 : 1;
+      }
+    }
+  }
+  return { size: [size, size, size], roles: ['empty', 'wood', 'band'], voxels };
+}
+
 function createHarborParts(): PartShelfV1 {
-  return { hull: hullPart, mast: mastPart, plank: plankPart };
+  return { hull: hullPart, mast: mastPart, plank: plankPart, crate: cratePart };
 }
 
 /**
@@ -204,24 +218,34 @@ function createFishingBoat(): StudioModelV1 {
   return buildRecipe(createFishingBoatRecipe(), createHarborParts()).model;
 }
 
-/** A crate, authored by hand. Not every model needs a recipe to reach a shelf. */
-function createCrate(): StudioModelV1 {
-  let model = createEmptyModel({ id: 'harbor:crate', label: 'Crate', size: [5, 5, 5] });
-  const wood = addPaletteColor(model, { r: 146, g: 104, b: 64 });
-  model = wood.model;
-  const band = addPaletteColor(model, { r: 92, g: 82, b: 74 });
-  model = band.model;
-  for (let x = 0; x < 5; x += 1) {
-    for (let y = 0; y < 5; y += 1) {
-      for (let z = 0; z < 5; z += 1) {
-        const shell = x === 0 || y === 0 || z === 0 || x === 4 || y === 4 || z === 4;
-        if (!shell) continue;
-        const edge = [x, y, z].filter((axis) => axis === 0 || axis === 4).length >= 2;
-        model = setVoxel(model, x, y, z, edge ? band.paletteIndex : wood.paletteIndex);
-      }
-    }
-  }
-  return setMotion(model, { periodMs: 0 });
+function createCrateRecipe(): RecipeV1 {
+  return {
+    schemaVersion: 'studio.voxel-recipe/1',
+    id: 'harbor:crate',
+    label: 'Crate',
+    seed: 17,
+    size: [5, 5, 5],
+    roles: ['empty', 'wood', 'band'],
+    palette: [
+      { r: 0, g: 0, b: 0 },
+      { r: 146, g: 104, b: 64 },
+      { r: 92, g: 82, b: 74 },
+    ],
+    steps: [{
+      kind: 'part',
+      part: 'crate',
+      at: [0, 0, 0],
+      settings: {},
+      note: 'Builds the complete crate shell',
+    }],
+    motion: {
+      periodMs: 0,
+      phaseRadians: 0,
+      translation: [0, 0, 0],
+      rotationRadians: [0, 0, 0],
+      scale: [0, 0, 0],
+    },
+  };
 }
 
 /** The harbor's shelf: sections this game names and orders. */
@@ -254,7 +278,12 @@ export function createHarborCatalog(): StudioCatalogV1 {
               parts: createHarborParts(),
             }),
           },
-          { id: 'harbor:crate', label: 'Crate', load: createCrate },
+          {
+            id: 'harbor:crate',
+            label: 'Crate',
+            load: () => buildRecipe(createCrateRecipe(), createHarborParts()).model,
+            howItsMade: () => ({ recipe: createCrateRecipe(), parts: createHarborParts() }),
+          },
         ],
       },
     ],

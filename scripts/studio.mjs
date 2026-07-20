@@ -303,6 +303,7 @@ const COMMANDS = {
     const modelId = process.argv[3];
     const pagePath = process.argv[4] ?? '';
     const file = join(OUTPUT_DIR, 'construction.png');
+    const partsFile = join(OUTPUT_DIR, 'parts-panel.png');
     const panelFile = join(OUTPUT_DIR, 'build-panel.png');
     const report = await withStudio(async (page) => {
       const walked = await page.evaluate(async (id) => {
@@ -310,9 +311,27 @@ const COMMANDS = {
       if (!studio) throw new Error('the studio harness is unavailable');
       if (id) studio.openFromShelf(id);
       const steps = studio.buildSteps();
+      const parts = studio.buildParts();
       if (steps.length === 0) {
-        throw new Error(`${studio.model().label} was authored by hand; it has no steps to show`);
+        throw new Error(`${studio.model().label} has no catalog recipe to show`);
       }
+      const countPartRows = (entries) => entries.reduce(
+        (total, entry) => total + 1 + countPartRows(entry.children),
+        0,
+      );
+      const allParts = (entries) => entries.flatMap(
+        (entry) => [entry, ...allParts(entry.children)],
+      );
+      const flattenedParts = allParts(parts);
+      const countLeafParts = (entries) => entries.reduce(
+        (total, entry) => total + (entry.children.length === 0
+          ? entry.count
+          : countLeafParts(entry.children)),
+        0,
+      );
+      const shelfIds = new Set(studio.shelf().flatMap(
+        (section) => section.models.map((model) => model.id),
+      ));
       // Walk the construction through the same harness calls the panel makes,
       // capturing each stage as it is shown.
       const images = [];
@@ -356,26 +375,67 @@ const COMMANDS = {
           voxelsAfter: step.voxelsAfter,
           voxelsAdded: step.voxelsAdded,
         })),
+        parts: {
+          topLevel: parts.length,
+          rows: countPartRows(parts),
+          leafPieces: countLeafParts(parts),
+          firstNestedChildren: parts.find((part) => part.children.length > 0)
+            ?.children.length ?? 0,
+          recipeTypes: flattenedParts.filter((part) => part.kind === 'recipe').length,
+          openable: flattenedParts.filter(
+            (part) => part.recipeId && shelfIds.has(part.recipeId),
+          ).length,
+        },
         dataUrl: canvas.toDataURL('image/png'),
         finishedVoxels: finished.filledVoxels,
         shownAfterFinish: studio.shownBuildStep(),
       };
       }, modelId);
 
-      // The panel is the feature; the sheet is only its record. Open the tab
-      // a person opens and photograph it mid-build, so the controls are
-      // reviewed as laid out rather than as written.
-      await page.getByRole('button', { name: 'Build', exact: true }).click();
+      // Parts and construction answer one question: how this model is made.
+      // Keep them together in the shared Build tab so every game inherits one
+      // stable inspector surface instead of adding game-specific tabs.
+      await page.getByRole('tab', { name: 'Build', exact: true }).click();
+      const firstBranch = page.locator('.pane:visible details.component-branch').first();
+      if (await firstBranch.count() > 0) {
+        await firstBranch.locator(':scope > summary').click();
+      }
+      // Advancing a construction rebuilds the panel. The disclosure a person
+      // opened must survive that refresh or inspecting a component while the
+      // build plays becomes impossible.
       const middle = Math.max(1, Math.floor((walked.steps.length - 1) / 2));
       await page.locator('.step-row button').nth(middle).click();
+      await page.locator('.pane:visible').evaluate((pane) => { pane.scrollTop = 0; });
       await mkdir(OUTPUT_DIR, { recursive: true });
+      await page.screenshot({ path: partsFile, fullPage: false });
+      await page.locator('.pane:visible .step-row.active').scrollIntoViewIfNeeded();
       await page.screenshot({ path: panelFile, fullPage: false });
       const panel = await page.evaluate(() => ({
-        rows: document.querySelectorAll('.step-row').length,
-        active: document.querySelectorAll('.step-row.active').length,
+        rows: document.querySelectorAll('.pane:not([hidden]) .step-row').length,
+        active: document.querySelectorAll('.pane:not([hidden]) .step-row.active').length,
         shown: window.voxelStudio?.shownBuildStep() ?? null,
+        componentRows: document.querySelectorAll('.pane:not([hidden]) .component-row').length,
+        topLevelComponents: document.querySelectorAll(
+          '.pane:not([hidden]) .components > .component-row',
+        ).length,
+        openButtons: document.querySelectorAll('.pane:not([hidden]) .component-open').length,
+        openLabels: [...document.querySelectorAll('.pane:not([hidden]) .component-open')]
+          .map((button) => button.getAttribute('aria-label')),
+        expandedChildren: document.querySelector(
+          '.pane:not([hidden]) details.component-branch[open] > .component-children',
+        )?.children.length ?? 0,
       }));
-      return { ...walked, panel };
+      const firstOpen = page.locator('.pane:visible .component-open').first();
+      let openedComponent = null;
+      if (await firstOpen.count() > 0) {
+        const expected = await firstOpen.getAttribute('data-model-id');
+        await firstOpen.click();
+        openedComponent = {
+          expected,
+          actual: await page.evaluate(() => window.voxelStudio?.model().id ?? null),
+        };
+      }
+      return { ...walked, panel, openedComponent };
     }, pagePath);
     const dataUrl = report.dataUrl;
 
@@ -386,10 +446,12 @@ const COMMANDS = {
       console.log(`${LOG_PREFIX}   ${String(step.index)}. ${step.summary} `
         + `(${step.voxelsAdded >= 0 ? '+' : ''}${String(step.voxelsAdded)} → ${String(step.voxelsAfter)} cubes)`);
     }
-    console.log(`${LOG_PREFIX} wrote ${relative(PROJECT_ROOT, file)} and `
-      + `${relative(PROJECT_ROOT, panelFile)}`);
+    console.log(`${LOG_PREFIX} wrote ${relative(PROJECT_ROOT, file)}, `
+      + `${relative(PROJECT_ROOT, partsFile)}, and ${relative(PROJECT_ROOT, panelFile)}`);
     console.log(`${LOG_PREFIX} panel: ${String(report.panel.rows)} rows, `
       + `showing step ${String(report.panel.shown)}`);
+    console.log(`${LOG_PREFIX} parts: ${String(report.parts.topLevel)} top-level line items, `
+      + `${String(report.parts.leafPieces)} recipe leaf pieces`);
 
     const failures = [];
     const last = report.steps[report.steps.length - 1];
@@ -402,6 +464,35 @@ const COMMANDS = {
     }
     if (report.panel.active !== 1) {
       failures.push(`${String(report.panel.active)} steps are marked as showing`);
+    }
+    if (report.panel.componentRows !== report.parts.rows) {
+      failures.push(`the panel lists ${String(report.panel.componentRows)} part rows for a `
+        + `${String(report.parts.rows)}-row parts tree`);
+    }
+    if (report.panel.topLevelComponents !== report.parts.topLevel) {
+      failures.push(`the panel lists ${String(report.panel.topLevelComponents)} top-level part types for `
+        + `${String(report.parts.topLevel)} described types`);
+    }
+    if (report.panel.expandedChildren !== report.parts.firstNestedChildren) {
+      failures.push(`the expanded assembly shows ${String(report.panel.expandedChildren)} child types; `
+        + `${String(report.parts.firstNestedChildren)} were described`);
+    }
+    if (report.panel.openButtons !== report.parts.openable) {
+      failures.push(`the panel offers ${String(report.panel.openButtons)} Open controls for `
+        + `${String(report.parts.openable)} openable recipe types`);
+    }
+    if (report.parts.recipeTypes > 0 && report.parts.openable === 0) {
+      failures.push('the composed recipe exposes no reusable assembly that can be opened');
+    }
+    const labelledOpenControls = report.panel.openLabels.filter((label) => typeof label === 'string'
+      && label.length > 0);
+    if (new Set(labelledOpenControls).size !== report.panel.openButtons) {
+      failures.push('component Open controls do not have unique accessible names');
+    }
+    if (report.openedComponent
+      && report.openedComponent.actual !== report.openedComponent.expected) {
+      failures.push(`opening component ${String(report.openedComponent.expected)} selected `
+        + `${String(report.openedComponent.actual)}`);
     }
     if (last?.voxelsAfter !== report.finishedVoxels) {
       failures.push(`the last step has ${String(last?.voxelsAfter)} cubes but the finished model has `
@@ -429,6 +520,7 @@ const COMMANDS = {
     // same eyes as the tool itself.
     const pagePath = process.argv[3];
     const file = join(OUTPUT_DIR, pagePath ? 'studio-page.png' : 'studio-ui.png');
+    const expandedPartsFile = join(OUTPUT_DIR, 'studio-parts-expanded.png');
     await withStudio(async (page) => {
       await mkdir(OUTPUT_DIR, { recursive: true });
       if (pagePath) {
@@ -439,22 +531,76 @@ const COMMANDS = {
         console.log(`${LOG_PREFIX} wrote ${relative(PROJECT_ROOT, file)} from ${pagePath}`);
         return;
       }
+      // Selecting a recipe from another inspector view must reveal its parts,
+      // not leave the user on a stale tab with the bill of materials hidden.
+      const diningSet = page.getByRole('button', { name: 'Dining set', exact: true });
+      if (await diningSet.count() > 0) {
+        await page.getByRole('tab', { name: 'Examine', exact: true }).click();
+        await diningSet.click();
+      }
       await page.screenshot({ path: file, fullPage: true });
+      const firstAssembly = page.locator('.pane:visible details.component-branch').first();
+      if (await firstAssembly.count() > 0) {
+        await firstAssembly.locator(':scope > summary').click();
+        await page.setViewportSize({ width: 1280, height: 900 });
+        await page.locator('.pane:visible').evaluate((pane) => { pane.scrollTop = 0; });
+        await page.screenshot({ path: expandedPartsFile, fullPage: false });
+      }
       // A page that renders but whose controls never wired up looks fine in a
       // screenshot, so the count is asserted rather than eyeballed.
       const controls = await page.evaluate(() => ({
         cells: document.querySelectorAll('.cell').length,
         swatches: document.querySelectorAll('.swatch').length,
         sliders: document.querySelectorAll('.slider').length,
+        shelfItemIndent: (() => {
+          const heading = document.querySelector('.section-head');
+          const item = document.querySelector('.model-row');
+          if (!(heading instanceof HTMLElement) || !(item instanceof HTMLElement)) return 0;
+          const headingStyle = getComputedStyle(heading);
+          const itemStyle = getComputedStyle(item);
+          const headingContentLeft = heading.getBoundingClientRect().left
+            + Number.parseFloat(headingStyle.paddingLeft);
+          const itemContentLeft = item.getBoundingClientRect().left
+            + Number.parseFloat(itemStyle.paddingLeft);
+          return itemContentLeft - headingContentLeft;
+        })(),
+        shelfCategoriesExpanded: [...document.querySelectorAll('.section-head')]
+          .every((heading) => heading.getAttribute('aria-expanded') === 'true'),
+        activeInspectorTab: document.querySelector('.tab.active')?.textContent ?? '',
+        hasBuildTab: [...document.querySelectorAll('.tab')]
+          .some((tab) => tab.textContent === 'Build'),
+        hasVisiblePartsHeading: [...document.querySelectorAll('.pane:not([hidden]) .grouphead')]
+          .some((heading) => heading.textContent === 'Parts list'),
+        visiblePartRows: document.querySelectorAll('.pane:not([hidden]) .component-row').length,
+        visiblePartNames: [...document.querySelectorAll('.pane:not([hidden]) .component-name')]
+          .map((name) => name.textContent),
       }));
       console.log(`${LOG_PREFIX} ${String(controls.cells)} cells, `
-        + `${String(controls.swatches)} swatches, ${String(controls.sliders)} sliders`);
+        + `${String(controls.swatches)} swatches, ${String(controls.sliders)} sliders; `
+        + `${String(controls.shelfItemIndent)}px shelf item indent`);
       if (controls.cells === 0 || controls.swatches === 0) {
         throw new Error('the editor rendered no controls');
       }
+      if (controls.shelfItemIndent < 16) {
+        throw new Error(`shelf items are indented only ${String(controls.shelfItemIndent)}px beneath their category`);
+      }
+      if (!controls.shelfCategoriesExpanded) {
+        throw new Error('an expanded shelf category does not expose its state');
+      }
+      if (!controls.hasBuildTab || controls.activeInspectorTab !== 'Build') {
+        throw new Error('a recipe-backed model does not open with a visible Build view');
+      }
+      if (!controls.hasVisiblePartsHeading || controls.visiblePartRows === 0) {
+        throw new Error('the visible Build view has no parts list');
+      }
+      if (!controls.visiblePartNames.includes('Table ×1')
+        || !controls.visiblePartNames.includes('Chair ×6')) {
+        throw new Error(`the Dining set parts list is ${controls.visiblePartNames.join(', ')}`);
+      }
+      console.log(`${LOG_PREFIX} wrote ${relative(PROJECT_ROOT, file)} and `
+        + `${relative(PROJECT_ROOT, expandedPartsFile)}`);
       return controls;
     });
-    console.log(`${LOG_PREFIX} wrote ${relative(PROJECT_ROOT, file)}`);
   },
 };
 

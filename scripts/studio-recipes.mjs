@@ -62,27 +62,26 @@ async function withStudio(run) {
 const results = await withStudio(async (page) => page.evaluate(async () => {
   // Vite serves the studio's TypeScript straight to the page, so the builder
   // under test is the real one, run where the studio runs.
-  const [{ buildRecipe }, { createStudioParts }, recipes, catalog] = await Promise.all([
+  const [{ buildRecipe }, catalog] = await Promise.all([
     import('/recipe.ts'),
-    import('/parts.ts'),
-    import('/recipes.ts'),
     import('/catalog.ts'),
   ]);
-  const parts = createStudioParts();
-  const entries = [
-    { name: 'starter', recipe: recipes.createStarterRecipe(), baked: catalog.createStarterModel() },
-    { name: 'brick-wall', recipe: recipes.createBrickWallRecipe(), baked: catalog.createBrickWallModel() },
-  ];
+  // The catalog is the one authority on what is on the shelf. Deriving the
+  // list here keeps this command honest as recipes are added, including
+  // composed recipes that need their own recipe book.
+  const entries = catalog.createStudioCatalog().sections
+    .flatMap((section) => section.models);
   const out = [];
   for (const entry of entries) {
-    const built = buildRecipe(entry.recipe, parts);
-    const matchesBaked = JSON.stringify(built.model) === JSON.stringify(entry.baked);
+    const source = entry.howItsMade();
+    const built = buildRecipe(source.recipe, source.parts, source.book);
+    const matchesBaked = JSON.stringify(built.model) === JSON.stringify(entry.load());
     const studio = window.voxelStudio;
     if (!studio) throw new Error('the studio harness is unavailable');
     studio.load(built.model);
     const sheet = await studio.spriteSheet();
     out.push({
-      name: entry.name,
+      name: entry.id.startsWith('studio:') ? entry.id.slice('studio:'.length) : entry.id,
       matchesBaked,
       placedVoxels: built.placedBy.filter((step) => step >= 0).length,
       dataUrl: sheet.dataUrl,

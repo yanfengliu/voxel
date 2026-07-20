@@ -5,10 +5,17 @@ import { buildRecipe, type PartShelfV1, type RecipeBookV1, type RecipeV1 } from 
 import {
   createBrickCottageRecipe,
   createBrickWallRecipe,
+  createChairRecipe,
+  createCottageRoofRecipe,
+  createDiningSetRecipe,
+  createFlowerRecipe,
+  createPotRecipe,
   createSandstoneCottageRecipe,
   createSandstoneWallRecipe,
   createStarterRecipe,
   createStudioRecipeBook,
+  createTableRecipe,
+  createThreeFlowerPotRecipe,
 } from './recipes.js';
 
 /**
@@ -32,12 +39,10 @@ export interface ShelfModelV1 {
   readonly label: string;
   load(): StudioModelV1;
   /**
-   * How this model is made, when it is made from a recipe. The studio replays
-   * it step by step so the construction can be watched rather than imagined.
-   * A hand-authored model omits this, and the studio says so plainly instead
-   * of inventing a story about steps that never existed.
+   * How this model is made. Every shelf entry is reconstructible from zero;
+   * shared recipes and standard parts keep that account reusable.
    */
-  howItsMade?(): ShelfRecipeV1;
+  howItsMade(): ShelfRecipeV1;
 }
 
 export interface ShelfSectionV1 {
@@ -156,13 +161,81 @@ export function createStudioCatalog(): StudioCatalogV1 {
         ],
       },
       {
-        // Two cottages that share one roof recipe and differ only in the wall
-        // they name. Improving the roof improves both, and neither owns it.
-        name: 'Cottages',
+        // The combined arrangement owns only placement. Its pot and all three
+        // flowers remain shared recipes that can also be opened on their own.
+        name: 'Garden',
         models: [
           {
+            id: 'studio:flower',
+            label: 'Flower',
+            load: () => buildRecipe(createFlowerRecipe(), createStudioParts()).model,
+            howItsMade: () => ({ recipe: createFlowerRecipe(), parts: createStudioParts() }),
+          },
+          {
+            id: 'studio:pot',
+            label: 'Pot',
+            load: () => buildRecipe(createPotRecipe(), createStudioParts()).model,
+            howItsMade: () => ({ recipe: createPotRecipe(), parts: createStudioParts() }),
+          },
+          {
+            id: 'studio:three-flower-pot',
+            label: 'Pot of three flowers',
+            load: () => buildRecipe(
+              createThreeFlowerPotRecipe(), createStudioParts(), createStudioRecipeBook(),
+            ).model,
+            howItsMade: () => ({
+              recipe: createThreeFlowerPotRecipe(),
+              parts: createStudioParts(),
+              book: createStudioRecipeBook(),
+            }),
+          },
+        ],
+      },
+      {
+        // Complete small objects come before rooms or houses. The dining set
+        // owns only arrangement: its table and every chair stay reusable.
+        name: 'Furniture',
+        models: [
+          {
+            id: 'studio:chair',
+            label: 'Chair',
+            load: () => buildRecipe(createChairRecipe(), createStudioParts()).model,
+            howItsMade: () => ({ recipe: createChairRecipe(), parts: createStudioParts() }),
+          },
+          {
+            id: 'studio:table',
+            label: 'Table',
+            load: () => buildRecipe(createTableRecipe(), createStudioParts()).model,
+            howItsMade: () => ({ recipe: createTableRecipe(), parts: createStudioParts() }),
+          },
+          {
+            id: 'studio:dining-set',
+            label: 'Dining set',
+            load: () => buildRecipe(
+              createDiningSetRecipe(), createStudioParts(), createStudioRecipeBook(),
+            ).model,
+            howItsMade: () => ({
+              recipe: createDiningSetRecipe(),
+              parts: createStudioParts(),
+              book: createStudioRecipeBook(),
+            }),
+          },
+        ],
+      },
+      {
+        // These are deliberately shallow composition studies, not houses.
+        // Each shared sub-recipe also appears on the shelf on its own.
+        name: 'Roof studies',
+        models: [
+          {
+            id: 'studio:cottage-roof',
+            label: 'Pitched roof slice',
+            load: () => buildRecipe(createCottageRoofRecipe(), createStudioParts()).model,
+            howItsMade: () => ({ recipe: createCottageRoofRecipe(), parts: createStudioParts() }),
+          },
+          {
             id: 'studio:brick-cottage',
-            label: 'Brick cottage',
+            label: 'Brick wall + roof slice',
             load: () => buildRecipe(
               createBrickCottageRecipe(), createStudioParts(), createStudioRecipeBook(),
             ).model,
@@ -174,7 +247,7 @@ export function createStudioCatalog(): StudioCatalogV1 {
           },
           {
             id: 'studio:sandstone-cottage',
-            label: 'Sandstone cottage',
+            label: 'Sandstone wall + roof slice',
             load: () => buildRecipe(
               createSandstoneCottageRecipe(), createStudioParts(), createStudioRecipeBook(),
             ).model,

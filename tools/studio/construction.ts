@@ -1,4 +1,5 @@
 import type { VoxelStudioHarnessV1 } from './harness.js';
+import type { RecipePartV1 } from './recipe.js';
 
 /**
  * The Build panel: watch the computer follow a recipe, one step at a time,
@@ -16,6 +17,7 @@ import type { VoxelStudioHarnessV1 } from './harness.js';
 
 /** How long each step holds while the build plays. */
 const STEP_HOLD_MS = 750;
+let constructionPanelSerial = 0;
 
 export interface ConstructionPanelV1 {
   readonly element: HTMLElement;
@@ -41,8 +43,10 @@ export function createConstructionPanel(options: {
   readonly onChanged: () => void;
 }): ConstructionPanelV1 {
   const { harness, onChanged } = options;
+  const panelId = String(constructionPanelSerial += 1);
 
   const pane = element('div', 'pane');
+  const partsIntro = element('p', 'hint');
   const intro = element('p', 'hint');
   const transport = element('div', 'row');
   const stepBack = element('button', 'step');
@@ -56,11 +60,32 @@ export function createConstructionPanel(options: {
   const finishedButton = element('button');
   finishedButton.textContent = 'Finished model';
   transport.append(stepBack, playButton, stepForward, finishedButton);
+  const componentsHeading = element('h3', 'grouphead');
+  componentsHeading.id = `studio-parts-heading-${panelId}`;
+  componentsHeading.textContent = 'Parts list';
+  const componentsHint = element('p', 'hint component-hint');
+  const componentsList = element('ul', 'components');
+  componentsList.setAttribute('aria-labelledby', componentsHeading.id);
+  const stepsHeading = element('h3', 'grouphead');
+  stepsHeading.id = `studio-construction-heading-${panelId}`;
+  stepsHeading.textContent = 'Construction stages';
   const list = element('ol', 'steps');
-  pane.append(intro, transport, list);
+  list.setAttribute('aria-labelledby', stepsHeading.id);
+  pane.append(
+    partsIntro,
+    componentsHeading,
+    componentsHint,
+    componentsList,
+    stepsHeading,
+    intro,
+    transport,
+    list,
+  );
 
   let playTimer = 0;
   let disposed = false;
+  let componentModelId = '';
+  const expandedComponents = new Set<string>();
 
   const stepCount = (): number => harness.buildSteps().length;
 
@@ -135,20 +160,138 @@ export function createConstructionPanel(options: {
 
   finishedButton.addEventListener('click', showFinished);
 
+  function countLeafParts(parts: readonly RecipePartV1[]): number {
+    return parts.reduce(
+      (total, part) => total + (part.children.length === 0
+        ? part.count
+        : countLeafParts(part.children)),
+      0,
+    );
+  }
+
+  function partDetail(part: RecipePartV1): string {
+    switch (part.kind) {
+      case 'recipe':
+        return [part.recipeId ?? '', `${String(part.count)} placement${part.count === 1 ? '' : 's'}`]
+          .filter(Boolean).join(' · ');
+      case 'part': {
+        const settings = Object.entries(part.settings ?? {})
+          .map(([name, value]) => `${name}=${String(value)}`)
+          .join(' · ');
+        return [`${String(part.count)} piece${part.count === 1 ? '' : 's'}`, settings]
+          .filter(Boolean).join(' · ');
+      }
+      case 'voxels':
+        return [
+          `${String(part.voxelCount ?? 0)} cubes`,
+          `${String(part.count)} layer${part.count === 1 ? '' : 's'}`,
+          part.size.join('×'),
+        ].filter(Boolean).join(' · ');
+    }
+  }
+
+  function renderPart(
+    part: RecipePartV1,
+    shelfIds: ReadonlySet<string>,
+    path: readonly number[],
+  ): HTMLLIElement {
+    const item = element('li', 'component-row');
+    const hasChildren = part.children.length > 0;
+    const branch = hasChildren ? element('details', 'component-branch') : null;
+    const pathLabel = path.join('.');
+    const line = hasChildren
+      ? element('summary', 'component-line')
+      : element('div', 'component-line');
+    const badge = element('span', `component-kind kind-${part.kind}`);
+    badge.textContent = part.kind;
+    const copy = element('span', 'component-copy');
+    const name = element('strong', 'component-name');
+    name.textContent = `${part.name} ×${String(part.count)}`;
+    const purpose = element('span', 'component-purpose');
+    purpose.textContent = part.summary;
+    const detail = element('span', 'component-detail');
+    detail.textContent = partDetail(part);
+    copy.append(name, purpose, detail);
+    line.append(badge, copy);
+
+    if (part.recipeId && shelfIds.has(part.recipeId)) {
+      const open = element('button', 'component-open');
+      open.textContent = 'Open';
+      open.title = `Open ${part.name} on its own`;
+      open.dataset.modelId = part.recipeId;
+      open.setAttribute('aria-label', `Open ${part.name}, part ${pathLabel}`);
+      open.addEventListener('click', (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        stopPlaying();
+        harness.openFromShelf(part.recipeId ?? '');
+        onChanged();
+        refresh();
+      });
+      line.appendChild(open);
+    }
+
+    if (branch) {
+      branch.open = expandedComponents.has(pathLabel);
+      branch.addEventListener('toggle', () => {
+        if (branch.open) expandedComponents.add(pathLabel);
+        else expandedComponents.delete(pathLabel);
+      });
+      branch.appendChild(line);
+      const children = element('ul', 'component-children');
+      part.children.forEach((child, index) => {
+        children.appendChild(renderPart(child, shelfIds, [...path, index + 1]));
+      });
+      branch.appendChild(children);
+      item.appendChild(branch);
+    } else {
+      item.appendChild(line);
+    }
+    return item;
+  }
+
   function refresh(): void {
     const steps = harness.buildSteps();
+    const parts = harness.buildParts();
     const shown = harness.shownBuildStep();
     const hasRecipe = steps.length > 0;
+    const openModelId = harness.model().id;
+    if (openModelId !== componentModelId) {
+      componentModelId = openModelId;
+      expandedComponents.clear();
+    }
 
     intro.textContent = hasRecipe
       ? `This model is made in ${String(steps.length - 1)} steps. `
         + 'Play it, or click a step to see the model as it stood then.'
-      : 'This model was made by hand, so there are no steps to replay. '
-        + 'Models saved as a recipe show their construction here.';
+      : 'No catalog recipe is open. Every shelf model must provide one.';
+    partsIntro.textContent = hasRecipe
+      ? 'Contributing assemblies and their saved recipe parts. Counts account '
+        + 'for overwrites and mirrors at each recipe level; expand or open a reusable recipe.'
+      : 'No catalog recipe is open, so there is no parts list to inspect.';
     for (const control of [stepBack, playButton, stepForward, finishedButton]) {
       control.toggleAttribute('disabled', !hasRecipe);
     }
     finishedButton.toggleAttribute('disabled', !hasRecipe || shown === null);
+
+    const topLevelCount = parts.reduce((total, part) => total + part.count, 0);
+    const leafCount = countLeafParts(parts);
+    componentsHint.textContent = `${String(parts.length)} top-level line item${parts.length === 1 ? '' : 's'} `
+      + `· ${String(topLevelCount)} occurrence${topLevelCount === 1 ? '' : 's'} `
+      + `· ${String(leafCount)} recipe leaf pieces. `
+      + 'Mirrors are construction steps, not parts.';
+    for (const node of [componentsHeading, componentsHint, componentsList]) {
+      node.hidden = !hasRecipe;
+    }
+    stepsHeading.hidden = !hasRecipe;
+
+    componentsList.replaceChildren();
+    const shelfIds = new Set(
+      harness.shelf().flatMap((section) => section.models.map((model) => model.id)),
+    );
+    parts.forEach((part, index) => {
+      componentsList.appendChild(renderPart(part, shelfIds, [index + 1]));
+    });
 
     list.replaceChildren();
     for (const step of steps) {
