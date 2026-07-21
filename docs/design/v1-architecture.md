@@ -1,8 +1,8 @@
 # Voxel 1.0 target architecture
 
-Status: target design from 2026-07-13. This document is normative for planned 1.0 work but does not claim that unmarked target APIs exist. The current executable surface is described by the README, [the implementation plan's ledger](../plans/v1-implementation.md), the package exports, and tests; where a delivered API's final shape differs from a sketch here, the delivered shape is noted in place.
+Status: Version 1.0 architecture record, originally authored as the target design on 2026-07-13 and frozen with the release on 2026-07-18. It does not claim that unmarked target sketches became public APIs. The current executable surface is described by the README, [the completed implementation ledger](../plans/v1-implementation.md), the package exports, and tests; where a delivered API's final shape differs from a sketch here, the delivered shape is noted in place.
 
-The design is deliberately evolutionary. Existing 0.1 snapshot consumers remain source-compatible while opt-in contracts are added and proven before the 1.0 freeze.
+The design is deliberately evolutionary. Existing 0.1 snapshot consumers remained source-compatible while opt-in contracts were added and proven before the 1.0 freeze.
 
 ## Architectural outcome
 

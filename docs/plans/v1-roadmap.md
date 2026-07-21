@@ -1,6 +1,6 @@
 # Voxel 1.0 roadmap
 
-Status: authoritative forward roadmap from 2026-07-13. The existing V1 vertical slice and its historical delivery ledger remain documented in [implementation.md](implementation.md). This document defines what “1.0” means, what it deliberately does not mean, and the evidence required before the version may be tagged.
+Status: released-scope and evidence record, authored from 2026-07-13 and completed with Version 1.0.0 on 2026-07-18. The earlier V1 vertical slice and its historical delivery ledger remain documented in [implementation.md](implementation.md). This document defines what “1.0” means, what it deliberately does not mean, and the evidence that supported the immutable release.
 
 Companion documents:
 

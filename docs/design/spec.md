@@ -1,6 +1,6 @@
 # Voxel graphics engine design
 
-Status: the V1 vertical slice was implemented on 2026-07-11. This document records the original architecture and option analysis; it is not a claim that every proposed section exists, and it predates most of the delivered surface — the README and [the implementation plan's ledger](../plans/v1-implementation.md) describe what ships today (deltas, the production greedy worker pipeline, presented picking, revision-aware capture, embedded hosts, and both consumer proofs). Forward work toward the stable release is governed by the [1.0 roadmap](../plans/v1-roadmap.md), [target architecture](v1-architecture.md), and [implementation plan](../plans/v1-implementation.md).
+Status: the V1 vertical slice was implemented on 2026-07-11 and the stable 1.0.0 release followed on 2026-07-18. This document records the original architecture and option analysis; it is not a claim that every proposed section exists. The README and [the completed implementation ledger](../plans/v1-implementation.md) describe what ships today (deltas, the production greedy worker pipeline, committed voxel/instance picking for profiled worker worlds, revision-aware capture, embedded hosts, and both consumer proofs). Facilities proposed here but absent from that shipped surface — including GLTF asset loading, public extension and pick-proxy APIs, and generic render passes — remain future design rather than current public API. The [1.0 roadmap](../plans/v1-roadmap.md), [target architecture](v1-architecture.md), and implementation ledger record the released scope, architecture, and evidence.
 
 ## Decision summary
 
@@ -19,7 +19,7 @@ Split these into independently versioned workspace packages only if real release
 
 Keep WebGPU as a later experimental backend. The portable data plane and Three-free mesher should not prevent it, but MVP APIs should not pretend that WebGL and WebGPU shaders, post-processing, readback, and lifecycle behavior are interchangeable.
 
-The delivered 0.1 slice is governed by the durable [architecture decisions](../architecture/decisions.md), [ecosystem review](../research/ecosystem.md), and [cross-game implementation ledger](../plans/implementation.md). Those documents record the selective build-versus-adopt boundary and the user-requested AoE2-first proving slice. The separate 1.0 documents are authoritative for future scope and ordering.
+The delivered 0.1 slice is governed by the durable [architecture decisions](../architecture/decisions.md), [ecosystem review](../research/ecosystem.md), and [cross-game implementation ledger](../plans/implementation.md). Those documents record the selective build-versus-adopt boundary and the user-requested AoE2-first proving slice. The separate 1.0 documents record the stable release's scope, ordering, and delivery evidence.
 
 ### Dependency and ownership strategy
 
@@ -54,11 +54,11 @@ The first TypeScript visible-face mesher is a deterministic correctness oracle b
 
 ### City
 
-`city` is the closest next Three-native consumer. Its simulation runs in a worker and emits structured-clone-safe render views; its renderer already uses Three.js, instanced buildings, vehicles, structures, trees, texture overlays, renderer-side interpolation, and versioned road geometry.
+`city` is the second live proving consumer. Its opt-in `?voxelWalls=1` path draws the building-wall lane through Voxel's embedded, borrowed-renderer mode. City's simulation still runs in a worker and emits structured-clone-safe render views; its host renderer continues to own terrain, vehicles, structures, trees, texture overlays, interpolation, camera, capture, and the rest of the frame.
 
 The reusable ideas are the simulation/render boundary, revision-aware updates, growable or capped instance pools, sparse overlays, renderer-owned interpolation, explicit draw-call budgets, and ground/preview picking.
 
-City-specific roads, zones, utilities, RCI colors, building rules, and protocol messages must remain in `city`. Its existing lifecycle also demonstrates a gap the shared runtime should close: top-level views need comprehensive, idempotent teardown for render loops, listeners, controls, meshes, materials, textures, and workers.
+City-specific roads, zones, utilities, RCI colors, building rules, and protocol messages remain in `city`. The embedded proof gives Voxel's owned root an idempotent teardown path without transferring responsibility for the host's render loop, listeners, controls, meshes, materials, textures, or workers.
 
 ### Townscaper
 
@@ -402,22 +402,22 @@ Exit gate: built exports and the worker resolve through a local dependency; core
 
 Exit gate: the sandbox exercises the full runtime contracts and a City compile/link fixture proves compatibility. Townscaper integration remains gated on upgrading it to the selected Three.js release rather than claiming an unsafe broad peer range.
 
-### Phase 2: voxel path
+### Phase 2: voxel path (completed for 1.0)
 
-- Implement opaque palette-indexed chunk storage and boundary-aware visible-face meshing as the correctness oracle, then bake off Voxelize's mesher and `block-mesh-rs` before selecting or implementing greedy optimization. The portable deterministic dense-chunk DDA, indexed halo/invalidation path, packaged worker protocol, bounded scheduler/stale firewall, frozen corpus, and provisional in-repo greedy selection are now implemented. Revision-atomic runtime groups, committed occupancy binding, final production measurements, and chunk pipeline/culling metrics remain open.
-- Establish correctness fixtures for empty/full/checkerboard/staircase/negative-coordinate/load-unload/neighbor-boundary chunks, palette opacity changes, tombstone/recreate, and adversarial revision races.
-- Add named performance scenes and budgets only after recording representative baselines.
+- Implemented opaque palette-indexed chunk storage and boundary-aware visible-face meshing as the correctness oracle, then selected the in-repo greedy production mesher after evaluating Voxelize and `block-mesh-rs` against the contract and supply-chain gates. The release also delivered the portable deterministic dense-chunk DDA, indexed halo/invalidation path, packaged worker protocol, bounded scheduler and stale firewall, frozen corpus, revision-atomic runtime groups, committed occupancy binding, production measurements, and chunk pipeline/culling metrics.
+- Established correctness fixtures for empty/full/checkerboard/staircase/negative-coordinate/load-unload/neighbor-boundary chunks, palette opacity changes, tombstone/recreate, and adversarial revision races.
+- Added named performance scenes and budgets after recording representative baselines.
 
-Exit gate: editing any dependency-boundary voxel rebuilds the declared minimum closure; old/new neighbors never appear in the same presentation group; picks match displayed occupancy; no stale overwrite or detached canonical storage; stable resources under repeated edits. Transparency, AO, and propagated voxel lighting remain out of scope.
+Exit gate: passed. Editing any dependency-boundary voxel rebuilds the declared minimum closure; old/new neighbors never appear in the same presentation group; picks match displayed occupancy; no stale overwrite or detached canonical storage; stable resources under repeated edits. Transparency, AO, and propagated voxel lighting remain out of scope.
 
-### Phase 3: first real consumer -- City
+### Phase 3: City consumer proof (completed 2026-07-15)
 
-- Add a City-owned adapter.
-- Replace one existing growable building instance batch through the engine's embedded, externally driven mode. Keep City's current terrain, camera, capture, picker, and composition root unchanged for this slice.
-- Compare instance identity, add/update/remove behavior, bounds, culling, visuals, draw calls, update cost, and teardown against the current batch before expanding scope.
-- Treat camera/capture adoption, picker adoption, and any terrain change as separate later slices. City's current flat land/water mesh is not a meaningful proof of volumetric voxel meshing; prove chunks in the 3D sandbox first.
+- Added a City-owned adapter for the opaque building-wall lane.
+- Replaced that lane through the engine's embedded, externally driven mode while City retained its terrain, camera, capture, picker, shadow policy, and composition root.
+- Verified instance identity, add/update/remove behavior, bounds, culling, visuals, draw calls, update cost, and teardown against City's prior batch.
+- Camera/capture adoption, picker adoption, and any terrain change remain separate future consumer work. City's flat land/water mesh is not evidence for volumetric voxel meshing; the worker-meshed chunk path is proven by the engine's deterministic and browser suites.
 
-Exit gate: one playable City building path uses the engine without importing City types into `voxel`, loading a second Three instance, or regressing its visual and performance baseline.
+Exit gate: passed. One playable City building-wall path uses the engine without importing City types into `voxel`, loading a second Three instance, or regressing its visual and performance baseline.
 
 ### Phase 4: Townscaper adoption
 
@@ -468,7 +468,7 @@ GPU and browser rasterization is not perfectly deterministic across machines. Us
 
 ### Consumer and dependency drift
 
-The Three-native consumers still require deliberate version alignment. AoE2 now uses the package's tested Three line and verifies one production runtime identity, while City and Townscaper remain separate alignment/adoption work. A peer declaration alone does not prevent linked Vite builds from duplicating Three, so adoption still needs externalization, consumer deduplication, runtime identity checks, and an intentional public API policy.
+The Three-native consumers still require deliberate version alignment. AoE2 and City's adopted building-wall lane use the package's supported Three line and verify one production runtime identity; Townscaper remains separate alignment and adoption work. A peer declaration alone does not prevent linked Vite builds from duplicating Three, so each future adoption still needs externalization, consumer deduplication, runtime identity checks, and an intentional public API policy.
 
 ### Asset and art-direction work
 
@@ -491,13 +491,13 @@ Approximate focused full-time-equivalent ranges, intended as planning bands rath
 | Production-grade multi-game toolkit with LOD, streaming, polished effects, broad compatibility | Medium | 6-15 months total | Integration, profiling, art pipelines, and long-tail lifecycle issues dominate |
 | Raw WebGPU engine with comparable facilities | Low for the current goal | Multi-year risk | Rebuilds a mature renderer ecosystem before proving shared value |
 
-The best success criterion for roughly the first 10-21 focused full-time-equivalent weeks is not "all games use voxel." It is: the production sandbox proves packaging, lifecycle, capture, spatial batching, and the opaque voxel path; one City building batch uses the embedded runtime; chunk-boundary edits present atomically without stale results or pick mismatch; and no game-specific type leaks into the package. Townscaper adoption follows its explicit Three.js alignment prerequisite rather than being forced into this first milestone.
+The original success criterion for roughly the first 10-21 focused full-time-equivalent weeks was not "all games use voxel." It was: the production sandbox proves packaging, lifecycle, capture, spatial batching, and the opaque voxel path; one City building batch uses the embedded runtime; chunk-boundary edits present atomically without stale results or pick mismatch; and no game-specific type leaks into the package. The formal 1.0 roadmap delivered that boundary through fixed-page batches rather than public spatial sharding; spatial sharding remains future work. Townscaper adoption remains post-1.0 behind its explicit Three.js alignment prerequisite.
 
 ## Current recommendation
 
-Proceed, but keep the promise narrow: build reusable rendering infrastructure and an optional true-voxel module on top of Three.js. Do not begin by porting a whole game or designing a universal plugin system.
+The recommendation remains narrow: maintain reusable rendering infrastructure and an optional true-voxel module on top of Three.js rather than expanding into a whole-game port or universal plugin system.
 
-The bounded AoE2 proving slice and standalone promotion are complete, without moving AoE concepts into the package. Next prove one City embedded instance batch, then bring Townscaper in through geometry resources and batches after Three-version alignment. AoE2's delivery is evidence for the boundary, not evidence that future consumer migrations are automatically small.
+The bounded AoE2 proving slice and standalone promotion are complete, without moving AoE concepts into the package, and City's building-wall lane now proves the embedded runtime while remaining City-owned. Townscaper adoption through consumer-generated geometry resources and batches remains future work after Three-version alignment. The two delivered consumer proofs validate the boundary; they do not imply that future migrations are automatically small.
 
 ## Non-normative references
 

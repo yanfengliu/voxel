@@ -1,6 +1,6 @@
 # Voxel 1.0 implementation plan
 
-Status: active from 2026-07-13. This is the executable work breakdown for [the 1.0 roadmap](v1-roadmap.md) and [target architecture](../design/v1-architecture.md). Check an item only when its named code and evidence exist. A milestone title is not evidence.
+Status: completed for Version 1.0 on 2026-07-18. This is the executable delivery ledger for [the 1.0 roadmap](v1-roadmap.md) and [target architecture](../design/v1-architecture.md). An item is checked only when its named code and evidence exist; a milestone title is not evidence.
 
 ## Execution rules
 
@@ -393,7 +393,7 @@ Current status:
 
 - [x] P-01 bounded plain query/result identities, validation, lifecycle/budget outcomes, and deterministic distance/lane/stable-identity ordering.
 - [x] P-02/P-03 internal voxel and exact instance query paths, work caps, committed snapshot/store objects, and focused tests are implemented and published. Each drawn revision's committed pick candidate is built from its exact canonical state, presented bundle, and frame manifest, and joined to the V-08 frame transaction through a reversible publication owner, so the query lane advances with the canvas or not at all. Instance material slots mirror the presenter's own resolution.
-- [x] P-04 composite ordering is published through `ThreeRenderRuntime.pickPresented`, which merges bounded voxel and instance hits under the P-01 deterministic ordering and reads no accepted, pending, mutable-camera, or live-presenter state. Optional logical proxies remain undecided: no AoE2 or City interaction has yet demonstrated a hit area that displayed geometry cannot express, so none are added. Public capability advertisement waits for the voxel worker option to become public.
+- [x] P-04 composite ordering is published through `ThreeRenderRuntime.pickPresented`, which merges bounded voxel and instance hits under the P-01 deterministic ordering and reads no accepted, pending, mutable-camera, or live-presenter state. Optional logical proxies remain undecided: no AoE2 or City interaction has yet demonstrated a hit area that displayed geometry cannot express, so none are added. The public capability report advertises both picking lanes for profiled worlds presented through the public `voxelWorkers` option.
 
 ### P-01: Plain query/result contracts
 
@@ -791,7 +791,10 @@ E exit gate: every support/performance claim has repeatable evidence, no leak or
 
 ### R-05: 1.0.0
 
-- [x] Released 2026-07-18 at commit `cb221f4`, tagged `v1.0.0`.
+- [x] Released 2026-07-18. The immutable candidate artifact was built and
+  verified from source commit `cb221f4`; the annotated `v1.0.0` tag points to
+  its following documentation-only child commit `91bb40a`, which records the
+  candidate and artifact provenance.
 
   Every roadmap requirement is met from live evidence recorded in its own
   milestone section above: bounded snapshots plus atomic deltas (F, D);
@@ -812,7 +815,7 @@ E exit gate: every support/performance claim has repeatable evidence, no leak or
 
 - Registry publication remains separately authorized and is not part of this release.
 
-R exit gate: no required item is incomplete, no substantive review issue is open, the complete supported matrix is green against the candidate from a clean checkout, and the artifact can be reproduced from the tag.
+R exit gate: no required item is incomplete, no substantive review issue is open, and the complete supported matrix is green against the candidate from a clean checkout. The recorded artifact can be reproduced from source commit `cb221f4` or the annotated tag: the intervening `91bb40a` changes only documentation excluded by the package's `files` manifest, so the package payload is identical.
 
 ## Verification command matrix
 
@@ -879,10 +882,10 @@ Risk: WebGPU, LOD, skeletal animation, effects, or a general scene graph displac
 
 Control: roadmap non-goals and decision gates. New 1.0 scope requires an explicit revision to the roadmap, critical path, and exit evidence.
 
-## Immediate implementation slice
+## Final pre-release implementation slice (completed)
 
-The V-08 transaction exists and commits standalone worker-meshed revisions with
-real browser evidence. The critical path continues:
+The V-08 transaction first committed standalone worker-meshed revisions with
+real browser evidence. The final pre-release critical path was:
 
 1. ~~Join the embedded host frame ticket to the V-08 transaction.~~ Delivered:
    an embedded host's successful draw is now the presentation acknowledgement
@@ -899,8 +902,8 @@ real browser evidence. The critical path continues:
    capture. `revisionAwareCapture` had been false since before H-04 published
    it, which the flip also corrects.
 
-The critical path is clear. What remains for 1.0 is the R-series: freeze,
-rehearsal, adversarial review, immutable candidate, and tag. All of F, D, V,
-P, H, C, and E is delivered with evidence recorded in its own section.
+The R-series above subsequently delivered the freeze, rehearsal, adversarial
+review, immutable candidate, and tag. All of F, D, V, P, H, C, E, and R is
+complete with evidence recorded in its own section.
 
 Each numbered step is split into minimal coherent verified commits and receives adversarial review as soon as its first public, async, presentation, or ownership boundary exists.
