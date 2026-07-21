@@ -32,8 +32,9 @@ export interface RecipeComponentV1 {
 /** A contributing item in an aggregated recipe bill of materials. Layout
  * operations such as mirrors are applied to the counts rather than presented
  * as if they were parts. Nested children describe the saved reusable recipe,
- * scaled across every surviving parent assembly occurrence; an outer recipe
- * does not rewrite that reusable recipe's own inventory. */
+ * scaled across every surviving parent assembly occurrence. The builder
+ * rejects cross-occurrence overlap before inventory is counted, so an outer
+ * recipe cannot clip or repaint one of its reusable children. */
 export interface RecipePartV1 {
   readonly kind: Exclude<RecipeStepV1['kind'], 'mirror'>;
   readonly name: string;
@@ -189,13 +190,13 @@ function scaleRecipePartsV1(
 
 /**
  * Returns an aggregated list of contributing recipe parts. Occurrence
- * ownership follows the built voxels through overwrites and mirrors, so an
- * erased step or a mirror that fills no new voxel adds no item. Repeated
+ * ownership follows the built voxels through same-occurrence repainting and
+ * mirrors, so an erased internal step or a mirror that fills no new voxel
+ * adds no item. Cross-occurrence overlap is rejected by the builder. Repeated
  * sub-recipes are grouped by identity, so the dining set says Chair ×6 instead
  * of three chairs plus a mirror operation. Children remain the reusable
- * recipe's own inventory, scaled by surviving assembly count; parent-level
- * overlap does not mutate that saved recipe. Procedural operations remain
- * visible in the construction stages.
+ * recipe's own inventory, scaled by surviving assembly count. Procedural
+ * operations remain visible in the construction stages.
  */
 export function listRecipePartsInternalV1(
   recipe: RecipeV1,

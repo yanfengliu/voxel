@@ -68,7 +68,7 @@ describe('recipe parts list', () => {
     ]);
   });
 
-  it('keeps expanded children scoped to the saved reusable recipe', () => {
+  it('refuses a parent-level part that would overwrite a reusable child', () => {
     const base = createChairRecipe();
     const child = {
       ...base,
@@ -109,14 +109,8 @@ describe('recipe parts list', () => {
       ],
     };
 
-    const inventory = listRecipePartsV1(parent, createStudioParts(), { [child.id]: child });
-    const assembly = inventory.find(({ kind }) => kind === 'recipe');
-
-    expect(assembly?.count).toBe(1);
-    expect(assembly?.children.map(({ summary }) => summary)).toEqual([
-      'Places the left child piece',
-      'Places the right child piece',
-    ]);
+    expect(() => listRecipePartsV1(parent, createStudioParts(), { [child.id]: child }))
+      .toThrow(/test:parent-overlap.*intersects.*test:two-piece-child/);
   });
 
   it('counts mirrored reusable furniture as physical assembly instances', () => {

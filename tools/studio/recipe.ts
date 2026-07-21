@@ -87,7 +87,8 @@ export interface PartStepV1 {
 }
 
 /** Makes what is placed so far symmetric across the grid's middle plane.
- * Cells that are already filled win over their mirrored twin. */
+ * Filled cells in the same object win over their mirrored twin. A reflected
+ * object that would be clipped by another occurrence fails the build. */
 export interface MirrorStepV1 {
   readonly kind: 'mirror';
   /** Plain words for what this step is for; shown while the model builds. */
@@ -398,6 +399,61 @@ export interface BuiltRecipeV1 {
    * lands where every user of it benefits.
    */
   readonly placedByRecipe: readonly string[];
+  /**
+   * For every grid cell, the deterministic path of the physical recipe
+   * occurrence that owns it; empty string where nothing did. Direct voxel
+   * and part steps belong to the recipe occurrence they run inside, so they
+   * may repaint one another. Every nested recipe step creates a distinct
+   * occurrence, even when it names the same saved recipe as another step.
+   * Mirrored copies that add cells receive their own `/mirrors[...]` suffix.
+   * This is Studio provenance, not a renderer or simulation contract.
+   */
+  readonly placedByOccurrence: readonly string[];
+}
+
+interface OccupancyConflictV1 {
+  readonly existing: string;
+  readonly incoming: string;
+  readonly first: readonly [number, number, number];
+  count: number;
+}
+
+function recordOccupancyConflict(
+  conflicts: Map<string, OccupancyConflictV1>,
+  existing: string,
+  incoming: string,
+  coordinate: readonly [number, number, number],
+): void {
+  const key = `${existing}\u0000${incoming}`;
+  const conflict = conflicts.get(key);
+  if (conflict) {
+    conflict.count += 1;
+    return;
+  }
+  conflicts.set(key, {
+    existing,
+    incoming,
+    first: [coordinate[0], coordinate[1], coordinate[2]],
+    count: 1,
+  });
+}
+
+function appendOccupancyIssues(
+  conflicts: ReadonlyMap<string, OccupancyConflictV1>,
+  path: string,
+  issues: GenomeIssueV1[],
+  mirrored: boolean,
+): void {
+  for (const conflict of conflicts.values()) {
+    const [x, y, z] = conflict.first;
+    issues.push({
+      path,
+      message: `${mirrored ? 'The mirrored occurrence' : 'The occurrence'} '${conflict.incoming}' `
+        + `intersects '${conflict.existing}' at voxel (${String(x)}, ${String(y)}, ${String(z)})`
+        + `; ${String(conflict.count)} overlapping ${conflict.count === 1 ? 'voxel' : 'voxels'} total. `
+        + 'A voxel may belong to at most one recipe occurrence.',
+    });
+  }
 }
 
 /**
@@ -405,6 +461,11 @@ export interface BuiltRecipeV1 {
  * there. Pure and deterministic — same recipe, same parts, identical model —
  * because every guarantee downstream (parity with the baked grid, honest
  * before/after sheets, note routing) stands on that.
+ *
+ * A nested recipe step is also a physical occurrence boundary. Distinct
+ * occurrences may touch faces, edges, or corners, but may not paint the same
+ * voxel; the build fails with stable occurrence paths when they do. Direct
+ * part and voxel steps remain internal paint for their containing occurrence.
  *
  * Bad steps do not stop the run: each is recorded and skipped, and the whole
  * list is thrown at the end, because a caller fixing a recipe file wants
@@ -415,7 +476,7 @@ export function buildRecipe(
   parts: PartShelfV1,
   book: RecipeBookV1 = {},
 ): BuiltRecipeV1 {
-  return buildRecipeInternal(recipe, parts, book, []);
+  return buildRecipeInternal(recipe, parts, book, [], recipe.id);
 }
 
 /**
@@ -429,6 +490,7 @@ function buildRecipeInternal(
   parts: PartShelfV1,
   book: RecipeBookV1,
   ancestry: readonly string[],
+  occurrencePath: string,
 ): BuiltRecipeV1 {
   const recipeIssues = validateRecipeV1(recipe);
   if (recipeIssues.length > 0) throw new RecipeBuildError(recipeIssues);
@@ -437,12 +499,19 @@ function buildRecipeInternal(
   const voxels = new Array<number>(sx * sy * sz).fill(0);
   const placedBy = new Array<number>(sx * sy * sz).fill(-1);
   const placedByRecipe = new Array<string>(sx * sy * sz).fill('');
+  const placedByOccurrence = new Array<string>(sx * sy * sz).fill('');
+  // Mirror operations act atomically on the objects placed directly in this
+  // recipe. Descendants of one nested recipe remain one assembly here even
+  // though placedByOccurrence retains their deeper diagnostic ownership.
+  const placedByMirrorGroup = new Array<string>(sx * sy * sz).fill('');
   const grid = (x: number, y: number, z: number): number => x + sx * (y + sy * z);
   const issues: GenomeIssueV1[] = [];
 
   recipe.steps.forEach((step, stepIndex) => {
     const path = `$.steps[${String(stepIndex)}]`;
     if (step.kind === 'voxels') {
+      const conflicts = new Map<string, OccupancyConflictV1>();
+      const writes: { readonly cell: number; readonly slot: number }[] = [];
       const [ax, ay, az] = step.at;
       const [px, py, pz] = step.size;
       for (let z = 0; z < pz; z += 1) {
@@ -451,11 +520,27 @@ function buildRecipeInternal(
             const slot = step.voxels[x + px * (y + py * z)] ?? 0;
             if (slot === 0) continue;
             const cell = grid(ax + x, ay + y, az + z);
-            voxels[cell] = slot;
-            placedBy[cell] = stepIndex;
-            placedByRecipe[cell] = recipe.id;
+            const existing = placedByOccurrence[cell] ?? '';
+            if ((voxels[cell] ?? 0) !== 0 && existing !== occurrencePath) {
+              recordOccupancyConflict(
+                conflicts,
+                existing,
+                occurrencePath,
+                [ax + x, ay + y, az + z],
+              );
+            }
+            writes.push({ cell, slot });
           }
         }
+      }
+      appendOccupancyIssues(conflicts, `${path}.at`, issues, false);
+      if (conflicts.size > 0) return;
+      for (const { cell, slot } of writes) {
+        voxels[cell] = slot;
+        placedBy[cell] = stepIndex;
+        placedByRecipe[cell] = recipe.id;
+        placedByOccurrence[cell] = occurrencePath;
+        placedByMirrorGroup[cell] = occurrencePath;
       }
       return;
     }
@@ -503,17 +588,35 @@ function buildRecipeInternal(
         });
         return;
       }
+      const conflicts = new Map<string, OccupancyConflictV1>();
+      const writes: { readonly cell: number; readonly slot: number }[] = [];
       for (let z = 0; z < fz; z += 1) {
         for (let y = 0; y < fy; y += 1) {
           for (let x = 0; x < fx; x += 1) {
             const role = fragment.voxels[x + fx * (y + fy * z)] ?? 0;
             if (role === 0) continue;
             const cell = grid(ax + x, ay + y, az + z);
-            voxels[cell] = slots[role] ?? 0;
-            placedBy[cell] = stepIndex;
-            placedByRecipe[cell] = recipe.id;
+            const existing = placedByOccurrence[cell] ?? '';
+            if ((voxels[cell] ?? 0) !== 0 && existing !== occurrencePath) {
+              recordOccupancyConflict(
+                conflicts,
+                existing,
+                occurrencePath,
+                [ax + x, ay + y, az + z],
+              );
+            }
+            writes.push({ cell, slot: slots[role] ?? 0 });
           }
         }
+      }
+      appendOccupancyIssues(conflicts, `${path}.at`, issues, false);
+      if (conflicts.size > 0) return;
+      for (const { cell, slot } of writes) {
+        voxels[cell] = slot;
+        placedBy[cell] = stepIndex;
+        placedByRecipe[cell] = recipe.id;
+        placedByOccurrence[cell] = occurrencePath;
+        placedByMirrorGroup[cell] = occurrencePath;
       }
       return;
     }
@@ -548,9 +651,16 @@ function buildRecipeInternal(
       // Salt 0 builds the sub-recipe exactly as it builds alone, so a shared
       // roof on a house is the same roof the shelf shows.
       const seeded = salt === 0 ? sub : { ...sub, seed: mixSeed(sub.seed, salt) };
+      const childOccurrencePath = `${occurrencePath}/steps[${String(stepIndex)}]<${sub.id}>`;
       let built: BuiltRecipeV1;
       try {
-        built = buildRecipeInternal(seeded, parts, book, [...ancestry, recipe.id]);
+        built = buildRecipeInternal(
+          seeded,
+          parts,
+          book,
+          [...ancestry, recipe.id],
+          childOccurrencePath,
+        );
       } catch (error) {
         if (error instanceof RecipeBuildError) {
           // Carry the inner findings out under a path that says which step
@@ -596,6 +706,13 @@ function buildRecipeInternal(
         return;
       }
 
+      const conflicts = new Map<string, OccupancyConflictV1>();
+      const writes: {
+        readonly cell: number;
+        readonly slot: number;
+        readonly subCell: number;
+        readonly incoming: string;
+      }[] = [];
       for (let z = 0; z < bz; z += 1) {
         for (let y = 0; y < by; y += 1) {
           for (let x = 0; x < bx; x += 1) {
@@ -603,36 +720,137 @@ function buildRecipeInternal(
             const role = built.model.voxels[subCell] ?? 0;
             if (role === 0) continue;
             const cell = grid(ax + x, ay + y, az + z);
-            voxels[cell] = slots[role] ?? 0;
-            placedBy[cell] = stepIndex;
-            // The deepest owner wins, so a voxel from a roof inside a house
-            // still names the roof.
-            placedByRecipe[cell] = built.placedByRecipe[subCell] ?? sub.id;
+            const incoming = built.placedByOccurrence[subCell] ?? childOccurrencePath;
+            const existing = placedByOccurrence[cell] ?? '';
+            if ((voxels[cell] ?? 0) !== 0 && existing !== incoming) {
+              recordOccupancyConflict(
+                conflicts,
+                existing,
+                incoming,
+                [ax + x, ay + y, az + z],
+              );
+            }
+            writes.push({ cell, slot: slots[role] ?? 0, subCell, incoming });
           }
         }
+      }
+      appendOccupancyIssues(conflicts, `${path}.at`, issues, false);
+      if (conflicts.size > 0) return;
+      for (const { cell, slot, subCell, incoming } of writes) {
+        voxels[cell] = slot;
+        placedBy[cell] = stepIndex;
+        // The deepest owner wins, so a voxel from a roof inside a house still
+        // names the roof.
+        placedByRecipe[cell] = built.placedByRecipe[subCell] ?? sub.id;
+        placedByOccurrence[cell] = incoming;
+        placedByMirrorGroup[cell] = childOccurrencePath;
       }
       return;
     }
 
-    // Mirror reads a snapshot of the grid as it stood, so the result is the
-    // simultaneous union — filled cells win over their mirrored twin, and
-    // running the same mirror twice changes nothing more.
+    // Mirror reads a snapshot of the grid as it stood, so the result is a
+    // simultaneous union and running the same mirror twice changes nothing
+    // more. Root-owned paint remains one object. A nested occurrence that
+    // gains any reflected cells is a new physical occurrence; if only part of
+    // that copy fits, report the blocked cells instead of silently producing
+    // a clipped, intersecting object. A fully covered reflection remains the
+    // established no-op (for example an explicitly authored symmetric pair).
     const before = voxels.slice();
     const beforePlaced = placedBy.slice();
     const beforeOwner = placedByRecipe.slice();
+    const beforeOccurrence = placedByOccurrence.slice();
+    const beforeMirrorGroup = placedByMirrorGroup.slice();
+    const reflected = new Map<string, {
+      source: number;
+      target: number;
+      coordinate: readonly [number, number, number];
+      sourceOccurrence: string;
+    }[]>();
     for (let z = 0; z < sz; z += 1) {
       for (let y = 0; y < sy; y += 1) {
         for (let x = 0; x < sx; x += 1) {
-          const cell = grid(x, y, z);
-          if ((before[cell] ?? 0) !== 0) continue;
-          const twin = step.axis === 'x' ? grid(sx - 1 - x, y, z) : grid(x, y, sz - 1 - z);
-          const slot = before[twin] ?? 0;
-          if (slot === 0) continue;
-          voxels[cell] = slot;
-          placedBy[cell] = beforePlaced[twin] ?? -1;
-          placedByRecipe[cell] = beforeOwner[twin] ?? '';
+          const source = grid(x, y, z);
+          if ((before[source] ?? 0) === 0) continue;
+          const sourceOccurrence = beforeOccurrence[source] ?? occurrencePath;
+          const mirrorGroup = beforeMirrorGroup[source] ?? occurrencePath;
+          const tx = step.axis === 'x' ? sx - 1 - x : x;
+          const tz = step.axis === 'z' ? sz - 1 - z : z;
+          const cells = reflected.get(mirrorGroup) ?? [];
+          cells.push({
+            source,
+            target: grid(tx, y, tz),
+            coordinate: [tx, y, tz],
+            sourceOccurrence,
+          });
+          reflected.set(mirrorGroup, cells);
         }
       }
+    }
+    const conflicts = new Map<string, OccupancyConflictV1>();
+    const writes: {
+      readonly source: number;
+      readonly target: number;
+      readonly incomingOccurrence: string;
+      readonly incomingMirrorGroup: string;
+    }[] = [];
+    for (const [sourceMirrorGroup, cells] of reflected) {
+      const addsCells = cells.some(({ target }) => (before[target] ?? 0) === 0);
+      const incomingMirrorGroup = sourceMirrorGroup === occurrencePath
+        ? occurrencePath
+        : `${sourceMirrorGroup}/mirrors[${String(stepIndex)}:${step.axis}]`;
+      for (const { source, target, coordinate, sourceOccurrence } of cells) {
+        const incomingOccurrence = sourceMirrorGroup === occurrencePath
+          ? occurrencePath
+          : `${sourceOccurrence}/mirrors[${String(stepIndex)}:${step.axis}]`;
+        if ((before[target] ?? 0) !== 0) {
+          const existingOccurrence = beforeOccurrence[target] ?? '';
+          const existingMirrorGroup = beforeMirrorGroup[target] ?? '';
+          if (sourceMirrorGroup === occurrencePath) {
+            if (existingOccurrence !== occurrencePath) {
+              recordOccupancyConflict(
+                conflicts,
+                existingOccurrence,
+                incomingOccurrence,
+                coordinate,
+              );
+            }
+          } else if (addsCells) {
+            // A copied assembly is all-or-none. Even a matching occupied leaf
+            // would make this a partial copy while another leaf is added.
+            recordOccupancyConflict(
+              conflicts,
+              existingOccurrence,
+              incomingOccurrence,
+              coordinate,
+            );
+          } else {
+            // A fully covered reflection is the established no-op when the
+            // same assembly covers itself or an already-authored counterpart
+            // has the identical voxel and deepest recipe provenance.
+            const isEquivalentCounterpart = (before[target] ?? 0) === (before[source] ?? 0)
+              && (beforeOwner[target] ?? '') === (beforeOwner[source] ?? '');
+            if (existingMirrorGroup !== sourceMirrorGroup && !isEquivalentCounterpart) {
+              recordOccupancyConflict(
+                conflicts,
+                existingOccurrence,
+                incomingOccurrence,
+                coordinate,
+              );
+            }
+          }
+          continue;
+        }
+        writes.push({ source, target, incomingOccurrence, incomingMirrorGroup });
+      }
+    }
+    appendOccupancyIssues(conflicts, path, issues, true);
+    if (conflicts.size > 0) return;
+    for (const { source, target, incomingOccurrence, incomingMirrorGroup } of writes) {
+      voxels[target] = before[source] ?? 0;
+      placedBy[target] = beforePlaced[source] ?? -1;
+      placedByRecipe[target] = beforeOwner[source] ?? '';
+      placedByOccurrence[target] = incomingOccurrence;
+      placedByMirrorGroup[target] = incomingMirrorGroup;
     }
   });
 
@@ -657,7 +875,7 @@ function buildRecipeInternal(
   // rather than hand a misbuilt model onward.
   const modelIssues = validateModelV1(model);
   if (modelIssues.length > 0) throw new RecipeBuildError(modelIssues);
-  return { model, placedBy, placedByRecipe };
+  return { model, placedBy, placedByRecipe, placedByOccurrence };
 }
 
 /**
@@ -677,13 +895,13 @@ export interface RecipeStageV1 {
 
 /**
  * Returns an aggregated list of contributing recipe parts. Occurrence
- * ownership follows the built voxels through overwrites and mirrors, so an
- * erased step or a mirror that fills no new voxel adds no item. Repeated
+ * ownership follows the built voxels through same-occurrence repainting and
+ * mirrors, so an erased internal step or a mirror that fills no new voxel
+ * adds no item. Cross-occurrence overlap is rejected by the builder. Repeated
  * sub-recipes are grouped by identity, so the dining set says Chair ×6 instead
  * of three chairs plus a mirror operation. Children remain the reusable
- * recipe's own inventory, scaled by surviving assembly count; parent-level
- * overlap does not mutate that saved recipe. Procedural operations remain
- * visible in the construction stages.
+ * recipe's own inventory, scaled by surviving assembly count. Procedural
+ * operations remain visible in the construction stages.
  */
 export function listRecipePartsV1(
   recipe: RecipeV1,

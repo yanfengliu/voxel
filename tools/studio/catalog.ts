@@ -5,15 +5,23 @@ import { buildRecipe, type PartShelfV1, type RecipeBookV1, type RecipeV1 } from 
 import {
   createBrickCottageRecipe,
   createBrickWallRecipe,
+  createBedFrameRecipe,
+  createBedroomFurnitureSetRecipe,
+  createBlanketRecipe,
   createChairRecipe,
   createCottageRoofRecipe,
   createDiningSetRecipe,
   createFlowerRecipe,
+  createMadeBedRecipe,
+  createMattressRecipe,
+  createNightstandRecipe,
+  createPillowRecipe,
   createPotRecipe,
   createSandstoneCottageRecipe,
   createSandstoneWallRecipe,
   createStarterRecipe,
   createStudioRecipeBook,
+  createTableLampRecipe,
   createTableRecipe,
   createThreeFlowerPotRecipe,
 } from './recipes.js';
@@ -216,6 +224,74 @@ export function createStudioCatalog(): StudioCatalogV1 {
             ).model,
             howItsMade: () => ({
               recipe: createDiningSetRecipe(),
+              parts: createStudioParts(),
+              book: createStudioRecipeBook(),
+            }),
+          },
+        ],
+      },
+      {
+        // Each bedroom object is saved independently before the larger bed
+        // and furniture-set recipes arrange it. The compositions contain no
+        // copied construction steps.
+        name: 'Bedroom furniture',
+        models: [
+          {
+            id: 'studio:bed-frame',
+            label: 'Bed frame',
+            load: () => buildRecipe(createBedFrameRecipe(), createStudioParts()).model,
+            howItsMade: () => ({ recipe: createBedFrameRecipe(), parts: createStudioParts() }),
+          },
+          {
+            id: 'studio:mattress',
+            label: 'Mattress',
+            load: () => buildRecipe(createMattressRecipe(), createStudioParts()).model,
+            howItsMade: () => ({ recipe: createMattressRecipe(), parts: createStudioParts() }),
+          },
+          {
+            id: 'studio:pillow',
+            label: 'Pillow',
+            load: () => buildRecipe(createPillowRecipe(), createStudioParts()).model,
+            howItsMade: () => ({ recipe: createPillowRecipe(), parts: createStudioParts() }),
+          },
+          {
+            id: 'studio:blanket',
+            label: 'Blanket',
+            load: () => buildRecipe(createBlanketRecipe(), createStudioParts()).model,
+            howItsMade: () => ({ recipe: createBlanketRecipe(), parts: createStudioParts() }),
+          },
+          {
+            id: 'studio:made-bed',
+            label: 'Made bed',
+            load: () => buildRecipe(
+              createMadeBedRecipe(), createStudioParts(), createStudioRecipeBook(),
+            ).model,
+            howItsMade: () => ({
+              recipe: createMadeBedRecipe(),
+              parts: createStudioParts(),
+              book: createStudioRecipeBook(),
+            }),
+          },
+          {
+            id: 'studio:nightstand',
+            label: 'Nightstand',
+            load: () => buildRecipe(createNightstandRecipe(), createStudioParts()).model,
+            howItsMade: () => ({ recipe: createNightstandRecipe(), parts: createStudioParts() }),
+          },
+          {
+            id: 'studio:table-lamp',
+            label: 'Table lamp',
+            load: () => buildRecipe(createTableLampRecipe(), createStudioParts()).model,
+            howItsMade: () => ({ recipe: createTableLampRecipe(), parts: createStudioParts() }),
+          },
+          {
+            id: 'studio:bedroom-furniture-set',
+            label: 'Bedroom furniture set',
+            load: () => buildRecipe(
+              createBedroomFurnitureSetRecipe(), createStudioParts(), createStudioRecipeBook(),
+            ).model,
+            howItsMade: () => ({
+              recipe: createBedroomFurnitureSetRecipe(),
               parts: createStudioParts(),
               book: createStudioRecipeBook(),
             }),

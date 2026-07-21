@@ -4,10 +4,34 @@ import {
   createDiningSetRecipe,
   createTableRecipe,
 } from './furniture-recipes.js';
+import {
+  createBedFrameRecipe,
+  createBedroomFurnitureSetRecipe,
+  createBlanketRecipe,
+  createHouseholdRecipeBook,
+  createMadeBedRecipe,
+  createMattressRecipe,
+  createNightstandRecipe,
+  createPillowRecipe,
+  createTableLampRecipe,
+} from './household-recipes.js';
 import type { GenomeColorV1 } from './model.js';
 import type { RecipeBookV1, RecipeV1 } from './recipe.js';
 
-export { createChairRecipe, createDiningSetRecipe, createTableRecipe };
+export {
+  createBedFrameRecipe,
+  createBedroomFurnitureSetRecipe,
+  createBlanketRecipe,
+  createChairRecipe,
+  createDiningSetRecipe,
+  createHouseholdRecipeBook,
+  createMadeBedRecipe,
+  createMattressRecipe,
+  createNightstandRecipe,
+  createPillowRecipe,
+  createTableLampRecipe,
+  createTableRecipe,
+};
 
 /**
  * The studio's shelf models, saved as the way they are made. Each recipe here
@@ -428,6 +452,7 @@ export function createSandstoneCottageRecipe(): RecipeV1 {
 /** Every recipe the studio's own models may place inside another. */
 export function createStudioRecipeBook(): RecipeBookV1 {
   return {
+    ...createHouseholdRecipeBook(),
     'studio:brick-wall': createBrickWallRecipe(),
     'studio:sandstone-wall': createSandstoneWallRecipe(),
     'studio:cottage-roof': createCottageRoofRecipe(),

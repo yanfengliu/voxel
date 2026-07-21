@@ -147,6 +147,28 @@ The full design, including how craft lessons and parts are shared between
 games, is in
 [model recipes and shared parts](../superpowers/specs/2026-07-17-model-recipes-and-shared-parts-design.md).
 
+### Household reuse ladder
+
+The **Bedroom furniture** shelf is the reference workflow for building upward
+without redrawing an object at a higher level:
+
+1. Save the bed frame, mattress, pillow, blanket, nightstand, and table lamp as
+   independently buildable recipes.
+2. Build **Made bed** only by placing the saved frame, mattress, pillow, and
+   blanket recipes. Mirroring the pillow creates the second occurrence.
+3. Build **Bedroom furniture set** only by placing the saved made bed,
+   nightstand, and table lamp recipes, then mirroring the bedside pair.
+4. Keep every level on the shelf. A designer can inspect the full arrangement,
+   expand its parts list, and open each reusable child on its own.
+
+Run `npm run studio:build studio:bedroom-furniture-set` to step through that
+complete chain headlessly. Adding a higher-level room later should place these
+saved recipes rather than reproduce their internal steps.
+
+Recipe nesting records construction reuse and placement, not physical
+attachment. Future body, collider, and joint authoring is a separate versioned
+sidecar described by [physical world invariants](../design/physical-world-invariants.md).
+
 ## Watching a model get made
 
 Every catalog model declares `howItsMade` and shows its construction in the
@@ -160,9 +182,25 @@ list. Final ownership removes erased placements and no-op mirrors from the
 top-level counts — for example, one table and six chairs — while mirrors remain
 in the construction stages instead of pretending to be parts. Expanding an
 assembly shows that reusable recipe's saved contents, scaled by the number of
-surviving assembly occurrences; a parent recipe does not silently rewrite its
-child recipe when their voxels overlap. When the child recipe is also a shelf
-model, **Open** shows it on its own.
+surviving assembly occurrences. A nested recipe placement is a distinct
+physical object: if it shares even one solid voxel with another occurrence,
+or with paint owned by its parent recipe, the build fails with both stable
+occurrence paths, the first conflicting coordinate, and the total overlap.
+Painting steps inside one recipe occurrence may still layer intentionally.
+Mirrored copies obey the same rule, so a partly blocked reflection cannot
+silently become a clipped object. When the child recipe is also a shelf model,
+**Open** shows it on its own.
+
+This is an authoring-time occupancy guarantee for recipe-built voxel models.
+It prevents intersecting saved objects from reaching the shelf; it does not
+claim runtime collision detection or rigid-body physics, which belong to a
+game-owned simulation rather than the renderer.
+
+This intentionally tightens the accepted builds for the existing V1 input
+shape. A recipe that relied on one nested recipe overwriting another must move
+that layering into direct steps of one occurrence or make the placements
+disjoint. The serialized fields did not change, but every existing catalog
+must be rebuilt through the stricter builder before it is accepted.
 
 ```ts
 {

@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { RenderWorld } from '../../src/core/index.js';
 
 import { buildSnapshot } from './build.js';
-import { createBrickWallModel, createStarterModel } from './catalog.js';
+import { createBrickWallModel, createStarterModel, createStudioCatalog } from './catalog.js';
 import { createStudioParts } from './parts.js';
 import {
   buildRecipe,
@@ -86,6 +86,7 @@ describe('building a recipe into a model', () => {
       const again = buildRecipe(createStarterRecipe(), createStudioParts());
       expect(again.model).toEqual(first.model);
       expect(again.placedBy).toEqual(first.placedBy);
+      expect(again.placedByOccurrence).toEqual(first.placedByOccurrence);
     }
   });
 
@@ -95,6 +96,17 @@ describe('building a recipe into a model', () => {
     const result = world.acceptSnapshot(buildSnapshot(built.model, { revision: 1 }));
     expect(result.status).toBe('accepted');
     world.dispose();
+  });
+
+  it('keeps every recipe-backed shelf model free of occurrence overlap', () => {
+    const entries = createStudioCatalog().sections.flatMap(({ models }) => models);
+    for (const entry of entries) {
+      const source = entry.howItsMade();
+      expect(
+        () => buildRecipe(source.recipe, source.parts, source.book),
+        entry.id,
+      ).not.toThrow();
+    }
   });
 
   it('a recipe survives JSON, like the model it builds', () => {
@@ -279,6 +291,152 @@ describe('recipes made of recipes', () => {
       { kind: 'recipe', recipe: 'test:cube', at: [2, 0, 0] },
     ]), createStudioParts(), book);
     expect(twice.model.voxels[0]).toBe(twice.model.voxels[2]);
+  });
+
+  it('refuses two distinct recipe occurrences that occupy the same voxels', () => {
+    const wide: RecipeV1 = {
+      ...cubeRecipe('test:wide', 'paint'),
+      size: [2, 1, 1],
+      steps: [{
+        kind: 'part',
+        part: 'box',
+        at: [0, 0, 0],
+        settings: { sizeX: 2, sizeY: 1, sizeZ: 1, role: 'paint' },
+      }],
+    };
+    const error = failure(smallRecipe([
+      { kind: 'recipe', recipe: wide.id, at: [1, 0, 0] },
+      { kind: 'recipe', recipe: wide.id, at: [1, 0, 0] },
+    ]), createStudioParts(), { [wide.id]: wide });
+
+    expect(error.issues).toEqual([
+      expect.objectContaining({ path: '$.steps[1].at' }),
+    ]);
+    expect(error.message).toContain('voxel (1, 0, 0)');
+    expect(error.message).toContain('2 overlapping voxels total');
+    expect(error.message).toContain('test:small/steps[0]<test:wide>');
+    expect(error.message).toContain('test:small/steps[1]<test:wide>');
+  });
+
+  it('reports the deepest deterministic paths for recursively nested collisions', () => {
+    const cube = cubeRecipe('test:cube', 'paint');
+    const wrapper: RecipeV1 = {
+      ...cubeRecipe('test:wrapper', 'paint'),
+      steps: [{ kind: 'recipe', recipe: cube.id, at: [0, 0, 0] }],
+    };
+    const error = failure(smallRecipe([
+      { kind: 'recipe', recipe: wrapper.id, at: [1, 0, 0] },
+      { kind: 'recipe', recipe: wrapper.id, at: [1, 0, 0] },
+    ]), createStudioParts(), { [cube.id]: cube, [wrapper.id]: wrapper });
+
+    expect(error.message).toContain(
+      'test:small/steps[0]<test:wrapper>/steps[0]<test:cube>',
+    );
+    expect(error.message).toContain(
+      'test:small/steps[1]<test:wrapper>/steps[0]<test:cube>',
+    );
+  });
+
+  it('allows painting steps to overlap inside one recipe occurrence', () => {
+    const built = buildRecipe(smallRecipe([
+      {
+        kind: 'part',
+        part: 'box',
+        at: [0, 0, 0],
+        settings: { sizeX: 2, sizeY: 1, sizeZ: 1, role: 'paint' },
+      },
+      { kind: 'voxels', at: [1, 0, 0], size: [1, 1, 1], voxels: [2] },
+    ]), createStudioParts());
+
+    expect(built.model.voxels.slice(0, 2)).toEqual([1, 2]);
+    expect(built.placedByOccurrence.slice(0, 2)).toEqual(['test:small', 'test:small']);
+  });
+
+  it('gives a successful mirrored recipe copy its own stable occurrence path', () => {
+    const cube = cubeRecipe('test:cube', 'paint');
+    const built = buildRecipe(smallRecipe([
+      { kind: 'recipe', recipe: cube.id, at: [0, 0, 0] },
+      { kind: 'mirror', axis: 'x' },
+    ]), createStudioParts(), { [cube.id]: cube });
+
+    expect(built.placedByOccurrence[0]).toBe('test:small/steps[0]<test:cube>');
+    expect(built.placedByOccurrence[3]).toBe(
+      'test:small/steps[0]<test:cube>/mirrors[1:x]',
+    );
+  });
+
+  it('refuses a mirrored occurrence that would only partly fit around another object', () => {
+    const cube = cubeRecipe('test:cube', 'paint');
+    const wide: RecipeV1 = {
+      ...cubeRecipe('test:wide', 'paint'),
+      size: [2, 1, 1],
+      steps: [{
+        kind: 'part',
+        part: 'box',
+        at: [0, 0, 0],
+        settings: { sizeX: 2, sizeY: 1, sizeZ: 1, role: 'paint' },
+      }],
+    };
+    const error = failure(smallRecipe([
+      { kind: 'recipe', recipe: wide.id, at: [0, 0, 0] },
+      { kind: 'recipe', recipe: cube.id, at: [2, 0, 0] },
+      { kind: 'mirror', axis: 'x' },
+    ]), createStudioParts(), { [cube.id]: cube, [wide.id]: wide });
+
+    expect(error.issues).toHaveLength(2);
+    expect(error.issues.every(({ path }) => path === '$.steps[2]')).toBe(true);
+    expect(error.message).toContain('mirrored occurrence');
+    expect(error.message).toContain('test:small/steps[0]<test:wide>/mirrors[2:x]');
+    expect(error.message).toContain('test:small/steps[1]<test:cube>');
+  });
+
+  it('refuses root-owned mirror paint that would be clipped by a nested object', () => {
+    const cube = cubeRecipe('test:cube', 'paint');
+    const error = failure(smallRecipe([
+      {
+        kind: 'part',
+        part: 'box',
+        at: [0, 0, 0],
+        settings: { sizeX: 2, sizeY: 1, sizeZ: 1, role: 'paint' },
+      },
+      { kind: 'recipe', recipe: cube.id, at: [3, 0, 0] },
+      { kind: 'mirror', axis: 'x' },
+    ]), createStudioParts(), { [cube.id]: cube });
+
+    expect(error.issues).toHaveLength(2);
+    expect(error.issues.every(({ path }) => path === '$.steps[2]')).toBe(true);
+    expect(error.message).toContain("'test:small' intersects");
+    expect(error.message).toContain('test:small/steps[1]<test:cube>');
+  });
+
+  it('mirrors a composed occurrence atomically instead of substituting a blocker', () => {
+    const left = cubeRecipe('test:left', 'paint');
+    const right = cubeRecipe('test:right', 'paint');
+    const pair: RecipeV1 = {
+      ...left,
+      id: 'test:pair',
+      label: 'Pair',
+      size: [2, 1, 1],
+      steps: [
+        { kind: 'recipe', recipe: left.id, at: [0, 0, 0] },
+        { kind: 'recipe', recipe: right.id, at: [1, 0, 0] },
+      ],
+    };
+    const error = failure(smallRecipe([
+      { kind: 'recipe', recipe: pair.id, at: [0, 0, 0] },
+      { kind: 'recipe', recipe: right.id, at: [2, 0, 0] },
+      { kind: 'mirror', axis: 'x' },
+    ]), createStudioParts(), {
+      [left.id]: left,
+      [right.id]: right,
+      [pair.id]: pair,
+    });
+
+    expect(error.issues).toEqual([
+      expect.objectContaining({ path: '$.steps[2]' }),
+    ]);
+    expect(error.message).toContain('test:small/steps[0]<test:pair>');
+    expect(error.message).toContain('test:small/steps[1]<test:right>');
   });
 
   it('names the recipe that placed each voxel, however deep', () => {
