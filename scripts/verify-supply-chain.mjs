@@ -1,6 +1,6 @@
 import { spawn } from 'node:child_process';
-import { readFile } from 'node:fs/promises';
-import { dirname, join, resolve as resolvePath } from 'node:path';
+import { readFile, stat } from 'node:fs/promises';
+import { delimiter, dirname, join, resolve as resolvePath } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const LOG_PREFIX = '[supply-chain]';
@@ -39,12 +39,42 @@ const ALLOWED_LICENSES = new Set([
 const EXPECTED_RUNTIME_DEPENDENCY_COUNT = 0;
 const EXPECTED_OPTIONAL_PEERS = ['@types/three', 'three'];
 
-function runNpm(args) {
+async function isFile(path) {
+  try {
+    return (await stat(path)).isFile();
+  } catch (error) {
+    if (error && typeof error === 'object' && error.code === 'ENOENT') {
+      return false;
+    }
+    throw error;
+  }
+}
+
+async function npmCommand() {
+  if (process.env.npm_execpath) {
+    return [process.execPath, [process.env.npm_execpath]];
+  }
+
+  if (process.platform === 'win32') {
+    for (const rawDirectory of (process.env.PATH ?? '').split(delimiter)) {
+      const directory = rawDirectory.replace(/^"|"$/g, '');
+      if (!directory) continue;
+      const cli = join(directory, 'node_modules', 'npm', 'bin', 'npm-cli.js');
+      if (await isFile(cli)) return [process.execPath, [cli]];
+    }
+  }
+
+  return ['npm', []];
+}
+
+async function runNpm(args) {
+  const [command, prefix] = await npmCommand();
   return new Promise((resolve, reject) => {
-    const child = spawn('npm', args, {
+    const child = spawn(command, [...prefix, ...args], {
       cwd: PROJECT_ROOT,
-      shell: process.platform === 'win32',
+      shell: false,
       stdio: ['ignore', 'pipe', 'pipe'],
+      windowsHide: true,
     });
     let stdout = '';
     let stderr = '';
