@@ -1,8 +1,12 @@
 # Physical world invariants
 
 Status: accepted design direction on 2026-07-20. Exact recipe-occurrence
-occupancy is implemented in Model Studio. Runtime collision response, rigid
-bodies, forces, and joints are not implemented in Voxel.
+occupancy is implemented in Model Studio, and so is authoring-time physical
+data: versioned `PhysicalAssetV1` sidecars beside saved recipes, validated
+and compiled into distinct per-occurrence bodies, colliders, joints, and
+ports ([design](../superpowers/specs/2026-07-21-physical-asset-sidecar-design.md)).
+Runtime collision response, rigid bodies, forces, and joints are not
+implemented in Voxel; the compiled data has no solver behind it.
 
 ## Outcome
 
@@ -178,10 +182,12 @@ public snapshots remain bounded structured data.
 ## Delivery sequence
 
 1. Enforce exact cross-occurrence occupancy in Studio recipes and keep each
-   reusable household object visible on the shelf. This is the current slice.
+   reusable household object visible on the shelf. Delivered.
 2. Define physical sidecars and collider/attachment visualization in Studio.
    Prove that a composed set produces distinct bodies and that one intersecting
-   placement rejects without mutation.
+   placement rejects without mutation. The sidecar schema, validation,
+   per-occurrence compile, and bedroom worked example are delivered;
+   collider and port visualization in the Studio viewer remains open.
 3. Build a headless static-placement kernel in one consumer: exact overlap,
    swept moves, sensors, atomic rollback, and stable conflict diagnostics.
 4. Spike Rapier behind a narrow adapter for dynamic and compound bodies,

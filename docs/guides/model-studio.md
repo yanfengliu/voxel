@@ -166,8 +166,18 @@ complete chain headlessly. Adding a higher-level room later should place these
 saved recipes rather than reproduce their internal steps.
 
 Recipe nesting records construction reuse and placement, not physical
-attachment. Future body, collider, and joint authoring is a separate versioned
-sidecar described by [physical world invariants](../design/physical-world-invariants.md).
+attachment. Physical meaning lives in a separate versioned sidecar: a
+`PhysicalAssetV1` beside a saved recipe names which pieces move as one,
+what shape each piece blocks, and where a hinge or slide is allowed. The
+bedroom shelf carries the worked example — the nightstand is a fixed
+cabinet plus a drawer on a limited slide, the lamp declares a `base` port,
+and the blanket deliberately has no sidecar because a draped textile has
+no honest rigid shape. `compilePhysicalModelV1` turns a placed arrangement
+into distinct, stably named bodies per occurrence, mirrors included; it
+proves composition, not physics — no solver runs behind it. The contract
+and its limits are in
+[physical world invariants](../design/physical-world-invariants.md) and the
+[sidecar design](../superpowers/specs/2026-07-21-physical-asset-sidecar-design.md).
 
 ## Watching a model get made
 
