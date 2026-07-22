@@ -219,7 +219,10 @@ hardest tests — double-mirror restores every pose and axis exactly, and
 mirrored assemblies preserve body, collider, constraint, and port counts.
 
 Like the voxel rule: a mirrored occurrence that lands is a new occurrence
-with its own compiled name; a mirror that adds nothing adds nothing.
+with its own compiled name; a mirror that adds nothing adds nothing. One
+consequence to know: landing is proven by painted voxels, so an occurrence
+that paints no voxels at all — say a sidecar-only sensor volume — never
+gains a mirror copy. Place such an asset explicitly on each side instead.
 
 ## Validation
 

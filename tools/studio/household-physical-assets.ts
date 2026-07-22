@@ -153,7 +153,10 @@ export function createTableLampPhysicalAsset(): PhysicalAssetV1 {
       { body: 'lamp', shape: { kind: 'box', halfExtents: [1.5, 0.5, 1.5] }, pose: { position: [0, -2.5, 0] } },
       { body: 'lamp', shape: { kind: 'box', halfExtents: [0.5, 1.5, 0.5] }, pose: { position: [0, -0.5, 0] } },
       { body: 'lamp', shape: { kind: 'box', halfExtents: [1.5, 0.5, 1.5] }, pose: { position: [0, 1.5, 0] } },
-      { body: 'lamp', shape: { kind: 'box', halfExtents: [0.5, 0.5, 0.5] }, pose: { position: [0, 2.5, 0] } },
+      // The crown is a five-voxel plus; two crossed bars on the one body
+      // cover it exactly (compound colliders on a body may overlap).
+      { body: 'lamp', shape: { kind: 'box', halfExtents: [1.5, 0.5, 0.5] }, pose: { position: [0, 2.5, 0] } },
+      { body: 'lamp', shape: { kind: 'box', halfExtents: [0.5, 0.5, 1.5] }, pose: { position: [0, 2.5, 0] } },
     ],
     constraints: [],
     ports: [

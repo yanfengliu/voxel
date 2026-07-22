@@ -116,17 +116,18 @@ contract and a second consumer demonstrates genuine shared semantics.
 ## Versioned physical asset sidecar
 
 `RecipeV1` describes visual construction and must not silently acquire
-physical meaning. A future `PhysicalAssetV1` sidecar, or a versioned recipe
-successor, should use stable named keys rather than mutable step-array indexes.
-Its minimum generic data is:
+physical meaning. The delivered `PhysicalAssetV1` sidecar uses stable named
+keys rather than mutable step-array indexes. Its minimum generic data is:
 
 - asset ID and schema version;
 - bodies with stable local keys, `fixed | dynamic | kinematic` type, local pose,
   damping, gravity, continuous-collision policy, and mass policy;
 - colliders with body key, bounded shape, local pose, density, friction,
   restitution, and `solid | sensor` role;
-- shapes initially limited to box, sphere, capsule, cylinder, bounded convex
-  hull, compound shape, and static heightfield or mesh;
+- shapes today limited to box, sphere, capsule, and cylinder, with compound
+  shapes expressed as several colliders on one body; bounded convex hulls and
+  static heightfields or meshes remain named future shapes the validator
+  rejects until they arrive;
 - constraints with stable key, kind, two body-local anchor frames, axes,
   limits, motor, and optional break threshold;
 - named attachment ports, each a body-local frame, so a higher-level recipe can
