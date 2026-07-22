@@ -279,6 +279,27 @@ describe('compilePhysicalModelV1', () => {
     expect(structuredClone(first)).toEqual(first);
   });
 
+  it('rebuilds every compiled record fresh, sharing and forwarding nothing', () => {
+    const asset = hingedBlockAsset();
+    const junked = structuredClone(asset) as unknown as {
+      colliders: Record<string, unknown>[];
+      constraints: Record<string, unknown>[];
+    };
+    junked.colliders[0] = { ...junked.colliders[0], paint: 'red' };
+    const book: PhysicalAssetBookV1 = {
+      'test:hinged-block': junked as unknown as PhysicalAssetV1,
+    };
+    const compiled = compilePhysicalModelV1(HINGED_BLOCK, {}, {}, book);
+    const original = (junked as unknown as PhysicalAssetV1).colliders[0];
+    expect(compiled.colliders[0]?.shape).not.toBe(original?.shape);
+    expect(compiled.constraints[0]?.limits)
+      .not.toBe((junked as unknown as PhysicalAssetV1).constraints[0]?.limits);
+    expect(compiled.constraints[1]?.motor)
+      .not.toBe((junked as unknown as PhysicalAssetV1).constraints[1]?.motor);
+    // An unvalidated stray field on a hand-loaded sidecar stops here.
+    expect(Object.keys(compiled.colliders[0] ?? {})).not.toContain('paint');
+  });
+
   it('fails atomically with every sidecar finding, under the sidecar path', () => {
     const broken: PhysicalAssetV1 = {
       ...hingedBlockAsset(),

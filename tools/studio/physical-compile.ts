@@ -200,6 +200,17 @@ function reflectAxis(
   ];
 }
 
+/** Shapes are mirror-invariant about their own frames, so a copy is a
+ * plain fresh copy — built field by field like every compiled record. */
+function copyShape(shape: PhysicalShapeV1): PhysicalShapeV1 {
+  if (shape.kind === 'box') {
+    const [hx, hy, hz] = shape.halfExtents;
+    return { kind: 'box', halfExtents: [hx, hy, hz] };
+  }
+  if (shape.kind === 'sphere') return { kind: 'sphere', radius: shape.radius };
+  return { kind: shape.kind, halfHeight: shape.halfHeight, radius: shape.radius };
+}
+
 function translated(frame: OccurrenceFrame, at: readonly [number, number, number]): OccurrenceFrame {
   return { ...frame, tx: frame.tx + at[0], ty: frame.ty + at[1], tz: frame.tz + at[2] };
 }
@@ -318,29 +329,41 @@ export function compilePhysicalModelV1(
       recipeId: record.recipeId,
       reflected: frame.dx * frame.dz < 0,
     });
+    // Fresh copies, field by field — the recipe builder's own stance:
+    // compiled output must not share structure with the book, and unknown
+    // fields on a hand-loaded sidecar must not ride through unvalidated.
     for (const body of asset.bodies) {
       bodies.push({
-        ...body,
         key: `${path}#body:${body.key}`,
         occurrence: path,
         localKey: body.key,
+        type: body.type,
         pose: poseToModel(body.pose, frame),
+        ...(body.mass === undefined ? {} : { mass: body.mass }),
+        ...(body.linearDamping === undefined ? {} : { linearDamping: body.linearDamping }),
+        ...(body.angularDamping === undefined ? {} : { angularDamping: body.angularDamping }),
+        ...(body.gravityScale === undefined ? {} : { gravityScale: body.gravityScale }),
+        ...(body.continuous === undefined ? {} : { continuous: body.continuous }),
       });
     }
     for (const collider of asset.colliders) {
       colliders.push({
-        ...collider,
         occurrence: path,
         body: `${path}#body:${collider.body}`,
+        shape: copyShape(collider.shape),
         pose: poseToBodyLocal(collider.pose, frame),
+        ...(collider.density === undefined ? {} : { density: collider.density }),
+        ...(collider.friction === undefined ? {} : { friction: collider.friction }),
+        ...(collider.restitution === undefined ? {} : { restitution: collider.restitution }),
+        ...(collider.role === undefined ? {} : { role: collider.role }),
       });
     }
     for (const constraint of asset.constraints) {
       constraints.push({
-        ...constraint,
         key: `${path}#constraint:${constraint.key}`,
         occurrence: path,
         localKey: constraint.key,
+        kind: constraint.kind,
         bodyA: `${path}#body:${constraint.bodyA}`,
         bodyB: `${path}#body:${constraint.bodyB}`,
         anchorA: poseToBodyLocal(constraint.anchorA, frame),
@@ -348,11 +371,22 @@ export function compilePhysicalModelV1(
         ...(constraint.axis === undefined
           ? {}
           : { axis: reflectAxis(constraint.axis, frame, constraint.kind) }),
+        ...(constraint.limits === undefined
+          ? {}
+          : { limits: [constraint.limits[0], constraint.limits[1]] as const }),
+        ...(constraint.motor === undefined
+          ? {}
+          : {
+            motor: {
+              targetVelocity: constraint.motor.targetVelocity,
+              maxForce: constraint.motor.maxForce,
+            },
+          }),
+        ...(constraint.breakForce === undefined ? {} : { breakForce: constraint.breakForce }),
       });
     }
     for (const port of asset.ports) {
       ports.push({
-        ...port,
         key: `${path}#port:${port.key}`,
         occurrence: path,
         localKey: port.key,

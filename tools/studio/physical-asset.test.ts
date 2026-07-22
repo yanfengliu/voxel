@@ -99,6 +99,41 @@ describe('validatePhysicalAssetV1', () => {
     expect(validatePhysicalAssetV1(structuredClone(createCabinetAsset()))).toEqual([]);
   });
 
+  it('rejects array holes, which structuredClone preserves and every/forEach skip', () => {
+    const holedTriple = (): number[] => {
+      const values = new Array<number>(3);
+      values[0] = 0.5;
+      values[2] = 0.5;
+      return values;
+    };
+    expect(paths(edited((asset) => {
+      asset.bodies[0] = { ...asset.bodies[0], pose: { position: holedTriple() } };
+    }))).toEqual(['$.bodies[0].pose.position']);
+    expect(paths(edited((asset) => {
+      const rotation = new Array<number>(4);
+      rotation[0] = 1;
+      rotation[1] = 0;
+      rotation[2] = 0;
+      asset.bodies[0] = { ...asset.bodies[0], pose: { position: [0, 0, 0], rotation } };
+    }))).toEqual(['$.bodies[0].pose.rotation']);
+    expect(paths(edited((asset) => {
+      asset.colliders[0] = { ...asset.colliders[0], shape: { kind: 'box', halfExtents: holedTriple() } };
+    }))).toEqual(['$.colliders[0].shape.halfExtents[1]']);
+    expect(paths(edited((asset) => {
+      asset.constraints[0] = { ...asset.constraints[0], axis: holedTriple() };
+    }))).toEqual(['$.constraints[0].axis']);
+    expect(paths(edited((asset) => {
+      const limits = new Array<number>(2);
+      limits[0] = 0;
+      asset.constraints[0] = { ...asset.constraints[0], limits };
+    }))).toEqual(['$.constraints[0].limits']);
+    expect(paths(edited((asset) => {
+      const bodies = new Array<Record<string, unknown>>(asset.bodies.length + 1);
+      asset.bodies.forEach((body, index) => { bodies[index] = body; });
+      asset.bodies = bodies;
+    }))).toEqual(['$.bodies[2]']);
+  });
+
   it('rejects a non-object outright', () => {
     expect(paths(null)).toEqual(['$']);
     expect(paths('cabinet')).toEqual(['$']);

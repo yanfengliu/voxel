@@ -170,10 +170,15 @@ function checkPose(value: unknown, path: string, issues: GenomeIssueV1[]): void 
     return;
   }
   const pose = value as Record<string, unknown>;
+  // Every element is read by index on purpose: `every` and `forEach` skip
+  // array holes, and structuredClone preserves them, so a holed array would
+  // otherwise sail through and surface as NaN in compiled output.
   const position: unknown = pose.position;
   if (!Array.isArray(position) || position.length !== 3
-    || !position.every((entry: unknown) => isFiniteNumber(entry)
-      && Math.abs(entry) <= MAX_PHYSICAL_POSE_POSITION)) {
+    || ![0, 1, 2].every((index) => {
+      const entry: unknown = position[index];
+      return isFiniteNumber(entry) && Math.abs(entry) <= MAX_PHYSICAL_POSE_POSITION;
+    })) {
     issues.push({
       path: `${path}.position`,
       message: `Expected three finite voxel-unit numbers within ±${String(MAX_PHYSICAL_POSE_POSITION)}.`,
@@ -182,7 +187,7 @@ function checkPose(value: unknown, path: string, issues: GenomeIssueV1[]): void 
   const rotation: unknown = pose.rotation;
   if (rotation === undefined) return;
   if (!Array.isArray(rotation) || rotation.length !== 4
-    || !rotation.every((entry: unknown) => isFiniteNumber(entry))) {
+    || ![0, 1, 2, 3].every((index) => isFiniteNumber(rotation[index]))) {
     issues.push({
       path: `${path}.rotation`,
       message: 'Expected a quaternion as four finite numbers, [x, y, z, w].',
@@ -220,9 +225,10 @@ function checkShape(value: unknown, path: string, issues: GenomeIssueV1[]): void
         issues.push({ path: `${path}.halfExtents`, message: 'Expected three half extents.' });
         break;
       }
-      halfExtents.forEach((entry: unknown, index) => {
-        checkDimension(entry, `${path}.halfExtents[${String(index)}]`, issues);
-      });
+      // Indexed on purpose, so array holes fail as the undefined they are.
+      for (let index = 0; index < 3; index += 1) {
+        checkDimension(halfExtents[index], `${path}.halfExtents[${String(index)}]`, issues);
+      }
       break;
     }
     case 'sphere':
@@ -239,6 +245,22 @@ function checkShape(value: unknown, path: string, issues: GenomeIssueV1[]): void
         message: `Expected one of: ${SHAPE_KINDS.join(', ')}. Convex hulls, meshes,`
           + ' and heightfields are future shapes, not yet supported.',
       });
+  }
+}
+
+/** `forEach` skips array holes, and structuredClone preserves them, so a
+ * holed entry would dodge the main loop entirely and crash a compile later.
+ * Surfacing each hole here first keeps that impossible. */
+function checkListHoles(
+  list: readonly unknown[],
+  name: string,
+  what: string,
+  issues: GenomeIssueV1[],
+): void {
+  for (let index = 0; index < list.length; index += 1) {
+    if (!(index in list)) {
+      issues.push({ path: `$.${name}[${String(index)}]`, message: `Expected a ${what} object.` });
+    }
   }
 }
 
@@ -286,6 +308,7 @@ export function validatePhysicalAssetV1(value: unknown): readonly GenomeIssueV1[
     if (bodies.length > MAX_PHYSICAL_BODIES) {
       issues.push({ path: '$.bodies', message: `Expected at most ${String(MAX_PHYSICAL_BODIES)} bodies.` });
     }
+    checkListHoles(bodies, 'bodies', 'body', issues);
     bodies.forEach((entry: unknown, index) => {
       const path = `$.bodies[${String(index)}]`;
       if (typeof entry !== 'object' || entry === null) {
@@ -332,6 +355,7 @@ export function validatePhysicalAssetV1(value: unknown): readonly GenomeIssueV1[
         message: `Expected at most ${String(MAX_PHYSICAL_COLLIDERS)} colliders.`,
       });
     }
+    checkListHoles(colliders, 'colliders', 'collider', issues);
     colliders.forEach((entry: unknown, index) => {
       const path = `$.colliders[${String(index)}]`;
       if (typeof entry !== 'object' || entry === null) {
@@ -365,6 +389,7 @@ export function validatePhysicalAssetV1(value: unknown): readonly GenomeIssueV1[
         message: `Expected at most ${String(MAX_PHYSICAL_CONSTRAINTS)} constraints.`,
       });
     }
+    checkListHoles(constraints, 'constraints', 'constraint', issues);
     constraints.forEach((entry: unknown, index) => {
       const path = `$.constraints[${String(index)}]`;
       if (typeof entry !== 'object' || entry === null) {
@@ -402,7 +427,7 @@ export function validatePhysicalAssetV1(value: unknown): readonly GenomeIssueV1[
       }
       if (axis !== undefined) {
         if (!Array.isArray(axis) || axis.length !== 3
-          || !axis.every((entry2: unknown) => isFiniteNumber(entry2))) {
+          || ![0, 1, 2].every((index2) => isFiniteNumber(axis[index2]))) {
           issues.push({ path: `${path}.axis`, message: 'Expected an axis as three finite numbers.' });
         } else if (Math.abs(Math.hypot(...(axis as readonly number[])) - 1) > UNIT_LENGTH_EPSILON) {
           issues.push({
@@ -416,7 +441,7 @@ export function validatePhysicalAssetV1(value: unknown): readonly GenomeIssueV1[
         if (kind === 'fixed') {
           issues.push({ path: `${path}.limits`, message: 'Expected no limits; a fixed joint allows no motion.' });
         } else if (!Array.isArray(limits) || limits.length !== 2
-          || !limits.every((entry2: unknown) => isFiniteNumber(entry2))
+          || ![0, 1].every((index2) => isFiniteNumber(limits[index2]))
           || (limits[0] ?? 0) > (limits[1] ?? 0)) {
           issues.push({
             path: `${path}.limits`,
@@ -451,6 +476,7 @@ export function validatePhysicalAssetV1(value: unknown): readonly GenomeIssueV1[
     if (ports.length > MAX_PHYSICAL_PORTS) {
       issues.push({ path: '$.ports', message: `Expected at most ${String(MAX_PHYSICAL_PORTS)} ports.` });
     }
+    checkListHoles(ports, 'ports', 'port', issues);
     ports.forEach((entry: unknown, index) => {
       const path = `$.ports[${String(index)}]`;
       if (typeof entry !== 'object' || entry === null) {
