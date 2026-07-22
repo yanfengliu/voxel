@@ -186,9 +186,9 @@ public snapshots remain bounded structured data.
    reusable household object visible on the shelf. Delivered.
 2. Define physical sidecars and collider/attachment visualization in Studio.
    Prove that a composed set produces distinct bodies and that one intersecting
-   placement rejects without mutation. The sidecar schema, validation,
-   per-occurrence compile, and bedroom worked example are delivered;
-   collider and port visualization in the Studio viewer remains open.
+   placement rejects without mutation. Delivered: the sidecar schema,
+   validation, per-occurrence compile, the bedroom worked example, and the
+   viewer's collider-and-port outline toggle with browser evidence.
 3. Build a headless static-placement kernel in one consumer: exact overlap,
    swept moves, sensors, atomic rollback, and stable conflict diagnostics.
 4. Spike Rapier behind a narrow adapter for dynamic and compound bodies,

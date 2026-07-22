@@ -15,7 +15,6 @@ import {
 } from './shared-ui/index.js';
 import { describeMotion, describePoseAt } from './describe.js';
 import { createStudioHarness, type VoxelStudioHarnessV1 } from './harness.js';
-import { createEmptyModel } from './edit.js';
 import type { StudioModelV1 } from './model.js';
 import { voxelIndex } from './model.js';
 import { NoteStore, type StudioNoteV1 } from './notes.js';
@@ -29,8 +28,10 @@ import {
   zoomOrbit,
   type OrbitStateV1,
 } from './orbit.js';
+import { createPhysicalOverlayView } from './physical-overlay-view.js';
 import { StudioPlayer } from './player.js';
 import { StudioSession } from './session.js';
+import { element, hexRgb, labelled, openingModel, rgbHex } from './studio-app-helpers.js';
 
 /**
  * The studio as an app: shelf on the left, the stage in the middle, one
@@ -91,64 +92,11 @@ export interface StudioHandleV1 {
   dispose(): void;
 }
 
-/** The first model on the shelf, or an empty one when a shelf is empty. */
-function openingModel(
-  catalog: StudioCatalogV1,
-  openModelId: string | undefined,
-): StudioModelV1 {
-  for (const section of catalog.sections) {
-    for (const entry of section.models) {
-      if (openModelId === undefined || entry.id === openModelId) return entry.load();
-    }
-  }
-  if (openModelId !== undefined) {
-    throw new Error(`No model on the shelf is called ${openModelId}.`);
-  }
-  // An empty shelf is a legitimate starting point for a game that has not
-  // authored anything yet, so it opens on an empty model rather than refusing.
-  return createEmptyModel({ id: 'studio:empty', label: 'Empty', size: [8, 8, 8] });
-}
-
 const VIEW_WIDTH = 640;
 const VIEW_HEIGHT = 440;
 // Replaced by the stage's real size once mounted; these only seed the first frame.
 const SWEEP_SAMPLES = 24;
 const DRAG_THRESHOLD_PIXELS = 4;
-
-function element<K extends keyof HTMLElementTagNameMap>(
-  tag: K,
-  className?: string,
-): HTMLElementTagNameMap[K] {
-  const node = document.createElement(tag);
-  if (className) node.className = className;
-  return node;
-}
-
-function labelled(text: string, control: HTMLElement, hint?: string): HTMLLabelElement {
-  const label = element('label', 'field');
-  const span = element('span');
-  span.textContent = text;
-  label.append(span, control);
-  if (hint) {
-    const note = element('small', 'hint');
-    note.textContent = hint;
-    label.append(note);
-  }
-  return label;
-}
-
-function rgbHex(color: { r: number; g: number; b: number }): string {
-  const hex = (value: number) => value.toString(16).padStart(2, '0');
-  return `#${hex(color.r)}${hex(color.g)}${hex(color.b)}`;
-}
-
-function hexRgb(hex: string): { r: number; g: number; b: number } {
-  return {
-    r: Number.parseInt(hex.slice(1, 3), 16),
-    g: Number.parseInt(hex.slice(3, 5), 16),
-    b: Number.parseInt(hex.slice(5, 7), 16),
-  };
-}
 
 type PendingAnchor =
   | { readonly kind: 'moment'; readonly timeMs: number; readonly u: number; readonly v: number }
@@ -169,8 +117,12 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
   canvas.width = VIEW_WIDTH;
   canvas.height = VIEW_HEIGHT;
   const marks = element('div', 'marks');
+  // The physical outlines live between the picture and the note rings: they
+  // annotate the model, and a pinned note still reads over everything.
+  const physicalView = createPhysicalOverlayView();
+  let physicalOn = false;
   const canvasWrap = element('div', 'canvas-wrap');
-  canvasWrap.append(canvas, marks);
+  canvasWrap.append(canvas, physicalView.element, marks);
   const viewChip = element('span', 'viewchip');
   viewChip.title = "Sides are the model's own, like a person facing you: "
     + 'their left appears on your right.';
@@ -193,8 +145,12 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
   depthToggle.textContent = 'real depth';
   depthToggle.title = 'Nearer really is bigger. The flat view can read backwards — '
     + 'equal sizes at every distance look like they grow away from you.';
+  const physToggle = element('button', 'toggle');
+  physToggle.textContent = 'colliders';
+  physToggle.title = 'Outlines the shapes this model blocks and its attachment '
+    + 'points, from its saved physical data. The picture itself is unchanged.';
   const toggles = element('div', 'toggles');
-  toggles.append(lookSwitch, depthToggle);
+  toggles.append(lookSwitch, depthToggle, physToggle);
 
   const flatCamera = new OrthographicCamera();
   const depthCamera = new PerspectiveCamera();
@@ -408,6 +364,8 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
     resizeStage,
     depth: () => depthOn,
     setDepth,
+    setPhysicalOverlay: setPhysicalOverlayOn,
+    physicalOverlay: () => physicalOn,
     setOrbit(view) {
       orbit = clampOrbit({ ...orbit, ...view });
       applyOrbit(camera, orbit, viewW, viewH);
@@ -439,6 +397,13 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
     }
     if (document.activeElement !== timeline) timeline.value = String(Math.round(timeMs));
     positionRings();
+    physicalView.draw(
+      camera,
+      session.frameMiddle(),
+      viewW,
+      viewH,
+      `${String(orbit.yawDegrees)}:${String(orbit.pitchDegrees)}:${String(orbit.viewHeight)}:${depthOn ? 'depth' : 'flat'}`,
+    );
   }
 
   function syncPlayButton(): void {
@@ -737,6 +702,13 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
     edgesSide.classList.toggle('on', session.edges);
     gameSide.classList.toggle('on', !session.edges);
     depthToggle.classList.toggle('on', depthOn);
+    // The outlines follow the open model: present only where its recipe
+    // carries physical data, and never left on from a previous model.
+    physicalView.setSegments(harness.physicalShapes());
+    physToggle.hidden = !physicalView.hasContent();
+    if (physicalOn && !physicalView.hasContent()) physicalOn = false;
+    physicalView.setVisible(physicalOn);
+    physToggle.classList.toggle('on', physicalOn);
     viewChip.textContent = describeOrbit(orbit);
     buildSwatches();
     buildStack();
@@ -813,6 +785,20 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
     refresh();
   });
   depthToggle.addEventListener('click', () => { setDepth(!depthOn); });
+  physToggle.addEventListener('click', () => { harness.setPhysicalOverlay(!physicalOn); });
+
+  /**
+   * Shows or hides the physical outlines. They can only show over a model
+   * whose shelf recipe carries physical data; the harness enforces that by
+   * only ever asking for what is available.
+   */
+  function setPhysicalOverlayOn(on: boolean): boolean {
+    physicalOn = on && physicalView.hasContent();
+    physicalView.setVisible(physicalOn);
+    physToggle.classList.toggle('on', physicalOn);
+    drawFrame(lastShownMs);
+    return physicalOn;
+  }
 
   /**
    * Swapping cameras means rebuilding the drawing session around the other
@@ -1156,6 +1142,7 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
       studioShell.dispose();
       document.removeEventListener('keydown', onDocumentKeyDown);
       window.removeEventListener('resize', followStage);
+      physicalView.dispose();
       session.dispose();
       if (options.publishHarness !== false && window.voxelStudio === harness) {
         delete window.voxelStudio;

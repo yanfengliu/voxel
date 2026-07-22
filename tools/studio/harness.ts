@@ -17,6 +17,8 @@ import {
   type RecipeStageV1,
 } from './recipe.js';
 import type { NoteStore, StudioNoteV1 } from './notes.js';
+import { compilePhysicalModelV1 } from './physical-compile.js';
+import { physicalOverlaySegmentsV1, type PhysicalOverlaySegmentV1 } from './physical-overlay.js';
 import type { StudioPlayer } from './player.js';
 import { buildRequest, sendRequest, type SendResult } from './requests.js';
 import type { ShelfRecipeV1, StudioCatalogV1 } from './catalog.js';
@@ -144,6 +146,19 @@ export interface VoxelStudioHarnessV1 {
   /** Study edges on (the examining look) or off (the game look). */
   setEdges(on: boolean): boolean;
   edges(): boolean;
+  /**
+   * The open model's compiled physical outlines — collider wireframes and
+   * port crosses in grid coordinates. Empty when its shelf recipe carries
+   * no physical sidecars, which is a valid state rather than an error.
+   */
+  physicalShapes(): readonly PhysicalOverlaySegmentV1[];
+  /**
+   * Shows or hides those outlines on the stage. They can only show when
+   * `physicalShapes()` has content; asking for them on an unclaiming model
+   * reports `on: false` rather than pretending.
+   */
+  setPhysicalOverlay(on: boolean): { readonly on: boolean; readonly available: boolean };
+  physicalOverlay(): { readonly on: boolean; readonly available: boolean };
   /** The shelf: this studio's sections of models. */
   shelf(): readonly { readonly name: string; readonly models: readonly { readonly id: string; readonly label: string }[] }[];
   /** Opens a model from the shelf by its id. */
@@ -233,6 +248,9 @@ export interface HarnessHostV1 {
   setOrbit(view: Partial<OrbitStateV1>): OrbitStateV1 & { readonly described: string };
   setDepth(on: boolean): boolean;
   depth(): boolean;
+  /** Shows or hides the stage's physical-outline layer; returns what shows. */
+  setPhysicalOverlay(on: boolean): boolean;
+  physicalOverlay(): boolean;
   catalog(): StudioCatalogV1;
 }
 
@@ -249,6 +267,7 @@ export function createStudioHarness(host: HarnessHostV1): VoxelStudioHarnessV1 {
   let restoreModel: StudioModelV1 | null = null;
   let cachedStages: { readonly id: string; readonly stages: readonly RecipeStageV1[] } | null = null;
   let cachedRecipe: { readonly id: string; readonly source: ShelfRecipeV1 | null } | null = null;
+  let cachedShapes: { readonly id: string; readonly shapes: readonly PhysicalOverlaySegmentV1[] } | null = null;
 
   function recipeForOpenModel(): ShelfRecipeV1 | null {
     const id = restoreModel?.id ?? host.session().model.id;
@@ -281,6 +300,26 @@ export function createStudioHarness(host: HarnessHostV1): VoxelStudioHarnessV1 {
     }
     cachedStages = { id, stages: [] };
     return [];
+  }
+
+  /**
+   * The compiled physical outlines of the shelf model the open model came
+   * from, matched by id exactly like the construction stages. Empty when the
+   * recipe carries no sidecars, or for a model made with New or Copy. A
+   * broken physical book throws the compiler's own whole-list error, the
+   * same stance `buildSteps` takes for a broken recipe.
+   */
+  function shapesForOpenModel(): readonly PhysicalOverlaySegmentV1[] {
+    const id = restoreModel?.id ?? host.session().model.id;
+    if (cachedShapes?.id === id) return cachedShapes.shapes;
+    const made = recipeForOpenModel();
+    const shapes = made?.physical
+      ? physicalOverlaySegmentsV1(compilePhysicalModelV1(
+        made.recipe, made.parts, made.book ?? {}, made.physical,
+      ))
+      : [];
+    cachedShapes = { id, shapes };
+    return shapes;
   }
 
   /** Ends a preview without redrawing, for paths that replace the model. */
@@ -419,6 +458,16 @@ export function createStudioHarness(host: HarnessHostV1): VoxelStudioHarnessV1 {
       return host.session().edges;
     },
     edges: () => host.session().edges,
+    physicalShapes: () => shapesForOpenModel(),
+    setPhysicalOverlay(on) {
+      const available = shapesForOpenModel().length > 0;
+      const shown = host.setPhysicalOverlay(on && available);
+      return { on: shown, available };
+    },
+    physicalOverlay: () => ({
+      on: host.physicalOverlay(),
+      available: shapesForOpenModel().length > 0,
+    }),
     shelf: () => host.catalog().sections.map((section) => ({
       name: section.name,
       models: section.models.map((entry) => ({ id: entry.id, label: entry.label })),

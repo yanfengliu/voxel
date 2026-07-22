@@ -275,8 +275,12 @@ not game rules; a game's own catalog decides what is fixed in its world.
 - Cross-occurrence connections and the `SubRecipeStepV1` key (next slice).
 - Any solver, integration, contact, or sleeping behavior (steps 4+).
 - Convex hull, mesh, and heightfield shapes.
-- Studio viewer visualization of colliders and ports. It follows this
-  slice, once there is compiled data worth drawing.
+- ~~Studio viewer visualization of colliders and ports.~~ Delivered after
+  this slice: `physicalOverlaySegmentsV1` turns a compiled model into plain
+  wireframe segments, an SVG stage layer projects them with the studio's
+  own camera (the runtime deliberately exposes no scene to inject), and the
+  `colliders` stage toggle plus `physicalShapes`/`setPhysicalOverlay` on
+  the harness make it drivable and testable headlessly.
 
 ## Build order
 

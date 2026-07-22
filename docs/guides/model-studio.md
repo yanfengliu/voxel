@@ -174,7 +174,12 @@ cabinet plus a drawer on a limited slide, the lamp declares a `base` port,
 and the blanket deliberately has no sidecar because a draped textile has
 no honest rigid shape. `compilePhysicalModelV1` turns a placed arrangement
 into distinct, stably named bodies per occurrence, mirrors included; it
-proves composition, not physics — no solver runs behind it. The contract
+proves composition, not physics — no solver runs behind it. On the stage,
+the **colliders** toggle outlines those shapes over the picture — solid
+outlines for blocking shapes, dashed for sensors, a small cross per
+attachment port — and appears only when the open model's recipe carries
+physical data. Agents drive the same thing through
+`physicalShapes()` and `setPhysicalOverlay(on)` on the harness. The contract
 and its limits are in
 [physical world invariants](../design/physical-world-invariants.md) and the
 [sidecar design](../superpowers/specs/2026-07-21-physical-asset-sidecar-design.md).

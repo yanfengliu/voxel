@@ -2,7 +2,7 @@ import type { Camera } from 'three';
 
 import { ThreeRenderRuntime } from '../../src/three/index.js';
 
-import { buildSnapshot, filledVoxelCount } from './build.js';
+import { buildSnapshot, filledVoxelCount, modelCenterV1 } from './build.js';
 import type { StudioModelV1 } from './model.js';
 import {
   isStill,
@@ -209,6 +209,19 @@ export class StudioSession {
     if (same) return;
     this.#frameCenter = center === null ? null : { x: center.x, y: center.y, z: center.z };
     this.#accept(this.#model);
+  }
+
+  /**
+   * The grid point the drawn picture is centred on right now: the pinned
+   * construction frame when one is set, otherwise the model's own filled
+   * middle — the same point `buildSnapshot` subtracts, to within the drawn
+   * outline's sub-pixel epsilon. Anything drawn over the canvas in grid
+   * coordinates must subtract this same point, or it will sit beside the
+   * model instead of on it.
+   */
+  frameMiddle(): { readonly x: number; readonly y: number; readonly z: number } {
+    this.#assertLive();
+    return this.#frameCenter ?? modelCenterV1(this.#model);
   }
 
   /** What the studio knows about the model without drawing it. */

@@ -131,6 +131,11 @@ button:disabled { opacity: 0.45; cursor: default; }
 canvas { display: block; width: 100%; height: 100%; cursor: grab; }
 canvas:active { cursor: grabbing; }
 .marks { position: absolute; inset: 0; pointer-events: none; }
+.physical-marks { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+.physical-marks line { fill: none; stroke-width: 1.2; }
+.physical-marks line.collider { stroke: rgba(255, 158, 44, 0.85); }
+.physical-marks line.sensor { stroke: rgba(64, 190, 255, 0.85); stroke-dasharray: 4 3; }
+.physical-marks line.port { stroke: rgba(255, 80, 220, 0.95); stroke-width: 2; }
 .ring {
   position: absolute;
   width: 26px; height: 26px;

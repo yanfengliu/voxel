@@ -1,6 +1,8 @@
 import { addPaletteColor, createEmptyModel, setMotion, setVoxel } from './edit.js';
+import { createHouseholdPhysicalBook } from './household-physical-assets.js';
 import type { StudioModelV1 } from './model.js';
 import { createStudioParts } from './parts.js';
+import type { PhysicalAssetBookV1 } from './physical-asset.js';
 import { buildRecipe, type PartShelfV1, type RecipeBookV1, type RecipeV1 } from './recipe.js';
 import {
   createBrickCottageRecipe,
@@ -40,6 +42,12 @@ export interface ShelfRecipeV1 {
   readonly parts: PartShelfV1;
   /** Recipes this one may place inside itself, by id. Omitted when it uses none. */
   readonly book?: RecipeBookV1;
+  /**
+   * Physical sidecars for this recipe and everything it places, by recipe
+   * id. Omitted when the model makes no physical claims — that is a valid
+   * state, not a default guess, and the viewer then has nothing to outline.
+   */
+  readonly physical?: PhysicalAssetBookV1;
 }
 
 export interface ShelfModelV1 {
@@ -240,25 +248,41 @@ export function createStudioCatalog(): StudioCatalogV1 {
             id: 'studio:bed-frame',
             label: 'Bed frame',
             load: () => buildRecipe(createBedFrameRecipe(), createStudioParts()).model,
-            howItsMade: () => ({ recipe: createBedFrameRecipe(), parts: createStudioParts() }),
+            howItsMade: () => ({
+              recipe: createBedFrameRecipe(),
+              parts: createStudioParts(),
+              physical: createHouseholdPhysicalBook(),
+            }),
           },
           {
             id: 'studio:mattress',
             label: 'Mattress',
             load: () => buildRecipe(createMattressRecipe(), createStudioParts()).model,
-            howItsMade: () => ({ recipe: createMattressRecipe(), parts: createStudioParts() }),
+            howItsMade: () => ({
+              recipe: createMattressRecipe(),
+              parts: createStudioParts(),
+              physical: createHouseholdPhysicalBook(),
+            }),
           },
           {
             id: 'studio:pillow',
             label: 'Pillow',
             load: () => buildRecipe(createPillowRecipe(), createStudioParts()).model,
-            howItsMade: () => ({ recipe: createPillowRecipe(), parts: createStudioParts() }),
+            howItsMade: () => ({
+              recipe: createPillowRecipe(),
+              parts: createStudioParts(),
+              physical: createHouseholdPhysicalBook(),
+            }),
           },
           {
             id: 'studio:blanket',
             label: 'Blanket',
             load: () => buildRecipe(createBlanketRecipe(), createStudioParts()).model,
-            howItsMade: () => ({ recipe: createBlanketRecipe(), parts: createStudioParts() }),
+            howItsMade: () => ({
+              recipe: createBlanketRecipe(),
+              parts: createStudioParts(),
+              physical: createHouseholdPhysicalBook(),
+            }),
           },
           {
             id: 'studio:made-bed',
@@ -270,19 +294,28 @@ export function createStudioCatalog(): StudioCatalogV1 {
               recipe: createMadeBedRecipe(),
               parts: createStudioParts(),
               book: createStudioRecipeBook(),
+              physical: createHouseholdPhysicalBook(),
             }),
           },
           {
             id: 'studio:nightstand',
             label: 'Nightstand',
             load: () => buildRecipe(createNightstandRecipe(), createStudioParts()).model,
-            howItsMade: () => ({ recipe: createNightstandRecipe(), parts: createStudioParts() }),
+            howItsMade: () => ({
+              recipe: createNightstandRecipe(),
+              parts: createStudioParts(),
+              physical: createHouseholdPhysicalBook(),
+            }),
           },
           {
             id: 'studio:table-lamp',
             label: 'Table lamp',
             load: () => buildRecipe(createTableLampRecipe(), createStudioParts()).model,
-            howItsMade: () => ({ recipe: createTableLampRecipe(), parts: createStudioParts() }),
+            howItsMade: () => ({
+              recipe: createTableLampRecipe(),
+              parts: createStudioParts(),
+              physical: createHouseholdPhysicalBook(),
+            }),
           },
           {
             id: 'studio:bedroom-furniture-set',
@@ -294,6 +327,7 @@ export function createStudioCatalog(): StudioCatalogV1 {
               recipe: createBedroomFurnitureSetRecipe(),
               parts: createStudioParts(),
               book: createStudioRecipeBook(),
+              physical: createHouseholdPhysicalBook(),
             }),
           },
         ],

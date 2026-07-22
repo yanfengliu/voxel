@@ -586,3 +586,54 @@ test('shared workbench chrome matches its normalized visual baseline', async ({ 
     maxDiffPixelRatio: 0,
   });
 });
+
+test('the colliders toggle outlines physical shapes only where a sidecar exists', async ({ page }, testInfo) => {
+  await page.setViewportSize({ width: 1280, height: 800 });
+  const errors: string[] = [];
+  page.on('pageerror', (error) => errors.push(error.message));
+  const response = await page.goto(studioOrigin, { waitUntil: 'load' });
+  expect(response?.ok()).toBe(true);
+  await page.waitForFunction(() => typeof window.voxelStudio === 'object');
+
+  const report = await page.evaluate(() => {
+    const studio = window.voxelStudio;
+    if (!studio) throw new Error('the harness is missing');
+    studio.openFromShelf('studio:bedroom-furniture-set');
+    const before = studio.physicalOverlay();
+    const turnedOn = studio.setPhysicalOverlay(true);
+    return { before, turnedOn, shapes: studio.physicalShapes().length };
+  });
+  expect(report.before).toEqual({ on: false, available: true });
+  expect(report.turnedOn).toEqual({ on: true, available: true });
+  // 39 box colliders of 12 edges each plus two lamp ports of 3 arms.
+  expect(report.shapes).toBe(474);
+
+  // Framed on the whole arrangement, every outline segment projects into
+  // view, so the stage carries exactly one SVG line per segment.
+  const lines = page.locator('.physical-marks line');
+  await expect(lines).toHaveCount(474);
+  await expect(page.locator('.physical-marks line.collider').first()).toBeVisible();
+  await expect(page.locator('.physical-marks line.port').first()).toBeVisible();
+  const collidersButton = page.locator('.toggles .toggle', { hasText: 'colliders' });
+  await expect(collidersButton).toBeVisible();
+  await page.screenshot({ path: testInfo.outputPath('physical-overlay.png') });
+
+  const turnedOff = await page.evaluate(() =>
+    window.voxelStudio?.setPhysicalOverlay(false) ?? null);
+  expect(turnedOff).toEqual({ on: false, available: true });
+  await expect(lines).toHaveCount(0);
+
+  // A model whose recipe makes no physical claims offers nothing: no
+  // toggle, no lines, and asking anyway honestly reports unavailable.
+  const starter = await page.evaluate(() => {
+    const studio = window.voxelStudio;
+    if (!studio) throw new Error('the harness is missing');
+    studio.openFromShelf('studio:starter');
+    return { state: studio.physicalOverlay(), forced: studio.setPhysicalOverlay(true) };
+  });
+  expect(starter.state).toEqual({ on: false, available: false });
+  expect(starter.forced).toEqual({ on: false, available: false });
+  await expect(collidersButton).toBeHidden();
+  await expect(lines).toHaveCount(0);
+  expect(errors).toEqual([]);
+});
