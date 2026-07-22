@@ -104,6 +104,9 @@ export function connectModelStudioShell(
 
   const selectTab = (next: ModelStudioTabId): void => {
     if (disposed) return;
+    if (!tabs.has(next)) {
+      throw new Error(`The Model Studio shell has no "${next}" tab.`);
+    }
     options.beforeSelect?.(next, selected);
     selected = next;
     for (const { id } of MODEL_STUDIO_TABS) {
@@ -518,6 +521,16 @@ export function connectModelStudioShellV2(
   tabList.addEventListener('scroll', updateScrollControls);
   scrollLeftButton.addEventListener('click', onScrollLeft);
   scrollRightButton.addEventListener('click', onScrollRight);
+  // The affordances depend on the tab list's box, which layout moves without
+  // any scroll or click — the sub-900px breakpoint narrows the inspector. The
+  // observer is the direct signal; the window listener also covers embedded
+  // browsers where observers have been measured to stay silent.
+  const resizeObserver = typeof ResizeObserver === 'undefined'
+    ? null
+    : new ResizeObserver(updateScrollControls);
+  resizeObserver?.observe(tabList);
+  const shellWindow = root.ownerDocument.defaultView;
+  shellWindow?.addEventListener('resize', updateScrollControls);
   root.dataset.studioShellConnected = 'true';
   revealTab(tabs.get(selected)!);
 
@@ -541,6 +554,8 @@ export function connectModelStudioShellV2(
       tabList.removeEventListener('scroll', updateScrollControls);
       scrollLeftButton.removeEventListener('click', onScrollLeft);
       scrollRightButton.removeEventListener('click', onScrollRight);
+      resizeObserver?.disconnect();
+      shellWindow?.removeEventListener('resize', updateScrollControls);
       delete root.dataset.studioShellConnected;
     },
   };

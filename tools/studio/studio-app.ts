@@ -111,6 +111,15 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
     configuredCoreTabs === undefined || configuredCoreTabs.includes(tab);
   const supportsEdit = supportsCoreTab('edit');
   const supportsNotes = supportsCoreTab('notes');
+  // Rendering the V2 shell is pure string work that runs the profile's full
+  // validation, so a bad descriptor is refused here — before the WebGL
+  // session, the published harness, or any listener exists to leak.
+  const shellMarkupV2 = options.shellProfileV2
+    ? renderModelStudioShellV2({
+      ...options.shellProfileV2,
+      panels: { examine: '', build: '', edit: '', motion: '', notes: '' },
+    })
+    : null;
 
   // ---- stage ----
   const canvas = element('canvas');
@@ -127,8 +136,11 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
   viewChip.title = "Sides are the model's own, like a person facing you: "
     + 'their left appears on your right.';
   const stageHint = element('span', 'stagehint');
-  stageHint.textContent =
-    'drag to turn · scroll to zoom · double-click to re-centre · click to pin a note';
+  // The hint teaches only what this profile offers: without Notes the click
+  // is correctly ignored, so the hint must not promise it.
+  stageHint.textContent = supportsNotes
+    ? 'drag to turn · scroll to zoom · double-click to re-centre · click to pin a note'
+    : 'drag to turn · scroll to zoom · double-click to re-centre';
   // Exactly one of the two looks is ever true, so the control is one switch
   // with two sides rather than two buttons that could both look pressed: the
   // knob sits on the side that is on, and clicking slides it to the other.
@@ -375,7 +387,8 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
     },
     catalog: () => catalog,
   });
-  if (options.publishHarness !== false) window.voxelStudio = harness;
+  // Published only once the mount can no longer fail, at the end of this
+  // function: a failed mount must never replace another mount's harness.
 
   // ---- drawing and readouts ----
   function drawFrame(timeMs: number): void {
@@ -459,7 +472,7 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
       where.title = 'Show me';
       if (note.kind === 'place' && !supportsEdit) {
         where.disabled = true;
-        where.title = 'Place notes need the Edit tools omitted by this Studio profile.';
+        where.title = 'Place notes need the Edit tools, and this Studio profile omits them.';
       }
       where.addEventListener('click', () => { showNote(note); });
       const text = element('span', 'note-text');
@@ -977,7 +990,8 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
     if (event.key === 'ArrowLeft') { harness.step(-1); syncPlayButton(); }
     if (event.key === 'ArrowRight') { harness.step(1); syncPlayButton(); }
   };
-  document.addEventListener('keydown', onDocumentKeyDown);
+  // Registered with the other globals at the end of the mount, after nothing
+  // can fail anymore, so a refused mount leaves the document untouched.
 
   // ---- assembly ----
   const grow = element('span', 'grow');
@@ -1042,21 +1056,30 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
     },
   };
   let studioShell: ModelStudioShellHandleV1 | ModelStudioShellHandleV2;
-  if (options.shellProfileV2) {
-    root.innerHTML = renderModelStudioShellV2({
-      ...options.shellProfileV2,
-      panels: { examine: '', build: '', edit: '', motion: '', notes: '' },
-    });
-    const shellRoot = root.firstElementChild;
-    if (!(shellRoot instanceof HTMLElement)) {
-      throw new Error('The V2 Model Studio shell did not render an HTML root.');
+  try {
+    if (shellMarkupV2 !== null) {
+      root.innerHTML = shellMarkupV2;
+      const shellRoot = root.firstElementChild;
+      if (!(shellRoot instanceof HTMLElement)) {
+        throw new Error('The V2 Model Studio shell did not render an HTML root.');
+      }
+      studioShell = connectModelStudioShellV2(shellRoot, shellOptions);
+    } else {
+      root.innerHTML = renderModelStudioShell({
+        panels: { examine: '', build: '', edit: '', motion: '', notes: '' },
+      });
+      studioShell = connectModelStudioShell(root, shellOptions);
     }
-    studioShell = connectModelStudioShellV2(shellRoot, shellOptions);
-  } else {
-    root.innerHTML = renderModelStudioShell({
-      panels: { examine: '', build: '', edit: '', motion: '', notes: '' },
-    });
-    studioShell = connectModelStudioShell(root, shellOptions);
+  } catch (error) {
+    // Connecting can still fail against the live document — a duplicate
+    // instanceId, most plainly. A mount that throws returns no handle, so
+    // nobody else could ever release what it had acquired: put everything
+    // back here and leave the page exactly as it stood.
+    construction.dispose();
+    physicalView.dispose();
+    session.dispose();
+    root.replaceChildren();
+    throw error;
   }
   const hasStudioTab = (name: ModelStudioTabId): boolean =>
     'hasTab' in studioShell ? studioShell.hasTab(name) : true;
@@ -1129,8 +1152,13 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
   // loop: the loop is throttled to nothing in background tabs, and the first
   // paint must be sharp everywhere.
   followStage();
+  // Nothing below can fail, so the globals a failed mount must never own —
+  // the document shortcut, the resize follow, and the published harness —
+  // attach only now.
+  document.addEventListener('keydown', onDocumentKeyDown);
   window.addEventListener('resize', followStage);
   frameHandle = requestAnimationFrame(tick);
+  if (options.publishHarness !== false) window.voxelStudio = harness;
 
   return {
     harness,

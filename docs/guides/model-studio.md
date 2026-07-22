@@ -1,6 +1,6 @@
 # Giving a game its own model studio
 
-Status: current from 2026-07-20. The renderer-neutral shell is consumed by
+Status: current from 2026-07-22. The renderer-neutral shell is consumed by
 Harborform, while Voxel's own page and the Harbor fixture
 (`tools/studio/game-fixture.ts`) prove the grid-renderer adapter.
 
@@ -83,7 +83,13 @@ window.addEventListener('pagehide', (event) => {
 
 That is the whole integration. `mountStudio` returns a handle carrying the
 harness and an idempotent `dispose()`, for a game that mounts the studio
-inside its own page rather than on a page of its own.
+inside its own page rather than on a page of its own. A mount the studio
+refuses — an invalid V2 profile, or an `instanceId` already mounted in the
+document — throws before anything global exists and puts back whatever it
+briefly held, so those refusals never leak a render session. However a mount
+fails, the harness and listeners attach only after everything else has
+succeeded, so a failed mount never replaces another mount's
+`window.voxelStudio` and never leaves a document listener behind.
 
 The grid adapter import path is relative to the engine repository, not a
 published runtime subpath. The UI-only boundary is a private file package,
@@ -97,7 +103,9 @@ narrow Three.js peer never enters the shared shell.
 Add `@voxel/model-studio-ui` as a file dev dependency and import the scoped
 `@voxel/model-studio-ui/style.css`. A fixed-profile game may continue to call
 `renderModelStudioShell` and `connectModelStudioShell`; that V1 pair returns the
-five regions and five standard panels exactly as before.
+five regions and five standard panels exactly as before, and its `selectTab`
+refuses an unknown tab id exactly as V2 does rather than silently deselecting
+every tab.
 
 A configurable game calls `renderModelStudioShellV2` with a stable unique
 kebab-case `instanceId`, a canonical-order `coreTabs` subsequence containing
@@ -105,7 +113,10 @@ kebab-case `instanceId`, a canonical-order `coreTabs` subsequence containing
 `game:addon-name` namespaces and always follow the standards. Mount the
 returned markup, then pass its exact shell root to `connectModelStudioShellV2`.
 The V2 handle exposes the same five regions plus `tabIds`, `hasTab`, dynamic
-`panel(id)` lookup, focus-aware `selectTab`, and idempotent `dispose`.
+`panel(id)` lookup, focus-aware `selectTab`, and idempotent `dispose`. When
+the tabs outgrow their row, the scroll buttons appear and retire on every
+resize of the tab list as well as on every scroll, so a narrowed window can
+never strand a clipped tab out of pointer reach.
 
 Do not copy the template, tab list, controller, or outer CSS into the game. A
 feature the game never adopts may be omitted in V2; a supported feature that is

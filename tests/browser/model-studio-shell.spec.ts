@@ -4,9 +4,13 @@ import { expect, test } from '@playwright/test';
 import { createServer, type ViteDevServer } from 'vite';
 import type { StudioHandleV1, StudioMountOptionsV1 } from '../../tools/studio/studio-app.js';
 import type {
+  ModelStudioShellHandleV1,
   ModelStudioShellHandleV2,
+  ModelStudioShellMarkupV1,
   ModelStudioShellMarkupV2,
+  ModelStudioShellOptionsV1,
   ModelStudioShellOptionsV2,
+  ModelStudioTabId,
 } from '../../tools/studio/shared-ui/index.js';
 
 interface BrowserStudioModule {
@@ -14,6 +18,11 @@ interface BrowserStudioModule {
 }
 
 interface BrowserSharedUiModule {
+  readonly connectModelStudioShell: (
+    host: ParentNode,
+    options?: ModelStudioShellOptionsV1,
+  ) => ModelStudioShellHandleV1;
+  readonly renderModelStudioShell: (markup?: ModelStudioShellMarkupV1) => string;
   readonly connectModelStudioShellV2: (
     root: HTMLElement,
     options?: ModelStudioShellOptionsV2,
@@ -271,6 +280,34 @@ test('the six-tab Harbor profile keeps V2 tabs on one horizontally scrollable ro
   await expect(shell.locator('[data-studio-panel="harbor:review"]')).toBeFocused();
 });
 
+test('V2 scroll affordances follow tab-list resizes without a scroll or click', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await page.goto(new URL('game-fixture.html', studioOrigin).toString(), { waitUntil: 'load' });
+  await page.waitForFunction(() => typeof window.voxelStudio === 'object');
+
+  const shell = page.locator('[data-model-studio-shell="voxel.model-studio-ui/2"]');
+  const scrollLeft = shell.getByRole('button', { name: 'Scroll Studio tools left' });
+  const scrollRight = shell.getByRole('button', { name: 'Scroll Studio tools right' });
+  // Five 64px tabs fit the 320px inspector, so nothing scrolls.
+  await expect(scrollLeft).toBeHidden();
+  await expect(scrollRight).toBeHidden();
+
+  // Below 900px the shared layout narrows the inspector to 280px. The same
+  // five tabs now overflow, and the affordance must appear from the resize
+  // alone — with no scroll, click, or selection to nudge it, a hidden pair
+  // of buttons would leave the clipped tabs unreachable by pointer.
+  await page.setViewportSize({ width: 840, height: 800 });
+  await expect(scrollRight).toBeVisible();
+  await expect(scrollLeft).toBeHidden();
+  await scrollRight.click();
+  await expect(scrollLeft).toBeVisible();
+
+  // Widening restores the fit; a stale leftover button would eat one click.
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await expect(scrollRight).toBeHidden();
+  await expect(scrollLeft).toBeHidden();
+});
+
 test('V2 connection is exact-root, instance-scoped, reconnectable, and focus-aware', async ({ page }) => {
   await page.goto(studioOrigin, { waitUntil: 'load' });
 
@@ -448,6 +485,212 @@ test('V2 connection is exact-root, instance-scoped, reconnectable, and focus-awa
   expect(evidence.tabFocused).toBe('edit');
   expect(evidence.preserveSelectionRevealed).toBe(true);
   expect(evidence.panelSelectionRevealed).toBe(true);
+});
+
+test('V1 selectTab refuses an unknown tab id and keeps the ARIA state intact', async ({ page }) => {
+  await page.goto(studioOrigin, { waitUntil: 'load' });
+
+  const evidence = await page.evaluate(async () => {
+    const moduleUrl = new URL('shared-ui/index.ts', window.location.href).href;
+    const shared = await import(moduleUrl) as unknown as BrowserSharedUiModule;
+    const host = document.createElement('div');
+    host.innerHTML = shared.renderModelStudioShell();
+    document.body.append(host);
+    const seenByBeforeSelect: string[] = [];
+    const handle = shared.connectModelStudioShell(host, {
+      beforeSelect: (next) => { seenByBeforeSelect.push(next); },
+    });
+    let invalidError = '';
+    try {
+      handle.selectTab('bogus' as ModelStudioTabId);
+    } catch (error) {
+      invalidError = String(error);
+    }
+    const selectedAfterInvalid = Array.from(host.querySelectorAll<HTMLElement>('[data-studio-tab]'))
+      .filter((tab) => tab.getAttribute('aria-selected') === 'true')
+      .map((tab) => tab.dataset.studioTab);
+    const hiddenPanelsAfterInvalid = host.querySelectorAll('[data-studio-panel][hidden]').length;
+    const activeAfterInvalid = handle.activeTab();
+    handle.selectTab('motion');
+    const activeAfterValid = handle.activeTab();
+    handle.dispose();
+    host.remove();
+    return {
+      invalidError,
+      selectedAfterInvalid,
+      hiddenPanelsAfterInvalid,
+      activeAfterInvalid,
+      activeAfterValid,
+      seenByBeforeSelect,
+    };
+  });
+
+  expect(evidence.invalidError).toContain('has no "bogus" tab');
+  expect(evidence.selectedAfterInvalid).toEqual(['examine']);
+  expect(evidence.hiddenPanelsAfterInvalid).toBe(4);
+  expect(evidence.activeAfterInvalid).toBe('examine');
+  expect(evidence.activeAfterValid).toBe('motion');
+  // The invalid id never reached the selection callbacks.
+  expect(evidence.seenByBeforeSelect).toEqual(['motion']);
+});
+
+test('a failed V2 mount validates before the session exists and rolls back', async ({ page }) => {
+  await page.goto(studioOrigin, { waitUntil: 'load' });
+  await page.waitForFunction(() => typeof window.voxelStudio === 'object');
+
+  const evidence = await page.evaluate(async () => {
+    const moduleUrl = new URL('studio-app.ts', window.location.href).href;
+    const { mountStudio } = await import(moduleUrl) as unknown as BrowserStudioModule;
+    const pageHarness = window.voxelStudio;
+    // eslint-disable-next-line @typescript-eslint/unbound-method -- the saved original is applied with an explicit receiver and restored verbatim.
+    const originalGetContext = HTMLCanvasElement.prototype.getContext;
+    let contextsCreated = 0;
+    HTMLCanvasElement.prototype.getContext = function (
+      this: HTMLCanvasElement,
+      ...args: Parameters<HTMLCanvasElement['getContext']>
+    ) {
+      if (args[0] === 'webgl' || args[0] === 'webgl2') contextsCreated += 1;
+      return originalGetContext.apply(this, args);
+    } as HTMLCanvasElement['getContext'];
+    try {
+      // An invalid descriptor must be refused before any GPU session exists,
+      // before the global harness moves, and before any listener registers.
+      const invalidRoot = document.createElement('div');
+      document.body.append(invalidRoot);
+      let invalidProfileError = '';
+      try {
+        mountStudio({
+          root: invalidRoot,
+          catalog: { sections: [] },
+          shellProfileV2: { instanceId: 'not safe' },
+        });
+      } catch (error) {
+        invalidProfileError = String(error);
+      }
+      const invalidProfile = {
+        error: invalidProfileError,
+        contexts: contextsCreated,
+        residueChildren: invalidRoot.childElementCount,
+        harnessKept: window.voxelStudio === pageHarness,
+      };
+      invalidRoot.remove();
+
+      // A duplicate instanceId is only discoverable against the live
+      // document, so its session is acquired and must be rolled back.
+      const firstRoot = document.createElement('div');
+      const secondRoot = document.createElement('div');
+      document.body.append(firstRoot, secondRoot);
+      const first = mountStudio({
+        root: firstRoot,
+        catalog: { sections: [] },
+        publishHarness: false,
+        shellProfileV2: { instanceId: 'rollback-studio', coreTabs: ['examine'] },
+      });
+      contextsCreated = 0;
+      let duplicateError = '';
+      try {
+        mountStudio({
+          root: secondRoot,
+          catalog: { sections: [] },
+          shellProfileV2: { instanceId: 'rollback-studio', coreTabs: ['examine'] },
+        });
+      } catch (error) {
+        duplicateError = String(error);
+      }
+      const duplicate = {
+        error: duplicateError,
+        contexts: contextsCreated,
+        residueChildren: secondRoot.childElementCount,
+        harnessKept: window.voxelStudio === pageHarness,
+        instances: document.querySelectorAll('[data-studio-shell-instance="rollback-studio"]').length,
+        firstStillConnected: firstRoot.querySelector('[data-model-studio-shell]')
+          ?.getAttribute('data-studio-shell-connected') === 'true',
+      };
+      // The failed root is clean enough to host a corrected mount.
+      const retry = mountStudio({
+        root: secondRoot,
+        catalog: { sections: [] },
+        publishHarness: false,
+        shellProfileV2: { instanceId: 'rollback-studio-retry', coreTabs: ['examine'] },
+      });
+      const retryMounted = secondRoot.querySelector(
+        '[data-studio-shell-instance="rollback-studio-retry"]',
+      ) !== null;
+      retry.dispose();
+      first.dispose();
+      firstRoot.remove();
+      secondRoot.remove();
+      return {
+        invalidProfile,
+        duplicate,
+        retryMounted,
+        pageHarnessKept: window.voxelStudio === pageHarness,
+      };
+    } finally {
+      HTMLCanvasElement.prototype.getContext = originalGetContext;
+    }
+  });
+
+  expect(evidence.invalidProfile.error).toContain('instanceId');
+  expect(evidence.invalidProfile.contexts).toBe(0);
+  expect(evidence.invalidProfile.residueChildren).toBe(0);
+  expect(evidence.invalidProfile.harnessKept).toBe(true);
+  expect(evidence.duplicate.error).toContain('not unique');
+  expect(evidence.duplicate.contexts).toBe(1);
+  expect(evidence.duplicate.residueChildren).toBe(0);
+  expect(evidence.duplicate.harnessKept).toBe(true);
+  expect(evidence.duplicate.instances).toBe(1);
+  expect(evidence.duplicate.firstStillConnected).toBe(true);
+  expect(evidence.retryMounted).toBe(true);
+  expect(evidence.pageHarnessKept).toBe(true);
+});
+
+test('omitted capabilities are not advertised by the stage hint or note tooltips', async ({ page }) => {
+  await page.goto(studioOrigin, { waitUntil: 'load' });
+  await page.waitForFunction(() => typeof window.voxelStudio === 'object');
+
+  // The engine page keeps every capability, so its hint still teaches the pin.
+  await expect(page.locator('.stagehint')).toContainText('click to pin a note');
+
+  const evidence = await page.evaluate(async () => {
+    const moduleUrl = new URL('studio-app.ts', window.location.href).href;
+    const { mountStudio } = await import(moduleUrl) as unknown as BrowserStudioModule;
+
+    const examineRoot = document.createElement('div');
+    document.body.append(examineRoot);
+    const examineOnly = mountStudio({
+      root: examineRoot,
+      catalog: { sections: [] },
+      publishHarness: false,
+      shellProfileV2: { instanceId: 'hint-examine-studio', coreTabs: ['examine'] },
+    });
+    const examineHint = examineRoot.querySelector('.stagehint')?.textContent ?? '';
+    examineOnly.dispose();
+    examineRoot.remove();
+
+    const notesRoot = document.createElement('div');
+    document.body.append(notesRoot);
+    const notesStudio = mountStudio({
+      root: notesRoot,
+      catalog: { sections: [] },
+      publishHarness: false,
+      shellProfileV2: { instanceId: 'hint-notes-studio', coreTabs: ['examine', 'notes'] },
+    });
+    const notesHint = notesRoot.querySelector('.stagehint')?.textContent ?? '';
+    notesStudio.harness.addPlaceNote({ x: 0, y: 0, z: 0 }, 'the corner looks pinched');
+    const showMe = notesRoot.querySelector<HTMLButtonElement>('.note-where');
+    const placeTooltip = { disabled: showMe?.disabled ?? false, title: showMe?.title ?? '' };
+    notesStudio.dispose();
+    notesRoot.remove();
+    return { examineHint, notesHint, placeTooltip };
+  });
+
+  expect(evidence.examineHint).toContain('drag to turn');
+  expect(evidence.examineHint).not.toContain('pin a note');
+  expect(evidence.notesHint).toContain('click to pin a note');
+  expect(evidence.placeTooltip.disabled).toBe(true);
+  expect(evidence.placeTooltip.title)
+    .toBe('Place notes need the Edit tools, and this Studio profile omits them.');
 });
 
 test('the grid adapter hides commands whose core capability was omitted', async ({ page }) => {

@@ -190,6 +190,6 @@ describe('shared Model Studio shell', () => {
     }
     expect(css).toContain('[data-model-studio-shell="voxel.model-studio-ui/2"] .tabs');
     expect(css).toContain('[data-studio-addon-first="true"]');
-    expect(packageJson).toContain('"version": "1.1.0"');
+    expect(packageJson).toContain('"version": "1.1.1"');
   });
 });
