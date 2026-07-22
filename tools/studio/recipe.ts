@@ -409,6 +409,16 @@ export interface BuiltRecipeV1 {
    * This is Studio provenance, not a renderer or simulation contract.
    */
   readonly placedByOccurrence: readonly string[];
+  /**
+   * Every recipe occurrence this build contains, in build order: the root,
+   * each placed sub-recipe with its whole subtree, and — for each mirror
+   * copy that landed — the copied subtree under its `/mirrors[...]` suffix.
+   * Unlike `placedByOccurrence`, this also names occurrences that own no
+   * voxels themselves, such as a recipe made only of other recipes. The
+   * builder is the one authority on which occurrences exist; consumers such
+   * as the physical compile must read this rather than re-deriving it.
+   */
+  readonly occurrences: readonly string[];
 }
 
 interface OccupancyConflictV1 {
@@ -506,6 +516,9 @@ function buildRecipeInternal(
   const placedByMirrorGroup = new Array<string>(sx * sy * sz).fill('');
   const grid = (x: number, y: number, z: number): number => x + sx * (y + sy * z);
   const issues: GenomeIssueV1[] = [];
+  // The build's own ledger of every occurrence it contains, voxel-owning or
+  // not. Steps append as they land, so the list is authoritative and ordered.
+  const occurrences: string[] = [occurrencePath];
 
   recipe.steps.forEach((step, stepIndex) => {
     const path = `$.steps[${String(stepIndex)}]`;
@@ -736,6 +749,9 @@ function buildRecipeInternal(
       }
       appendOccupancyIssues(conflicts, `${path}.at`, issues, false);
       if (conflicts.size > 0) return;
+      // The sub-build's ledger is already rooted at this step's path, so it
+      // carries over whole — including its own voxel-less compositions.
+      occurrences.push(...built.occurrences);
       for (const { cell, slot, subCell, incoming } of writes) {
         voxels[cell] = slot;
         placedBy[cell] = stepIndex;
@@ -793,8 +809,12 @@ function buildRecipeInternal(
       readonly incomingOccurrence: string;
       readonly incomingMirrorGroup: string;
     }[] = [];
+    const landedGroups: string[] = [];
     for (const [sourceMirrorGroup, cells] of reflected) {
       const addsCells = cells.some(({ target }) => (before[target] ?? 0) === 0);
+      if (addsCells && sourceMirrorGroup !== occurrencePath) {
+        landedGroups.push(sourceMirrorGroup);
+      }
       const incomingMirrorGroup = sourceMirrorGroup === occurrencePath
         ? occurrencePath
         : `${sourceMirrorGroup}/mirrors[${String(stepIndex)}:${step.axis}]`;
@@ -845,6 +865,16 @@ function buildRecipeInternal(
     }
     appendOccupancyIssues(conflicts, path, issues, true);
     if (conflicts.size > 0) return;
+    // Each landed copy is a whole new assembly, so its entire subtree —
+    // including voxel-less compositions — joins the ledger under the copy's
+    // suffix. The snapshot keeps this step's own copies from re-copying.
+    const establishedOccurrences = occurrences.slice();
+    for (const group of landedGroups) {
+      for (const established of establishedOccurrences) {
+        if (established !== group && !established.startsWith(`${group}/`)) continue;
+        occurrences.push(`${established}/mirrors[${String(stepIndex)}:${step.axis}]`);
+      }
+    }
     for (const { source, target, incomingOccurrence, incomingMirrorGroup } of writes) {
       voxels[target] = before[source] ?? 0;
       placedBy[target] = beforePlaced[source] ?? -1;
@@ -875,7 +905,7 @@ function buildRecipeInternal(
   // rather than hand a misbuilt model onward.
   const modelIssues = validateModelV1(model);
   if (modelIssues.length > 0) throw new RecipeBuildError(modelIssues);
-  return { model, placedBy, placedByRecipe, placedByOccurrence };
+  return { model, placedBy, placedByRecipe, placedByOccurrence, occurrences };
 }
 
 /**

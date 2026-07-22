@@ -189,6 +189,14 @@ content of one built model:
 Compiled output is derived data, rebuilt on every compile, so step-indexed
 occurrence paths are safe in it; only saved documents must avoid indexes.
 
+The builder is the one authority on which occurrences exist. `BuiltRecipeV1`
+carries an `occurrences` ledger — the root, every placed subtree, and every
+landed mirror copy, including compositions that own no voxels — and the
+compile filters its walked candidates against that ledger. Re-deriving
+landing decisions from path strings is forbidden: a nested mirror can spell
+the same `/mirrors[i:axis]` suffix at two levels, and guessing would compile
+bodies for a copy the voxel build declined.
+
 ### Mirrors
 
 The bedroom set mirrors a nightstand-and-lamp pair, so composition must
