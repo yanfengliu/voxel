@@ -26,6 +26,23 @@ export function openingModel(
   return createEmptyModel({ id: 'studio:empty', label: 'Empty', size: [8, 8, 8] });
 }
 
+/**
+ * The Motion tab's slider table: one row per animated amount, in the order
+ * the panel shows them. Scale converts a slider's whole-number position into
+ * the model's own unit for that amount.
+ */
+export const AMPLITUDES = [
+  { kind: 'rotationRadians', axis: 0, group: 'Turn', label: 'Pitch', unit: '°', max: 180, scale: Math.PI / 180 },
+  { kind: 'rotationRadians', axis: 1, group: 'Turn', label: 'Rock', unit: '°', max: 180, scale: Math.PI / 180 },
+  { kind: 'rotationRadians', axis: 2, group: 'Turn', label: 'Roll', unit: '°', max: 180, scale: Math.PI / 180 },
+  { kind: 'translation', axis: 0, group: 'Slide', label: 'Sideways', unit: 'levels', max: 40, scale: 0.1 },
+  { kind: 'translation', axis: 1, group: 'Slide', label: 'Up and down', unit: 'levels', max: 40, scale: 0.1 },
+  { kind: 'translation', axis: 2, group: 'Slide', label: 'In and out', unit: 'levels', max: 40, scale: 0.1 },
+  { kind: 'scale', axis: 0, group: 'Stretch', label: 'Width', unit: '%', max: 100, scale: 0.01 },
+  { kind: 'scale', axis: 1, group: 'Stretch', label: 'Height', unit: '%', max: 100, scale: 0.01 },
+  { kind: 'scale', axis: 2, group: 'Stretch', label: 'Depth', unit: '%', max: 100, scale: 0.01 },
+] as const;
+
 export function element<K extends keyof HTMLElementTagNameMap>(
   tag: K,
   className?: string,

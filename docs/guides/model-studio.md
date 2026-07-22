@@ -83,13 +83,17 @@ window.addEventListener('pagehide', (event) => {
 
 That is the whole integration. `mountStudio` returns a handle carrying the
 harness and an idempotent `dispose()`, for a game that mounts the studio
-inside its own page rather than on a page of its own. A mount the studio
-refuses — an invalid V2 profile, or an `instanceId` already mounted in the
-document — throws before anything global exists and puts back whatever it
-briefly held, so those refusals never leak a render session. However a mount
-fails, the harness and listeners attach only after everything else has
-succeeded, so a failed mount never replaces another mount's
-`window.voxelStudio` and never leaves a document listener behind.
+inside its own page rather than on a page of its own. A mount that fails —
+an invalid V2 profile, an `instanceId` already mounted in the document, a
+model the engine rejects, or catalog data whose recipe or physical sidecar
+throws while the studio first reads it — throws before anything global
+exists and puts back whatever it briefly held: the render session is
+released, a connected shell is taken down, and the studio's own markup is
+cleared from the root, while a mount that failed before writing the root
+leaves the host's own content untouched. The
+harness and listeners attach only after everything else has succeeded, so a
+failed mount never replaces another mount's `window.voxelStudio` and never
+leaves a document listener behind.
 
 The grid adapter import path is relative to the engine repository, not a
 published runtime subpath. The UI-only boundary is a private file package,

@@ -1,7 +1,7 @@
 import { OrthographicCamera, PerspectiveCamera } from 'three';
 
 import type { StudioCatalogV1 } from './catalog.js';
-import { createConstructionPanel } from './construction.js';
+import { createConstructionPanel, type ConstructionPanelV1 } from './construction.js';
 import {
   connectModelStudioShell,
   connectModelStudioShellV2,
@@ -31,7 +31,7 @@ import {
 import { createPhysicalOverlayView } from './physical-overlay-view.js';
 import { StudioPlayer } from './player.js';
 import { StudioSession } from './session.js';
-import { element, hexRgb, labelled, openingModel, rgbHex } from './studio-app-helpers.js';
+import { AMPLITUDES, element, hexRgb, labelled, openingModel, rgbHex } from './studio-app-helpers.js';
 
 /**
  * The studio as an app: shelf on the left, the stage in the middle, one
@@ -316,18 +316,6 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
   phaseInput.type = 'range';
   phaseInput.min = '-180';
   phaseInput.max = '180';
-
-  const AMPLITUDES = [
-    { kind: 'rotationRadians', axis: 0, group: 'Turn', label: 'Pitch', unit: '°', max: 180, scale: Math.PI / 180 },
-    { kind: 'rotationRadians', axis: 1, group: 'Turn', label: 'Rock', unit: '°', max: 180, scale: Math.PI / 180 },
-    { kind: 'rotationRadians', axis: 2, group: 'Turn', label: 'Roll', unit: '°', max: 180, scale: Math.PI / 180 },
-    { kind: 'translation', axis: 0, group: 'Slide', label: 'Sideways', unit: 'levels', max: 40, scale: 0.1 },
-    { kind: 'translation', axis: 1, group: 'Slide', label: 'Up and down', unit: 'levels', max: 40, scale: 0.1 },
-    { kind: 'translation', axis: 2, group: 'Slide', label: 'In and out', unit: 'levels', max: 40, scale: 0.1 },
-    { kind: 'scale', axis: 0, group: 'Stretch', label: 'Width', unit: '%', max: 100, scale: 0.01 },
-    { kind: 'scale', axis: 1, group: 'Stretch', label: 'Height', unit: '%', max: 100, scale: 0.01 },
-    { kind: 'scale', axis: 2, group: 'Stretch', label: 'Depth', unit: '%', max: 100, scale: 0.01 },
-  ] as const;
 
   const amplitudeInputs = AMPLITUDES.map((spec) => {
     const input = element('input', 'slider');
@@ -1000,16 +988,6 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
   const transport = element('div', 'transport');
   transport.append(stepBack, playButton, stepForward, speedSelect);
 
-  // Watching a model get made. Its previews go through the harness, so the
-  // agent walks the same construction the panel shows.
-  const construction = createConstructionPanel({
-    harness,
-    onChanged: () => {
-      refresh();
-      drawFrame(lastShownMs);
-    },
-  });
-
   const examinePane = element('div', 'pane');
   const checkRow = element('div', 'row');
   checkRow.append(sweepButton, sheetButton);
@@ -1055,32 +1033,8 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
       if (name === 'build') construction.refresh();
     },
   };
+  let construction: ConstructionPanelV1;
   let studioShell: ModelStudioShellHandleV1 | ModelStudioShellHandleV2;
-  try {
-    if (shellMarkupV2 !== null) {
-      root.innerHTML = shellMarkupV2;
-      const shellRoot = root.firstElementChild;
-      if (!(shellRoot instanceof HTMLElement)) {
-        throw new Error('The V2 Model Studio shell did not render an HTML root.');
-      }
-      studioShell = connectModelStudioShellV2(shellRoot, shellOptions);
-    } else {
-      root.innerHTML = renderModelStudioShell({
-        panels: { examine: '', build: '', edit: '', motion: '', notes: '' },
-      });
-      studioShell = connectModelStudioShell(root, shellOptions);
-    }
-  } catch (error) {
-    // Connecting can still fail against the live document — a duplicate
-    // instanceId, most plainly. A mount that throws returns no handle, so
-    // nobody else could ever release what it had acquired: put everything
-    // back here and leave the page exactly as it stood.
-    construction.dispose();
-    physicalView.dispose();
-    session.dispose();
-    root.replaceChildren();
-    throw error;
-  }
   const hasStudioTab = (name: ModelStudioTabId): boolean =>
     'hasTab' in studioShell ? studioShell.hasTab(name) : true;
   const studioPanel = (name: ModelStudioTabId): HTMLElement =>
@@ -1088,19 +1042,6 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
   function showTab(name: ModelStudioTabId): void {
     studioShell.selectTab(hasStudioTab(name) ? name : 'examine');
   }
-
-  studioShell.regions.top.append(
-    modelName, statusChip, grow, openButton, newButton, copyButton, requestShortcut,
-  );
-  studioShell.regions.shelf.append(railTitle, shelf);
-  const stage = studioShell.regions.stage;
-  stage.append(canvasWrap, viewChip, toggles, stageHint);
-  studioShell.regions.player.append(transport, timelineWrap, timeLabel);
-  if (hasStudioTab('examine')) studioPanel('examine').append(...Array.from(examinePane.childNodes));
-  if (hasStudioTab('build')) studioPanel('build').append(...Array.from(construction.element.childNodes));
-  if (hasStudioTab('edit')) studioPanel('edit').append(...Array.from(editPane.childNodes));
-  if (hasStudioTab('motion')) studioPanel('motion').append(...Array.from(motionPane.childNodes));
-  if (hasStudioTab('notes')) studioPanel('notes').append(...Array.from(notesPane.childNodes));
 
   // The picture fills the stage and follows the window, so zooming meets the
   // window's edge, never an invisible border in the middle of the screen —
@@ -1119,7 +1060,7 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
   // not a follow. One rectangle read per frame is cheap; resizing only happens
   // on real drift.
   function followStage(): void {
-    const rect = stage.getBoundingClientRect();
+    const rect = studioShell.regions.stage.getBoundingClientRect();
     if (rect.width < 2 || rect.height < 2) return;
     if (Math.floor(rect.width) === viewW && Math.floor(rect.height) === viewH) return;
     resizeStage(rect.width, rect.height);
@@ -1138,20 +1079,79 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
     frameHandle = requestAnimationFrame(tick);
   }
 
-  // A recipe-backed model opens on Build, whose first section is its recipe
-  // parts list. Construction used to be hidden behind Examine on every open,
-  // which made the parts effectively invisible until someone knew to look.
-  if (options.shellProfileV2?.initialTab !== undefined && 'hasTab' in studioShell) {
-    studioShell.selectTab(options.shellProfileV2.initialTab);
-  } else {
-    showTab(harness.buildSteps().length > 0 ? 'build' : 'examine');
+  // Everything from the construction panel to the first paint runs on
+  // game-supplied catalog data, and a recipe, part, or physical sidecar that
+  // throws by design can surface anywhere in this span — while the panel
+  // first reads the steps, while connecting finds a duplicate instanceId, or
+  // while the first refresh compiles the physical shapes.
+  const acquired: { dispose(): void }[] = [];
+  let rootWritten = false;
+  try {
+    // Watching a model get made. Its previews go through the harness, so the
+    // agent walks the same construction the panel shows.
+    construction = createConstructionPanel({
+      harness,
+      onChanged: () => {
+        refresh();
+        drawFrame(lastShownMs);
+      },
+    });
+    acquired.push(construction);
+
+    if (shellMarkupV2 !== null) {
+      rootWritten = true;
+      root.innerHTML = shellMarkupV2;
+      const shellRoot = root.firstElementChild;
+      if (!(shellRoot instanceof HTMLElement)) {
+        throw new Error('The V2 Model Studio shell did not render an HTML root.');
+      }
+      studioShell = connectModelStudioShellV2(shellRoot, shellOptions);
+    } else {
+      rootWritten = true;
+      root.innerHTML = renderModelStudioShell({
+        panels: { examine: '', build: '', edit: '', motion: '', notes: '' },
+      });
+      studioShell = connectModelStudioShell(root, shellOptions);
+    }
+    acquired.push(studioShell);
+
+    studioShell.regions.top.append(
+      modelName, statusChip, grow, openButton, newButton, copyButton, requestShortcut,
+    );
+    studioShell.regions.shelf.append(railTitle, shelf);
+    studioShell.regions.stage.append(canvasWrap, viewChip, toggles, stageHint);
+    studioShell.regions.player.append(transport, timelineWrap, timeLabel);
+    if (hasStudioTab('examine')) studioPanel('examine').append(...Array.from(examinePane.childNodes));
+    if (hasStudioTab('build')) studioPanel('build').append(...Array.from(construction.element.childNodes));
+    if (hasStudioTab('edit')) studioPanel('edit').append(...Array.from(editPane.childNodes));
+    if (hasStudioTab('motion')) studioPanel('motion').append(...Array.from(motionPane.childNodes));
+    if (hasStudioTab('notes')) studioPanel('notes').append(...Array.from(notesPane.childNodes));
+
+    // A recipe-backed model opens on Build, whose first section is its recipe
+    // parts list. Construction used to be hidden behind Examine on every open,
+    // which made the parts effectively invisible until someone knew to look.
+    if (options.shellProfileV2?.initialTab !== undefined && 'hasTab' in studioShell) {
+      studioShell.selectTab(options.shellProfileV2.initialTab);
+    } else {
+      showTab(harness.buildSteps().length > 0 ? 'build' : 'examine');
+    }
+    renderNotes();
+    refresh();
+    // Sized once immediately and on every window resize, besides the frame
+    // loop: the loop is throttled to nothing in background tabs, and the first
+    // paint must be sharp everywhere.
+    followStage();
+  } catch (error) {
+    // A mount that throws returns no handle, so nobody else could ever
+    // release what it had acquired: put everything back, newest first. The
+    // root is cleared only when the mount wrote it — a throw before that
+    // must not cost the host whatever it was showing in its own element.
+    for (const resource of [...acquired].reverse()) resource.dispose();
+    physicalView.dispose();
+    session.dispose();
+    if (rootWritten) root.replaceChildren();
+    throw error;
   }
-  renderNotes();
-  refresh();
-  // Sized once immediately and on every window resize, besides the frame
-  // loop: the loop is throttled to nothing in background tabs, and the first
-  // paint must be sharp everywhere.
-  followStage();
   // Nothing below can fail, so the globals a failed mount must never own —
   // the document shortcut, the resize follow, and the published harness —
   // attach only now.

@@ -88,7 +88,15 @@ export class StudioSession {
         ? { view: { kind: 'borrowed-camera' as const, camera: options.camera, projectionOwnership: 'host' as const } }
         : { center: { x: 0, y: 0, z: 0 }, zoom: options.zoom ?? DEFAULT_ZOOM }),
     });
-    this.#accept(model);
+    try {
+      this.#accept(model);
+    } catch (error) {
+      // A constructor that throws hands its caller nothing to dispose, so
+      // the runtime it just created must be released right here or it
+      // outlives the only reference anyone ever had.
+      try { this.#runtime.dispose(); } catch { /* Preserve the opening failure. */ }
+      throw error;
+    }
   }
 
   get model(): StudioModelV1 {
