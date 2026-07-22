@@ -241,9 +241,11 @@ function walkOccurrences(
       return;
     }
     if (step.kind === 'mirror') {
-      const suffix = `/mirrors[${String(stepIndex)}:${step.axis}]`;
+      // The marker sits at this recipe's level, exactly as the builder
+      // spells it, so a nested same-numbered mirror stays a different path.
+      const marker = `${path}/mirrors[${String(stepIndex)}:${step.axis}]`;
       const copies = records.map((record) => ({
-        path: `${record.path}${suffix}`,
+        path: `${marker}${record.path.slice(path.length)}`,
         recipeId: record.recipeId,
         frame: reflected(record.frame, step.axis, step.axis === 'x' ? sx : sz),
       }));

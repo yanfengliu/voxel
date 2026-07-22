@@ -361,7 +361,7 @@ describe('recipes made of recipes', () => {
 
     expect(built.placedByOccurrence[0]).toBe('test:small/steps[0]<test:cube>');
     expect(built.placedByOccurrence[3]).toBe(
-      'test:small/steps[0]<test:cube>/mirrors[1:x]',
+      'test:small/mirrors[1:x]/steps[0]<test:cube>',
     );
   });
 
@@ -386,7 +386,7 @@ describe('recipes made of recipes', () => {
     expect(error.issues).toHaveLength(2);
     expect(error.issues.every(({ path }) => path === '$.steps[2]')).toBe(true);
     expect(error.message).toContain('mirrored occurrence');
-    expect(error.message).toContain('test:small/steps[0]<test:wide>/mirrors[2:x]');
+    expect(error.message).toContain('test:small/mirrors[2:x]/steps[0]<test:wide>');
     expect(error.message).toContain('test:small/steps[1]<test:cube>');
   });
 
@@ -435,7 +435,7 @@ describe('recipes made of recipes', () => {
     expect(error.issues).toEqual([
       expect.objectContaining({ path: '$.steps[2]' }),
     ]);
-    expect(error.message).toContain('test:small/steps[0]<test:pair>');
+    expect(error.message).toContain('test:small/mirrors[2:x]/steps[0]<test:pair>');
     expect(error.message).toContain('test:small/steps[1]<test:right>');
   });
 

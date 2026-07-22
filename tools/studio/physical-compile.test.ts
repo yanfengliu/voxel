@@ -126,10 +126,12 @@ const BOOK = {
 
 const PHYSICAL: PhysicalAssetBookV1 = { 'test:hinged-block': hingedBlockAsset() };
 
+// The mirror marker sits at the level of the recipe whose mirror ran: the
+// pair's own x mirror inside its path, the court's z mirror at the front.
 const HB1 = 'test:court/steps[0]<test:pair>/steps[0]<test:hinged-block>';
-const HB2 = `${HB1}/mirrors[1:x]`;
-const HB3 = `${HB1}/mirrors[1:z]`;
-const HB4 = `${HB1}/mirrors[1:x]/mirrors[1:z]`;
+const HB2 = 'test:court/steps[0]<test:pair>/mirrors[1:x]/steps[0]<test:hinged-block>';
+const HB3 = 'test:court/mirrors[1:z]/steps[0]<test:pair>/steps[0]<test:hinged-block>';
+const HB4 = 'test:court/mirrors[1:z]/steps[0]<test:pair>/mirrors[1:x]/steps[0]<test:hinged-block>';
 
 describe('the builder occurrence ledger', () => {
   it('names every occurrence including voxel-less compositions and landed mirror copies', () => {
@@ -138,7 +140,7 @@ describe('the builder occurrence ledger', () => {
       'test:court/steps[0]<test:pair>',
       HB1,
       HB2,
-      'test:court/steps[0]<test:pair>/mirrors[1:z]',
+      'test:court/mirrors[1:z]/steps[0]<test:pair>',
       HB3,
       HB4,
     ]);

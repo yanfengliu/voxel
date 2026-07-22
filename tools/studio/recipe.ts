@@ -405,14 +405,17 @@ export interface BuiltRecipeV1 {
    * and part steps belong to the recipe occurrence they run inside, so they
    * may repaint one another. Every nested recipe step creates a distinct
    * occurrence, even when it names the same saved recipe as another step.
-   * Mirrored copies that add cells receive their own `/mirrors[...]` suffix.
-   * This is Studio provenance, not a renderer or simulation contract.
+   * A landed mirror copy's path inserts `/mirrors[step:axis]` directly
+   * after the path of the recipe whose mirror made it, so equal step
+   * numbers at different depths can never name the same copy. This is
+   * Studio provenance, not a renderer or simulation contract.
    */
   readonly placedByOccurrence: readonly string[];
   /**
    * Every recipe occurrence this build contains, in build order: the root,
    * each placed sub-recipe with its whole subtree, and — for each mirror
-   * copy that landed — the copied subtree under its `/mirrors[...]` suffix.
+   * copy that landed — the copied subtree under the mirroring recipe's
+   * `/mirrors[...]` marker.
    * Unlike `placedByOccurrence`, this also names occurrences that own no
    * voxels themselves, such as a recipe made only of other recipes. The
    * builder is the one authority on which occurrences exist; consumers such
@@ -809,6 +812,11 @@ function buildRecipeInternal(
       readonly incomingOccurrence: string;
       readonly incomingMirrorGroup: string;
     }[] = [];
+    // A copy's path inserts the mirror marker directly after this recipe's
+    // own occurrence path — the level whose mirror ran. Appending it at the
+    // deep end instead would let a same-numbered mirror step inside a nested
+    // recipe spell the identical path for a different physical occurrence.
+    const mirrorMarker = `${occurrencePath}/mirrors[${String(stepIndex)}:${step.axis}]`;
     const landedGroups: string[] = [];
     for (const [sourceMirrorGroup, cells] of reflected) {
       const addsCells = cells.some(({ target }) => (before[target] ?? 0) === 0);
@@ -817,11 +825,11 @@ function buildRecipeInternal(
       }
       const incomingMirrorGroup = sourceMirrorGroup === occurrencePath
         ? occurrencePath
-        : `${sourceMirrorGroup}/mirrors[${String(stepIndex)}:${step.axis}]`;
+        : `${mirrorMarker}${sourceMirrorGroup.slice(occurrencePath.length)}`;
       for (const { source, target, coordinate, sourceOccurrence } of cells) {
         const incomingOccurrence = sourceMirrorGroup === occurrencePath
           ? occurrencePath
-          : `${sourceOccurrence}/mirrors[${String(stepIndex)}:${step.axis}]`;
+          : `${mirrorMarker}${sourceOccurrence.slice(occurrencePath.length)}`;
         if ((before[target] ?? 0) !== 0) {
           const existingOccurrence = beforeOccurrence[target] ?? '';
           const existingMirrorGroup = beforeMirrorGroup[target] ?? '';
@@ -872,7 +880,7 @@ function buildRecipeInternal(
     for (const group of landedGroups) {
       for (const established of establishedOccurrences) {
         if (established !== group && !established.startsWith(`${group}/`)) continue;
-        occurrences.push(`${established}/mirrors[${String(stepIndex)}:${step.axis}]`);
+        occurrences.push(`${mirrorMarker}${established.slice(occurrencePath.length)}`);
       }
     }
     for (const { source, target, incomingOccurrence, incomingMirrorGroup } of writes) {

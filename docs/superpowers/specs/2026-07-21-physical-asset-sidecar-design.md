@@ -192,10 +192,17 @@ occurrence paths are safe in it; only saved documents must avoid indexes.
 The builder is the one authority on which occurrences exist. `BuiltRecipeV1`
 carries an `occurrences` ledger — the root, every placed subtree, and every
 landed mirror copy, including compositions that own no voxels — and the
-compile filters its walked candidates against that ledger. Re-deriving
-landing decisions from path strings is forbidden: a nested mirror can spell
-the same `/mirrors[i:axis]` suffix at two levels, and guessing would compile
-bodies for a copy the voxel build declined.
+compile filters its walked candidates against that ledger rather than
+re-deriving landing decisions.
+
+Building this slice exposed and fixed a path-grammar ambiguity: appending
+`/mirrors[step:axis]` at the deep end of a copied path let a mirror at one
+level and a same-numbered mirror inside a nested recipe spell the identical
+path for two different physical occurrences — the furniture set's step-3
+mirror collided with the made bed's own step-3 pillow mirror. The marker
+now sits directly after the path of the recipe whose mirror ran
+(`set/mirrors[3:x]/steps[1]<nightstand>`), which is unambiguous by
+construction and reads as what happened.
 
 ### Mirrors
 
