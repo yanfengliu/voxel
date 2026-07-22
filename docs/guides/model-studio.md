@@ -184,6 +184,31 @@ and its limits are in
 [physical world invariants](../design/physical-world-invariants.md) and the
 [sidecar design](../superpowers/specs/2026-07-21-physical-asset-sidecar-design.md).
 
+### Where recipes live and how to add one
+
+Every shelf section keeps its recipes in its own module:
+`shapes-recipes.ts`, `wall-recipes.ts`, `garden-recipes.ts`,
+`cottage-recipes.ts`, `furniture-recipes.ts`, and
+`household-recipes.ts` under `tools/studio/`. Each module exports its
+recipe creators and a section book; `recipes.ts` is the hub that
+re-exports them all and merges the section books into
+`createStudioRecipeBook` — the book holds the whole shelf uniformly,
+because sharing is a recipe naming another, not a curated subset.
+Shelf entries are derived from the recipes themselves: the id and label
+on the shelf are the recipe's own, so the two can never disagree.
+
+Adding a recipe takes three steps, and forgetting one is loud:
+
+1. write its creator in the section module it belongs to (or start a
+   new module for a new section);
+2. add it to that module's section book;
+3. add one `recipeEntry` line to its section in `catalog.ts` — plus a
+   physical book reference if it carries sidecars.
+
+A shelf test pins that every recipe in the book stands on the shelf
+exactly once under its own name, so a half-registered recipe fails the
+suite instead of existing quietly.
+
 ## Watching a model get made
 
 Every catalog model declares `howItsMade` and shows its construction in the

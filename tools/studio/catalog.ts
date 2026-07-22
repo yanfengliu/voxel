@@ -143,37 +143,58 @@ export function createBrickWallModel(): StudioModelV1 {
   };
 }
 
-/** The engine studio's own shelf. */
+/**
+ * Builds one shelf entry from its recipe: the id and label come from the
+ * recipe itself, so the shelf can never disagree with the thing it shows.
+ * Every entry carries the whole studio book — any saved recipe may place
+ * any other, and an entry that names no sub-recipe never opens it.
+ */
+function recipeEntry(
+  make: () => RecipeV1,
+  options?: {
+    /** A hand-authored model this recipe is proven to rebuild cell for cell. */
+    readonly load?: () => StudioModelV1;
+    readonly physical?: () => PhysicalAssetBookV1;
+  },
+): ShelfModelV1 {
+  const { id, label } = make();
+  return {
+    id,
+    label,
+    load: options?.load
+      ?? (() => buildRecipe(make(), createStudioParts(), createStudioRecipeBook()).model),
+    howItsMade: () => ({
+      recipe: make(),
+      parts: createStudioParts(),
+      book: createStudioRecipeBook(),
+      ...(options?.physical === undefined ? {} : { physical: options.physical() }),
+    }),
+  };
+}
+
+/** A bedroom entry: the same derivation plus the household physical book. */
+const bedroomEntry = (make: () => RecipeV1): ShelfModelV1 =>
+  recipeEntry(make, { physical: createHouseholdPhysicalBook });
+
+/** The engine studio's own shelf. One section per recipe module; a test
+ * pins that every recipe in the shared book stands here. */
 export function createStudioCatalog(): StudioCatalogV1 {
   return {
     sections: [
       {
         name: 'Shapes',
-        models: [{
-          id: 'studio:starter',
-          label: 'Starter',
-          load: createStarterModel,
-          howItsMade: () => ({ recipe: createStarterRecipe(), parts: createStudioParts() }),
-        }],
+        models: [recipeEntry(createStarterRecipe, { load: createStarterModel })],
       },
       {
         name: 'Walls',
         models: [
-          {
-            id: 'studio:brick-wall',
-            label: 'Brick wall',
-            load: createBrickWallModel,
-            howItsMade: () => ({ recipe: createBrickWallRecipe(), parts: createStudioParts() }),
-          },
-          {
-            // The same courses with different numbers and a different palette:
-            // longer bricks, a stack bond, sandstone colours. No new part and
-            // no new code, which is the point of it being on the shelf.
-            id: 'studio:sandstone-wall',
-            label: 'Sandstone wall',
-            load: () => buildRecipe(createSandstoneWallRecipe(), createStudioParts()).model,
-            howItsMade: () => ({ recipe: createSandstoneWallRecipe(), parts: createStudioParts() }),
-          },
+          // The hand-built brick wall proves "texture" is pattern plus
+          // variation; its recipe rebuilds it cell for cell.
+          recipeEntry(createBrickWallRecipe, { load: createBrickWallModel }),
+          // The same courses with different numbers and a different palette:
+          // longer bricks, a stack bond, sandstone colours. No new part and
+          // no new code, which is the point of it being on the shelf.
+          recipeEntry(createSandstoneWallRecipe),
         ],
       },
       {
@@ -181,30 +202,9 @@ export function createStudioCatalog(): StudioCatalogV1 {
         // flowers remain shared recipes that can also be opened on their own.
         name: 'Garden',
         models: [
-          {
-            id: 'studio:flower',
-            label: 'Flower',
-            load: () => buildRecipe(createFlowerRecipe(), createStudioParts()).model,
-            howItsMade: () => ({ recipe: createFlowerRecipe(), parts: createStudioParts() }),
-          },
-          {
-            id: 'studio:pot',
-            label: 'Pot',
-            load: () => buildRecipe(createPotRecipe(), createStudioParts()).model,
-            howItsMade: () => ({ recipe: createPotRecipe(), parts: createStudioParts() }),
-          },
-          {
-            id: 'studio:three-flower-pot',
-            label: 'Pot of three flowers',
-            load: () => buildRecipe(
-              createThreeFlowerPotRecipe(), createStudioParts(), createStudioRecipeBook(),
-            ).model,
-            howItsMade: () => ({
-              recipe: createThreeFlowerPotRecipe(),
-              parts: createStudioParts(),
-              book: createStudioRecipeBook(),
-            }),
-          },
+          recipeEntry(createFlowerRecipe),
+          recipeEntry(createPotRecipe),
+          recipeEntry(createThreeFlowerPotRecipe),
         ],
       },
       {
@@ -212,124 +212,26 @@ export function createStudioCatalog(): StudioCatalogV1 {
         // owns only arrangement: its table and every chair stay reusable.
         name: 'Furniture',
         models: [
-          {
-            id: 'studio:chair',
-            label: 'Chair',
-            load: () => buildRecipe(createChairRecipe(), createStudioParts()).model,
-            howItsMade: () => ({ recipe: createChairRecipe(), parts: createStudioParts() }),
-          },
-          {
-            id: 'studio:table',
-            label: 'Table',
-            load: () => buildRecipe(createTableRecipe(), createStudioParts()).model,
-            howItsMade: () => ({ recipe: createTableRecipe(), parts: createStudioParts() }),
-          },
-          {
-            id: 'studio:dining-set',
-            label: 'Dining set',
-            load: () => buildRecipe(
-              createDiningSetRecipe(), createStudioParts(), createStudioRecipeBook(),
-            ).model,
-            howItsMade: () => ({
-              recipe: createDiningSetRecipe(),
-              parts: createStudioParts(),
-              book: createStudioRecipeBook(),
-            }),
-          },
+          recipeEntry(createChairRecipe),
+          recipeEntry(createTableRecipe),
+          recipeEntry(createDiningSetRecipe),
         ],
       },
       {
         // Each bedroom object is saved independently before the larger bed
         // and furniture-set recipes arrange it. The compositions contain no
-        // copied construction steps.
+        // copied construction steps, and each entry carries the household
+        // physical sidecars for the stage's colliders outline.
         name: 'Bedroom furniture',
         models: [
-          {
-            id: 'studio:bed-frame',
-            label: 'Bed frame',
-            load: () => buildRecipe(createBedFrameRecipe(), createStudioParts()).model,
-            howItsMade: () => ({
-              recipe: createBedFrameRecipe(),
-              parts: createStudioParts(),
-              physical: createHouseholdPhysicalBook(),
-            }),
-          },
-          {
-            id: 'studio:mattress',
-            label: 'Mattress',
-            load: () => buildRecipe(createMattressRecipe(), createStudioParts()).model,
-            howItsMade: () => ({
-              recipe: createMattressRecipe(),
-              parts: createStudioParts(),
-              physical: createHouseholdPhysicalBook(),
-            }),
-          },
-          {
-            id: 'studio:pillow',
-            label: 'Pillow',
-            load: () => buildRecipe(createPillowRecipe(), createStudioParts()).model,
-            howItsMade: () => ({
-              recipe: createPillowRecipe(),
-              parts: createStudioParts(),
-              physical: createHouseholdPhysicalBook(),
-            }),
-          },
-          {
-            id: 'studio:blanket',
-            label: 'Blanket',
-            load: () => buildRecipe(createBlanketRecipe(), createStudioParts()).model,
-            howItsMade: () => ({
-              recipe: createBlanketRecipe(),
-              parts: createStudioParts(),
-              physical: createHouseholdPhysicalBook(),
-            }),
-          },
-          {
-            id: 'studio:made-bed',
-            label: 'Made bed',
-            load: () => buildRecipe(
-              createMadeBedRecipe(), createStudioParts(), createStudioRecipeBook(),
-            ).model,
-            howItsMade: () => ({
-              recipe: createMadeBedRecipe(),
-              parts: createStudioParts(),
-              book: createStudioRecipeBook(),
-              physical: createHouseholdPhysicalBook(),
-            }),
-          },
-          {
-            id: 'studio:nightstand',
-            label: 'Nightstand',
-            load: () => buildRecipe(createNightstandRecipe(), createStudioParts()).model,
-            howItsMade: () => ({
-              recipe: createNightstandRecipe(),
-              parts: createStudioParts(),
-              physical: createHouseholdPhysicalBook(),
-            }),
-          },
-          {
-            id: 'studio:table-lamp',
-            label: 'Table lamp',
-            load: () => buildRecipe(createTableLampRecipe(), createStudioParts()).model,
-            howItsMade: () => ({
-              recipe: createTableLampRecipe(),
-              parts: createStudioParts(),
-              physical: createHouseholdPhysicalBook(),
-            }),
-          },
-          {
-            id: 'studio:bedroom-furniture-set',
-            label: 'Bedroom furniture set',
-            load: () => buildRecipe(
-              createBedroomFurnitureSetRecipe(), createStudioParts(), createStudioRecipeBook(),
-            ).model,
-            howItsMade: () => ({
-              recipe: createBedroomFurnitureSetRecipe(),
-              parts: createStudioParts(),
-              book: createStudioRecipeBook(),
-              physical: createHouseholdPhysicalBook(),
-            }),
-          },
+          bedroomEntry(createBedFrameRecipe),
+          bedroomEntry(createMattressRecipe),
+          bedroomEntry(createPillowRecipe),
+          bedroomEntry(createBlanketRecipe),
+          bedroomEntry(createMadeBedRecipe),
+          bedroomEntry(createNightstandRecipe),
+          bedroomEntry(createTableLampRecipe),
+          bedroomEntry(createBedroomFurnitureSetRecipe),
         ],
       },
       {
@@ -337,36 +239,9 @@ export function createStudioCatalog(): StudioCatalogV1 {
         // Each shared sub-recipe also appears on the shelf on its own.
         name: 'Roof studies',
         models: [
-          {
-            id: 'studio:cottage-roof',
-            label: 'Pitched roof slice',
-            load: () => buildRecipe(createCottageRoofRecipe(), createStudioParts()).model,
-            howItsMade: () => ({ recipe: createCottageRoofRecipe(), parts: createStudioParts() }),
-          },
-          {
-            id: 'studio:brick-cottage',
-            label: 'Brick wall + roof slice',
-            load: () => buildRecipe(
-              createBrickCottageRecipe(), createStudioParts(), createStudioRecipeBook(),
-            ).model,
-            howItsMade: () => ({
-              recipe: createBrickCottageRecipe(),
-              parts: createStudioParts(),
-              book: createStudioRecipeBook(),
-            }),
-          },
-          {
-            id: 'studio:sandstone-cottage',
-            label: 'Sandstone wall + roof slice',
-            load: () => buildRecipe(
-              createSandstoneCottageRecipe(), createStudioParts(), createStudioRecipeBook(),
-            ).model,
-            howItsMade: () => ({
-              recipe: createSandstoneCottageRecipe(),
-              parts: createStudioParts(),
-              book: createStudioRecipeBook(),
-            }),
-          },
+          recipeEntry(createCottageRoofRecipe),
+          recipeEntry(createBrickCottageRecipe),
+          recipeEntry(createSandstoneCottageRecipe),
         ],
       },
     ],
