@@ -1,4 +1,4 @@
-import type { RecipeV1 } from './recipe.js';
+import type { RecipeBookV1, RecipeV1 } from './recipe.js';
 
 /**
  * Furniture comes before rooms: small, complete objects make part boundaries,
@@ -210,4 +210,10 @@ export function createDiningSetRecipe(): RecipeV1 {
     ],
     motion: { ...STILL },
   };
+}
+
+/** Every Furniture recipe, by id, for the studio's shared book. */
+export function createFurnitureRecipeBook(): RecipeBookV1 {
+  const recipes = [createChairRecipe(), createTableRecipe(), createDiningSetRecipe()];
+  return Object.fromEntries(recipes.map((recipe) => [recipe.id, recipe]));
 }
