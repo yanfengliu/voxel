@@ -13,11 +13,10 @@ import {
   type ModelStudioShellProfileV2,
   type ModelStudioTabId,
 } from './shared-ui/index.js';
-import { describeMotion, describePoseAt } from './describe.js';
+import { describeMotion } from './describe.js';
 import { createStudioHarness, type VoxelStudioHarnessV1 } from './harness.js';
 import type { StudioModelV1 } from './model.js';
-import { voxelIndex } from './model.js';
-import { NoteStore, type StudioNoteV1 } from './notes.js';
+import { NoteStore } from './notes.js';
 import {
   applyOrbit,
   clampOrbit,
@@ -31,7 +30,13 @@ import {
 import { createPhysicalOverlayView } from './physical-overlay-view.js';
 import { StudioPlayer } from './player.js';
 import { StudioSession } from './session.js';
-import { AMPLITUDES, element, hexRgb, labelled, openingModel, rgbHex } from './studio-app-helpers.js';
+import type { StudioEditStateV1 } from './studio-app-context.js';
+import { element, openingModel } from './studio-app-helpers.js';
+import { createStudioEditorPanel, type StudioEditorPanelV1 } from './studio-editor.js';
+import { createStudioMotionPanel, type StudioMotionPanelV1 } from './studio-motion.js';
+import { createStudioNotesPanel, type StudioNotesPanelV1 } from './studio-notes.js';
+import { createStudioPlayerBar, type StudioPlayerBarV1 } from './studio-player.js';
+import { createStudioShelf, type StudioShelfV1 } from './studio-shelf.js';
 
 /**
  * The studio as an app: shelf on the left, the stage in the middle, one
@@ -48,6 +53,14 @@ import { AMPLITUDES, element, hexRgb, labelled, openingModel, rgbHex } from './s
  * that made it. Every game mounts this with its own catalog -- see
  * `docs/guides/model-studio.md` -- and the engine's own shelf in `main.ts` is
  * simply the first caller, with no privileges the games lack.
+ *
+ * `mountStudio` is the composition root and stays so on purpose: it owns the
+ * render session, the camera, the frame loop, and the one rollback that
+ * disposes them if the mount fails. The inspector's five panels are their own
+ * modules -- player, editor, motion, shelf, notes -- each building its DOM and
+ * wiring its own controls through the harness; this file holds the stage, the
+ * things that read the live camera every frame, and the assembly that binds
+ * the panels together.
  */
 
 declare global {
@@ -97,10 +110,6 @@ const VIEW_HEIGHT = 440;
 // Replaced by the stage's real size once mounted; these only seed the first frame.
 const SWEEP_SAMPLES = 24;
 const DRAG_THRESHOLD_PIXELS = 4;
-
-type PendingAnchor =
-  | { readonly kind: 'moment'; readonly timeMs: number; readonly u: number; readonly v: number }
-  | { readonly kind: 'place'; readonly x: number; readonly y: number; readonly z: number };
 
 export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
   const root = options.root ?? document.getElementById('studio');
@@ -187,10 +196,10 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
   });
   const player = new StudioPlayer(session.model.motion.periodMs);
   const noteStore = new NoteStore();
-  let selectedSlot = 1;
-  let layer = 0;
-  let pending: PendingAnchor | null = null;
-  let armedForPlace = false;
+  // The floor, colour, and note anchor the editor, notes, and stage share.
+  const state: StudioEditStateV1 = {
+    layer: 0, selectedSlot: 1, pending: null, armedForPlace: false,
+  };
   let lastShownMs = 0;
 
   // ---- top bar ----
@@ -211,33 +220,6 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
   requestShortcut.hidden = !supportsNotes;
   requestShortcut.disabled = !supportsNotes;
 
-  // ---- player bar ----
-  const stepBack = element('button', 'step');
-  stepBack.textContent = '◀';
-  stepBack.title = 'One frame back (left arrow)';
-  const playButton = element('button', 'primary play');
-  playButton.textContent = '▶ Play';
-  const stepForward = element('button', 'step');
-  stepForward.textContent = '▶';
-  stepForward.title = 'One frame forward (right arrow)';
-  const speedSelect = element('select', 'speed');
-  for (const speed of [0.25, 0.5, 1, 2]) {
-    const option = element('option');
-    option.value = String(speed);
-    option.textContent = `${String(speed)}×`;
-    if (speed === 1) option.selected = true;
-    speedSelect.appendChild(option);
-  }
-  const timeline = element('input', 'timeline');
-  timeline.type = 'range';
-  timeline.min = '0';
-  timeline.step = '1';
-  timeline.value = '0';
-  const dots = element('div', 'dots');
-  const timelineWrap = element('div', 'timeline-wrap');
-  timelineWrap.append(timeline, dots);
-  const timeLabel = element('span', 'time-label');
-
   // ---- inspector: examine ----
   const motionText = element('p', 'motion');
   const modelLine = element('p', 'factline');
@@ -251,85 +233,6 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
   const sheetImage = element('img', 'sheet');
   sheetImage.alt = 'Every frame of the movement, in time order';
   sheetImage.hidden = true;
-
-  // ---- inspector: notes ----
-  const notesList = element('ul', 'notes');
-  const noteInput = element('input', 'note-input');
-  noteInput.type = 'text';
-  noteInput.placeholder = 'Say what you see…';
-  const noteSave = element('button', 'primary');
-  noteSave.textContent = 'Pin note';
-  const noteCancel = element('button');
-  noteCancel.textContent = 'Cancel';
-  const noteEditor = element('div', 'note-editor');
-  noteEditor.append(noteInput, noteSave, noteCancel);
-  noteEditor.hidden = true;
-  const noteHint = element('p', 'hint');
-  noteHint.textContent = 'Pause and click the picture to pin a note to that moment.';
-  const pinPlaceButton = element('button');
-  pinPlaceButton.textContent = 'Pin to a spot on the model';
-  pinPlaceButton.hidden = !supportsEdit;
-  pinPlaceButton.disabled = !supportsEdit;
-  const requestBox = element('textarea', 'request');
-  requestBox.rows = 3;
-  requestBox.placeholder = 'What should change? Your notes travel with this.';
-  const sendButton = element('button', 'primary');
-  sendButton.textContent = 'Send request';
-  const requestStatus = element('p', 'verdict');
-
-  // ---- inspector: edit ----
-  const swatches = element('div', 'swatches');
-  const colorInput = element('input');
-  colorInput.type = 'color';
-  const stack = element('div', 'stack');
-  const layerLabel = element('span', 'layer-label');
-  const grid = element('div', 'grid');
-  const stackHint = element('p', 'hint');
-  stackHint.textContent = 'Your model is a stack of floors, tallest first. Pick one to edit below.';
-  const modelText = element('textarea', 'model');
-  modelText.rows = 5;
-  modelText.spellcheck = false;
-  const modelStatus = element('p', 'verdict');
-  const sizeInput = element('input', 'slider');
-  sizeInput.type = 'range';
-  sizeInput.min = '2';
-  sizeInput.max = '24';
-  sizeInput.value = '8';
-
-  // ---- inspector: motion ----
-  const styleSelect = element('select', 'speed');
-  for (const [value, label] of [
-    ['swing', 'Swings back and forth'],
-    ['turn', 'Turns all the way around'],
-  ] as const) {
-    const option = element('option');
-    option.value = value;
-    option.textContent = label;
-    styleSelect.appendChild(option);
-  }
-  const periodInput = element('input', 'slider');
-  periodInput.type = 'range';
-  periodInput.min = '0';
-  periodInput.max = '4000';
-  periodInput.step = '50';
-  const phaseInput = element('input', 'slider');
-  phaseInput.type = 'range';
-  phaseInput.min = '-180';
-  phaseInput.max = '180';
-
-  const amplitudeInputs = AMPLITUDES.map((spec) => {
-    const input = element('input', 'slider');
-    input.type = 'range';
-    input.min = String(-spec.max);
-    input.max = String(spec.max);
-    input.addEventListener('input', () => {
-      const motion = harness.model().motion;
-      const next: [number, number, number] = [...motion[spec.kind]];
-      next[spec.axis] = Number(input.value) * spec.scale;
-      harness.animate({ [spec.kind]: next });
-    });
-    return { spec, input };
-  });
 
   // ---- the harness: the one surface both the buttons and the agent use ----
   const harness = createStudioHarness({
@@ -357,8 +260,8 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
     now: () => performance.now(),
     drawAt: (timeMs: number) => { drawFrame(timeMs); },
     notesChanged() {
-      renderNotes();
-      renderDots();
+      notesPanel.renderNotes();
+      playerBar.renderDots();
     },
     orbit: () => ({ ...orbit, described: describeOrbit(orbit) }),
     resizeStage,
@@ -378,6 +281,35 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
   // Published only once the mount can no longer fail, at the end of this
   // function: a failed mount must never replace another mount's harness.
 
+  // ---- the inspector panels ----
+  // Each panel builds its own DOM and wires its own controls through the
+  // harness. They coordinate through the shared `state`, the hoisted stage
+  // functions below, and a few callbacks; the construction panel is created
+  // last, inside the rollback, because it is the first thing to touch the
+  // game's catalog data and so the first that can fail.
+  const playerBar: StudioPlayerBarV1 = createStudioPlayerBar({ harness, player, noteStore });
+  const motionPanel: StudioMotionPanelV1 = createStudioMotionPanel({ harness });
+  const shelfPanel: StudioShelfV1 = createStudioShelf({ harness, showTab });
+  const editor: StudioEditorPanelV1 = createStudioEditorPanel({
+    harness,
+    supportsEdit,
+    state,
+    showTab,
+    beginPlaceNote: (x, y, z) => { notesPanel.beginPlaceNote(x, y, z); },
+  });
+  const notesPanel: StudioNotesPanelV1 = createStudioNotesPanel({
+    harness,
+    supportsEdit,
+    supportsNotes,
+    state,
+    editor,
+    showTab,
+    syncPlayButton: () => { playerBar.syncPlayButton(); },
+    redrawOverlays: positionRings,
+  });
+  editor.wireTopBar({ openButton, newButton, copyButton });
+  notesPanel.wireRequestShortcut(requestShortcut);
+
   // ---- drawing and readouts ----
   function drawFrame(timeMs: number): void {
     lastShownMs = timeMs;
@@ -386,17 +318,7 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
     // after an interaction.
     applyOrbit(camera, orbit, viewW, viewH);
     session.showAt(timeMs);
-    const period = player.periodMs;
-    if (period > 0) {
-      const frame = harness.frameAt();
-      timeLabel.textContent =
-        `frame ${String(frame.frame)} / ${String(frame.frameCount)} · `
-        + `${String(Math.round(timeMs))} ms of ${String(period)} · `
-        + describePoseAt(harness.model().motion, timeMs);
-    } else {
-      timeLabel.textContent = 'still · one frame';
-    }
-    if (document.activeElement !== timeline) timeline.value = String(Math.round(timeMs));
+    playerBar.showTime(timeMs);
     positionRings();
     physicalView.draw(
       camera,
@@ -407,10 +329,6 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
     );
   }
 
-  function syncPlayButton(): void {
-    playButton.textContent = player.playing ? '⏸ Pause' : '▶ Play';
-  }
-
   function positionRings(): void {
     marks.replaceChildren();
     const nearMs = 40;
@@ -419,7 +337,7 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
       if (Math.abs(note.timeMs - lastShownMs) > nearMs) continue;
       marks.appendChild(ringAt(note.spot.u, note.spot.v, false));
     }
-    if (pending?.kind === 'moment') marks.appendChild(ringAt(pending.u, pending.v, true));
+    if (state.pending?.kind === 'moment') marks.appendChild(ringAt(state.pending.u, state.pending.v, true));
   }
 
   function ringAt(u: number, v: number, active: boolean): HTMLElement {
@@ -427,238 +345,6 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
     ring.style.left = `${String(u * 100)}%`;
     ring.style.top = `${String(v * 100)}%`;
     return ring;
-  }
-
-  function renderDots(): void {
-    dots.replaceChildren();
-    const period = player.periodMs;
-    if (period <= 0) return;
-    for (const note of noteStore.list()) {
-      if (note.kind !== 'moment') continue;
-      const dot = element('button', 'dot');
-      dot.title = `${String(note.timeMs)} ms — ${note.text}`;
-      dot.style.left = `${String((note.timeMs / period) * 100)}%`;
-      dot.addEventListener('click', () => { harness.seek(note.timeMs); syncPlayButton(); });
-      dots.appendChild(dot);
-    }
-  }
-
-  function describeNoteAnchor(note: StudioNoteV1): string {
-    return note.kind === 'moment'
-      ? `${String(note.timeMs)} ms`
-      : `floor ${String(note.voxel.y + 1)}, square ${String(note.voxel.x)},${String(note.voxel.z)}`;
-  }
-
-  function renderNotes(): void {
-    notesList.replaceChildren();
-    const all = noteStore.list();
-    noteHint.hidden = all.length > 0;
-    for (const note of all) {
-      const item = element('li', 'note-row');
-      const where = element('button', 'note-where');
-      where.textContent = describeNoteAnchor(note);
-      where.title = 'Show me';
-      if (note.kind === 'place' && !supportsEdit) {
-        where.disabled = true;
-        where.title = 'Place notes need the Edit tools, and this Studio profile omits them.';
-      }
-      where.addEventListener('click', () => { showNote(note); });
-      const text = element('span', 'note-text');
-      text.textContent = note.text;
-      const remove = element('button', 'note-remove');
-      remove.textContent = '×';
-      remove.title = 'Remove this note';
-      remove.addEventListener('click', () => { harness.removeNote(note.id); });
-      item.append(where, text, remove);
-      notesList.appendChild(item);
-    }
-  }
-
-  function showNote(note: StudioNoteV1): void {
-    if (note.kind === 'moment') {
-      harness.pause();
-      syncPlayButton();
-      harness.seek(note.timeMs);
-      return;
-    }
-    if (!supportsEdit) return;
-    showTab('edit');
-    if (layer !== note.voxel.y) {
-      layer = note.voxel.y;
-      buildStack();
-      updateLayerLabel();
-      buildGrid();
-    }
-    const [sx, , sz] = harness.model().size;
-    const index = (sz - 1 - note.voxel.z) * sx + note.voxel.x;
-    const cell = grid.children.item(index);
-    if (cell instanceof HTMLElement) {
-      cell.classList.add('flash');
-      window.setTimeout(() => { cell.classList.remove('flash'); }, 1600);
-      cell.scrollIntoView({ block: 'nearest' });
-    }
-  }
-
-  function openNoteEditor(hint: string): void {
-    if (!supportsNotes) return;
-    showTab('notes');
-    noteEditor.hidden = false;
-    noteHint.hidden = true;
-    noteInput.placeholder = hint;
-    noteInput.focus();
-  }
-
-  function closeNoteEditor(): void {
-    pending = null;
-    armedForPlace = false;
-    pinPlaceButton.classList.remove('armed');
-    noteEditor.hidden = true;
-    noteInput.value = '';
-    positionRings();
-    renderNotes();
-  }
-
-  // ---- editors ----
-  function buildSwatches(): void {
-    const model = harness.model();
-    swatches.replaceChildren();
-    model.palette.forEach((color, index) => {
-      const swatch = element('button', 'swatch');
-      swatch.style.background = index === 0 ? 'transparent' : rgbHex(color);
-      swatch.textContent = index === 0 ? '∅' : '';
-      swatch.title = index === 0 ? 'Empty (erase)' : `Colour ${String(index)}`;
-      swatch.setAttribute('aria-pressed', String(index === selectedSlot));
-      swatch.addEventListener('click', () => {
-        selectedSlot = index;
-        if (index > 0) colorInput.value = rgbHex(color);
-        buildSwatches();
-      });
-      swatches.appendChild(swatch);
-    });
-    const add = element('button', 'swatch add');
-    add.textContent = '+';
-    add.title = 'Add a colour';
-    add.addEventListener('click', () => {
-      selectedSlot = harness.addColor(hexRgb(colorInput.value)).paletteIndex;
-    });
-    swatches.appendChild(add);
-  }
-
-  function updateLayerLabel(): void {
-    const model = harness.model();
-    const [sx, sy, sz] = model.size;
-    let filled = 0;
-    for (let x = 0; x < sx; x += 1) {
-      for (let z = 0; z < sz; z += 1) {
-        if ((model.voxels[voxelIndex(model, x, layer, z)] ?? 0) !== 0) filled += 1;
-      }
-    }
-    const ground = layer === 0 ? ', the ground' : '';
-    layerLabel.textContent =
-      `Editing floor ${String(layer + 1)} of ${String(sy)}${ground} · `
-      + `${String(filled)} of ${String(sx * sz)} squares filled`;
-  }
-
-  function buildStack(): void {
-    const model = harness.model();
-    const [sx, sy, sz] = model.size;
-    stack.replaceChildren();
-    for (let y = sy - 1; y >= 0; y -= 1) {
-      const row = element('button', 'floor');
-      row.setAttribute('aria-current', String(y === layer));
-      const mini = element('div', 'mini');
-      mini.style.gridTemplateColumns = `repeat(${String(sx)}, 1fr)`;
-      let filled = 0;
-      for (let z = sz - 1; z >= 0; z -= 1) {
-        for (let x = 0; x < sx; x += 1) {
-          const slot = model.voxels[voxelIndex(model, x, y, z)] ?? 0;
-          if (slot !== 0) filled += 1;
-          const dot = element('i');
-          dot.style.background = slot === 0
-            ? 'transparent'
-            : rgbHex(model.palette[slot] ?? { r: 0, g: 0, b: 0 });
-          mini.appendChild(dot);
-        }
-      }
-      const tag = element('span');
-      tag.textContent = filled === 0 ? `${String(y + 1)} · empty` : String(y + 1);
-      row.append(tag, mini);
-      row.addEventListener('click', () => {
-        layer = y;
-        buildStack();
-        updateLayerLabel();
-        buildGrid();
-      });
-      stack.appendChild(row);
-    }
-  }
-
-  function buildGrid(): void {
-    const model = harness.model();
-    const [sx, , sz] = model.size;
-    grid.replaceChildren();
-    grid.style.gridTemplateColumns = `repeat(${String(sx)}, 1fr)`;
-    for (let z = sz - 1; z >= 0; z -= 1) {
-      for (let x = 0; x < sx; x += 1) {
-        const slot = model.voxels[voxelIndex(model, x, layer, z)] ?? 0;
-        const cell = element('button', 'cell');
-        cell.style.background = slot === 0 ? 'transparent' : rgbHex(
-          model.palette[slot] ?? { r: 0, g: 0, b: 0 },
-        );
-        cell.title = slot === 0
-          ? `Empty · floor ${String(layer + 1)}`
-          : `Colour ${String(slot)} · floor ${String(layer + 1)}`;
-        cell.addEventListener('click', () => {
-          if (armedForPlace) {
-            pending = { kind: 'place', x, y: layer, z };
-            armedForPlace = false;
-            pinPlaceButton.classList.remove('armed');
-            openNoteEditor(`Floor ${String(layer + 1)}, square ${String(x)},${String(z)} — say what should change…`);
-            return;
-          }
-          harness.paint(x, layer, z, selectedSlot);
-        });
-        grid.appendChild(cell);
-      }
-    }
-  }
-
-  // ---- the shelf ----
-  const shelf = element('div', 'rail-body');
-  const folded = new Set<string>();
-  function buildShelf(): void {
-    shelf.replaceChildren();
-    const currentId = harness.model().id;
-    for (const section of harness.shelf()) {
-      const isFolded = folded.has(section.name);
-      const head = element('button', 'section-head');
-      head.textContent = `${isFolded ? '▸' : '▾'} ${section.name}`;
-      head.setAttribute('aria-expanded', String(!isFolded));
-      head.setAttribute('aria-label', section.name);
-      head.addEventListener('click', () => {
-        if (folded.has(section.name)) folded.delete(section.name);
-        else folded.add(section.name);
-        buildShelf();
-      });
-      shelf.appendChild(head);
-      if (isFolded) continue;
-      for (const entry of section.models) {
-        const row = element('button', 'model-row');
-        row.classList.toggle('active', entry.id === currentId);
-        const label = element('span');
-        label.textContent = entry.label;
-        row.appendChild(label);
-        row.addEventListener('click', () => {
-          harness.openFromShelf(entry.id);
-          showTab(harness.buildSteps().length > 0 ? 'build' : 'examine');
-        });
-        shelf.appendChild(row);
-      }
-    }
-    const note = element('p', 'railnote');
-    note.textContent =
-      'One studio per game, each with its own shelf. This one belongs to the engine.';
-    shelf.appendChild(note);
   }
 
   // ---- refresh ----
@@ -669,14 +355,8 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
     // one from the shelf must not leave the previous model's steps sitting
     // there looking current.
     construction.refresh();
-    player.setPeriod(model.motion.periodMs, performance.now());
-    syncPlayButton();
-    const period = player.periodMs;
-    playButton.disabled = period <= 0;
-    stepBack.disabled = period <= 0;
-    stepForward.disabled = period <= 0;
-    timeline.disabled = period <= 0;
-    timeline.max = String(Math.max(period - 1, 0));
+    playerBar.applyPeriod(model.motion.periodMs);
+    playerBar.syncPlayButton();
     modelName.textContent = described.label;
     statusChip.textContent = described.state === 'running'
       ? 'drawing normally'
@@ -688,16 +368,7 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
     engineWarning.hidden = described.state === 'running';
     engineWarning.dataset.tone = 'bad';
     engineWarning.textContent = `Something is wrong underneath: the engine reports "${described.state}".`;
-    if (selectedSlot > 0) {
-      colorInput.value = rgbHex(model.palette[selectedSlot] ?? { r: 0, g: 0, b: 0 });
-    }
-    if (layer > model.size[1] - 1) layer = 0;
-    styleSelect.value = model.motion.rotationStyle === 'turn' ? 'turn' : 'swing';
-    periodInput.value = String(model.motion.periodMs);
-    phaseInput.value = String(Math.round((model.motion.phaseRadians * 180) / Math.PI));
-    for (const { spec, input } of amplitudeInputs) {
-      input.value = String(Math.round(model.motion[spec.kind][spec.axis] / spec.scale));
-    }
+    motionPanel.syncFromModel(model);
     lookSwitch.dataset.side = session.edges ? 'left' : 'right';
     lookSwitch.setAttribute('aria-checked', String(session.edges));
     edgesSide.classList.toggle('on', session.edges);
@@ -711,27 +382,14 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
     physicalView.setVisible(physicalOn);
     physToggle.classList.toggle('on', physicalOn);
     viewChip.textContent = describeOrbit(orbit);
-    buildSwatches();
-    buildStack();
-    updateLayerLabel();
-    buildGrid();
-    buildShelf();
-    renderDots();
+    editor.rebuild();
+    shelfPanel.rebuild();
+    playerBar.renderDots();
     sheetImage.hidden = true;
     verdict.dataset.tone = 'idle';
     verdict.textContent = '';
-    drawFrame(Math.min(lastShownMs, Math.max(period - 1, 0)));
+    drawFrame(Math.min(lastShownMs, Math.max(player.periodMs - 1, 0)));
   }
-
-  // ---- wiring: player ----
-  playButton.addEventListener('click', () => {
-    if (player.playing) harness.pause(); else harness.play();
-    syncPlayButton();
-  });
-  stepBack.addEventListener('click', () => { harness.step(-1); syncPlayButton(); });
-  stepForward.addEventListener('click', () => { harness.step(1); syncPlayButton(); });
-  speedSelect.addEventListener('change', () => { harness.setSpeed(Number(speedSelect.value)); });
-  timeline.addEventListener('input', () => { harness.seek(Number(timeline.value)); });
 
   // ---- wiring: stage (orbit vs pin) ----
   let dragging = false;
@@ -766,14 +424,14 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
     // A clean click is pointing at something seen; freeze that moment.
     if (player.playing) {
       harness.pause();
-      syncPlayButton();
+      playerBar.syncPlayButton();
     }
     const rect = canvas.getBoundingClientRect();
     const u = (event.clientX - rect.left) / rect.width;
     const v = (event.clientY - rect.top) / rect.height;
-    pending = { kind: 'moment', timeMs: player.timeAt(performance.now()), u, v };
+    state.pending = { kind: 'moment', timeMs: player.timeAt(performance.now()), u, v };
     positionRings();
-    openNoteEditor(`Pinned at ${String(Math.round(player.timeAt(performance.now())))} ms — say what you see…`);
+    notesPanel.openNoteEditor(`Pinned at ${String(Math.round(player.timeAt(performance.now())))} ms — say what you see…`);
   });
   canvas.addEventListener('wheel', (event) => {
     event.preventDefault();
@@ -819,66 +477,6 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
     return depthOn;
   }
 
-  // ---- wiring: notes and requests ----
-  pinPlaceButton.addEventListener('click', () => {
-    if (!supportsEdit) return;
-    armedForPlace = !armedForPlace;
-    pinPlaceButton.classList.toggle('armed', armedForPlace);
-    if (armedForPlace) {
-      showTab('edit');
-      noteHint.hidden = false;
-      noteHint.textContent = 'Now click a floor square in the Edit tab.';
-    } else {
-      noteHint.textContent = 'Pause and click the picture to pin a note to that moment.';
-    }
-  });
-  noteSave.addEventListener('click', () => {
-    if (!pending) return;
-    const text = noteInput.value;
-    try {
-      if (pending.kind === 'moment') {
-        harness.addMomentNote(pending.timeMs, { u: pending.u, v: pending.v }, text);
-      } else {
-        harness.addPlaceNote({ x: pending.x, y: pending.y, z: pending.z }, text);
-      }
-    } catch (error) {
-      noteInput.placeholder = String(error instanceof Error ? error.message : error);
-      noteInput.value = '';
-      return;
-    }
-    closeNoteEditor();
-  });
-  noteCancel.addEventListener('click', closeNoteEditor);
-  noteInput.addEventListener('keydown', (event) => {
-    if (event.key === 'Enter') noteSave.click();
-    if (event.key === 'Escape') closeNoteEditor();
-  });
-  sendButton.addEventListener('click', () => {
-    sendButton.disabled = true;
-    requestStatus.dataset.tone = 'idle';
-    requestStatus.textContent = 'Sending…';
-    void harness.sendRequest(requestBox.value).then((result) => {
-      sendButton.disabled = false;
-      if (result.ok) {
-        requestStatus.dataset.tone = 'ok';
-        requestStatus.textContent = `Saved as ${result.file}. An agent will pick it up; your notes stay until it does.`;
-        requestBox.value = '';
-      } else {
-        requestStatus.dataset.tone = 'bad';
-        requestStatus.textContent = result.reason;
-      }
-    }).catch((error: unknown) => {
-      sendButton.disabled = false;
-      requestStatus.dataset.tone = 'bad';
-      requestStatus.textContent = String(error);
-    });
-  });
-  requestShortcut.addEventListener('click', () => {
-    if (!supportsNotes) return;
-    showTab('notes');
-    requestBox.focus();
-  });
-
   // ---- wiring: examine ----
   sweepButton.addEventListener('click', () => {
     const summary = harness.sweep({ samplesPerPeriod: SWEEP_SAMPLES });
@@ -897,133 +495,25 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
     })();
   });
 
-  // ---- wiring: edit (open/copy/new) ----
-  openButton.addEventListener('click', () => {
-    if (!supportsEdit) return;
-    showTab('edit');
-    modelText.focus();
-    modelStatus.dataset.tone = 'idle';
-    modelStatus.textContent = 'Paste a model file below, then press "Open this model".';
-  });
-  const loadButton = element('button');
-  loadButton.textContent = 'Open this model';
-  loadButton.addEventListener('click', () => {
-    let parsed: unknown;
-    try {
-      parsed = JSON.parse(modelText.value);
-    } catch (error) {
-      modelStatus.dataset.tone = 'bad';
-      modelStatus.textContent = `That is not JSON: ${String(error)}`;
-      return;
-    }
-    const issues = harness.validate(parsed);
-    if (issues.length > 0) {
-      modelStatus.dataset.tone = 'bad';
-      modelStatus.textContent = issues.map((i) => `${i.path} ${i.message}`).join(' · ');
-      return;
-    }
-    harness.load(parsed as StudioModelV1);
-    modelStatus.dataset.tone = 'ok';
-    modelStatus.textContent = `Opened ${harness.model().label}.`;
-  });
-  copyButton.addEventListener('click', () => {
-    if (!supportsEdit) return;
-    showTab('edit');
-    modelText.value = JSON.stringify(harness.model(), null, 2);
-    modelText.select();
-    modelStatus.dataset.tone = 'idle';
-    modelStatus.textContent = 'The model is in the box, ready to copy or edit.';
-  });
-  newButton.addEventListener('click', () => {
-    if (!supportsEdit) return;
-    const size = Number(sizeInput.value);
-    harness.load({
-      schemaVersion: 'studio.voxel-model/1',
-      id: `studio:new-${String(size)}`,
-      label: `New ${String(size)} cube`,
-      seed: 1,
-      size: [size, size, size],
-      palette: [{ r: 0, g: 0, b: 0 }, { r: 150, g: 160, b: 175 }],
-      voxels: new Array<number>(size * size * size).fill(0),
-      motion: {
-        periodMs: 0,
-        phaseRadians: 0,
-        translation: [0, 0, 0],
-        rotationRadians: [0, 0, 0],
-        scale: [0, 0, 0],
-      },
-    });
-    showTab('edit');
-    modelStatus.dataset.tone = 'idle';
-    modelStatus.textContent = 'Empty model. Paint a floor to begin.';
-  });
-
-  // ---- wiring: motion ----
-  styleSelect.addEventListener('change', () => {
-    harness.animate({ rotationStyle: styleSelect.value === 'turn' ? 'turn' : 'swing' });
-  });
-  periodInput.addEventListener('input', () => { harness.animate({ periodMs: Number(periodInput.value) }); });
-  phaseInput.addEventListener('input', () => {
-    harness.animate({ phaseRadians: (Number(phaseInput.value) * Math.PI) / 180 });
-  });
-  colorInput.addEventListener('input', () => {
-    if (selectedSlot > 0) harness.recolor(selectedSlot, hexRgb(colorInput.value));
-  });
   const onDocumentKeyDown = (event: KeyboardEvent): void => {
     if (!(event.target instanceof Node) || !root.contains(event.target)) return;
-    if (event.key === 'Escape' && (pending || armedForPlace)) closeNoteEditor();
+    if (event.key === 'Escape' && (state.pending || state.armedForPlace)) notesPanel.closeNoteEditor();
     const typing = event.target instanceof HTMLInputElement
       || event.target instanceof HTMLTextAreaElement;
     if (typing) return;
-    if (event.key === 'ArrowLeft') { harness.step(-1); syncPlayButton(); }
-    if (event.key === 'ArrowRight') { harness.step(1); syncPlayButton(); }
+    if (event.key === 'ArrowLeft') { harness.step(-1); playerBar.syncPlayButton(); }
+    if (event.key === 'ArrowRight') { harness.step(1); playerBar.syncPlayButton(); }
   };
   // Registered with the other globals at the end of the mount, after nothing
   // can fail anymore, so a refused mount leaves the document untouched.
 
   // ---- assembly ----
   const grow = element('span', 'grow');
-  const railTitle = element('h2');
-  railTitle.textContent = "This studio's shelf";
-  const transport = element('div', 'transport');
-  transport.append(stepBack, playButton, stepForward, speedSelect);
 
   const examinePane = element('div', 'pane');
   const checkRow = element('div', 'row');
   checkRow.append(sweepButton, sheetButton);
   examinePane.append(motionText, modelLine, engineWarning, checkRow, verdict, sheetImage);
-
-  const editPane = element('div', 'pane');
-  const modelButtons = element('div', 'row');
-  modelButtons.append(loadButton);
-  editPane.append(
-    swatches,
-    labelled('Colour', colorInput, 'Recolours every voxel using this swatch.'),
-    stackHint, stack, layerLabel, grid,
-    labelled('New model size', sizeInput, 'Used by the New button in the top bar.'),
-    modelButtons, modelText, modelStatus,
-  );
-
-  const motionPane = element('div', 'pane');
-  motionPane.append(
-    labelled('Movement style', styleSelect,
-      'Swinging goes out and comes back; turning goes all the way around, using the Turn amounts as how far.'),
-    labelled('Period', periodInput, 'How long one full round trip takes. Zero is still.'),
-    labelled('Phase', phaseInput, 'Where in the cycle time zero starts.'),
-  );
-  let currentGroup = '';
-  for (const { spec, input } of amplitudeInputs) {
-    if (spec.group !== currentGroup) {
-      currentGroup = spec.group;
-      const head = element('p', 'grouphead');
-      head.textContent = spec.group;
-      motionPane.appendChild(head);
-    }
-    motionPane.append(labelled(`${spec.label} (${spec.unit})`, input));
-  }
-
-  const notesPane = element('div', 'pane');
-  notesPane.append(noteHint, noteEditor, notesList, pinPlaceButton, requestBox, sendButton, requestStatus);
 
   const shellOptions: ModelStudioShellOptionsV2 = {
     beforeSelect: (name) => {
@@ -1118,14 +608,14 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
     studioShell.regions.top.append(
       modelName, statusChip, grow, openButton, newButton, copyButton, requestShortcut,
     );
-    studioShell.regions.shelf.append(railTitle, shelf);
+    studioShell.regions.shelf.append(shelfPanel.heading, shelfPanel.body);
     studioShell.regions.stage.append(canvasWrap, viewChip, toggles, stageHint);
-    studioShell.regions.player.append(transport, timelineWrap, timeLabel);
+    studioShell.regions.player.append(playerBar.transport, playerBar.timelineWrap, playerBar.timeLabel);
     if (hasStudioTab('examine')) studioPanel('examine').append(...Array.from(examinePane.childNodes));
     if (hasStudioTab('build')) studioPanel('build').append(...Array.from(construction.element.childNodes));
-    if (hasStudioTab('edit')) studioPanel('edit').append(...Array.from(editPane.childNodes));
-    if (hasStudioTab('motion')) studioPanel('motion').append(...Array.from(motionPane.childNodes));
-    if (hasStudioTab('notes')) studioPanel('notes').append(...Array.from(notesPane.childNodes));
+    if (hasStudioTab('edit')) studioPanel('edit').append(...Array.from(editor.pane.childNodes));
+    if (hasStudioTab('motion')) studioPanel('motion').append(...Array.from(motionPanel.pane.childNodes));
+    if (hasStudioTab('notes')) studioPanel('notes').append(...Array.from(notesPanel.pane.childNodes));
 
     // A recipe-backed model opens on Build, whose first section is its recipe
     // parts list. Construction used to be hidden behind Examine on every open,
@@ -1135,7 +625,7 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
     } else {
       showTab(harness.buildSteps().length > 0 ? 'build' : 'examine');
     }
-    renderNotes();
+    notesPanel.renderNotes();
     refresh();
     // Sized once immediately and on every window resize, besides the frame
     // loop: the loop is throttled to nothing in background tabs, and the first
