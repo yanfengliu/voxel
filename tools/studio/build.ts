@@ -66,6 +66,14 @@ export interface BuildOptionsV1 {
    * face's colour reads once a light falls across it. Defaults to off.
    */
   readonly lit?: boolean;
+  /**
+   * Wireframe: hide the solid faces so only the stage's line overlay shows,
+   * giving a see-through look at the model's make-up. The engine has no line
+   * lane, so this only makes the material all but invisible; the studio draws
+   * the lines itself over the canvas. Outlines and the light are moot with no
+   * visible surface, so this wins over both. Defaults to off (solid).
+   */
+  readonly wireframe?: boolean;
 }
 
 export class ModelBuildError extends Error {
@@ -160,7 +168,10 @@ export function buildSnapshot(
   const revision = options.revision;
   const incarnation = options.incarnation ?? 1;
   const epoch = options.epoch ?? `epoch:${model.id}`;
-  const lit = options.lit === true;
+  const wireframe = options.wireframe === true;
+  // A visible surface would sit in front of the see-through wireframe, so
+  // wireframe overrides the light: an invisible surface has nothing to shade.
+  const lit = options.lit === true && !wireframe;
 
   // The model and the chunk disagree on byte order: the model stores
   // x + sx*(y + sy*z) — height in the middle — while the chunk reads
@@ -206,8 +217,10 @@ export function buildSnapshot(
   // go on. The line colour lives in the render palette only, one slot past the
   // model's own colours: it is presentation, not part of the model, so saving
   // or copying a model never carries it.
+  // No outlines when the surface is hidden for wireframe: they would only be
+  // invisible geometry. Otherwise it is the edges/game-look choice.
   const outlineSlot = model.palette.length;
-  const mesh = options.edges === false
+  const mesh = (options.edges === false || wireframe)
     ? { ...bare, paletteIndices: bare.paletteIndices }
     : addFaceOutlines(bare, { paletteIndex: outlineSlot });
 
@@ -295,8 +308,11 @@ export function buildSnapshot(
         shading: lit ? 'lambert' : 'unlit',
         color: { r: 255, g: 255, b: 255, a: 255 },
         vertexColors: true,
-        transparent: false,
-        opacity: 1,
+        // Wireframe hides the solid faces so only the studio's line overlay
+        // shows: a fully transparent surface, present for picking and metrics
+        // but invisible on the canvas.
+        transparent: wireframe,
+        opacity: wireframe ? 0 : 1,
         doubleSided: false,
         roughness: 1,
         metalness: 0,

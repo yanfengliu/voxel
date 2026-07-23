@@ -154,6 +154,13 @@ export interface VoxelStudioHarnessV1 {
   setLit(on: boolean): boolean;
   lit(): boolean;
   /**
+   * Wireframe on: the solid faces give way to a see-through line drawing of
+   * the model, so its make-up reads from every side at once. Off is the solid
+   * model. Defaults to off.
+   */
+  setWireframe(on: boolean): boolean;
+  wireframe(): boolean;
+  /**
    * The open model's compiled physical outlines — collider wireframes and
    * port crosses in grid coordinates. Empty when its shelf recipe carries
    * no physical sidecars, which is a valid state rather than an error.
@@ -263,6 +270,8 @@ export interface HarnessHostV1 {
   setEdges(on: boolean): boolean;
   /** Lights the model on/off; funneled through the app like edges, so the choice is remembered and the button refreshes. */
   setLit(on: boolean): boolean;
+  /** Wireframe on/off; funneled through the app so it also toggles the line overlay, remembers the choice, and refreshes the button. */
+  setWireframe(on: boolean): boolean;
   /** Shows or hides the stage's physical-outline layer; returns what shows. */
   setPhysicalOverlay(on: boolean): boolean;
   physicalOverlay(): boolean;
@@ -471,6 +480,8 @@ export function createStudioHarness(host: HarnessHostV1): VoxelStudioHarnessV1 {
     edges: () => host.session().edges,
     setLit: (on) => host.setLit(on),
     lit: () => host.session().lit,
+    setWireframe: (on) => host.setWireframe(on),
+    wireframe: () => host.session().wireframe,
     physicalShapes: () => shapesForOpenModel(),
     setPhysicalOverlay(on) {
       const available = shapesForOpenModel().length > 0;

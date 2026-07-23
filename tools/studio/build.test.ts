@@ -352,6 +352,41 @@ describe('building a model into a voxel snapshot', () => {
     world.dispose();
   });
 
+  it('hides the solid faces for wireframe so only the studio lines remain', () => {
+    // Wireframe draws over the canvas; the engine surface must get out of the
+    // way. A fully transparent material does that without removing the
+    // geometry, which picking and metrics still want.
+    const solid = material(buildSnapshot(model(), { revision: 1 }));
+    expect(solid.transparent).toBe(false);
+    expect(solid.opacity).toBe(1);
+    const wire = material(buildSnapshot(model(), { revision: 1, wireframe: true }));
+    expect(wire.transparent).toBe(true);
+    expect(wire.opacity).toBe(0);
+  });
+
+  it('drops the outline pass for wireframe, since invisible edges are wasted geometry', () => {
+    // With the surface hidden, the outline strips would be invisible geometry.
+    // The wireframe geometry is therefore the bare mesh, exactly the game look's.
+    const game = geometry(buildSnapshot(model(), { revision: 1, edges: false }));
+    const wire = geometry(buildSnapshot(model(), { revision: 1, wireframe: true }));
+    expect(wire.positions.length).toBe(game.positions.length);
+    // And far fewer vertices than the edged examining look, which adds strips.
+    const edged = geometry(buildSnapshot(model(), { revision: 1, edges: true }));
+    expect(wire.positions.length).toBeLessThan(edged.positions.length);
+  });
+
+  it('keeps the surface unlit under wireframe, because an invisible face cannot shade', () => {
+    // Wireframe wins over the light: there is no visible surface to shade, so
+    // asking for both must not leave a lambert material behind.
+    expect(material(buildSnapshot(model(), { revision: 1, wireframe: true, lit: true })).shading).toBe('unlit');
+  });
+
+  it('lets the engine accept a wireframe model', () => {
+    const world = new RenderWorld();
+    expect(world.acceptSnapshot(buildSnapshot(model(), { revision: 1, wireframe: true })).status).toBe('accepted');
+    world.dispose();
+  });
+
   it('counts what would actually be drawn', () => {
     expect(filledVoxelCount(createEmptyModel({ id: 'e', size: [2, 2, 2] }))).toBe(0);
     expect(filledVoxelCount(model())).toBe(2);

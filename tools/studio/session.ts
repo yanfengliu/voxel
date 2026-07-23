@@ -62,6 +62,11 @@ export interface StudioSessionOptionsV1 {
    * so the remembered look carries onto the next model. Defaults to off.
    */
   readonly lit?: boolean;
+  /**
+   * Open in wireframe (solid faces hidden) or solid. Seeded like `edges` so
+   * the remembered look carries onto the next model. Defaults to off (solid).
+   */
+  readonly wireframe?: boolean;
 }
 
 const DEFAULT_WIDTH = 320;
@@ -81,6 +86,7 @@ export class StudioSession {
   #disposed = false;
   #edges = true;
   #lit = false;
+  #wireframe = false;
 
   constructor(model: StudioModelV1, options: StudioSessionOptionsV1) {
     this.#model = model;
@@ -89,6 +95,7 @@ export class StudioSession {
     // flash the resting look for one frame first.
     this.#edges = options.edges ?? true;
     this.#lit = options.lit ?? false;
+    this.#wireframe = options.wireframe ?? false;
     this.#runtime = new ThreeRenderRuntime({
       canvas: options.canvas,
       width: options.width ?? DEFAULT_WIDTH,
@@ -228,6 +235,18 @@ export class StudioSession {
     return this.#lit;
   }
 
+  /** Wireframe on (solid faces hidden for the see-through look) or off. Redraws. */
+  setWireframe(on: boolean): void {
+    this.#assertLive();
+    if (this.#wireframe === on) return;
+    this.#wireframe = on;
+    this.#accept(this.#model);
+  }
+
+  get wireframe(): boolean {
+    return this.#wireframe;
+  }
+
   /**
    * Holds the picture still on a fixed middle, or releases it back to the
    * model's own. Used while watching a construction, where every stage is
@@ -310,6 +329,7 @@ export class StudioSession {
       epoch: `epoch:${model.id}`,
       edges: this.#edges,
       lit: this.#lit,
+      wireframe: this.#wireframe,
       ...(this.#frameCenter === null ? {} : { centerOn: this.#frameCenter }),
     }));
     if (result.status !== 'accepted') {

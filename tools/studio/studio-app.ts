@@ -29,6 +29,8 @@ import {
 } from './orbit.js';
 import { createPhysicalOverlayView } from './physical-overlay-view.js';
 import { StudioPlayer } from './player.js';
+import { createWireframeView } from './wireframe-view.js';
+import { modelWireframeSegmentsV1 } from './wireframe.js';
 import { StudioSession } from './session.js';
 import {
   browserViewPrefsStore,
@@ -133,7 +135,7 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
   const viewStore = options.viewStore ?? browserViewPrefsStore();
   const view = readViewPrefs(viewStore);
   const persistView = (): void => {
-    writeViewPrefs(viewStore, { depth: depthOn, edges: session.edges, lit: session.lit, wireframe: view.wireframe });
+    writeViewPrefs(viewStore, { depth: depthOn, edges: session.edges, lit: session.lit, wireframe: session.wireframe });
   };
   const configuredCoreTabs = options.shellProfileV2?.coreTabs;
   const supportsCoreTab = (tab: ModelStudioTabId): boolean =>
@@ -159,8 +161,11 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
   // annotate the model, and a pinned note still reads over everything.
   const physicalView = createPhysicalOverlayView();
   let physicalOn = false;
+  // The wireframe stands in for the solid model when the surface is hidden, so
+  // it sits just over the canvas, under the collider outlines and note rings.
+  const wireframeView = createWireframeView();
   const canvasWrap = element('div', 'canvas-wrap');
-  canvasWrap.append(canvas, physicalView.element, marks);
+  canvasWrap.append(canvas, wireframeView.element, physicalView.element, marks);
   const viewChip = element('span', 'viewchip');
   viewChip.title = "Sides are the model's own, like a person facing you: "
     + 'their left appears on your right.';
@@ -191,12 +196,16 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
   lightToggle.title = 'Lights the model so each face shades by how it faces the light — '
     + 'the way to see a colour change across a surface. Off is the flat, honest '
     + "look at the model's own colours.";
+  const wireframeToggle = element('button', 'toggle');
+  wireframeToggle.textContent = 'wireframe';
+  wireframeToggle.title = 'Hides the solid faces and draws the model as lines, so you '
+    + 'can see through it to how it is put together, front and back at once.';
   const physToggle = element('button', 'toggle');
   physToggle.textContent = 'colliders';
   physToggle.title = 'Outlines the shapes this model blocks and its attachment '
     + 'points, from its saved physical data. The picture itself is unchanged.';
   const toggles = element('div', 'toggles');
-  toggles.append(lookSwitch, depthToggle, lightToggle, physToggle);
+  toggles.append(lookSwitch, depthToggle, lightToggle, wireframeToggle, physToggle);
 
   const flatCamera = new OrthographicCamera();
   const depthCamera = new PerspectiveCamera();
@@ -218,7 +227,7 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
   applyOrbit(camera, orbit, viewW, viewH);
 
   let session = new StudioSession(firstModel, {
-    canvas, width: viewW, height: viewH, camera, edges: view.edges, lit: view.lit,
+    canvas, width: viewW, height: viewH, camera, edges: view.edges, lit: view.lit, wireframe: view.wireframe,
   });
   const player = new StudioPlayer(session.model.motion.periodMs);
   const noteStore = new NoteStore();
@@ -269,9 +278,11 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
       // resting look, which is the whole of "remember my last choice".
       const carriedEdges = session.edges;
       const carriedLit = session.lit;
+      const carriedWireframe = session.wireframe;
       session.dispose();
       session = new StudioSession(model, {
-        canvas, width: viewW, height: viewH, camera, edges: carriedEdges, lit: carriedLit,
+        canvas, width: viewW, height: viewH, camera,
+        edges: carriedEdges, lit: carriedLit, wireframe: carriedWireframe,
       });
       // Opening a model fits the view to it, because a shelf holds a game's
       // whole asset set and those are not one size. Only on open: an edit
@@ -312,6 +323,13 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
       persistView();
       refresh();
       return session.lit;
+    },
+    setWireframe(on: boolean): boolean {
+      session.setWireframe(on);
+      persistView();
+      // refresh owns the overlay's lines and visibility, from session.wireframe.
+      refresh();
+      return session.wireframe;
     },
     setPhysicalOverlay: setPhysicalOverlayOn,
     physicalOverlay: () => physicalOn,
@@ -366,13 +384,11 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
     session.showAt(timeMs);
     playerBar.showTime(timeMs);
     positionRings();
-    physicalView.draw(
-      camera,
-      session.frameMiddle(),
-      viewW,
-      viewH,
-      `${String(orbit.yawDegrees)}:${String(orbit.pitchDegrees)}:${String(orbit.viewHeight)}:${depthOn ? 'depth' : 'flat'}`,
-    );
+    const middle = session.frameMiddle();
+    const viewSignature =
+      `${String(orbit.yawDegrees)}:${String(orbit.pitchDegrees)}:${String(orbit.viewHeight)}:${depthOn ? 'depth' : 'flat'}`;
+    physicalView.draw(camera, middle, viewW, viewH, viewSignature);
+    wireframeView.draw(camera, middle, viewW, viewH, viewSignature);
   }
 
   function positionRings(): void {
@@ -421,6 +437,12 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
     gameSide.classList.toggle('on', !session.edges);
     depthToggle.classList.toggle('on', depthOn);
     lightToggle.classList.toggle('on', session.lit);
+    // The wireframe follows the open model: its lines are recomputed while it
+    // is on, and cleared on the next draw once it is off. Computed only when
+    // shown, so the solid path pays nothing for it.
+    if (session.wireframe) wireframeView.setSegments(modelWireframeSegmentsV1(harness.model()));
+    wireframeView.setVisible(session.wireframe);
+    wireframeToggle.classList.toggle('on', session.wireframe);
     // The outlines follow the open model: present only where its recipe
     // carries physical data, and never left on from a previous model.
     physicalView.setSegments(harness.physicalShapes());
@@ -489,6 +511,7 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
   lookSwitch.addEventListener('click', () => { harness.setEdges(!session.edges); });
   depthToggle.addEventListener('click', () => { setDepth(!depthOn); });
   lightToggle.addEventListener('click', () => { harness.setLit(!session.lit); });
+  wireframeToggle.addEventListener('click', () => { harness.setWireframe(!session.wireframe); });
   physToggle.addEventListener('click', () => { harness.setPhysicalOverlay(!physicalOn); });
 
   /**
@@ -516,8 +539,9 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
     const model = session.model;
     const edges = session.edges;
     const lit = session.lit;
+    const wireframe = session.wireframe;
     session.dispose();
-    session = new StudioSession(model, { canvas, width: viewW, height: viewH, camera, edges, lit });
+    session = new StudioSession(model, { canvas, width: viewW, height: viewH, camera, edges, lit, wireframe });
     refresh();
     persistView();
     return depthOn;
@@ -684,6 +708,7 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
     // must not cost the host whatever it was showing in its own element.
     for (const resource of [...acquired].reverse()) resource.dispose();
     physicalView.dispose();
+    wireframeView.dispose();
     session.dispose();
     if (rootWritten) root.replaceChildren();
     throw error;
@@ -707,6 +732,7 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
       document.removeEventListener('keydown', onDocumentKeyDown);
       window.removeEventListener('resize', followStage);
       physicalView.dispose();
+      wireframeView.dispose();
       session.dispose();
       if (options.publishHarness !== false && window.voxelStudio === harness) {
         delete window.voxelStudio;
