@@ -68,6 +68,20 @@ export interface ShelfSectionV1 {
 
 export interface StudioCatalogV1 {
   readonly sections: readonly ShelfSectionV1[];
+  /**
+   * The game's whole parts shelf, so the studio can list every part a person
+   * or agent may build with — not only the ones some model already uses.
+   * Omitted, the studio falls back to the union of what the shelf models call,
+   * which finds the used parts but misses any a game has published for reuse
+   * before its first caller.
+   */
+  readonly parts?: PartShelfV1;
+  /**
+   * The game's whole recipe book, so the studio can list every reusable recipe
+   * for browsing and placing. Omitted, the studio falls back to the union of
+   * what the shelf models place.
+   */
+  readonly recipes?: RecipeBookV1;
 }
 
 /** A small model that is obviously a model, so the studio never opens on noise. */
@@ -245,5 +259,9 @@ export function createStudioCatalog(): StudioCatalogV1 {
         ],
       },
     ],
+    // The whole palette, declared so discovery lists every part and reusable
+    // recipe by name, not only the ones a shelf model already happens to call.
+    parts: createStudioParts(),
+    recipes: createStudioRecipeBook(),
   };
 }

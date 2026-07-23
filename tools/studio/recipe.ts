@@ -158,6 +158,10 @@ export interface RecipeV1 {
    * kind of thing at different grains.
    */
   readonly voxelSize?: number;
+  /** One line on what this recipe makes, for browsing. Optional. */
+  readonly summary?: string;
+  /** Free tags for search, e.g. ['furniture', 'seating']. Optional. */
+  readonly tags?: readonly string[];
   /** One name per palette slot; `roles[0]` is always 'empty'. Parts paint
    * names, the palette gives the names colours: shared bones, per-game skin. */
   readonly roles: readonly string[];
@@ -242,6 +246,14 @@ export function validateRecipeV1(value: unknown): readonly GenomeIssueV1[] {
     voxels: [],
     motion: recipe.motion,
   }).filter((issue) => !issue.path.startsWith('$.voxels'));
+
+  if (recipe.summary !== undefined && typeof recipe.summary !== 'string') {
+    issues.push({ path: '$.summary', message: 'Expected a string, or omit it.' });
+  }
+  if (recipe.tags !== undefined
+    && (!Array.isArray(recipe.tags) || !recipe.tags.every((tag) => typeof tag === 'string'))) {
+    issues.push({ path: '$.tags', message: 'Expected an array of strings, or omit it.' });
+  }
 
   const paletteLength = Array.isArray(recipe.palette) ? recipe.palette.length : 0;
   const roles: unknown = recipe.roles;

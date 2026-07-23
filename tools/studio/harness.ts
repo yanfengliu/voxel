@@ -9,6 +9,16 @@ import {
 } from './edit.js';
 import { validateModelV1, type ModelMotionV1, type StudioModelV1 } from './model.js';
 import { modelCenterV1 } from './build.js';
+import type { PartInfoV1 } from './part-definition.js';
+import {
+  catalogPartsV1,
+  catalogRecipesV1,
+  partInfoListV1,
+  recipeInfoListV1,
+  searchPartInfoV1,
+  searchRecipeInfoV1,
+  type RecipeInfoV1,
+} from './studio-library.js';
 import {
   buildRecipeStages,
   listRecipeComponentsV1,
@@ -188,6 +198,24 @@ export interface VoxelStudioHarnessV1 {
   openFromShelf(id: string): ReturnType<StudioSession['describe']>;
 
   /**
+   * Every part this studio offers, as discovery info: name, title, summary,
+   * category, tags, its settings schema, and presets. This is the palette a
+   * model is built from — distinct from `buildParts`, which is only what the
+   * open model already uses.
+   */
+  availableParts(): readonly PartInfoV1[];
+  /** Those parts filtered by a search over name, title, summary, category, and tags. */
+  findParts(query: string): readonly PartInfoV1[];
+  /**
+   * Every reusable recipe this studio offers, as discovery info: id, label,
+   * summary, tags, grid size, voxel size, and the parts and sub-recipes it
+   * places. Distinct from the shelf, which lists the models to open.
+   */
+  availableRecipes(): readonly RecipeInfoV1[];
+  /** Those recipes filtered by a search over id, label, summary, tags, and what they place. */
+  findRecipes(query: string): readonly RecipeInfoV1[];
+
+  /**
    * How the open model is made, one entry per step of its recipe, starting
    * from the empty grid. Empty only when no catalog model is open; every shelf
    * model is required to provide a recipe.
@@ -324,6 +352,14 @@ export function createStudioHarness(host: HarnessHostV1): VoxelStudioHarnessV1 {
   let cachedRecipe: { readonly id: string; readonly source: ShelfRecipeV1 | null } | null = null;
   let cachedShapes: { readonly id: string; readonly shapes: readonly PhysicalOverlaySegmentV1[] } | null = null;
   let cachedPartCells: { readonly id: string; readonly cells: readonly (readonly number[])[] } | null = null;
+  // The library is the game's whole palette; the catalog is fixed for a mount,
+  // so it is computed once and kept.
+  let libraryPartsCache: readonly PartInfoV1[] | null = null;
+  let libraryRecipesCache: readonly RecipeInfoV1[] | null = null;
+  const availableParts = (): readonly PartInfoV1[] =>
+    (libraryPartsCache ??= partInfoListV1(catalogPartsV1(host.catalog())));
+  const availableRecipes = (): readonly RecipeInfoV1[] =>
+    (libraryRecipesCache ??= recipeInfoListV1(catalogRecipesV1(host.catalog())));
 
   function recipeForOpenModel(): ShelfRecipeV1 | null {
     const id = restoreModel?.id ?? host.session().model.id;
@@ -558,6 +594,10 @@ export function createStudioHarness(host: HarnessHostV1): VoxelStudioHarnessV1 {
       }
       throw new Error(`No model on the shelf is called ${id}.`);
     },
+    availableParts,
+    findParts: (query) => searchPartInfoV1(availableParts(), query),
+    availableRecipes,
+    findRecipes: (query) => searchRecipeInfoV1(availableRecipes(), query),
 
     buildSteps: () => stagesForOpenModel().map((stage) => ({
       index: stage.index,
