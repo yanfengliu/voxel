@@ -203,8 +203,11 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
   const gridView = createWireframeView('grid-marks');
   let gridOn = view.grid;
   const canvasWrap = element('div', 'canvas-wrap');
+  // Order is paint order, so the ground grid goes first (behind the canvas,
+  // occluded by the solid model) while the wireframe, collider, part-highlight,
+  // and note layers go after it (over the model, where they belong).
   canvasWrap.append(
-    canvas, gridView.element, wireframeView.element, physicalView.element, highlightView.element, marks,
+    gridView.element, canvas, wireframeView.element, physicalView.element, highlightView.element, marks,
   );
   const viewChip = element('span', 'viewchip');
   viewChip.title = "Sides are the model's own, like a person facing you: "
