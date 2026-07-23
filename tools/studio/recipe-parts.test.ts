@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { createStudioParts } from './parts.js';
-import { listRecipePartsV1, mixSeed, type PartV1 } from './recipe.js';
+import { listRecipePartsV1, listRecipePartsWithCellsV1, mixSeed, type PartV1 } from './recipe.js';
 import {
   createChairRecipe,
   createDiningSetRecipe,
@@ -66,6 +66,50 @@ describe('recipe parts list', () => {
       { count: 1, size: [1, 1, 1] },
       { count: 1, size: [2, 1, 1] },
     ]);
+  });
+
+  it('reports the exact grid cells each top-level part placed, aligned with the parts', () => {
+    // Two hand-placed blocks in a 4×1×1 row, kept apart as separate line items
+    // by their notes. The cells a highlight would light must be exactly the
+    // cells each block filled, and in the same order as the parts list.
+    const base = createChairRecipe();
+    const { parts, cells } = listRecipePartsWithCellsV1({
+      ...base,
+      id: 'test:part-cells',
+      label: 'Part cells',
+      size: [4, 1, 1],
+      steps: [
+        { kind: 'voxels', at: [0, 0, 0], size: [1, 1, 1], voxels: [1], note: 'left block' },
+        { kind: 'voxels', at: [3, 0, 0], size: [1, 1, 1], voxels: [1], note: 'right block' },
+      ],
+    }, createStudioParts());
+
+    expect(parts.map((part) => part.summary)).toEqual(['left block', 'right block']);
+    expect(cells).toHaveLength(2);
+    // Grid index in a 4×1×1 row is just x.
+    expect([...cells[0] ?? []]).toEqual([0]);
+    expect([...cells[1] ?? []]).toEqual([3]);
+  });
+
+  it('counts a mirror copy among the mirrored part cells', () => {
+    // One block, then a mirror: the part is one line item at count 2, and its
+    // cells cover both the original and the reflected copy, so a highlight
+    // lights the whole symmetric part rather than half of it.
+    const base = createChairRecipe();
+    const { parts, cells } = listRecipePartsWithCellsV1({
+      ...base,
+      id: 'test:mirror-cells',
+      label: 'Mirror cells',
+      size: [4, 1, 1],
+      steps: [
+        { kind: 'voxels', at: [0, 0, 0], size: [1, 1, 1], voxels: [1], note: 'block' },
+        { kind: 'mirror', axis: 'x' },
+      ],
+    }, createStudioParts());
+
+    expect(parts).toHaveLength(1);
+    expect(parts[0]?.count).toBe(2);
+    expect([...cells[0] ?? []].sort((a, b) => a - b)).toEqual([0, 3]);
   });
 
   it('refuses a parent-level part that would overwrite a reusable child', () => {

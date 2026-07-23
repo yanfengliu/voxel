@@ -34,15 +34,23 @@ type FaceCorners = readonly [
   readonly [number, number, number],
 ];
 
-export function modelWireframeSegmentsV1(model: StudioModelV1): readonly WireSegmentV1[] {
-  const [sx, sy, sz] = model.size;
-  const filled = (x: number, y: number, z: number): boolean => {
-    if (x < 0 || y < 0 || z < 0 || x >= sx || y >= sy || z >= sz) return false;
-    return (model.voxels[x + sx * (y + sy * z)] ?? 0) !== 0;
-  };
+/** Whether a grid cell belongs to the region being outlined. */
+type CellPredicate = (x: number, y: number, z: number) => boolean;
 
-  // Keyed by the unordered endpoint pair, so a boundary shared by two exposed
-  // faces is stored once rather than drawn twice.
+/**
+ * The boundary of a region: every unit face where an included cell meets a
+ * cell that is not included (empty, out of bounds, or a different region),
+ * as deduplicated edges. The whole-model wireframe and a single part's outline
+ * are the same operation over different predicates, which is why they share
+ * this — the only thing that changes is what counts as "inside".
+ */
+function faceBoundarySegments(
+  size: readonly [number, number, number],
+  include: CellPredicate,
+): readonly WireSegmentV1[] {
+  const [sx, sy, sz] = size;
+  // Keyed by the unordered endpoint pair, so a boundary shared by two faces of
+  // the region is stored once rather than drawn twice.
   const edges = new Map<string, WireSegmentV1>();
   const point = (p: readonly [number, number, number]): string => `${String(p[0])},${String(p[1])},${String(p[2])}`;
   const addEdge = (a: readonly [number, number, number], b: readonly [number, number, number]): void => {
@@ -63,17 +71,45 @@ export function modelWireframeSegmentsV1(model: StudioModelV1): readonly WireSeg
   for (let z = 0; z < sz; z += 1) {
     for (let y = 0; y < sy; y += 1) {
       for (let x = 0; x < sx; x += 1) {
-        if (!filled(x, y, z)) continue;
+        if (!include(x, y, z)) continue;
         // A cell spans [x,x+1] × [y,y+1] × [z,z+1]. Each face is drawn only
-        // where it meets empty space, matching what the mesher would surface.
-        if (!filled(x - 1, y, z)) addFace([[x, y, z], [x, y + 1, z], [x, y + 1, z + 1], [x, y, z + 1]]);
-        if (!filled(x + 1, y, z)) addFace([[x + 1, y, z], [x + 1, y + 1, z], [x + 1, y + 1, z + 1], [x + 1, y, z + 1]]);
-        if (!filled(x, y - 1, z)) addFace([[x, y, z], [x + 1, y, z], [x + 1, y, z + 1], [x, y, z + 1]]);
-        if (!filled(x, y + 1, z)) addFace([[x, y + 1, z], [x + 1, y + 1, z], [x + 1, y + 1, z + 1], [x, y + 1, z + 1]]);
-        if (!filled(x, y, z - 1)) addFace([[x, y, z], [x + 1, y, z], [x + 1, y + 1, z], [x, y + 1, z]]);
-        if (!filled(x, y, z + 1)) addFace([[x, y, z + 1], [x + 1, y, z + 1], [x + 1, y + 1, z + 1], [x, y + 1, z + 1]]);
+        // where it meets a cell outside the region.
+        if (!include(x - 1, y, z)) addFace([[x, y, z], [x, y + 1, z], [x, y + 1, z + 1], [x, y, z + 1]]);
+        if (!include(x + 1, y, z)) addFace([[x + 1, y, z], [x + 1, y + 1, z], [x + 1, y + 1, z + 1], [x + 1, y, z + 1]]);
+        if (!include(x, y - 1, z)) addFace([[x, y, z], [x + 1, y, z], [x + 1, y, z + 1], [x, y, z + 1]]);
+        if (!include(x, y + 1, z)) addFace([[x, y + 1, z], [x + 1, y + 1, z], [x + 1, y + 1, z + 1], [x, y + 1, z + 1]]);
+        if (!include(x, y, z - 1)) addFace([[x, y, z], [x + 1, y, z], [x + 1, y + 1, z], [x, y + 1, z]]);
+        if (!include(x, y, z + 1)) addFace([[x, y, z + 1], [x + 1, y, z + 1], [x + 1, y + 1, z + 1], [x, y + 1, z + 1]]);
       }
     }
   }
   return [...edges.values()];
+}
+
+export function modelWireframeSegmentsV1(model: StudioModelV1): readonly WireSegmentV1[] {
+  const [sx, sy, sz] = model.size;
+  return faceBoundarySegments(model.size, (x, y, z) => {
+    if (x < 0 || y < 0 || z < 0 || x >= sx || y >= sy || z >= sz) return false;
+    return (model.voxels[x + sx * (y + sy * z)] ?? 0) !== 0;
+  });
+}
+
+/**
+ * The outline of one part: the boundary of a chosen set of grid cells, so a
+ * clicked part can be lit up where it sits in the model. The cells are flat
+ * `x + sx*(y + sy*z)` indices into the model's grid, the same index a part's
+ * provenance is reported in. A cell abutting another part still counts as
+ * boundary, so the outline hugs the part rather than dissolving into its
+ * neighbours.
+ */
+export function cellSubsetOutlineSegmentsV1(
+  model: StudioModelV1,
+  cells: ReadonlySet<number>,
+): readonly WireSegmentV1[] {
+  if (cells.size === 0) return [];
+  const [sx, sy, sz] = model.size;
+  return faceBoundarySegments(model.size, (x, y, z) => {
+    if (x < 0 || y < 0 || z < 0 || x >= sx || y >= sy || z >= sz) return false;
+    return cells.has(x + sx * (y + sy * z));
+  });
 }

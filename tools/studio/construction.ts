@@ -23,6 +23,12 @@ export interface ConstructionPanelV1 {
   readonly element: HTMLElement;
   /** Rebuilds the step list; call when the open model changes. */
   refresh(): void;
+  /**
+   * Re-marks the selected part row from the harness, without rebuilding the
+   * list. Called when a highlight changes, so clicking a part with children
+   * lights it without the list rebuilding out from under the expand toggle.
+   */
+  syncHighlight(): void;
   /** Stops playing and restores the finished model. */
   leave(): void;
   dispose(): void;
@@ -231,6 +237,22 @@ export function createConstructionPanel(options: {
       line.appendChild(open);
     }
 
+    // Only top-level parts are locatable: a nested child lives in its own
+    // sub-grid, which the model's cells do not address. Clicking the row lights
+    // the part up in the picture and marks it here; clicking it again clears it.
+    // The Open button and a details toggle keep their own jobs.
+    if (path.length === 1) {
+      const topIndex = (path[0] ?? 1) - 1;
+      line.classList.add('selectable');
+      line.dataset.partIndex = String(topIndex);
+      line.title = 'Click to light this part up in the model';
+      if (harness.highlightedPart() === topIndex) line.classList.add('selected');
+      line.addEventListener('click', (event) => {
+        if (event.target instanceof HTMLButtonElement) return;
+        harness.highlightPart(harness.highlightedPart() === topIndex ? null : topIndex);
+      });
+    }
+
     if (branch) {
       branch.open = expandedComponents.has(pathLabel);
       branch.addEventListener('toggle', () => {
@@ -318,11 +340,19 @@ export function createConstructionPanel(options: {
     }
   }
 
+  function syncHighlight(): void {
+    const selected = harness.highlightedPart();
+    for (const line of Array.from(componentsList.querySelectorAll<HTMLElement>('.component-line.selectable'))) {
+      line.classList.toggle('selected', Number(line.dataset.partIndex) === selected);
+    }
+  }
+
   refresh();
 
   return {
     element: pane,
     refresh,
+    syncHighlight,
     leave() {
       stopPlaying();
       if (harness.shownBuildStep() !== null) showFinished();

@@ -10,12 +10,14 @@ import {
   describeRecipeStepV1,
   listRecipeComponentsV1,
   listRecipePartsInternalV1,
+  listRecipePartsWithCellsInternalV1,
   type RecipeComponentV1,
+  type RecipePartsWithCellsV1,
   type RecipePartV1,
 } from './recipe-inspection.js';
 
 export { describeRecipeStepV1, listRecipeComponentsV1 };
-export type { RecipeComponentV1, RecipePartV1 };
+export type { RecipeComponentV1, RecipePartsWithCellsV1, RecipePartV1 };
 
 /**
  * A recipe is how a model was made: an ordered list of steps — hand-placed
@@ -947,6 +949,18 @@ export function listRecipePartsV1(
   book: RecipeBookV1 = {},
 ): readonly RecipePartV1[] {
   return listRecipePartsInternalV1(recipe, parts, book, { buildRecipe, mixSeed });
+}
+
+/**
+ * The parts list plus, for each top-level part, the exact grid cells it placed
+ * — so the studio can light up a clicked part where it sits in the model.
+ */
+export function listRecipePartsWithCellsV1(
+  recipe: RecipeV1,
+  parts: PartShelfV1,
+  book: RecipeBookV1 = {},
+): RecipePartsWithCellsV1 {
+  return listRecipePartsWithCellsInternalV1(recipe, parts, book, { buildRecipe, mixSeed });
 }
 
 function countFilledInternal(model: StudioModelV1): number {

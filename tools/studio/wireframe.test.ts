@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import { addPaletteColor, createEmptyModel, setVoxel } from './edit.js';
 import type { StudioModelV1 } from './model.js';
-import { modelWireframeSegmentsV1 } from './wireframe.js';
+import { cellSubsetOutlineSegmentsV1, modelWireframeSegmentsV1 } from './wireframe.js';
 
 /** A grid with one colour, ready to fill. */
 function blank(size: [number, number, number]): StudioModelV1 {
@@ -51,5 +51,39 @@ describe('a model as a wireframe', () => {
     const a = modelWireframeSegmentsV1(model);
     const b = modelWireframeSegmentsV1(model);
     expect(b).toEqual(a);
+  });
+});
+
+describe('outlining a subset of cells for a part highlight', () => {
+  it('outlines nothing for an empty selection', () => {
+    const model = setVoxel(blank([3, 3, 3]), 1, 1, 1, 1);
+    expect(cellSubsetOutlineSegmentsV1(model, new Set())).toEqual([]);
+  });
+
+  it('wraps one chosen cell in a full cube even when a neighbour is filled', () => {
+    // A 2×1×1 box, both cells filled. Outlining only cell 0 must still draw its
+    // whole cube: the face it shares with cell 1 is a boundary of the *subset*,
+    // because cell 1 is not chosen. This is what makes a highlight hug the part
+    // rather than dissolve where it meets another part.
+    let model = setVoxel(blank([2, 1, 1]), 0, 0, 0, 1);
+    model = setVoxel(model, 1, 0, 0, 1);
+    expect(cellSubsetOutlineSegmentsV1(model, new Set([0]))).toHaveLength(12);
+  });
+
+  it('matches the whole-model wireframe when the subset is every filled cell', () => {
+    let model = blank([3, 3, 3]);
+    model = setVoxel(model, 0, 0, 0, 1);
+    model = setVoxel(model, 1, 0, 0, 1);
+    model = setVoxel(model, 1, 1, 0, 1);
+    const all = new Set<number>();
+    model.voxels.forEach((slot, index) => { if (slot !== 0) all.add(index); });
+    // Same set of undirected edges, order aside.
+    const key = (s: { a: readonly number[]; b: readonly number[] }): string => {
+      const ka = s.a.join(','); const kb = s.b.join(',');
+      return ka < kb ? `${ka}|${kb}` : `${kb}|${ka}`;
+    };
+    const subset = new Set(cellSubsetOutlineSegmentsV1(model, all).map(key));
+    const whole = new Set(modelWireframeSegmentsV1(model).map(key));
+    expect(subset).toEqual(whole);
   });
 });

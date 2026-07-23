@@ -12,6 +12,7 @@ import {
   buildRecipeStages,
   listRecipeComponentsV1,
   listRecipePartsV1,
+  listRecipePartsWithCellsV1,
   type RecipeComponentV1,
   type RecipePartV1,
   type RecipeStageV1,
@@ -197,6 +198,21 @@ export interface VoxelStudioHarnessV1 {
    */
   buildParts(): readonly RecipePartV1[];
   /**
+   * The grid cells each top-level part owns, aligned index-for-index with
+   * `buildParts`. Empty for a hand-built model with no recipe. A nested child
+   * part lives in its own sub-grid and is not addressed here.
+   */
+  partCells(): readonly (readonly number[])[];
+  /**
+   * Lights up a top-level part where it sits in the model, and marks it in the
+   * list. The index is into `buildParts`/`partCells`; null clears the
+   * highlight, and an out-of-range index clears it too rather than claiming a
+   * selection that lights nothing.
+   */
+  highlightPart(index: number | null): void;
+  /** Which top-level part is lit up, or null. */
+  highlightedPart(): number | null;
+  /**
    * Shows the model as it stood at one construction step. This is a preview:
    * the open model is unchanged, and `showFinished` puts the picture back.
    */
@@ -275,6 +291,13 @@ export interface HarnessHostV1 {
   /** Shows or hides the stage's physical-outline layer; returns what shows. */
   setPhysicalOverlay(on: boolean): boolean;
   physicalOverlay(): boolean;
+  /**
+   * Lights up a top-level part in the render; null clears it. The app owns
+   * this so it can turn the part's cells into an outline overlay and refresh
+   * the parts list's selected row, whether the UI or an agent asked.
+   */
+  highlightPart(index: number | null): void;
+  highlightedPart(): number | null;
   catalog(): StudioCatalogV1;
 }
 
@@ -292,6 +315,7 @@ export function createStudioHarness(host: HarnessHostV1): VoxelStudioHarnessV1 {
   let cachedStages: { readonly id: string; readonly stages: readonly RecipeStageV1[] } | null = null;
   let cachedRecipe: { readonly id: string; readonly source: ShelfRecipeV1 | null } | null = null;
   let cachedShapes: { readonly id: string; readonly shapes: readonly PhysicalOverlaySegmentV1[] } | null = null;
+  let cachedPartCells: { readonly id: string; readonly cells: readonly (readonly number[])[] } | null = null;
 
   function recipeForOpenModel(): ShelfRecipeV1 | null {
     const id = restoreModel?.id ?? host.session().model.id;
@@ -344,6 +368,22 @@ export function createStudioHarness(host: HarnessHostV1): VoxelStudioHarnessV1 {
       : [];
     cachedShapes = { id, shapes };
     return shapes;
+  }
+
+  /**
+   * The grid cells each top-level part of the open model's recipe placed,
+   * aligned with `listRecipePartsV1`. Cached per open model like the stages
+   * and shapes; empty for a New/Copy model that matches no shelf recipe.
+   */
+  function partCellsForOpenModel(): readonly (readonly number[])[] {
+    const id = restoreModel?.id ?? host.session().model.id;
+    if (cachedPartCells?.id === id) return cachedPartCells.cells;
+    const made = recipeForOpenModel();
+    const cells = made
+      ? listRecipePartsWithCellsV1(made.recipe, made.parts, made.book ?? {}).cells
+      : [];
+    cachedPartCells = { id, cells };
+    return cells;
   }
 
   /** Ends a preview without redrawing, for paths that replace the model. */
@@ -523,6 +563,9 @@ export function createStudioHarness(host: HarnessHostV1): VoxelStudioHarnessV1 {
       const made = recipeForOpenModel();
       return made ? listRecipePartsV1(made.recipe, made.parts, made.book ?? {}) : [];
     },
+    partCells: () => partCellsForOpenModel(),
+    highlightPart: (index) => { host.highlightPart(index); },
+    highlightedPart: () => host.highlightedPart(),
     showBuildStep(index) {
       const stages = stagesForOpenModel();
       const stage = stages[index];

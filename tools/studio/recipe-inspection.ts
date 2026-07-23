@@ -158,6 +158,10 @@ interface RecipePartInventoryV1 {
   readonly instances: readonly RecipePartInstanceV1[];
   /** Final voxel ownership, indexed by instance position in `instances`. */
   readonly contributedVoxels: ReadonlyMap<number, number>;
+  /** For every grid cell of this recipe, the instance that finally owns it, or
+   * -1. This is the per-cell truth the aggregated counts are folded from, kept
+   * so a caller can light up exactly the cells one part group placed. */
+  readonly owners: readonly number[];
 }
 
 interface RecipePartsDependenciesV1 {
@@ -198,12 +202,23 @@ function scaleRecipePartsV1(
  * recipe's own inventory, scaled by surviving assembly count. Procedural
  * operations remain visible in the construction stages.
  */
-export function listRecipePartsInternalV1(
+export interface RecipePartsWithCellsV1 {
+  readonly parts: readonly RecipePartV1[];
+  /**
+   * For each top-level part in `parts`, the flat grid cells it owns in the
+   * root model, in the same order. This is only the top level: a nested part
+   * lives in its own sub-grid and is not addressed here. Empty arrays are
+   * kept so the two lists stay index-aligned.
+   */
+  readonly cells: readonly (readonly number[])[];
+}
+
+export function listRecipePartsWithCellsInternalV1(
   recipe: RecipeV1,
   parts: PartShelfV1,
   book: RecipeBookV1,
   dependencies: RecipePartsDependenciesV1,
-): readonly RecipePartV1[] {
+): RecipePartsWithCellsV1 {
   const { buildRecipe, mixSeed } = dependencies;
 
   // Counting is only meaningful for a recipe that can actually build. This
@@ -352,7 +367,7 @@ export function listRecipePartsInternalV1(
       if (owner < 0) continue;
       contributedVoxels.set(owner, (contributedVoxels.get(owner) ?? 0) + 1);
     }
-    return { instances: collected, contributedVoxels };
+    return { instances: collected, contributedVoxels, owners };
   }
 
   function grouped(
@@ -395,5 +410,44 @@ export function listRecipePartsInternalV1(
     });
   }
 
-  return grouped(recipe, []);
+  /**
+   * The root cells each top-level part group owns, index-aligned with the
+   * top-level `grouped(recipe)` result. It replays that grouping's exact
+   * order — first contributing instance per group key — over the same
+   * inventory, then reads the per-cell owners back into a cell list per group.
+   */
+  function topLevelCells(): readonly (readonly number[])[] {
+    const inventory = instances(recipe);
+    const order: string[] = [];
+    const idsByKey = new Map<string, number[]>();
+    inventory.instances.forEach((instance, id) => {
+      if (!inventory.contributedVoxels.has(id)) return;
+      let ids = idsByKey.get(instance.groupKey);
+      if (!ids) {
+        ids = [];
+        idsByKey.set(instance.groupKey, ids);
+        order.push(instance.groupKey);
+      }
+      ids.push(id);
+    });
+    return order.map((key) => {
+      const idSet = new Set(idsByKey.get(key));
+      const cells: number[] = [];
+      inventory.owners.forEach((owner, cell) => {
+        if (idSet.has(owner)) cells.push(cell);
+      });
+      return cells;
+    });
+  }
+
+  return { parts: grouped(recipe, []), cells: topLevelCells() };
+}
+
+export function listRecipePartsInternalV1(
+  recipe: RecipeV1,
+  parts: PartShelfV1,
+  book: RecipeBookV1,
+  dependencies: RecipePartsDependenciesV1,
+): readonly RecipePartV1[] {
+  return listRecipePartsWithCellsInternalV1(recipe, parts, book, dependencies).parts;
 }

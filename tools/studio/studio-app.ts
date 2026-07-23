@@ -30,7 +30,7 @@ import {
 import { createPhysicalOverlayView } from './physical-overlay-view.js';
 import { StudioPlayer } from './player.js';
 import { createWireframeView } from './wireframe-view.js';
-import { modelWireframeSegmentsV1 } from './wireframe.js';
+import { cellSubsetOutlineSegmentsV1, modelWireframeSegmentsV1 } from './wireframe.js';
 import { StudioSession } from './session.js';
 import {
   browserViewPrefsStore,
@@ -164,8 +164,12 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
   // The wireframe stands in for the solid model when the surface is hidden, so
   // it sits just over the canvas, under the collider outlines and note rings.
   const wireframeView = createWireframeView();
+  // The part highlight is an outline in its own colour, over everything but the
+  // note rings, so a clicked part reads clearly against whatever look is on.
+  const highlightView = createWireframeView('highlight-marks');
+  let highlightedPartIndex: number | null = null;
   const canvasWrap = element('div', 'canvas-wrap');
-  canvasWrap.append(canvas, wireframeView.element, physicalView.element, marks);
+  canvasWrap.append(canvas, wireframeView.element, physicalView.element, highlightView.element, marks);
   const viewChip = element('span', 'viewchip');
   viewChip.title = "Sides are the model's own, like a person facing you: "
     + 'their left appears on your right.';
@@ -291,10 +295,16 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
       orbit = clampOrbit({ ...orbit, viewHeight: fitViewHeight(model.size) });
       applyOrbit(camera, orbit, viewW, viewH);
       viewChip.textContent = describeOrbit(orbit);
+      // A new model has its own parts, so a part lit up on the last one has no
+      // meaning here.
+      highlightedPartIndex = null;
       refresh();
     },
     update(model: StudioModelV1) {
       session.setGenome(model);
+      // The model changed under the parts list — an edit, or a construction
+      // preview showing a partial grid — so any lit part is now stale.
+      highlightedPartIndex = null;
       refresh();
     },
     player: () => player,
@@ -333,6 +343,8 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
     },
     setPhysicalOverlay: setPhysicalOverlayOn,
     physicalOverlay: () => physicalOn,
+    highlightPart: setHighlightedPart,
+    highlightedPart: () => highlightedPartIndex,
     setOrbit(view) {
       orbit = clampOrbit({ ...orbit, ...view });
       applyOrbit(camera, orbit, viewW, viewH);
@@ -389,6 +401,7 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
       `${String(orbit.yawDegrees)}:${String(orbit.pitchDegrees)}:${String(orbit.viewHeight)}:${depthOn ? 'depth' : 'flat'}`;
     physicalView.draw(camera, middle, viewW, viewH, viewSignature);
     wireframeView.draw(camera, middle, viewW, viewH, viewSignature);
+    highlightView.draw(camera, middle, viewW, viewH, viewSignature);
   }
 
   function positionRings(): void {
@@ -443,6 +456,9 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
     if (session.wireframe) wireframeView.setSegments(modelWireframeSegmentsV1(harness.model()));
     wireframeView.setVisible(session.wireframe);
     wireframeToggle.classList.toggle('on', session.wireframe);
+    // The part highlight follows the chosen part; the construction panel reads
+    // the index back for its selected row when it rebuilds.
+    syncHighlightOverlay();
     // The outlines follow the open model: present only where its recipe
     // carries physical data, and never left on from a previous model.
     physicalView.setSegments(harness.physicalShapes());
@@ -525,6 +541,33 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
     physToggle.classList.toggle('on', physicalOn);
     drawFrame(lastShownMs);
     return physicalOn;
+  }
+
+  /** Rebuilds the highlight outline from the chosen part, or clears it. Shared
+   * by refresh (model changes) and the setter (a click), so both stay in step. */
+  function syncHighlightOverlay(): void {
+    if (highlightedPartIndex !== null) {
+      const cells = harness.partCells()[highlightedPartIndex];
+      if (cells === undefined) highlightedPartIndex = null;
+      else highlightView.setSegments(cellSubsetOutlineSegmentsV1(harness.model(), new Set(cells)));
+    }
+    highlightView.setVisible(highlightedPartIndex !== null);
+  }
+
+  /**
+   * Lights up a top-level part where it sits in the model. The index is into
+   * the parts list; a null or out-of-range index clears the highlight rather
+   * than claiming a selection that outlines nothing.
+   *
+   * It updates just the outline, the picture, and the list's selected row —
+   * not a full refresh — so clicking a part with children lights it without
+   * the parts list rebuilding out from under the browser's own expand toggle.
+   */
+  function setHighlightedPart(index: number | null): void {
+    highlightedPartIndex = index !== null && harness.partCells()[index] !== undefined ? index : null;
+    syncHighlightOverlay();
+    construction.syncHighlight();
+    drawFrame(lastShownMs);
   }
 
   /**
@@ -709,6 +752,7 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
     for (const resource of [...acquired].reverse()) resource.dispose();
     physicalView.dispose();
     wireframeView.dispose();
+    highlightView.dispose();
     session.dispose();
     if (rootWritten) root.replaceChildren();
     throw error;
@@ -733,6 +777,7 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
       window.removeEventListener('resize', followStage);
       physicalView.dispose();
       wireframeView.dispose();
+      highlightView.dispose();
       session.dispose();
       if (options.publishHarness !== false && window.voxelStudio === harness) {
         delete window.voxelStudio;

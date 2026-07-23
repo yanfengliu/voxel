@@ -40,9 +40,15 @@ export interface WireframeViewV1 {
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
 
-export function createWireframeView(): WireframeViewV1 {
+/**
+ * @param rootClass the layer's CSS class, which is what styles its lines. The
+ *   whole-model wireframe and a single part's highlight outline are the same
+ *   projected-segment layer in two colours, so they share this and differ only
+ *   by class.
+ */
+export function createWireframeView(rootClass = 'wire-marks'): WireframeViewV1 {
   const element = document.createElementNS(SVG_NS, 'svg');
-  element.classList.add('wire-marks');
+  element.classList.add(rootClass);
   element.setAttribute('aria-hidden', 'true');
   let segments: readonly WireSegmentV1[] = [];
   let segmentsRevision = 0;
