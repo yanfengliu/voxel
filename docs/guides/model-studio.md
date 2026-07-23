@@ -176,9 +176,10 @@ the same browsing.
 
 The studio then offers discovery for free, to people and agents alike:
 
-- the left rail switches between **Models**, **Parts**, and **Recipes** over one
-  search box; each part shows its settings and presets and each recipe shows its
-  grain, size, and what it places, with the step that places it;
+- the left rail switches between **Models**, **Parts**, **Recipes**, and — when
+  the catalog ships any — **Scenes**, over one search box; each part shows its
+  settings and presets and each recipe shows its grain, size, and what it
+  places, with the step that places it;
 - the harness reports the same as data — `availableParts()`,
   `availableRecipes()`, `findParts(query)`, and `findRecipes(query)` — so an
   agent browses the whole palette through one `page.evaluate`.
@@ -186,6 +187,46 @@ The studio then offers discovery for free, to people and agents alike:
 The full design, including how craft lessons and parts are shared between
 games, is in
 [model recipes and shared parts](../superpowers/specs/2026-07-17-model-recipes-and-shared-parts-design.md).
+
+### Scenes
+
+A scene stands finished models together in one world — a table and a sofa in a
+room, a street of houses — without merging them into a new recipe. It is an
+arrangement of whole, still-reusable models, not one combined grid. A game
+ships scenes on its catalog:
+
+```ts
+const catalog: StudioCatalogV1 = {
+  sections: [...],
+  scenes: [
+    {
+      schemaVersion: 'studio.scene/1',
+      id: 'game:street',
+      label: 'Main street',
+      placements: [
+        { id: 'house-1', model: 'game:cottage', at: [0, 0, 0] },
+        { id: 'house-2', model: 'game:cottage', at: [16, 0, 0], turns: 2 },
+        { id: 'lamp', model: 'game:street-lamp', at: [8, 0, 6] },
+      ],
+    },
+  ],
+};
+```
+
+A placement names a model by its recipe id, the spot its base stands on (a
+scene grounds every model on one floor), an optional quarter-`turns` about the
+up axis, and an optional `grain` to override the model's voxel size — so a fine
+flower and a coarse building stand side by side. Repeated models render as
+instances, so a street of identical houses stays one geometry and many
+transforms.
+
+When a catalog ships scenes, the rail grows a **Scenes** lane; opening a scene
+draws the whole arrangement on the stage under the same look controls, and
+opening any model leaves it. The harness reports and drives the lane —
+`scenes()`, `openScene(id)`, `sceneMode()` — like everything else.
+
+Scenes are what earn a game's recipes: filling a street wants a house, a lamp,
+and a tree, so building the scene is what drives building those.
 
 ### Household reuse ladder
 
