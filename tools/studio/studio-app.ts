@@ -29,6 +29,7 @@ import {
 } from './orbit.js';
 import { createPhysicalOverlayView } from './physical-overlay-view.js';
 import { StudioPlayer } from './player.js';
+import { referenceGridSegmentsV1 } from './reference-grid.js';
 import { createWireframeView } from './wireframe-view.js';
 import { cellSubsetOutlineSegmentsV1, modelWireframeSegmentsV1 } from './wireframe.js';
 import { StudioSession } from './session.js';
@@ -125,6 +126,33 @@ const VIEW_HEIGHT = 440;
 const SWEEP_SAMPLES = 24;
 const DRAG_THRESHOLD_PIXELS = 4;
 
+// The voxel-size slider maps logarithmically, so a nudge near one unit is a
+// small change and the ends still reach a fine petal and a coarse wall — with
+// one unit sitting exactly at the middle.
+const SIZE_SLIDER_MIN = 1 / 32;
+const SIZE_SLIDER_MAX = 32;
+const SIZE_SLIDER_STEPS = 1000;
+function sliderToVoxelSize(value: number): number {
+  return SIZE_SLIDER_MIN * Math.pow(SIZE_SLIDER_MAX / SIZE_SLIDER_MIN, value / SIZE_SLIDER_STEPS);
+}
+function voxelSizeToSlider(size: number): number {
+  const clamped = Math.min(SIZE_SLIDER_MAX, Math.max(SIZE_SLIDER_MIN, size));
+  return Math.round(
+    SIZE_SLIDER_STEPS * Math.log(clamped / SIZE_SLIDER_MIN) / Math.log(SIZE_SLIDER_MAX / SIZE_SLIDER_MIN),
+  );
+}
+/** The voxel size and the model's world dimensions, in words for the readout. */
+function describeVoxelSize(voxelSize: number, size: readonly [number, number, number]): string {
+  const num = (value: number): string => {
+    if (value >= 100) return value.toFixed(0);
+    if (value >= 10) return value.toFixed(1);
+    if (value >= 1) return value.toFixed(2);
+    return value.toFixed(3);
+  };
+  const [sx, sy, sz] = size;
+  return `${num(voxelSize)} per voxel · ${num(sx * voxelSize)} × ${num(sy * voxelSize)} × ${num(sz * voxelSize)} units`;
+}
+
 export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
   const root = options.root ?? document.getElementById('studio');
   if (!root) throw new Error('The studio needs a #studio host element.');
@@ -135,7 +163,9 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
   const viewStore = options.viewStore ?? browserViewPrefsStore();
   const view = readViewPrefs(viewStore);
   const persistView = (): void => {
-    writeViewPrefs(viewStore, { depth: depthOn, edges: session.edges, lit: session.lit, wireframe: session.wireframe });
+    writeViewPrefs(viewStore, {
+      depth: depthOn, edges: session.edges, lit: session.lit, wireframe: session.wireframe, grid: gridOn,
+    });
   };
   const configuredCoreTabs = options.shellProfileV2?.coreTabs;
   const supportsCoreTab = (tab: ModelStudioTabId): boolean =>
@@ -168,8 +198,14 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
   // note rings, so a clicked part reads clearly against whatever look is on.
   const highlightView = createWireframeView('highlight-marks');
   let highlightedPartIndex: number | null = null;
+  // The reference grid sits under everything — a one-unit ground plane the
+  // model stands on, drawn straight in world space rather than model space.
+  const gridView = createWireframeView('grid-marks');
+  let gridOn = view.grid;
   const canvasWrap = element('div', 'canvas-wrap');
-  canvasWrap.append(canvas, wireframeView.element, physicalView.element, highlightView.element, marks);
+  canvasWrap.append(
+    canvas, gridView.element, wireframeView.element, physicalView.element, highlightView.element, marks,
+  );
   const viewChip = element('span', 'viewchip');
   viewChip.title = "Sides are the model's own, like a person facing you: "
     + 'their left appears on your right.';
@@ -204,12 +240,16 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
   wireframeToggle.textContent = 'wireframe';
   wireframeToggle.title = 'Hides the solid faces and draws the model as lines, so you '
     + 'can see through it to how it is put together, front and back at once.';
+  const gridToggle = element('button', 'toggle');
+  gridToggle.textContent = 'grid';
+  gridToggle.title = 'A one-unit ground grid the model stands on, so its voxel size '
+    + 'reads as a real scale — how many squares it covers is how big it is.';
   const physToggle = element('button', 'toggle');
   physToggle.textContent = 'colliders';
   physToggle.title = 'Outlines the shapes this model blocks and its attachment '
     + 'points, from its saved physical data. The picture itself is unchanged.';
   const toggles = element('div', 'toggles');
-  toggles.append(lookSwitch, depthToggle, lightToggle, wireframeToggle, physToggle);
+  toggles.append(lookSwitch, depthToggle, lightToggle, wireframeToggle, gridToggle, physToggle);
 
   const flatCamera = new OrthographicCamera();
   const depthCamera = new PerspectiveCamera();
@@ -262,6 +302,21 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
   // ---- inspector: examine ----
   const motionText = element('p', 'motion');
   const modelLine = element('p', 'factline');
+  // Scale the whole model by its voxel size. The slider resizes it in place
+  // against the ground grid; the readout says the size in world units.
+  const sizeField = element('div', 'field');
+  const sizeHead = element('span', 'grouphead');
+  sizeHead.textContent = 'Voxel size';
+  const sizeSlider = element('input', 'slider');
+  sizeSlider.type = 'range';
+  sizeSlider.min = '0';
+  sizeSlider.max = String(SIZE_SLIDER_STEPS);
+  sizeSlider.step = '1';
+  sizeSlider.setAttribute('aria-label', 'Voxel size');
+  sizeSlider.title = 'How big one voxel is in world units. Scales the whole model '
+    + 'without changing any step of how it was made.';
+  const sizeReadout = element('p', 'factline');
+  sizeField.append(sizeHead, sizeSlider, sizeReadout);
   const engineWarning = element('p', 'verdict');
   engineWarning.hidden = true;
   const sweepButton = element('button');
@@ -400,6 +455,9 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
     const scale = session.voxelSize;
     const viewSignature =
       `${String(orbit.yawDegrees)}:${String(orbit.pitchDegrees)}:${String(orbit.viewHeight)}:${depthOn ? 'depth' : 'flat'}`;
+    // The grid is already world coordinates, so it draws straight — no model
+    // middle to subtract, no voxel scale to apply.
+    gridView.draw(camera, { x: 0, y: 0, z: 0 }, viewW, viewH, viewSignature, 1);
     physicalView.draw(camera, middle, viewW, viewH, viewSignature, scale);
     wireframeView.draw(camera, middle, viewW, viewH, viewSignature, scale);
     highlightView.draw(camera, middle, viewW, viewH, viewSignature, scale);
@@ -460,6 +518,13 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
     // The part highlight follows the chosen part; the construction panel reads
     // the index back for its selected row when it rebuilds.
     syncHighlightOverlay();
+    // The ground grid follows the open model's footprint and grain.
+    gridView.setSegments(gridOn ? referenceGridSegmentsV1(harness.model()) : []);
+    gridView.setVisible(gridOn);
+    gridToggle.classList.toggle('on', gridOn);
+    // The size control shows the model's grain and its world dimensions.
+    sizeSlider.value = String(voxelSizeToSlider(session.voxelSize));
+    sizeReadout.textContent = describeVoxelSize(session.voxelSize, described.size);
     // The outlines follow the open model: present only where its recipe
     // carries physical data, and never left on from a previous model.
     physicalView.setSegments(harness.physicalShapes());
@@ -529,7 +594,29 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
   depthToggle.addEventListener('click', () => { setDepth(!depthOn); });
   lightToggle.addEventListener('click', () => { harness.setLit(!session.lit); });
   wireframeToggle.addEventListener('click', () => { harness.setWireframe(!session.wireframe); });
+  gridToggle.addEventListener('click', () => { setGridOn(!gridOn); });
   physToggle.addEventListener('click', () => { harness.setPhysicalOverlay(!physicalOn); });
+  sizeSlider.addEventListener('input', () => {
+    // Set the grain, then re-fit so the model stays framed at any size — the
+    // ground grid, not the model's screen size, is what shows the scale.
+    harness.setVoxelSize(sliderToVoxelSize(sizeSlider.valueAsNumber));
+    refitView();
+    drawFrame(lastShownMs);
+  });
+
+  /** Shows or hides the ground grid; refresh redraws it and marks the toggle. */
+  function setGridOn(on: boolean): void {
+    gridOn = on;
+    persistView();
+    refresh();
+  }
+
+  /** Frames the open model at its current grain, so scaling never buries or crops it. */
+  function refitView(): void {
+    orbit = clampOrbit({ ...orbit, viewHeight: fitViewHeight(session.model.size, session.voxelSize) });
+    applyOrbit(camera, orbit, viewW, viewH);
+    viewChip.textContent = describeOrbit(orbit);
+  }
 
   /**
    * Shows or hides the physical outlines. They can only show over a model
@@ -627,7 +714,7 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
   const examinePane = element('div', 'pane');
   const checkRow = element('div', 'row');
   checkRow.append(sweepButton, sheetButton);
-  examinePane.append(motionText, modelLine, engineWarning, checkRow, verdict, sheetImage);
+  examinePane.append(motionText, modelLine, sizeField, engineWarning, checkRow, verdict, sheetImage);
 
   const shellOptions: ModelStudioShellOptionsV2 = {
     beforeSelect: (name) => {
@@ -754,6 +841,7 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
     physicalView.dispose();
     wireframeView.dispose();
     highlightView.dispose();
+    gridView.dispose();
     session.dispose();
     if (rootWritten) root.replaceChildren();
     throw error;
@@ -779,6 +867,7 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
       physicalView.dispose();
       wireframeView.dispose();
       highlightView.dispose();
+      gridView.dispose();
       session.dispose();
       if (options.publishHarness !== false && window.voxelStudio === harness) {
         delete window.voxelStudio;

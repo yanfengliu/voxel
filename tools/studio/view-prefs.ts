@@ -21,6 +21,8 @@ export interface ViewPrefsV1 {
   readonly lit: boolean;
   /** Wireframe on: the solid faces give way to a see-through line drawing. */
   readonly wireframe: boolean;
+  /** A one-unit ground grid under the model, so a voxel size reads as a scale. */
+  readonly grid: boolean;
 }
 
 /**
@@ -33,6 +35,9 @@ export const DEFAULT_VIEW_PREFS: ViewPrefsV1 = {
   edges: true,
   lit: false,
   wireframe: false,
+  // On by default: the grid is what makes a voxel size read as a real scale,
+  // and it is the reference the size control leans on.
+  grid: true,
 };
 
 /** The one place a studio's view choices are kept; versioned so a future shape can migrate rather than misread. */
@@ -78,6 +83,7 @@ export function readViewPrefs(store: ViewPrefsStoreV1): ViewPrefsV1 {
     edges: readBoolean(source, 'edges'),
     lit: readBoolean(source, 'lit'),
     wireframe: readBoolean(source, 'wireframe'),
+    grid: readBoolean(source, 'grid'),
   };
 }
 

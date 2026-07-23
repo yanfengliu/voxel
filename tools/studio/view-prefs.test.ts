@@ -25,16 +25,16 @@ describe('remembering the stage look', () => {
 
   it('reads back exactly what was written, so the next visit matches the last', () => {
     const store = mapStore();
-    const chosen = { depth: false, edges: false, lit: true, wireframe: true };
+    const chosen = { depth: false, edges: false, lit: true, wireframe: true, grid: false };
     writeViewPrefs(store, chosen);
     expect(readViewPrefs(store)).toEqual(chosen);
   });
 
   it('keeps the fields a stored value did carry when it is missing newer ones', () => {
-    // A value written before wireframe existed. Everything it named is honoured;
-    // only the field it never knew about falls back to its default.
+    // A value written before wireframe and the grid existed. Everything it
+    // named is honoured; the fields it never knew about fall back to default.
     const store = mapStore({ [VIEW_PREFS_KEY]: JSON.stringify({ depth: false, edges: false, lit: true }) });
-    expect(readViewPrefs(store)).toEqual({ depth: false, edges: false, lit: true, wireframe: false });
+    expect(readViewPrefs(store)).toEqual({ depth: false, edges: false, lit: true, wireframe: false, grid: true });
   });
 
   it('falls back to the defaults for a wrong-typed field rather than trusting it', () => {

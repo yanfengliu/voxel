@@ -141,6 +141,8 @@ canvas:active { cursor: grabbing; }
 .wire-marks line { fill: none; stroke: rgba(232, 238, 244, 0.55); stroke-width: 1; }
 .highlight-marks { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
 .highlight-marks line { fill: none; stroke: var(--select); stroke-width: 2.5; }
+.grid-marks { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+.grid-marks line { fill: none; stroke: rgba(130, 145, 160, 0.28); stroke-width: 1; }
 .ring {
   position: absolute;
   width: 26px; height: 26px;

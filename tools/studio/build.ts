@@ -124,6 +124,34 @@ export function modelCenterV1(
   };
 }
 
+/**
+ * The grid bounds of what a model actually fills, or null when nothing does.
+ * The reference grid reads this to sit a ground plane under the model's feet
+ * and size itself to the footprint, at whatever grain the voxel size sets.
+ */
+export function filledGridBoundsV1(
+  model: StudioModelV1,
+): { readonly min: { x: number; y: number; z: number }; readonly max: { x: number; y: number; z: number } } | null {
+  const [sx, sy, sz] = model.size;
+  let minX = Infinity; let minY = Infinity; let minZ = Infinity;
+  let maxX = -Infinity; let maxY = -Infinity; let maxZ = -Infinity;
+  for (let z = 0; z < sz; z += 1) {
+    for (let y = 0; y < sy; y += 1) {
+      for (let x = 0; x < sx; x += 1) {
+        if ((model.voxels[x + sx * (y + sy * z)] ?? 0) === 0) continue;
+        if (x < minX) minX = x;
+        if (y < minY) minY = y;
+        if (z < minZ) minZ = z;
+        if (x > maxX) maxX = x;
+        if (y > maxY) maxY = y;
+        if (z > maxZ) maxZ = z;
+      }
+    }
+  }
+  if (minX === Infinity) return null;
+  return { min: { x: minX, y: minY, z: minZ }, max: { x: maxX, y: maxY, z: maxZ } };
+}
+
 /** One world description, shared by the drawn and the empty paths. */
 function describeWorld(epoch: string): RenderSnapshotV1['descriptor'] {
   return {
