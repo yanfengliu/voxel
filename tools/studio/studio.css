@@ -216,6 +216,29 @@ canvas:active { cursor: grabbing; }
 .highlight-marks line { fill: none; stroke: var(--select); stroke-width: 2.5; }
 .grid-marks { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
 .grid-marks line { fill: none; stroke: rgba(130, 145, 160, 0.28); stroke-width: 1; }
+/* ---- draggable column dividers ---- */
+.col-resize {
+  position: absolute;
+  top: 48px;
+  bottom: 0;
+  width: 8px;
+  cursor: col-resize;
+  z-index: 6;
+  touch-action: none;
+}
+.col-resize::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 50%;
+  width: 2px;
+  transform: translateX(-50%);
+  background: transparent;
+  transition: background 120ms ease;
+}
+.col-resize:hover::after,
+.col-resize.dragging::after { background: var(--accent); }
 .ring {
   position: absolute;
   width: 26px; height: 26px;
