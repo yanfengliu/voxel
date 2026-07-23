@@ -147,6 +147,13 @@ export interface VoxelStudioHarnessV1 {
   setEdges(on: boolean): boolean;
   edges(): boolean;
   /**
+   * Light the model on, so faces shade by how they face the studio's daylight
+   * rig, or off for the flat unlit look. The light is an inspection aid, not a
+   * claim about any game's lighting; off is the resting state.
+   */
+  setLit(on: boolean): boolean;
+  lit(): boolean;
+  /**
    * The open model's compiled physical outlines — collider wireframes and
    * port crosses in grid coordinates. Empty when its shelf recipe carries
    * no physical sidecars, which is a valid state rather than an error.
@@ -254,6 +261,8 @@ export interface HarnessHostV1 {
    * from the UI or an agent — the same reason depth is a host method.
    */
   setEdges(on: boolean): boolean;
+  /** Lights the model on/off; funneled through the app like edges, so the choice is remembered and the button refreshes. */
+  setLit(on: boolean): boolean;
   /** Shows or hides the stage's physical-outline layer; returns what shows. */
   setPhysicalOverlay(on: boolean): boolean;
   physicalOverlay(): boolean;
@@ -460,6 +469,8 @@ export function createStudioHarness(host: HarnessHostV1): VoxelStudioHarnessV1 {
     setViewAngles: (view) => host.setOrbit(view),
     setEdges: (on) => host.setEdges(on),
     edges: () => host.session().edges,
+    setLit: (on) => host.setLit(on),
+    lit: () => host.session().lit,
     physicalShapes: () => shapesForOpenModel(),
     setPhysicalOverlay(on) {
       const available = shapesForOpenModel().length > 0;

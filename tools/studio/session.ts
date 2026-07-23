@@ -57,6 +57,11 @@ export interface StudioSessionOptionsV1 {
    * on, which is the studio's resting examining look.
    */
   readonly edges?: boolean;
+  /**
+   * Light the model on open, or leave it flat and unlit. Seeded like `edges`
+   * so the remembered look carries onto the next model. Defaults to off.
+   */
+  readonly lit?: boolean;
 }
 
 const DEFAULT_WIDTH = 320;
@@ -75,13 +80,15 @@ export class StudioSession {
   #frameIndex = 0;
   #disposed = false;
   #edges = true;
+  #lit = false;
 
   constructor(model: StudioModelV1, options: StudioSessionOptionsV1) {
     this.#model = model;
     // Seeded before the first accept, because the opening snapshot is built
-    // with this look: a model asked to open on the game look must not flash the
-    // examining edges for one frame first.
+    // with this look: a model asked to open on the game look, or lit, must not
+    // flash the resting look for one frame first.
     this.#edges = options.edges ?? true;
+    this.#lit = options.lit ?? false;
     this.#runtime = new ThreeRenderRuntime({
       canvas: options.canvas,
       width: options.width ?? DEFAULT_WIDTH,
@@ -209,6 +216,18 @@ export class StudioSession {
     return this.#edges;
   }
 
+  /** Light the model (faces shade by the daylight rig) or leave it unlit. Redraws. */
+  setLit(on: boolean): void {
+    this.#assertLive();
+    if (this.#lit === on) return;
+    this.#lit = on;
+    this.#accept(this.#model);
+  }
+
+  get lit(): boolean {
+    return this.#lit;
+  }
+
   /**
    * Holds the picture still on a fixed middle, or releases it back to the
    * model's own. Used while watching a construction, where every stage is
@@ -290,6 +309,7 @@ export class StudioSession {
       incarnation: this.#incarnation,
       epoch: `epoch:${model.id}`,
       edges: this.#edges,
+      lit: this.#lit,
       ...(this.#frameCenter === null ? {} : { centerOn: this.#frameCenter }),
     }));
     if (result.status !== 'accepted') {

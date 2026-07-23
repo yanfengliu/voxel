@@ -44,6 +44,13 @@ function batch(snapshot: ReturnType<typeof buildSnapshot>) {
   return only;
 }
 
+/** The one material the model draws with. */
+function material(snapshot: ReturnType<typeof buildSnapshot>) {
+  const resource = snapshot.resources.find((entry) => entry.kind === 'material');
+  if (resource?.kind !== 'material') throw new Error('expected a material resource');
+  return resource;
+}
+
 function surface(snapshot: ReturnType<typeof buildSnapshot>): number[] {
   return Array.from(geometry(snapshot).positions);
 }
@@ -319,6 +326,30 @@ describe('building a model into a voxel snapshot', () => {
     // would be applied after the rotation and reintroduce the swing.
     const matrices = Array.from(batch(buildSnapshot(model(), { revision: 1 })).matrices);
     expect(matrices.slice(12, 15)).toEqual([0, 0, 0]);
+  });
+
+  it('draws unlit by default and lambert-shaded when lit', () => {
+    // Unlit is the resting judge of a model's own colours; a light is an
+    // opt-in inspection aid. The engine only shades a lambert surface, so the
+    // toggle is exactly this shading choice.
+    expect(material(buildSnapshot(model(), { revision: 1 })).shading).toBe('unlit');
+    expect(material(buildSnapshot(model(), { revision: 1, lit: false })).shading).toBe('unlit');
+    expect(material(buildSnapshot(model(), { revision: 1, lit: true })).shading).toBe('lambert');
+  });
+
+  it('rises the material revision with the snapshot so a look change reaches the screen', () => {
+    // The material presenter reuses a material whose version has not changed.
+    // A fixed material revision would swallow the unlit/lambert swap: the
+    // person flips the light and nothing happens. The revision must move with
+    // the snapshot for the change to be presented.
+    expect(material(buildSnapshot(model(), { revision: 7 })).revision).toBe(7);
+    expect(material(buildSnapshot(model(), { revision: 8, lit: true })).revision).toBe(8);
+  });
+
+  it('lets the engine accept a lit model, so the light is a real drawable choice', () => {
+    const world = new RenderWorld();
+    expect(world.acceptSnapshot(buildSnapshot(model(), { revision: 1, lit: true })).status).toBe('accepted');
+    world.dispose();
   });
 
   it('counts what would actually be drawn', () => {

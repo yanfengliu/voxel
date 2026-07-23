@@ -133,7 +133,7 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
   const viewStore = options.viewStore ?? browserViewPrefsStore();
   const view = readViewPrefs(viewStore);
   const persistView = (): void => {
-    writeViewPrefs(viewStore, { depth: depthOn, edges: session.edges, lit: view.lit, wireframe: view.wireframe });
+    writeViewPrefs(viewStore, { depth: depthOn, edges: session.edges, lit: session.lit, wireframe: view.wireframe });
   };
   const configuredCoreTabs = options.shellProfileV2?.coreTabs;
   const supportsCoreTab = (tab: ModelStudioTabId): boolean =>
@@ -186,12 +186,17 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
   depthToggle.textContent = 'real depth';
   depthToggle.title = 'Nearer really is bigger. The flat view can read backwards — '
     + 'equal sizes at every distance look like they grow away from you.';
+  const lightToggle = element('button', 'toggle');
+  lightToggle.textContent = 'light';
+  lightToggle.title = 'Lights the model so each face shades by how it faces the light — '
+    + 'the way to see a colour change across a surface. Off is the flat, honest '
+    + "look at the model's own colours.";
   const physToggle = element('button', 'toggle');
   physToggle.textContent = 'colliders';
   physToggle.title = 'Outlines the shapes this model blocks and its attachment '
     + 'points, from its saved physical data. The picture itself is unchanged.';
   const toggles = element('div', 'toggles');
-  toggles.append(lookSwitch, depthToggle, physToggle);
+  toggles.append(lookSwitch, depthToggle, lightToggle, physToggle);
 
   const flatCamera = new OrthographicCamera();
   const depthCamera = new PerspectiveCamera();
@@ -213,7 +218,7 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
   applyOrbit(camera, orbit, viewW, viewH);
 
   let session = new StudioSession(firstModel, {
-    canvas, width: viewW, height: viewH, camera, edges: view.edges,
+    canvas, width: viewW, height: viewH, camera, edges: view.edges, lit: view.lit,
   });
   const player = new StudioPlayer(session.model.motion.periodMs);
   const noteStore = new NoteStore();
@@ -259,13 +264,14 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
   const harness = createStudioHarness({
     session: () => session,
     replace(model: StudioModelV1) {
-      // The look carries onto the next model: opening one keeps the edges
-      // choice the last was left on rather than snapping back to examining
-      // edges, which is the whole of "remember my last choice".
+      // The look carries onto the next model: opening one keeps the edges and
+      // light choices the last was left on rather than snapping back to the
+      // resting look, which is the whole of "remember my last choice".
       const carriedEdges = session.edges;
+      const carriedLit = session.lit;
       session.dispose();
       session = new StudioSession(model, {
-        canvas, width: viewW, height: viewH, camera, edges: carriedEdges,
+        canvas, width: viewW, height: viewH, camera, edges: carriedEdges, lit: carriedLit,
       });
       // Opening a model fits the view to it, because a shelf holds a game's
       // whole asset set and those are not one size. Only on open: an edit
@@ -300,6 +306,12 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
       // asked for it.
       refresh();
       return session.edges;
+    },
+    setLit(on: boolean): boolean {
+      session.setLit(on);
+      persistView();
+      refresh();
+      return session.lit;
     },
     setPhysicalOverlay: setPhysicalOverlayOn,
     physicalOverlay: () => physicalOn,
@@ -408,6 +420,7 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
     edgesSide.classList.toggle('on', session.edges);
     gameSide.classList.toggle('on', !session.edges);
     depthToggle.classList.toggle('on', depthOn);
+    lightToggle.classList.toggle('on', session.lit);
     // The outlines follow the open model: present only where its recipe
     // carries physical data, and never left on from a previous model.
     physicalView.setSegments(harness.physicalShapes());
@@ -475,6 +488,7 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
 
   lookSwitch.addEventListener('click', () => { harness.setEdges(!session.edges); });
   depthToggle.addEventListener('click', () => { setDepth(!depthOn); });
+  lightToggle.addEventListener('click', () => { harness.setLit(!session.lit); });
   physToggle.addEventListener('click', () => { harness.setPhysicalOverlay(!physicalOn); });
 
   /**
@@ -501,8 +515,9 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
     applyOrbit(camera, orbit, viewW, viewH);
     const model = session.model;
     const edges = session.edges;
+    const lit = session.lit;
     session.dispose();
-    session = new StudioSession(model, { canvas, width: viewW, height: viewH, camera, edges });
+    session = new StudioSession(model, { canvas, width: viewW, height: viewH, camera, edges, lit });
     refresh();
     persistView();
     return depthOn;

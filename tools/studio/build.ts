@@ -58,6 +58,14 @@ export interface BuildOptionsV1 {
    * look — games never draw edges, so off shows exactly what players see.
    */
   readonly edges?: boolean;
+  /**
+   * Light the model, so faces shade by how they face the studio's daylight
+   * rig, or leave it flat and unlit. Off is the resting look: unlit is the
+   * honest judge of a model's own colours, making no claim about lights the
+   * games have not chosen. On is an inspection aid — turn it up to see how a
+   * face's colour reads once a light falls across it. Defaults to off.
+   */
+  readonly lit?: boolean;
 }
 
 export class ModelBuildError extends Error {
@@ -152,6 +160,7 @@ export function buildSnapshot(
   const revision = options.revision;
   const incarnation = options.incarnation ?? 1;
   const epoch = options.epoch ?? `epoch:${model.id}`;
+  const lit = options.lit === true;
 
   // The model and the chunk disagree on byte order: the model stores
   // x + sx*(y + sy*z) — height in the middle — while the chunk reads
@@ -275,11 +284,15 @@ export function buildSnapshot(
         kind: 'material',
         key: MATERIAL_KEY,
         incarnation,
-        revision: 1,
-        // Unlit: the studio judges the model, not a lighting rig. A lambert
-        // surface would make every frame a claim about lights the games have
-        // not chosen yet.
-        shading: 'unlit',
+        // Rises with the snapshot so a look change actually reaches the
+        // screen: the material presenter reuses a material whose version is
+        // unchanged, so a fixed revision would swallow the unlit/lambert swap.
+        revision,
+        // Unlit by default: the studio judges the model's own colours, making
+        // no claim about lights the games have not chosen. Lit on request
+        // shades faces by the daylight rig, which is how a person checks the
+        // way a colour reads once light falls across it.
+        shading: lit ? 'lambert' : 'unlit',
         color: { r: 255, g: 255, b: 255, a: 255 },
         vertexColors: true,
         transparent: false,
