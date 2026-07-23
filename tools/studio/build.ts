@@ -1,7 +1,7 @@
 import type { RenderSnapshotV1 } from '../../src/core/index.js';
 import { addFaceOutlines, DensePaletteChunk, meshVisibleFaces } from '../../src/meshing/index.js';
 
-import { validateModelV1, type StudioModelV1 } from './model.js';
+import { modelVoxelSizeV1, validateModelV1, type StudioModelV1 } from './model.js';
 
 /**
  * Turns a model into a voxel render snapshot. This is the only place the
@@ -256,11 +256,16 @@ export function buildSnapshot(
     y: (raw.min.y + raw.max.y) / 2,
     z: (raw.min.z + raw.max.z) / 2,
   };
+  // Centre in grid units, then scale to world units by the voxel size, so one
+  // number resizes the whole model without any step of its recipe changing.
+  // Centring happens before the scale so the model still spins about its own
+  // middle rather than drifting as it grows.
+  const voxelSize = modelVoxelSizeV1(model);
   const centred = new Float32Array(mesh.positions.length);
   for (let offset = 0; offset < mesh.positions.length; offset += 3) {
-    centred[offset] = (mesh.positions[offset] ?? 0) - middle.x;
-    centred[offset + 1] = (mesh.positions[offset + 1] ?? 0) - middle.y;
-    centred[offset + 2] = (mesh.positions[offset + 2] ?? 0) - middle.z;
+    centred[offset] = ((mesh.positions[offset] ?? 0) - middle.x) * voxelSize;
+    centred[offset + 1] = ((mesh.positions[offset + 1] ?? 0) - middle.y) * voxelSize;
+    centred[offset + 2] = ((mesh.positions[offset + 2] ?? 0) - middle.z) * voxelSize;
   }
 
   const bounds = boundsOf(centred, sx, sy, sz);

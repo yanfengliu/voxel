@@ -15,7 +15,7 @@ import {
 } from './shared-ui/index.js';
 import { describeMotion } from './describe.js';
 import { createStudioHarness, type VoxelStudioHarnessV1 } from './harness.js';
-import type { StudioModelV1 } from './model.js';
+import { modelVoxelSizeV1, type StudioModelV1 } from './model.js';
 import { NoteStore } from './notes.js';
 import {
   applyOrbit,
@@ -224,7 +224,7 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
   // a shelf's models are not one size.
   let orbit: OrbitStateV1 = clampOrbit({
     ...DEFAULT_ORBIT,
-    viewHeight: fitViewHeight(firstModel.size),
+    viewHeight: fitViewHeight(firstModel.size, modelVoxelSizeV1(firstModel)),
   });
   let viewW = VIEW_WIDTH;
   let viewH = VIEW_HEIGHT;
@@ -292,7 +292,7 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
       // whole asset set and those are not one size. Only on open: an edit
       // must not re-zoom under your hands, and a construction's stages must
       // keep the frame the finished model set.
-      orbit = clampOrbit({ ...orbit, viewHeight: fitViewHeight(model.size) });
+      orbit = clampOrbit({ ...orbit, viewHeight: fitViewHeight(model.size, session.voxelSize) });
       applyOrbit(camera, orbit, viewW, viewH);
       viewChip.textContent = describeOrbit(orbit);
       // A new model has its own parts, so a part lit up on the last one has no
@@ -397,11 +397,12 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
     playerBar.showTime(timeMs);
     positionRings();
     const middle = session.frameMiddle();
+    const scale = session.voxelSize;
     const viewSignature =
       `${String(orbit.yawDegrees)}:${String(orbit.pitchDegrees)}:${String(orbit.viewHeight)}:${depthOn ? 'depth' : 'flat'}`;
-    physicalView.draw(camera, middle, viewW, viewH, viewSignature);
-    wireframeView.draw(camera, middle, viewW, viewH, viewSignature);
-    highlightView.draw(camera, middle, viewW, viewH, viewSignature);
+    physicalView.draw(camera, middle, viewW, viewH, viewSignature, scale);
+    wireframeView.draw(camera, middle, viewW, viewH, viewSignature, scale);
+    highlightView.draw(camera, middle, viewW, viewH, viewSignature, scale);
   }
 
   function positionRings(): void {

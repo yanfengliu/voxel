@@ -387,6 +387,34 @@ describe('building a model into a voxel snapshot', () => {
     world.dispose();
   });
 
+  it('scales the whole model by its voxel size, still centred to spin in place', () => {
+    // One number resizes the model without a step changing. The mesh is
+    // centred first, so a scaled model still spins about its own middle rather
+    // than orbiting the origin.
+    const base = model();
+    const plain = geometry(buildSnapshot(base, { revision: 1 }));
+    const doubled = geometry(buildSnapshot({ ...base, voxelSize: 2 }, { revision: 1 }));
+
+    // Same topology, twice the reach from the centre.
+    expect(doubled.positions.length).toBe(plain.positions.length);
+    const reach = (g: ReturnType<typeof geometry>): number => {
+      let max = 0;
+      for (const value of g.positions) max = Math.max(max, Math.abs(value));
+      return max;
+    };
+    expect(reach(doubled)).toBeCloseTo(reach(plain) * 2, 5);
+    // Still centred on the origin, at either grain.
+    for (const g of [plain, doubled]) {
+      expect((g.bounds.min.x + g.bounds.max.x) / 2).toBeCloseTo(0, 5);
+      expect((g.bounds.min.y + g.bounds.max.y) / 2).toBeCloseTo(0, 5);
+    }
+    // And the engine accepts a scaled model.
+    const world = new RenderWorld();
+    expect(world.acceptSnapshot(buildSnapshot({ ...base, voxelSize: 0.25 }, { revision: 1 })).status)
+      .toBe('accepted');
+    world.dispose();
+  });
+
   it('counts what would actually be drawn', () => {
     expect(filledVoxelCount(createEmptyModel({ id: 'e', size: [2, 2, 2] }))).toBe(0);
     expect(filledVoxelCount(model())).toBe(2);

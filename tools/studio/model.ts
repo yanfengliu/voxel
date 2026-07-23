@@ -49,11 +49,29 @@ export interface StudioModelV1 {
   /** Every random choice a generator makes must flow from this. */
   readonly seed: number;
   readonly size: readonly [number, number, number];
+  /**
+   * How big one voxel is in world units. A flower may use a tenth of a unit
+   * for fine petals; a house a whole unit or more, since building it from
+   * tenths would be a million voxels most of which only add up to a giant
+   * voxel anyway. Omitted means one unit per voxel. Changing only this scales
+   * the whole model without touching a single step of how it was made.
+   */
+  readonly voxelSize?: number;
   /** Index 0 is the empty slot and is never drawn. */
   readonly palette: readonly GenomeColorV1[];
   readonly voxels: readonly number[];
   readonly motion: ModelMotionV1;
 }
+
+/** World units per voxel, defaulting to one for a model that does not say. */
+export function modelVoxelSizeV1(model: { readonly voxelSize?: number }): number {
+  return model.voxelSize ?? 1;
+}
+
+/** The largest voxel a model may declare; past this a single model is a world, not a model. */
+export const MAX_VOXEL_SIZE = 1024;
+/** The smallest voxel a model may declare; fine enough for a petal, not zero. */
+export const MIN_VOXEL_SIZE = 0.01;
 
 export interface GenomeIssueV1 {
   readonly path: string;
@@ -113,6 +131,13 @@ export function validateModelV1(value: unknown): readonly GenomeIssueV1[] {
   }
   if (!isFiniteNumber(model.seed)) {
     issues.push({ path: '$.seed', message: 'Expected a finite seed.' });
+  }
+  if (model.voxelSize !== undefined
+    && (!isFiniteNumber(model.voxelSize) || model.voxelSize <= 0 || model.voxelSize > MAX_VOXEL_SIZE)) {
+    issues.push({
+      path: '$.voxelSize',
+      message: `Expected a world size per voxel above 0 and at most ${String(MAX_VOXEL_SIZE)}, or omit it for one.`,
+    });
   }
 
   const size: unknown = model.size;

@@ -7,14 +7,50 @@ import {
   setMotion,
   setPaletteColor,
   setVoxel,
+  setVoxelSize,
   stopMotion,
 } from './edit.js';
-import { validateModelV1, voxelIndex, VOXEL_GENOME_SCHEMA_V1 } from './model.js';
+import {
+  modelVoxelSizeV1,
+  validateModelV1,
+  voxelIndex,
+  VOXEL_GENOME_SCHEMA_V1,
+} from './model.js';
 
 const base = () => {
   const empty = createEmptyModel({ id: 'test:model', size: [4, 4, 4] });
   return addPaletteColor(empty, { r: 90, g: 200, b: 120 }).model;
 };
+
+describe('voxel size', () => {
+  it('sets the world size per voxel and validates', () => {
+    const scaled = setVoxelSize(base(), 0.25);
+    expect(modelVoxelSizeV1(scaled)).toBe(0.25);
+    expect(validateModelV1(scaled)).toEqual([]);
+  });
+
+  it('clamps out-of-range sizes rather than storing a broken model', () => {
+    expect(modelVoxelSizeV1(setVoxelSize(base(), 0))).toBeGreaterThan(0);
+    expect(modelVoxelSizeV1(setVoxelSize(base(), -3))).toBeGreaterThan(0);
+    expect(modelVoxelSizeV1(setVoxelSize(base(), 1e9))).toBeLessThanOrEqual(1024);
+    expect(modelVoxelSizeV1(setVoxelSize(base(), Number.NaN))).toBeGreaterThan(0);
+  });
+
+  it('stores one voxel-per-unit as absence, so scaling back compares equal', () => {
+    // A model scaled to something and back to one must equal one that never
+    // scaled — the same rule motion follows for its resting values.
+    const start = base();
+    const roundTrip = setVoxelSize(setVoxelSize(start, 3), 1);
+    expect(roundTrip.voxelSize).toBeUndefined();
+    expect(JSON.stringify(roundTrip)).toBe(JSON.stringify(start));
+  });
+
+  it('rejects a hand-written model whose voxel size is not a positive number', () => {
+    expect(validateModelV1({ ...base(), voxelSize: 0 })).not.toEqual([]);
+    expect(validateModelV1({ ...base(), voxelSize: -1 })).not.toEqual([]);
+    expect(validateModelV1({ ...base(), voxelSize: 'big' })).not.toEqual([]);
+  });
+});
 
 describe('model editing', () => {
   it('never mutates the model it was given', () => {

@@ -31,6 +31,8 @@ export interface PhysicalOverlayViewV1 {
     width: number,
     height: number,
     viewSignature: string,
+    /** World units per grid unit, so outlines track a scaled model. Defaults to 1. */
+    scale?: number,
   ): void;
   dispose(): void;
 }
@@ -67,28 +69,30 @@ export function createPhysicalOverlayView(): PhysicalOverlayViewV1 {
       lastDrawn = '';
     },
     visible: () => on,
-    draw(camera, middle, width, height, viewSignature) {
+    draw(camera, middle, width, height, viewSignature, scale = 1) {
       if (!on || segments.length === 0) {
         if (pool.length > 0) clear();
         return;
       }
       const signature =
-        `${viewSignature}|${String(segmentsRevision)}|${String(middle.x)},${String(middle.y)},${String(middle.z)}|${String(width)}x${String(height)}`;
+        `${viewSignature}|${String(segmentsRevision)}|${String(middle.x)},${String(middle.y)},${String(middle.z)}|${String(scale)}|${String(width)}x${String(height)}`;
       if (signature === lastDrawn) return;
       lastDrawn = signature;
       element.setAttribute('viewBox', `0 0 ${String(width)} ${String(height)}`);
       const size = { width, height };
       let used = 0;
       for (const segment of segments) {
+        // Grid coordinates centred on the model's middle, then scaled to world
+        // units, so an outline sits on a model scaled by its voxel size.
         const a = tryProjectWorldToViewportV1(camera, {
-          x: segment.a[0] - middle.x,
-          y: segment.a[1] - middle.y,
-          z: segment.a[2] - middle.z,
+          x: (segment.a[0] - middle.x) * scale,
+          y: (segment.a[1] - middle.y) * scale,
+          z: (segment.a[2] - middle.z) * scale,
         }, size);
         const b = tryProjectWorldToViewportV1(camera, {
-          x: segment.b[0] - middle.x,
-          y: segment.b[1] - middle.y,
-          z: segment.b[2] - middle.z,
+          x: (segment.b[0] - middle.x) * scale,
+          y: (segment.b[1] - middle.y) * scale,
+          z: (segment.b[2] - middle.z) * scale,
         }, size);
         // Draw only what honestly projects into the view volume; a segment
         // behind the camera would otherwise draw mirrored garbage.

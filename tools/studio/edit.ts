@@ -1,4 +1,6 @@
 import {
+  MAX_VOXEL_SIZE,
+  MIN_VOXEL_SIZE,
   VOXEL_GENOME_SCHEMA_V1,
   voxelIndex,
   type GenomeColorV1,
@@ -160,6 +162,23 @@ export function setMotion(
 /** Stops the model. Sugar for a zero period, which is voxel's own "still". */
 export function stopMotion(model: StudioModelV1): StudioModelV1 {
   return setMotion(model, { periodMs: 0 });
+}
+
+/**
+ * Sets how big one voxel is in world units, scaling the whole model without
+ * touching a step. Clamped above zero; one voxel-per-unit is stored as absence,
+ * so a model scaled back to one compares equal to a model that never scaled at
+ * all — the same rule motion's 'swing' follows.
+ */
+export function setVoxelSize(model: StudioModelV1, voxelSize: number): StudioModelV1 {
+  const clamped = clampFinite(voxelSize, MIN_VOXEL_SIZE, MAX_VOXEL_SIZE);
+  if (clamped === 1) {
+    if (model.voxelSize === undefined) return model;
+    const next: Record<string, unknown> = { ...model };
+    delete next.voxelSize;
+    return next as unknown as StudioModelV1;
+  }
+  return { ...model, voxelSize: clamped };
 }
 
 /**

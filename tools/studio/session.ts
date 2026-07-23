@@ -3,7 +3,7 @@ import type { Camera } from 'three';
 import { ThreeRenderRuntime } from '../../src/three/index.js';
 
 import { buildSnapshot, filledVoxelCount, modelCenterV1 } from './build.js';
-import type { StudioModelV1 } from './model.js';
+import { modelVoxelSizeV1, type StudioModelV1 } from './model.js';
 import {
   isStill,
   planSweep,
@@ -126,6 +126,11 @@ export class StudioSession {
 
   get model(): StudioModelV1 {
     return this.#model;
+  }
+
+  /** World units per voxel of the open model; overlays and the fit scale by it. */
+  get voxelSize(): number {
+    return modelVoxelSizeV1(this.#model);
   }
 
   /**

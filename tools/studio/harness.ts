@@ -4,6 +4,7 @@ import {
   setMotion,
   setPaletteColor,
   setVoxel,
+  setVoxelSize,
   stopMotion,
 } from './edit.js';
 import { validateModelV1, type ModelMotionV1, type StudioModelV1 } from './model.js';
@@ -70,6 +71,13 @@ export interface VoxelStudioHarnessV1 {
   addColor(color: { r: number; g: number; b: number }): { readonly paletteIndex: number };
   animate(motion: Partial<ModelMotionV1>): ReturnType<StudioSession['describe']>;
   stop(): ReturnType<StudioSession['describe']>;
+  /**
+   * Sets how big one voxel is in world units, scaling the whole model without
+   * changing a step. Returns what the studio now holds. `voxelSize` reads it
+   * back; one voxel-per-unit is the default.
+   */
+  setVoxelSize(size: number): ReturnType<StudioSession['describe']>;
+  voxelSize(): number;
 
   /** Draws one exact time. Returns the frame's data URL and what was drawn. */
   sampleAt(nowMs: number): {
@@ -419,6 +427,8 @@ export function createStudioHarness(host: HarnessHostV1): VoxelStudioHarnessV1 {
     },
     animate: (motion) => edit(setMotion(host.session().model, motion)),
     stop: () => edit(stopMotion(host.session().model)),
+    setVoxelSize: (size) => edit(setVoxelSize(host.session().model, size)),
+    voxelSize: () => host.session().voxelSize,
 
     sampleAt: (nowMs) => host.session().sampleAt(nowMs),
     sweep(options) {

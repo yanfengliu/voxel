@@ -53,9 +53,14 @@ export function clampOrbit(state: OrbitStateV1): OrbitStateV1 {
  * wall seen end-on is as tall as it is long, and fitting only its height
  * would crop it the moment you orbit.
  */
-export function fitViewHeight(size: readonly [number, number, number]): number {
+export function fitViewHeight(
+  size: readonly [number, number, number],
+  voxelSize = 1,
+): number {
   const [sx, sy, sz] = size;
-  const diagonal = Math.sqrt(sx * sx + sy * sy + sz * sz);
+  // World units, not cells: a model's size on screen is its grid times how big
+  // each voxel is, so a fine-grained flower and a coarse wall both frame right.
+  const diagonal = Math.sqrt(sx * sx + sy * sy + sz * sz) * voxelSize;
   return clampOrbit({ ...DEFAULT_ORBIT, viewHeight: diagonal * 1.15 }).viewHeight;
 }
 

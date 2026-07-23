@@ -145,6 +145,13 @@ export interface RecipeV1 {
   /** Every random choice in the build flows from this, salted per step. */
   readonly seed: number;
   readonly size: readonly [number, number, number];
+  /**
+   * World units per voxel for the whole recipe; omitted means one. Scaling
+   * this scales the built model without changing a single step — a flower
+   * recipe at a tenth of a unit and a wall recipe at a whole one are the same
+   * kind of thing at different grains.
+   */
+  readonly voxelSize?: number;
   /** One name per palette slot; `roles[0]` is always 'empty'. Parts paint
    * names, the palette gives the names colours: shared bones, per-game skin. */
   readonly roles: readonly string[];
@@ -224,6 +231,7 @@ export function validateRecipeV1(value: unknown): readonly GenomeIssueV1[] {
     label: recipe.label,
     seed: recipe.seed,
     size: recipe.size,
+    voxelSize: recipe.voxelSize,
     palette: recipe.palette,
     voxels: [],
     motion: recipe.motion,
@@ -908,6 +916,10 @@ function buildRecipeInternal(
     palette: recipe.palette.map((color) => ({ r: color.r, g: color.g, b: color.b })),
     voxels,
     motion: normalizedMotion(recipe.motion),
+    // Carried through so the built model draws at the recipe's grain. A shared
+    // roof recipe placed as-is keeps its own grain here; a scaled placement is
+    // the second slice, not this one.
+    ...(recipe.voxelSize === undefined ? {} : { voxelSize: recipe.voxelSize }),
   };
   // The builder's own output through the model's own validator. This should
   // never fire — a validated recipe and checked steps cannot produce an
