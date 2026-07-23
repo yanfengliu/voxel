@@ -158,6 +158,31 @@ fastest honest way, with raw voxels wherever no part fits; when the same shape
 gets hand-sculpted a second time, promote it into a part. A part built ahead
 of need is a part nobody calls.
 
+### Discovering parts and recipes
+
+A part may be a bare function or a self-describing `PartDefinitionV1` — a
+title, summary, category, tags, a settings schema with bounds and defaults, and
+named presets, alongside its `build` function. The shelf accepts either and the
+builder runs both the same way through `partBuildV1`, so a game adopts
+definitions where they earn their keep. The schema is honest rather than
+decoration: the build reads its inputs through it (`resolvePartSettingsV1`), so
+the bounds a browser shows are the bounds the part enforces.
+
+Declare the game's whole palette on the catalog — `parts` and `recipes` — so
+the studio can list every part and reusable recipe, not only the ones some
+shelf model already uses. Omit them and the studio falls back to the union of
+what its models call. Recipes may carry an optional `summary` and `tags` for
+the same browsing.
+
+The studio then offers discovery for free, to people and agents alike:
+
+- the left rail switches between **Models**, **Parts**, and **Recipes** over one
+  search box; each part shows its settings and presets and each recipe shows its
+  grain, size, and what it places, with the step that places it;
+- the harness reports the same as data — `availableParts()`,
+  `availableRecipes()`, `findParts(query)`, and `findRecipes(query)` — so an
+  agent browses the whole palette through one `page.evaluate`.
+
 The full design, including how craft lessons and parts are shared between
 games, is in
 [model recipes and shared parts](../superpowers/specs/2026-07-17-model-recipes-and-shared-parts-design.md).
