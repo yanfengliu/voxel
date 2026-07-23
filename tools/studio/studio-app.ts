@@ -29,7 +29,10 @@ import {
 } from './orbit.js';
 import { createPhysicalOverlayView } from './physical-overlay-view.js';
 import { StudioPlayer } from './player.js';
-import { referenceGridSegmentsV1 } from './reference-grid.js';
+import { referenceGridSegmentsV1, sceneReferenceGridSegmentsV1 } from './reference-grid.js';
+import type { SceneV1 } from './scene.js';
+import { SceneSession } from './scene-session.js';
+import { catalogPartsV1, catalogRecipesV1 } from './studio-library.js';
 import { createWireframeView } from './wireframe-view.js';
 import { cellSubsetOutlineSegmentsV1, modelWireframeSegmentsV1 } from './wireframe.js';
 import { StudioSession } from './session.js';
@@ -202,12 +205,18 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
   // model stands on, drawn straight in world space rather than model space.
   const gridView = createWireframeView('grid-marks');
   let gridOn = view.grid;
+  // A scene draws to its own canvas so it and a model never fight over one
+  // WebGL context; exactly one of the two is shown at a time.
+  const sceneCanvas = element('canvas', 'scene-canvas');
+  sceneCanvas.width = VIEW_WIDTH;
+  sceneCanvas.height = VIEW_HEIGHT;
+  sceneCanvas.style.display = 'none';
   const canvasWrap = element('div', 'canvas-wrap');
-  // Order is paint order, so the ground grid goes first (behind the canvas,
+  // Order is paint order, so the ground grid goes first (behind the canvases,
   // occluded by the solid model) while the wireframe, collider, part-highlight,
   // and note layers go after it (over the model, where they belong).
   canvasWrap.append(
-    gridView.element, canvas, wireframeView.element, physicalView.element, highlightView.element, marks,
+    gridView.element, canvas, sceneCanvas, wireframeView.element, physicalView.element, highlightView.element, marks,
   );
   const viewChip = element('span', 'viewchip');
   viewChip.title = "Sides are the model's own, like a person facing you: "
@@ -276,6 +285,14 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
   let session = new StudioSession(firstModel, {
     canvas, width: viewW, height: viewH, camera, edges: view.edges, lit: view.lit, wireframe: view.wireframe,
   });
+  // The scene lane: the game's whole book to resolve placements, a session that
+  // draws to sceneCanvas (created lazily the first time a scene opens), and
+  // which scene is open — null in model mode. The model session stays alive
+  // under a shown scene, so everything that reads it keeps working.
+  const sceneRecipes = catalog.recipes ?? catalogRecipesV1(catalog);
+  const sceneParts = catalog.parts ?? catalogPartsV1(catalog);
+  let sceneSession: SceneSession | null = null;
+  let sceneOpen: SceneV1 | null = null;
   const player = new StudioPlayer(session.model.motion.periodMs);
   const noteStore = new NoteStore();
   // The floor, colour, and note anchor the editor, notes, and stage share.
@@ -335,6 +352,9 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
   const harness = createStudioHarness({
     session: () => session,
     replace(model: StudioModelV1) {
+      // Opening a model leaves any shown scene, so the model canvas shows and
+      // the scene's is hidden again.
+      closeSceneMode();
       // The look carries onto the next model: opening one keeps the edges and
       // light choices the last was left on rather than snapping back to the
       // resting look, which is the whole of "remember my last choice".
@@ -378,7 +398,10 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
     depth: () => depthOn,
     setDepth,
     setEdges(on: boolean): boolean {
+      // Applied to both lanes so the look is one choice: switching between a
+      // model and a scene never surprises you with a different look.
       session.setEdges(on);
+      sceneSession?.setEdges(on);
       persistView();
       // A full refresh so the switch, the picture, and the remembered look
       // all catch up together — the same funnel whether the UI or an agent
@@ -388,6 +411,7 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
     },
     setLit(on: boolean): boolean {
       session.setLit(on);
+      sceneSession?.setLit(on);
       persistView();
       refresh();
       return session.lit;
@@ -403,6 +427,8 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
     physicalOverlay: () => physicalOn,
     highlightPart: setHighlightedPart,
     highlightedPart: () => highlightedPartIndex,
+    openScene: (scene) => { openSceneMode(scene); },
+    sceneMode: () => sceneOpen !== null,
     setOrbit(view) {
       orbit = clampOrbit({ ...orbit, ...view });
       applyOrbit(camera, orbit, viewW, viewH);
@@ -451,13 +477,21 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
     // camera, and the studio's view must win on every frame, not just the ones
     // after an interaction.
     applyOrbit(camera, orbit, viewW, viewH);
+    const viewSignature =
+      `${String(orbit.yawDegrees)}:${String(orbit.pitchDegrees)}:${String(orbit.viewHeight)}:${depthOn ? 'depth' : 'flat'}`;
+    // A shown scene draws to its own canvas and keeps a ground grid under its
+    // whole floor; the model's own layers (colliders, wireframe, part
+    // highlight, note rings) belong to a single model and stay hidden.
+    if (sceneOpen && sceneSession) {
+      sceneSession.showAt(timeMs);
+      gridView.draw(camera, { x: 0, y: 0, z: 0 }, viewW, viewH, viewSignature, 1);
+      return;
+    }
     session.showAt(timeMs);
     playerBar.showTime(timeMs);
     positionRings();
     const middle = session.frameMiddle();
     const scale = session.voxelSize;
-    const viewSignature =
-      `${String(orbit.yawDegrees)}:${String(orbit.pitchDegrees)}:${String(orbit.viewHeight)}:${depthOn ? 'depth' : 'flat'}`;
     // The grid is already world coordinates, so it draws straight — no model
     // middle to subtract, no voxel scale to apply.
     gridView.draw(camera, { x: 0, y: 0, z: 0 }, viewW, viewH, viewSignature, 1);
@@ -484,8 +518,109 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
     return ring;
   }
 
+  // ---- scene view ----
+  /** A view height that frames the whole scene, from how far its models spread. */
+  function sceneFitHeight(scene: SceneV1): number {
+    let reach = 8;
+    for (const placement of scene.placements) {
+      reach = Math.max(reach, Math.hypot(placement.at[0], placement.at[2]) + 10);
+    }
+    return reach * 2.4;
+  }
+
+  /**
+   * Opens a scene on the stage. The model session stays alive underneath its
+   * own hidden canvas, so everything that reads a single model keeps working;
+   * the scene draws to its own canvas at the same shared camera and look.
+   */
+  function openSceneMode(scene: SceneV1): void {
+    if (sceneSession === null) {
+      sceneSession = new SceneSession(scene, sceneRecipes, sceneParts, {
+        canvas: sceneCanvas, width: viewW, height: viewH, camera,
+        edges: session.edges, lit: session.lit, wireframe: false,
+      });
+    } else {
+      sceneSession.setScene(scene);
+      sceneSession.setEdges(session.edges);
+      sceneSession.setLit(session.lit);
+    }
+    sceneOpen = scene;
+    canvas.style.display = 'none';
+    sceneCanvas.style.display = 'block';
+    orbit = clampOrbit({ ...orbit, viewHeight: sceneFitHeight(scene) });
+    applyOrbit(camera, orbit, viewW, viewH);
+    // Examine carries the scene's readout; Build and the rest belong to a
+    // single model, so open on the tab that speaks about the scene.
+    showTab('examine');
+    refresh();
+    drawFrame(0);
+  }
+
+  /** Leaves the scene view for the model lane; a no-op outside a scene. */
+  function closeSceneMode(): void {
+    if (sceneOpen === null) return;
+    sceneOpen = null;
+    canvas.style.display = 'block';
+    sceneCanvas.style.display = 'none';
+  }
+
+  /**
+   * Scene-mode readouts: the top bar and the shared look toggles, nothing a
+   * single model owns. The model's own overlays and tools stay hidden while a
+   * scene shows.
+   */
+  function refreshScene(scene: SceneV1): void {
+    const count = scene.placements.length;
+    modelName.textContent = scene.label;
+    statusChip.textContent = `scene · ${String(count)} model${count === 1 ? '' : 's'}`;
+    lookSwitch.dataset.side = session.edges ? 'left' : 'right';
+    lookSwitch.setAttribute('aria-checked', String(session.edges));
+    edgesSide.classList.toggle('on', session.edges);
+    gameSide.classList.toggle('on', !session.edges);
+    depthToggle.classList.toggle('on', depthOn);
+    lightToggle.classList.toggle('on', session.lit);
+    // A scene has no one model, so the model-only tools step aside.
+    wireframeToggle.hidden = true;
+    gridToggle.hidden = true;
+    physToggle.hidden = true;
+    wireframeView.setVisible(false);
+    highlightView.setVisible(false);
+    physicalView.setVisible(false);
+    // The scene stands on its own ground grid, sized to how far it spreads.
+    gridView.setSegments(sceneReferenceGridSegmentsV1(scene));
+    gridView.setVisible(true);
+    // The examine pane carries the scene's own readout — what it is and which
+    // models stand in it — not a single model's motion or checks.
+    const counts = new Map<string, number>();
+    for (const placement of scene.placements) {
+      counts.set(placement.model, (counts.get(placement.model) ?? 0) + 1);
+    }
+    motionText.textContent = scene.summary ?? `A scene of ${String(count)} models.`;
+    modelLine.textContent = [...counts.entries()]
+      .map(([id, n]) => {
+        const label = sceneRecipes[id]?.label ?? id;
+        return n === 1 ? label : `${label} ×${String(n)}`;
+      })
+      .join(' · ');
+    engineWarning.hidden = true;
+    checkRow.hidden = true;
+    sizeField.hidden = true;
+    verdict.dataset.tone = 'idle';
+    verdict.textContent = '';
+    sheetImage.hidden = true;
+    shelfPanel.rebuild();
+    viewChip.textContent = describeOrbit(orbit);
+  }
+
   // ---- refresh ----
   function refresh(): void {
+    if (sceneOpen) { refreshScene(sceneOpen); return; }
+    // Returning from a scene un-hides the model-only toggles, checks, and size
+    // control a scene hid.
+    wireframeToggle.hidden = false;
+    gridToggle.hidden = false;
+    checkRow.hidden = false;
+    sizeField.hidden = false;
     const model = harness.model();
     const described = harness.describe();
     // The step list belongs to whichever model is open, so opening another
@@ -776,6 +911,14 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
     const wireframe = session.wireframe;
     session.dispose();
     session = new StudioSession(model, { canvas, width: viewW, height: viewH, camera, edges, lit, wireframe });
+    // A shown scene borrows the same camera, so it is rebuilt on the new one too.
+    if (sceneOpen && sceneSession) {
+      const scene = sceneSession.scene;
+      sceneSession.dispose();
+      sceneSession = new SceneSession(scene, sceneRecipes, sceneParts, {
+        canvas: sceneCanvas, width: viewW, height: viewH, camera, edges, lit, wireframe: false,
+      });
+    }
     refresh();
     persistView();
     return depthOn;
@@ -844,6 +987,7 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
     viewW = Math.max(2, Math.floor(width));
     viewH = Math.max(2, Math.floor(height));
     session.resize(viewW, viewH);
+    sceneSession?.resize(viewW, viewH);
     applyOrbit(camera, orbit, viewW, viewH);
     drawFrame(lastShownMs);
     return { width: canvas.width, height: canvas.height };
@@ -980,6 +1124,7 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
       highlightView.dispose();
       gridView.dispose();
       session.dispose();
+      sceneSession?.dispose();
       if (options.publishHarness !== false && window.voxelStudio === harness) {
         delete window.voxelStudio;
       }

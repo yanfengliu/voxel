@@ -34,6 +34,7 @@ import { physicalOverlaySegmentsV1, type PhysicalOverlaySegmentV1 } from './phys
 import type { StudioPlayer } from './player.js';
 import { buildRequest, sendRequest, type SendResult } from './requests.js';
 import type { ShelfRecipeV1, StudioCatalogV1 } from './catalog.js';
+import type { SceneV1 } from './scene.js';
 import type { OrbitStateV1 } from './orbit.js';
 import { composeSpriteSheet, type SpriteSheetPlanV1 } from './sheet.js';
 import { nearestFrame, stepFrame, type FrameStepV1 } from './sweep.js';
@@ -198,6 +199,20 @@ export interface VoxelStudioHarnessV1 {
   openFromShelf(id: string): ReturnType<StudioSession['describe']>;
 
   /**
+   * The scenes this studio offers: arrangements of its models standing together
+   * in one world. Empty when the catalog declares none.
+   */
+  scenes(): readonly SceneInfoV1[];
+  /**
+   * Opens a scene on the stage by its id. The stage shows the whole scene until
+   * any model is opened, which leaves the scene view. Throws when no scene has
+   * that id, naming it, rather than opening nothing.
+   */
+  openScene(id: string): void;
+  /** Whether a scene is on the stage rather than a single model. */
+  sceneMode(): boolean;
+
+  /**
    * Every part this studio offers, as discovery info: name, title, summary,
    * category, tags, its settings schema, and presets. This is the palette a
    * model is built from — distinct from `buildParts`, which is only what the
@@ -259,6 +274,15 @@ export interface VoxelStudioHarnessV1 {
   shownBuildStep(): number | null;
 
   validate(value: unknown): readonly { readonly path: string; readonly message: string }[];
+}
+
+/** A scene reduced to what browsing needs, before it is opened. */
+export interface SceneInfoV1 {
+  readonly id: string;
+  readonly label: string;
+  readonly summary?: string;
+  /** How many model placements the scene holds. */
+  readonly models: number;
 }
 
 /** One step of a model's construction, as plain data an agent can assert on. */
@@ -334,6 +358,10 @@ export interface HarnessHostV1 {
    */
   highlightPart(index: number | null): void;
   highlightedPart(): number | null;
+  /** Opens a scene on the stage; the model session stays alive underneath. */
+  openScene(scene: SceneV1): void;
+  /** Whether a scene is on the stage rather than a single model. */
+  sceneMode(): boolean;
   catalog(): StudioCatalogV1;
 }
 
@@ -594,6 +622,18 @@ export function createStudioHarness(host: HarnessHostV1): VoxelStudioHarnessV1 {
       }
       throw new Error(`No model on the shelf is called ${id}.`);
     },
+    scenes: () => (host.catalog().scenes ?? []).map((scene) => ({
+      id: scene.id,
+      label: scene.label,
+      ...(scene.summary === undefined ? {} : { summary: scene.summary }),
+      models: scene.placements.length,
+    })),
+    openScene(id) {
+      const scene = (host.catalog().scenes ?? []).find((entry) => entry.id === id);
+      if (!scene) throw new Error(`No scene in this studio is called ${id}.`);
+      host.openScene(scene);
+    },
+    sceneMode: () => host.sceneMode(),
     availableParts,
     findParts: (query) => searchPartInfoV1(availableParts(), query),
     availableRecipes,

@@ -14,7 +14,11 @@ import { element } from './studio-app-helpers.js';
  * so a game gets the same browser by declaring its parts and recipes.
  */
 
-type LibraryView = 'models' | 'parts' | 'recipes';
+type LibraryView = 'models' | 'parts' | 'recipes' | 'scenes';
+
+const VIEW_LABELS: Readonly<Record<LibraryView, string>> = {
+  models: 'Models', parts: 'Parts', recipes: 'Recipes', scenes: 'Scenes',
+};
 
 export interface StudioShelfDepsV1 {
   readonly harness: VoxelStudioHarnessV1;
@@ -48,9 +52,14 @@ export function createStudioShelf(deps: StudioShelfDepsV1): StudioShelfV1 {
   const heading = element('div', 'rail-head');
   const tabs = element('div', 'lib-switch');
   const viewButtons = new Map<LibraryView, HTMLButtonElement>();
-  for (const name of ['models', 'parts', 'recipes'] as const) {
+  // Scenes only appear when the game ships some, so a studio with none shows the
+  // three lanes it had before rather than an empty tab.
+  const views: readonly LibraryView[] = harness.scenes().length > 0
+    ? ['models', 'parts', 'recipes', 'scenes']
+    : ['models', 'parts', 'recipes'];
+  for (const name of views) {
     const button = element('button');
-    button.textContent = name === 'models' ? 'Models' : name === 'parts' ? 'Parts' : 'Recipes';
+    button.textContent = VIEW_LABELS[name];
     button.addEventListener('click', () => {
       if (view === name) return;
       view = name;
@@ -73,11 +82,13 @@ export function createStudioShelf(deps: StudioShelfDepsV1): StudioShelfV1 {
   function rebuild(): void {
     for (const [name, button] of viewButtons) button.classList.toggle('on', view === name);
     search.placeholder = view === 'models' ? 'Search models…'
-      : view === 'parts' ? 'Search parts…' : 'Search recipes…';
+      : view === 'parts' ? 'Search parts…'
+        : view === 'recipes' ? 'Search recipes…' : 'Search scenes…';
     body.replaceChildren();
     if (view === 'models') renderModels();
     else if (view === 'parts') renderParts();
-    else renderRecipes();
+    else if (view === 'recipes') renderRecipes();
+    else renderScenes();
   }
 
   function matchesModel(label: string, id: string): boolean {
@@ -228,6 +239,28 @@ export function createStudioShelf(deps: StudioShelfDepsV1): StudioShelfV1 {
     detail.append(usage);
     details.append(detail);
     return details;
+  }
+
+  function renderScenes(): void {
+    const scenes = harness.scenes();
+    const needle = query.trim().toLowerCase();
+    let shown = 0;
+    for (const scene of scenes) {
+      if (needle !== ''
+        && !`${scene.label} ${scene.id} ${scene.summary ?? ''}`.toLowerCase().includes(needle)) continue;
+      const row = element('button', 'model-row');
+      const label = element('span');
+      label.textContent = scene.label;
+      const count = element('span', 'scene-count');
+      count.textContent = `${String(scene.models)} model${scene.models === 1 ? '' : 's'}`;
+      row.append(label, count);
+      if (scene.summary) row.title = scene.summary;
+      row.addEventListener('click', () => { harness.openScene(scene.id); });
+      body.appendChild(row);
+      shown += 1;
+    }
+    if (shown === 0) { emptyNote('No scenes match.'); return; }
+    emptyNote('A scene stands finished models together in one world. Open one to view it.');
   }
 
   function emptyNote(text: string): void {
