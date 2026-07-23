@@ -1,3 +1,4 @@
+import { partBuildV1 } from './part-definition.js';
 import type {
   PartSettingsV1,
   PartShelfV1,
@@ -303,7 +304,7 @@ export function listRecipePartsWithCellsInternalV1(
         const make = parts[step.part];
         if (!make) return;
         const effectiveSeed = mixSeed(current.seed, step.seedSalt ?? 0);
-        const fragment = make(step.settings, effectiveSeed);
+        const fragment = partBuildV1(make)(step.settings, effectiveSeed);
         const size = [fragment.size[0], fragment.size[1], fragment.size[2]] as const;
         const id = add({
           groupKey: `part:${step.part}:${summary}:${partSettingsKey(step.settings)}:${String(effectiveSeed)}`,

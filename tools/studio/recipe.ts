@@ -6,6 +6,7 @@ import {
   type ModelMotionV1,
   type StudioModelV1,
 } from './model.js';
+import { partBuildV1, type PartDefinitionV1 } from './part-definition.js';
 import {
   describeRecipeStepV1,
   listRecipeComponentsV1,
@@ -60,8 +61,13 @@ export interface PartFragmentV1 {
  */
 export type PartV1 = (settings: PartSettingsV1, seed: number) => PartFragmentV1;
 
-/** The parts a builder may call, by the name a recipe step uses. */
-export type PartShelfV1 = Readonly<Record<string, PartV1>>;
+/**
+ * The parts a builder may call, by the name a recipe step uses. An entry is
+ * either a bare `PartV1` function or a self-describing `PartDefinitionV1`; the
+ * builder runs both the same way through `partBuildV1`, so a game can publish
+ * described parts for discovery without changing how a recipe places them.
+ */
+export type PartShelfV1 = Readonly<Record<string, PartV1 | PartDefinitionV1>>;
 
 /** Hand-sculpted voxels, layered wherever parts do not reach. Load-bearing:
  * without this step, the first corner no part can express forces a model back
@@ -571,14 +577,14 @@ function buildRecipeInternal(
       return;
     }
     if (step.kind === 'part') {
-      const make = parts[step.part];
-      if (!make) {
+      const entry = parts[step.part];
+      if (!entry) {
         issues.push({ path: `${path}.part`, message: `No part on the shelf is called '${step.part}'.` });
         return;
       }
       let fragment: PartFragmentV1;
       try {
-        fragment = make(step.settings, mixSeed(recipe.seed, step.seedSalt ?? 0));
+        fragment = partBuildV1(entry)(step.settings, mixSeed(recipe.seed, step.seedSalt ?? 0));
       } catch (error) {
         issues.push({
           path,
