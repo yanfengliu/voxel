@@ -50,6 +50,13 @@ export interface StudioSessionOptionsV1 {
    * simply draws with it, exactly as a game embedding the engine would.
    */
   readonly camera?: Camera;
+  /**
+   * Study edges on (the examining look) or off (the game look). Seeds the look
+   * a model opens on, so the stage can carry the last-chosen look onto the next
+   * model rather than resetting to edges every time one is opened. Defaults to
+   * on, which is the studio's resting examining look.
+   */
+  readonly edges?: boolean;
 }
 
 const DEFAULT_WIDTH = 320;
@@ -71,6 +78,10 @@ export class StudioSession {
 
   constructor(model: StudioModelV1, options: StudioSessionOptionsV1) {
     this.#model = model;
+    // Seeded before the first accept, because the opening snapshot is built
+    // with this look: a model asked to open on the game look must not flash the
+    // examining edges for one frame first.
+    this.#edges = options.edges ?? true;
     this.#runtime = new ThreeRenderRuntime({
       canvas: options.canvas,
       width: options.width ?? DEFAULT_WIDTH,

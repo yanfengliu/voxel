@@ -30,6 +30,12 @@ import {
 import { createPhysicalOverlayView } from './physical-overlay-view.js';
 import { StudioPlayer } from './player.js';
 import { StudioSession } from './session.js';
+import {
+  browserViewPrefsStore,
+  readViewPrefs,
+  writeViewPrefs,
+  type ViewPrefsStoreV1,
+} from './view-prefs.js';
 import type { StudioEditStateV1 } from './studio-app-context.js';
 import { element, openingModel } from './studio-app-helpers.js';
 import { createStudioEditorPanel, type StudioEditorPanelV1 } from './studio-editor.js';
@@ -96,6 +102,12 @@ export interface StudioMountOptionsV1 {
    * Omit it to preserve the exact five-tab V1 workbench.
    */
   readonly shellProfileV2?: ModelStudioShellProfileV2;
+  /**
+   * Where the stage's remembered look is kept. Defaults to the browser's
+   * `localStorage`, guarded so a page that forbids it still mounts; a test or a
+   * game embedding two studios can pass its own store to keep them separate.
+   */
+  readonly viewStore?: ViewPrefsStoreV1;
 }
 
 export interface StudioHandleV1 {
@@ -115,6 +127,14 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
   const root = options.root ?? document.getElementById('studio');
   if (!root) throw new Error('The studio needs a #studio host element.');
   const catalog = options.catalog;
+  // The look this studio last wore, so the next model opens the way the last one
+  // was left rather than resetting to the resting look. Read once here; written
+  // back whenever a view control changes.
+  const viewStore = options.viewStore ?? browserViewPrefsStore();
+  const view = readViewPrefs(viewStore);
+  const persistView = (): void => {
+    writeViewPrefs(viewStore, { depth: depthOn, edges: session.edges, lit: view.lit, wireframe: view.wireframe });
+  };
   const configuredCoreTabs = options.shellProfileV2?.coreTabs;
   const supportsCoreTab = (tab: ModelStudioTabId): boolean =>
     configuredCoreTabs === undefined || configuredCoreTabs.includes(tab);
@@ -177,9 +197,10 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
   const depthCamera = new PerspectiveCamera();
   // Real depth is the resting state, per the owner: the flat view's
   // equal-sizes-everywhere reads backwards at a glance, so the honest eye is
-  // the default and flat is the deliberate choice.
-  let depthOn = true;
-  let camera: OrthographicCamera | PerspectiveCamera = depthCamera;
+  // the default and flat is the deliberate choice — unless a previous visit
+  // chose otherwise, which the remembered look restores here.
+  let depthOn = view.depth;
+  let camera: OrthographicCamera | PerspectiveCamera = depthOn ? depthCamera : flatCamera;
   const firstModel = openingModel(catalog, options.openModelId);
   // Fitted to the model it opens on, for the same reason every later open is:
   // a shelf's models are not one size.
@@ -192,7 +213,7 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
   applyOrbit(camera, orbit, viewW, viewH);
 
   let session = new StudioSession(firstModel, {
-    canvas, width: viewW, height: viewH, camera,
+    canvas, width: viewW, height: viewH, camera, edges: view.edges,
   });
   const player = new StudioPlayer(session.model.motion.periodMs);
   const noteStore = new NoteStore();
@@ -238,9 +259,13 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
   const harness = createStudioHarness({
     session: () => session,
     replace(model: StudioModelV1) {
+      // The look carries onto the next model: opening one keeps the edges
+      // choice the last was left on rather than snapping back to examining
+      // edges, which is the whole of "remember my last choice".
+      const carriedEdges = session.edges;
       session.dispose();
       session = new StudioSession(model, {
-        canvas, width: viewW, height: viewH, camera,
+        canvas, width: viewW, height: viewH, camera, edges: carriedEdges,
       });
       // Opening a model fits the view to it, because a shelf holds a game's
       // whole asset set and those are not one size. Only on open: an edit
@@ -267,6 +292,15 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
     resizeStage,
     depth: () => depthOn,
     setDepth,
+    setEdges(on: boolean): boolean {
+      session.setEdges(on);
+      persistView();
+      // A full refresh so the switch, the picture, and the remembered look
+      // all catch up together — the same funnel whether the UI or an agent
+      // asked for it.
+      refresh();
+      return session.edges;
+    },
     setPhysicalOverlay: setPhysicalOverlayOn,
     physicalOverlay: () => physicalOn,
     setOrbit(view) {
@@ -439,10 +473,7 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
   }, { passive: false });
   canvas.addEventListener('dblclick', () => { harness.setViewAngles(DEFAULT_ORBIT); });
 
-  lookSwitch.addEventListener('click', () => {
-    harness.setEdges(!session.edges);
-    refresh();
-  });
+  lookSwitch.addEventListener('click', () => { harness.setEdges(!session.edges); });
   depthToggle.addEventListener('click', () => { setDepth(!depthOn); });
   physToggle.addEventListener('click', () => { harness.setPhysicalOverlay(!physicalOn); });
 
@@ -471,9 +502,9 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
     const model = session.model;
     const edges = session.edges;
     session.dispose();
-    session = new StudioSession(model, { canvas, width: viewW, height: viewH, camera });
-    session.setEdges(edges);
+    session = new StudioSession(model, { canvas, width: viewW, height: viewH, camera, edges });
     refresh();
+    persistView();
     return depthOn;
   }
 

@@ -248,6 +248,12 @@ export interface HarnessHostV1 {
   setOrbit(view: Partial<OrbitStateV1>): OrbitStateV1 & { readonly described: string };
   setDepth(on: boolean): boolean;
   depth(): boolean;
+  /**
+   * Sets study edges on/off. The app owns this so the one funnel also
+   * remembers the choice and refreshes the switch, whether the change came
+   * from the UI or an agent — the same reason depth is a host method.
+   */
+  setEdges(on: boolean): boolean;
   /** Shows or hides the stage's physical-outline layer; returns what shows. */
   setPhysicalOverlay(on: boolean): boolean;
   physicalOverlay(): boolean;
@@ -452,11 +458,7 @@ export function createStudioHarness(host: HarnessHostV1): VoxelStudioHarnessV1 {
     setDepth: (on) => host.setDepth(on),
     depth: () => host.depth(),
     setViewAngles: (view) => host.setOrbit(view),
-    setEdges(on) {
-      host.session().setEdges(on);
-      host.drawAt(host.player().timeAt(host.now()));
-      return host.session().edges;
-    },
+    setEdges: (on) => host.setEdges(on),
     edges: () => host.session().edges,
     physicalShapes: () => shapesForOpenModel(),
     setPhysicalOverlay(on) {
