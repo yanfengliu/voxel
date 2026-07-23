@@ -16,6 +16,8 @@ import {
   createCottageRoofRecipe,
   createDiningSetRecipe,
   createFlowerRecipe,
+  createHouseRoofRecipe,
+  createHouseShellRecipe,
   createMadeBedRecipe,
   createMattressRecipe,
   createNightstandRecipe,
@@ -264,6 +266,15 @@ export function createStudioCatalog(): StudioCatalogV1 {
           recipeEntry(createCottageRoofRecipe),
           recipeEntry(createBrickCottageRecipe),
           recipeEntry(createSandstoneCottageRecipe),
+        ],
+      },
+      {
+        // The structural pieces a house is built from, composed with the
+        // shelf's furniture into the Furnished house scene.
+        name: 'House',
+        models: [
+          recipeEntry(createHouseShellRecipe),
+          recipeEntry(createHouseRoofRecipe),
         ],
       },
     ],

@@ -39,5 +39,25 @@ export function createStudioScenes(): readonly SceneV1[] {
         { id: 'pot-back', model: 'studio:three-flower-pot', at: [2, 0, -15] },
       ],
     },
+    {
+      schemaVersion: VOXEL_SCENE_SCHEMA_V1,
+      id: 'studio:scene:house',
+      label: 'Furnished house',
+      summary: 'A house with an open front so the room inside is in full view — a made '
+        + 'bed, a nightstand with its lamp, a table and chairs, and a plant, all on one '
+        + 'floor under a pitched roof. The shell and roof are recipes; the furniture is '
+        + 'the shelf\'s own, reused whole.',
+      placements: [
+        { id: 'shell', model: 'studio:house-shell', at: [0, 0, 0] },
+        { id: 'roof', model: 'studio:house-roof', at: [0, 14, 0] },
+        { id: 'bed', model: 'studio:made-bed', at: [-6, 1, 3] },
+        { id: 'nightstand', model: 'studio:nightstand', at: [-13, 1, 9] },
+        { id: 'lamp', model: 'studio:table-lamp', at: [-13, 7, 9] },
+        { id: 'table', model: 'studio:table', at: [7, 1, -4] },
+        { id: 'chair-left', model: 'studio:chair', at: [1, 1, -4], turns: 3 },
+        { id: 'chair-right', model: 'studio:chair', at: [13, 1, -4], turns: 1 },
+        { id: 'plant', model: 'studio:three-flower-pot', at: [11, 1, 7] },
+      ],
+    },
   ];
 }
