@@ -31,7 +31,7 @@ export interface ScenePlacementV1 {
   readonly id: string;
   /** Which model to place, by the recipe id it is built from. */
   readonly model: string;
-  /** Where its middle sits, in world units. */
+  /** Where its base sits, in world units — a scene stands its models on a floor. */
   readonly at: readonly [number, number, number];
   /** Quarter-turns about the up axis; omitted means none. */
   readonly turns?: number;

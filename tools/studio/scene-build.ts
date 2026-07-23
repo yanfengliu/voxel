@@ -121,6 +121,7 @@ export function buildSceneSnapshot(
   recipes: RecipeBookV1,
   parts: PartShelfV1,
   look: SceneLookV1 = {},
+  revision = 1,
 ): RenderSnapshotV1 {
   const issues = validateSceneV1(scene);
   if (issues.length > 0) throw new SceneBuildError(issues);
@@ -173,22 +174,31 @@ export function buildSceneSnapshot(
       ...geometry,
       key: geometryKey,
       incarnation: 1,
-      revision: 1,
+      revision,
       groups: geometry.groups.map((entry) => ({ ...entry, materialKey })),
     });
-    resources.push({ ...material, key: materialKey, incarnation: 1, revision: 1 });
+    resources.push({ ...material, key: materialKey, incarnation: 1, revision });
 
     const count = group.placements.length;
     const matrices = new Float32Array(count * 16);
     const instanceKeys: string[] = [];
+    // A scene stands models on a floor, so a placement's `at` is where the
+    // model's base goes, not its middle. The geometry is centred on its own
+    // middle, so its lowest point is exactly how far to lift it.
+    const baseLift = -geometry.bounds.min.y;
     group.placements.forEach((placement, slot) => {
-      writePlacementMatrix(matrices, slot * 16, placement.at, placement.turns ?? 0);
+      writePlacementMatrix(
+        matrices,
+        slot * 16,
+        [placement.at[0], placement.at[1] + baseLift, placement.at[2]],
+        placement.turns ?? 0,
+      );
       instanceKeys.push(placement.id);
     });
     batches.push({
       key: `batch:${String(index)}`,
       incarnation: 1,
-      revision: 1,
+      revision,
       geometryKey,
       materialKey,
       instanceKeys,
@@ -201,7 +211,7 @@ export function buildSceneSnapshot(
   return {
     schemaVersion: 'voxel.render-snapshot/1',
     descriptor: sceneDescriptor(scene.id),
-    revision: 1,
+    revision,
     resources,
     chunks: [],
     batches,

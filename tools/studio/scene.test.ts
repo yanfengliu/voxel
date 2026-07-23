@@ -67,11 +67,26 @@ describe('building a scene into a snapshot', () => {
     expect(snapshot.batches).toHaveLength(1);
     const batch = snapshot.batches[0];
     expect(batch?.instanceKeys).toEqual(['a', 'b', 'c']);
-    // Each instance sits where its placement said, in the matrix's translation.
+    // Each instance sits where its placement said in x and z; y lifts every
+    // instance of the model by the same amount, so a scene stands its models on
+    // one floor rather than sinking them to their middles.
     const matrices = batch?.matrices ?? new Float32Array();
-    expect([matrices[12], matrices[13], matrices[14]]).toEqual([0, 0, 0]);
-    expect([matrices[28], matrices[29], matrices[30]]).toEqual([6, 0, 0]);
-    expect([matrices[44], matrices[45], matrices[46]]).toEqual([12, 0, 0]);
+    const lift = matrices[13] ?? 0;
+    expect(lift).toBeGreaterThan(0);
+    expect([matrices[12], matrices[14]]).toEqual([0, 0]);
+    expect([matrices[28], matrices[29], matrices[30]]).toEqual([6, lift, 0]);
+    expect([matrices[44], matrices[45], matrices[46]]).toEqual([12, lift, 0]);
+  });
+
+  it('threads a rising revision through the snapshot and its bodies', () => {
+    // A look change re-accepts at a higher revision, so the runtime updates
+    // rather than ignoring a same-revision snapshot.
+    const built = buildSceneSnapshot(
+      scene([{ id: 'a', model: 'studio:chair', at: [0, 0, 0] }]), recipes, parts, {}, 7,
+    );
+    expect(built.revision).toBe(7);
+    for (const resource of built.resources) expect(resource.revision).toBe(7);
+    for (const batch of built.batches) expect(batch.revision).toBe(7);
   });
 
   it('keeps the same model at a different grain as its own body', () => {

@@ -4,6 +4,8 @@ import type { StudioModelV1 } from './model.js';
 import { createStudioParts } from './parts.js';
 import type { PhysicalAssetBookV1 } from './physical-asset.js';
 import { buildRecipe, type PartShelfV1, type RecipeBookV1, type RecipeV1 } from './recipe.js';
+import type { SceneV1 } from './scene.js';
+import { createStudioScenes } from './scenes.js';
 import {
   createBrickCottageRecipe,
   createBrickWallRecipe,
@@ -82,6 +84,12 @@ export interface StudioCatalogV1 {
    * what the shelf models place.
    */
   readonly recipes?: RecipeBookV1;
+  /**
+   * The game's scenes: arrangements of its models standing together in one
+   * world, for the studio's scene view. Omitted, the studio offers no scenes —
+   * a game earns them as it composes its models, and needs none to start.
+   */
+  readonly scenes?: readonly SceneV1[];
 }
 
 /** A small model that is obviously a model, so the studio never opens on noise. */
@@ -263,5 +271,8 @@ export function createStudioCatalog(): StudioCatalogV1 {
     // recipe by name, not only the ones a shelf model already happens to call.
     parts: createStudioParts(),
     recipes: createStudioRecipeBook(),
+    // Example scenes: the shelf's own models arranged together, so the scene
+    // view opens on something real rather than an empty world.
+    scenes: createStudioScenes(),
   };
 }
