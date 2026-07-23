@@ -118,6 +118,75 @@ button:disabled { opacity: 0.45; cursor: default; }
 .model-row:hover { background: var(--panel); color: var(--text); }
 .model-row.active { background: var(--panel); border-color: var(--line); color: var(--text); }
 .railnote { font-size: 11px; color: var(--faint); margin: 12px 8px 0; line-height: 1.45; }
+/* ---- library rail: models / parts / recipes ---- */
+.rail-head { padding: 10px 8px 8px; display: grid; gap: 8px; }
+.lib-switch { display: flex; gap: 4px; }
+.lib-switch button {
+  flex: 1;
+  font-size: 11px;
+  padding: 5px 4px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  color: var(--muted);
+  background: transparent;
+}
+.lib-switch button.on { color: var(--accent); border-color: var(--accent); }
+.lib-search {
+  width: 100%;
+  font: inherit;
+  font-size: 12px;
+  background: var(--sunk);
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 5px 8px;
+}
+.lib-item { border: 1px solid var(--line); border-radius: 6px; background: var(--sunk); margin: 0 6px 5px; }
+.lib-summary {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  cursor: pointer;
+  padding: 7px 9px;
+  font-size: 12.5px;
+}
+.lib-summary:hover { color: var(--text); }
+.lib-title { font-weight: 600; color: var(--text); }
+.lib-badge {
+  font-size: 8.5px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  padding: 2px 4px;
+}
+.lib-badge.lib-bare { color: var(--bad); border-color: color-mix(in srgb, var(--bad) 45%, var(--line)); }
+.lib-detail { padding: 0 9px 9px; display: grid; gap: 6px; }
+.lib-text { margin: 0; font-size: 11.5px; color: var(--muted); line-height: 1.4; }
+.lib-subhead {
+  margin: 2px 0 0;
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--faint);
+}
+.lib-list { margin: 0; padding-left: 16px; display: grid; gap: 2px; font-size: 11px; color: var(--muted); }
+.lib-facts { margin: 0; font-family: ui-monospace, "Cascadia Code", monospace; font-size: 10.5px; color: var(--faint); }
+.lib-code {
+  margin: 0;
+  font-family: ui-monospace, "Cascadia Code", monospace;
+  font-size: 10px;
+  color: var(--faint);
+  background: var(--bg);
+  border: 1px solid var(--line-soft);
+  border-radius: 4px;
+  padding: 4px 6px;
+  overflow-x: auto;
+  white-space: nowrap;
+}
+.lib-open { justify-self: start; padding: 4px 8px; font-size: 11px; color: var(--accent); }
 /* ---- stage ---- */
 .stage {
   grid-area: stage;
