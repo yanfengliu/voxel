@@ -53,9 +53,9 @@ export function createStudioScenes(): readonly SceneV1[] {
         { id: 'bed', model: 'studio:made-bed', at: [-4, 1, 4] },
         { id: 'nightstand', model: 'studio:nightstand', at: [-13, 1, 9] },
         { id: 'lamp', model: 'studio:table-lamp', at: [-13, 7, 9] },
-        { id: 'table', model: 'studio:table', at: [8, 1, -4] },
-        { id: 'chair-front', model: 'studio:chair', at: [8, 1, -10], turns: 0 },
-        { id: 'chair-back', model: 'studio:chair', at: [8, 1, 2], turns: 2 },
+        { id: 'table', model: 'studio:table', at: [8, 1, -2] },
+        { id: 'chair-front', model: 'studio:chair', at: [8, 1, -8], turns: 0 },
+        { id: 'chair-back', model: 'studio:chair', at: [8, 1, 4], turns: 2 },
       ],
     },
     {

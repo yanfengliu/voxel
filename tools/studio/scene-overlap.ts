@@ -28,8 +28,15 @@ export interface SceneOverlapV1 {
   readonly cells: number;
 }
 
-/** The world cells a placement fills, keyed 'x,y,z', matching buildSceneSnapshot. */
-function placementCells(placement: ScenePlacementV1, model: StudioModelV1, grain: number): Set<string> {
+interface VoxelBox {
+  readonly x: number;
+  readonly y: number;
+  readonly z: number;
+  readonly size: number;
+}
+
+/** A placement's filled voxels as world cubes, matching how buildSceneSnapshot places it. */
+function placementVoxels(placement: ScenePlacementV1, model: StudioModelV1, grain: number): VoxelBox[] {
   const [sx, sy, sz] = model.size;
   const middle = modelCenterV1(model);
   // The lowest filled row, so the base can be lifted to sit on the floor.
@@ -41,23 +48,66 @@ function placementCells(placement: ScenePlacementV1, model: StudioModelV1, grain
   }
   const turns = (((placement.turns ?? 0) % 4) + 4) % 4;
   const [ax, ay, az] = placement.at;
-  const cells = new Set<string>();
+  const voxels: VoxelBox[] = [];
   for (let z = 0; z < sz; z += 1) {
     for (let y = 0; y < sy; y += 1) {
       for (let x = 0; x < sx; x += 1) {
         if ((model.voxels[x + sx * (y + sy * z)] ?? 0) === 0) continue;
-        // Voxel centre, centred on the model's middle and scaled by grain.
-        const localX = (x + 0.5 - middle.x) * grain;
-        const localZ = (z + 0.5 - middle.z) * grain;
+        // Low corner of the voxel, centred on the model's middle and scaled by grain.
+        const localX = (x - middle.x) * grain;
+        const localZ = (z - middle.z) * grain;
         // Rotate about the up axis by quarter-turns (matching the placement matrix).
-        const worldX = ax + (turns === 0 ? localX : turns === 1 ? localZ : turns === 2 ? -localX : -localZ);
-        const worldZ = az + (turns === 0 ? localZ : turns === 1 ? -localX : turns === 2 ? -localZ : localX);
-        const worldY = ay + (y - baseRow + 0.5) * grain;
-        cells.add(`${String(Math.floor(worldX))},${String(Math.floor(worldY))},${String(Math.floor(worldZ))}`);
+        // A rotated cube's low corner is its min corner, so quarter-turns pick the
+        // corner that stays lowest after the turn.
+        const cornerX = turns === 0 ? localX : turns === 1 ? localZ : turns === 2 ? -localX - grain : -localZ - grain;
+        const cornerZ = turns === 0 ? localZ : turns === 1 ? -localX - grain : turns === 2 ? -localZ - grain : localX;
+        voxels.push({
+          x: ax + cornerX,
+          y: ay + (y - baseRow) * grain,
+          z: az + cornerZ,
+          size: grain,
+        });
       }
     }
   }
-  return cells;
+  return voxels;
+}
+
+/** Whether two axis-aligned voxel cubes overlap with positive volume (touching is not overlap). */
+function cubesOverlap(a: VoxelBox, b: VoxelBox): boolean {
+  return a.x < b.x + b.size && b.x < a.x + a.size
+    && a.y < b.y + b.size && b.y < a.y + a.size
+    && a.z < b.z + b.size && b.z < a.z + a.size;
+}
+
+/** How many of A's voxels overlap any of B's, via a unit-cell hash of B's low corners. */
+function sharedVoxels(a: readonly VoxelBox[], b: readonly VoxelBox[]): number {
+  const byCell = new Map<string, VoxelBox[]>();
+  for (const box of b) {
+    const key = `${String(Math.floor(box.x))},${String(Math.floor(box.y))},${String(Math.floor(box.z))}`;
+    const bucket = byCell.get(key);
+    if (bucket) bucket.push(box);
+    else byCell.set(key, [box]);
+  }
+  let shared = 0;
+  for (const box of a) {
+    // A cube spanning [x, x+size] can only meet B cubes whose low corner falls in
+    // the neighbouring unit cells, so only those are tested.
+    const spanLo = -Math.ceil(box.size);
+    let hit = false;
+    for (let dx = spanLo; dx <= 0 && !hit; dx += 1) {
+      for (let dy = spanLo; dy <= 0 && !hit; dy += 1) {
+        for (let dz = spanLo; dz <= 0 && !hit; dz += 1) {
+          const key = `${String(Math.floor(box.x) + dx)},${String(Math.floor(box.y) + dy)},${String(Math.floor(box.z) + dz)}`;
+          for (const other of byCell.get(key) ?? []) {
+            if (cubesOverlap(box, other)) { hit = true; break; }
+          }
+        }
+      }
+    }
+    if (hit) shared += 1;
+  }
+  return shared;
 }
 
 /**
@@ -71,7 +121,7 @@ export function sceneOverlapsV1(
 ): readonly SceneOverlapV1[] {
   if (validateSceneV1(scene).length > 0) return [];
   const byModel = new Map<string, { model: StudioModelV1; grain: number }>();
-  const filled: { id: string; cells: Set<string> }[] = [];
+  const filled: { id: string; voxels: VoxelBox[] }[] = [];
   for (const placement of scene.placements) {
     const recipe = recipes[placement.model];
     if (!recipe) continue;
@@ -84,16 +134,15 @@ export function sceneOverlapsV1(
       entry = { model, grain };
       byModel.set(key, entry);
     }
-    filled.push({ id: placement.id, cells: placementCells(placement, entry.model, entry.grain) });
+    filled.push({ id: placement.id, voxels: placementVoxels(placement, entry.model, entry.grain) });
   }
   const overlaps: SceneOverlapV1[] = [];
   for (let i = 0; i < filled.length; i += 1) {
     for (let j = i + 1; j < filled.length; j += 1) {
       const a = filled[i]!;
       const b = filled[j]!;
-      const [small, big] = a.cells.size <= b.cells.size ? [a.cells, b.cells] : [b.cells, a.cells];
-      let shared = 0;
-      for (const cell of small) if (big.has(cell)) shared += 1;
+      const [small, big] = a.voxels.length <= b.voxels.length ? [a.voxels, b.voxels] : [b.voxels, a.voxels];
+      const shared = sharedVoxels(small, big);
       if (shared > 0) overlaps.push({ a: a.id, b: b.id, cells: shared });
     }
   }
