@@ -1,4 +1,4 @@
-import { OrthographicCamera, PerspectiveCamera } from 'three';
+import { Box3, OrthographicCamera, PerspectiveCamera, Plane, Raycaster, Vector2, Vector3 } from 'three';
 
 import type { StudioCatalogV1 } from './catalog.js';
 import { createConstructionPanel, type ConstructionPanelV1 } from './construction.js';
@@ -24,7 +24,9 @@ import {
   describeOrbit,
   dragOrbit,
   fitViewHeight,
+  panOrbit,
   zoomOrbit,
+  type OrbitCenterV1,
   type OrbitStateV1,
 } from './orbit.js';
 import { createPhysicalOverlayView } from './physical-overlay-view.js';
@@ -32,6 +34,7 @@ import { StudioPlayer } from './player.js';
 import { referenceGridSegmentsV1, sceneReferenceGridSegmentsV1 } from './reference-grid.js';
 import type { SceneV1 } from './scene.js';
 import { createSceneEditor } from './scene-editor.js';
+import { boxEdgesV1, placementWorldBoxesV1, type PlacementBoxV1 } from './scene-pick.js';
 import { SceneSession } from './scene-session.js';
 import { catalogPartsV1, catalogRecipesV1 } from './studio-library.js';
 import { createWireframeView } from './wireframe-view.js';
@@ -279,9 +282,12 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
     ...DEFAULT_ORBIT,
     viewHeight: fitViewHeight(firstModel.size, modelVoxelSizeV1(firstModel)),
   });
+  // The point the camera looks at; a right-drag pan slides it, opening a model
+  // or scene re-centres it on the origin.
+  let panCenter: OrbitCenterV1 = [0, 0, 0];
   let viewW = VIEW_WIDTH;
   let viewH = VIEW_HEIGHT;
-  applyOrbit(camera, orbit, viewW, viewH);
+  applyOrbit(camera, orbit, viewW, viewH, panCenter);
 
   let session = new StudioSession(firstModel, {
     canvas, width: viewW, height: viewH, camera, edges: view.edges, lit: view.lit, wireframe: view.wireframe,
@@ -294,6 +300,12 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
   const sceneParts = catalog.parts ?? catalogPartsV1(catalog);
   let sceneSession: SceneSession | null = null;
   let sceneOpen: SceneV1 | null = null;
+  // A left click picks the model under the cursor; these hold each placement's
+  // world box (recomputed when the scene changes) and which one is selected, so
+  // it can be outlined and dragged.
+  const sceneRaycaster = new Raycaster();
+  let sceneBoxes: readonly PlacementBoxV1[] = [];
+  let selectedPlacementId: string | null = null;
   // Editing a scene hands a new scene back: the app adopts it, redraws, and
   // re-renders the editor — the same one-way flow the model editor uses.
   const sceneEditor = createSceneEditor({
@@ -321,8 +333,12 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
   // shown while a scene is open — so the model's own content underneath keeps
   // its visibility and is simply covered, never toggled out from under itself.
   const sceneInspectorPanels: HTMLElement[] = [];
+  // The tab buttons a scene does not use — Build, Motion, Notes — hidden while a
+  // scene is open, so the inspector shows only Examine and the scene editor.
+  let sceneHiddenTabs: HTMLElement[] = [];
   function setInspectorSceneMode(on: boolean): void {
     for (const content of sceneInspectorPanels) content.hidden = !on;
+    for (const tab of sceneHiddenTabs) tab.hidden = on;
   }
   const player = new StudioPlayer(session.model.motion.periodMs);
   const noteStore = new NoteStore();
@@ -402,7 +418,8 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
       // must not re-zoom under your hands, and a construction's stages must
       // keep the frame the finished model set.
       orbit = clampOrbit({ ...orbit, viewHeight: fitViewHeight(model.size, session.voxelSize) });
-      applyOrbit(camera, orbit, viewW, viewH);
+      panCenter = [0, 0, 0];
+      applyOrbit(camera, orbit, viewW, viewH, panCenter);
       viewChip.textContent = describeOrbit(orbit);
       // A new model has its own parts, so a part lit up on the last one has no
       // meaning here.
@@ -462,7 +479,7 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
     sceneMode: () => sceneOpen !== null,
     setOrbit(view) {
       orbit = clampOrbit({ ...orbit, ...view });
-      applyOrbit(camera, orbit, viewW, viewH);
+      applyOrbit(camera, orbit, viewW, viewH, panCenter);
       viewChip.textContent = describeOrbit(orbit);
       drawFrame(lastShownMs);
       return { ...orbit, described: describeOrbit(orbit) };
@@ -507,15 +524,19 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
     // Reasserted every draw, not only on drag: the engine may touch the shared
     // camera, and the studio's view must win on every frame, not just the ones
     // after an interaction.
-    applyOrbit(camera, orbit, viewW, viewH);
+    applyOrbit(camera, orbit, viewW, viewH, panCenter);
     const viewSignature =
-      `${String(orbit.yawDegrees)}:${String(orbit.pitchDegrees)}:${String(orbit.viewHeight)}:${depthOn ? 'depth' : 'flat'}`;
+      `${String(orbit.yawDegrees)}:${String(orbit.pitchDegrees)}:${String(orbit.viewHeight)}`
+      + `:${depthOn ? 'depth' : 'flat'}:${String(panCenter[0])},${String(panCenter[2])}`;
     // A shown scene draws to its own canvas and keeps a ground grid under its
-    // whole floor; the model's own layers (colliders, wireframe, part
-    // highlight, note rings) belong to a single model and stay hidden.
+    // whole floor; the only model layer it borrows is the highlight, reused to
+    // outline the selected placement.
     if (sceneOpen && sceneSession) {
       sceneSession.showAt(timeMs);
       gridView.draw(camera, { x: 0, y: 0, z: 0 }, viewW, viewH, viewSignature, 1);
+      if (selectedPlacementId !== null) {
+        highlightView.draw(camera, { x: 0, y: 0, z: 0 }, viewW, viewH, viewSignature, 1);
+      }
       return;
     }
     session.showAt(timeMs);
@@ -576,10 +597,12 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
       sceneSession.setLit(session.lit);
     }
     sceneOpen = scene;
+    selectedPlacementId = null;
+    panCenter = [0, 0, 0];
     canvas.style.display = 'none';
     sceneCanvas.style.display = 'block';
     orbit = clampOrbit({ ...orbit, viewHeight: sceneFitHeight(scene) });
-    applyOrbit(camera, orbit, viewW, viewH);
+    applyOrbit(camera, orbit, viewW, viewH, panCenter);
     // Examine carries the scene's readout; Build and the rest belong to a
     // single model, so open on the tab that speaks about the scene.
     showTab('examine');
@@ -615,11 +638,13 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
     gridToggle.hidden = true;
     physToggle.hidden = true;
     wireframeView.setVisible(false);
-    highlightView.setVisible(false);
     physicalView.setVisible(false);
     // The scene stands on its own ground grid, sized to how far it spreads.
     gridView.setSegments(sceneReferenceGridSegmentsV1(scene));
     gridView.setVisible(true);
+    // The highlight is reused to outline the selected placement, if any.
+    recomputeSceneBoxes();
+    showSelection();
     // The examine pane carries the scene's own readout — what it is and which
     // models stand in it — not a single model's motion or checks.
     const counts = new Map<string, number>();
@@ -722,37 +747,129 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
     drawFrame(Math.min(lastShownMs, Math.max(player.periodMs - 1, 0)));
   }
 
-  // ---- wiring: stage (orbit vs pin) ----
-  let dragging = false;
+  // ---- wiring: stage ----
+  // Left button: in a scene, pick the model under the cursor and drag it across
+  // the ground; in model mode, turn the view, and a clean click pins a note.
+  // Middle button turns the view; right button pans it; wheel zooms.
+  function recomputeSceneBoxes(): void {
+    sceneBoxes = sceneOpen ? placementWorldBoxesV1(sceneOpen, sceneRecipes, sceneParts) : [];
+  }
+  function showSelection(): void {
+    const box = sceneBoxes.find((candidate) => candidate.id === selectedPlacementId);
+    if (box) {
+      highlightView.setSegments(boxEdgesV1(box));
+      highlightView.setVisible(true);
+    } else {
+      highlightView.setVisible(false);
+    }
+  }
+  function cursorNdc(event: PointerEvent): Vector2 {
+    const rect = canvasWrap.getBoundingClientRect();
+    return new Vector2(
+      ((event.clientX - rect.left) / Math.max(1, rect.width)) * 2 - 1,
+      -(((event.clientY - rect.top) / Math.max(1, rect.height)) * 2 - 1),
+    );
+  }
+  function groundPoint(event: PointerEvent, groundY: number): { readonly x: number; readonly z: number } | null {
+    sceneRaycaster.setFromCamera(cursorNdc(event), camera);
+    const hit = sceneRaycaster.ray.intersectPlane(new Plane(new Vector3(0, 1, 0), -groundY), new Vector3());
+    return hit ? { x: hit.x, z: hit.z } : null;
+  }
+  function pickPlacement(event: PointerEvent): string | null {
+    sceneRaycaster.setFromCamera(cursorNdc(event), camera);
+    const box = new Box3();
+    const point = new Vector3();
+    let best: string | null = null;
+    let bestVolume = Infinity;
+    // The smallest box the ray meets, not the nearest — so a chair inside a
+    // house is picked over the house shell whose box encloses it. The shell is
+    // still picked where only it is hit, a bare wall or the floor.
+    for (const candidate of sceneBoxes) {
+      box.min.set(candidate.min[0], candidate.min[1], candidate.min[2]);
+      box.max.set(candidate.max[0], candidate.max[1], candidate.max[2]);
+      if (sceneRaycaster.ray.intersectBox(box, point) === null) continue;
+      const volume = (candidate.max[0] - candidate.min[0])
+        * (candidate.max[1] - candidate.min[1])
+        * (candidate.max[2] - candidate.min[2]);
+      if (volume < bestVolume) { bestVolume = volume; best = candidate.id; }
+    }
+    return best;
+  }
+  function moveSelectedBy(dx: number, dz: number): void {
+    if (sceneOpen === null || selectedPlacementId === null) return;
+    sceneOpen = {
+      ...sceneOpen,
+      placements: sceneOpen.placements.map((placement) => (placement.id === selectedPlacementId
+        ? { ...placement, at: [placement.at[0] + dx, placement.at[1], placement.at[2] + dz] }
+        : placement)),
+    };
+    sceneSession?.setScene(sceneOpen);
+    recomputeSceneBoxes();
+    showSelection();
+    drawFrame(lastShownMs);
+  }
+
+  type StageGesture = 'none' | 'orbit' | 'pan' | 'move';
+  let gesture: StageGesture = 'none';
   let moved = false;
   let lastX = 0;
   let lastY = 0;
+  let dragGround: { readonly x: number; readonly z: number } | null = null;
+  // The browser's own context menu would swallow a right-drag pan.
+  canvasWrap.addEventListener('contextmenu', (event) => { event.preventDefault(); });
   canvasWrap.addEventListener('pointerdown', (event) => {
-    dragging = true;
     moved = false;
     lastX = event.clientX;
     lastY = event.clientY;
     canvasWrap.setPointerCapture(event.pointerId);
+    if (event.button === 1) { gesture = 'orbit'; return; }
+    if (event.button === 2) { gesture = 'pan'; return; }
+    if (event.button !== 0) { gesture = 'none'; return; }
+    if (!sceneOpen) { gesture = 'orbit'; return; }
+    // Left in a scene selects the model under the cursor and starts dragging it.
+    selectedPlacementId = pickPlacement(event);
+    showSelection();
+    drawFrame(lastShownMs);
+    if (selectedPlacementId === null) { gesture = 'none'; return; }
+    const box = sceneBoxes.find((candidate) => candidate.id === selectedPlacementId);
+    dragGround = groundPoint(event, box ? box.min[1] : 0);
+    gesture = dragGround ? 'move' : 'none';
   });
   canvasWrap.addEventListener('pointermove', (event) => {
-    if (!dragging) return;
+    if (gesture === 'none') return;
     const dx = event.clientX - lastX;
     const dy = event.clientY - lastY;
-    if (!moved && Math.hypot(event.clientX - lastX, event.clientY - lastY) < DRAG_THRESHOLD_PIXELS) {
-      return;
-    }
+    if (!moved && Math.hypot(event.clientX - lastX, event.clientY - lastY) < DRAG_THRESHOLD_PIXELS) return;
     moved = true;
     lastX = event.clientX;
     lastY = event.clientY;
-    harness.setViewAngles(dragOrbit(orbit, dx, dy));
+    if (gesture === 'orbit') {
+      harness.setViewAngles(dragOrbit(orbit, dx, dy));
+    } else if (gesture === 'pan') {
+      panCenter = panOrbit(orbit, panCenter, dx, dy, viewH);
+      applyOrbit(camera, orbit, viewW, viewH, panCenter);
+      viewChip.textContent = describeOrbit(orbit);
+      drawFrame(lastShownMs);
+    } else if (dragGround) {
+      const box = sceneBoxes.find((candidate) => candidate.id === selectedPlacementId);
+      const point = groundPoint(event, box ? box.min[1] : 0);
+      if (point) {
+        moveSelectedBy(point.x - dragGround.x, point.z - dragGround.z);
+        dragGround = point;
+      }
+    }
   });
   canvasWrap.addEventListener('pointerup', (event) => {
     canvasWrap.releasePointerCapture(event.pointerId);
     const wasDrag = moved;
-    dragging = false;
+    const finished = gesture;
+    gesture = 'none';
     moved = false;
+    dragGround = null;
+    // A finished drag of a scene model syncs the editor list to its new spot.
+    if (finished === 'move') { refresh(); return; }
     // A scene has no single model to pin a note against, so a clean click on
-    // one only ever turned or zoomed — never pins.
+    // one only ever selected — never pins.
     if (wasDrag || !supportsNotes || sceneOpen) return;
     // A clean click is pointing at something seen; freeze that moment.
     if (player.playing) {
@@ -796,7 +913,7 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
   /** Frames the open model at its current grain, so scaling never buries or crops it. */
   function refitView(): void {
     orbit = clampOrbit({ ...orbit, viewHeight: fitViewHeight(session.model.size, session.voxelSize) });
-    applyOrbit(camera, orbit, viewW, viewH);
+    applyOrbit(camera, orbit, viewW, viewH, panCenter);
     viewChip.textContent = describeOrbit(orbit);
   }
 
@@ -948,7 +1065,7 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
     if (on === depthOn) return depthOn;
     depthOn = on;
     camera = depthOn ? depthCamera : flatCamera;
-    applyOrbit(camera, orbit, viewW, viewH);
+    applyOrbit(camera, orbit, viewW, viewH, panCenter);
     const model = session.model;
     const edges = session.edges;
     const lit = session.lit;
@@ -1032,7 +1149,7 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
     viewH = Math.max(2, Math.floor(height));
     session.resize(viewW, viewH);
     sceneSession?.resize(viewW, viewH);
-    applyOrbit(camera, orbit, viewW, viewH);
+    applyOrbit(camera, orbit, viewW, viewH, panCenter);
     drawFrame(lastShownMs);
     return { width: canvas.width, height: canvas.height };
   }
@@ -1131,6 +1248,12 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
     attachSceneInspector('build', sceneBuildNote);
     attachSceneInspector('motion', sceneMotionNote);
     attachSceneInspector('notes', sceneNotesNote);
+    // The tab buttons a scene hides. Examine and Edit stay; a scene is examined
+    // and edited, never built from steps, given motion, or noted per-model.
+    const tabHost = studioShell.regions.stage.parentElement;
+    sceneHiddenTabs = (['build', 'motion', 'notes'] as const)
+      .map((tab) => tabHost?.querySelector<HTMLElement>(`[data-studio-tab="${tab}"]`) ?? null)
+      .filter((element): element is HTMLElement => element !== null);
 
     // A recipe-backed model opens on Build, whose first section is its recipe
     // parts list. Construction used to be hidden behind Examine on every open,

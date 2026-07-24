@@ -81,6 +81,36 @@ export function zoomOrbit(state: OrbitStateV1, wheelSteps: number): OrbitStateV1
   return clampOrbit({ ...state, viewHeight: state.viewHeight * Math.pow(1.12, wheelSteps) });
 }
 
+/** The point the camera looks at; panning slides it across the ground. */
+export type OrbitCenterV1 = readonly [number, number, number];
+
+/**
+ * Slides the look-at point across the ground for a right-drag pan. The world
+ * follows the cursor: drag right and the scene moves right, so the point the
+ * camera holds moves left. It moves in the screen's own right and up
+ * directions, projected onto the ground, so a pan feels the same at any yaw.
+ */
+export function panOrbit(
+  state: OrbitStateV1,
+  center: OrbitCenterV1,
+  dxPixels: number,
+  dyPixels: number,
+  heightPixels: number,
+): OrbitCenterV1 {
+  const worldPerPixel = clampOrbit(state).viewHeight / Math.max(1, heightPixels);
+  const yaw = (clampOrbit(state).yawDegrees * Math.PI) / 180;
+  // Screen right and the ground projection of screen up, in world XZ.
+  const rightX = Math.cos(yaw);
+  const rightZ = -Math.sin(yaw);
+  const upX = Math.sin(yaw);
+  const upZ = Math.cos(yaw);
+  return [
+    center[0] + (-rightX * dxPixels + upX * dyPixels) * worldPerPixel,
+    center[1],
+    center[2] + (-rightZ * dxPixels + upZ * dyPixels) * worldPerPixel,
+  ];
+}
+
 /** With real depth, how wide the eye opens. Modest, so cubes stay readable. */
 const DEPTH_FOV_DEGREES = 35;
 
@@ -99,6 +129,7 @@ export function applyOrbit(
   state: OrbitStateV1,
   widthPixels: number,
   heightPixels: number,
+  center: OrbitCenterV1 = [0, 0, 0],
 ): void {
   const clamped = clampOrbit(state);
   const yaw = (clamped.yawDegrees * Math.PI) / 180;
@@ -110,13 +141,15 @@ export function applyOrbit(
     ? half / Math.tan((DEPTH_FOV_DEGREES * Math.PI) / 360)
     : EYE_DISTANCE;
   const flat = Math.cos(pitch) * distance;
+  // Position and aim are both offset by the pan centre, so panning slides the
+  // whole view across the ground without changing the angle or the zoom.
   camera.position.set(
-    Math.sin(yaw) * flat,
-    Math.sin(pitch) * distance,
-    Math.cos(yaw) * flat,
+    center[0] + Math.sin(yaw) * flat,
+    center[1] + Math.sin(pitch) * distance,
+    center[2] + Math.cos(yaw) * flat,
   );
   camera.up.set(0, 1, 0);
-  camera.lookAt(0, 0, 0);
+  camera.lookAt(center[0], center[1], center[2]);
   if (depth) {
     camera.fov = DEPTH_FOV_DEGREES;
     camera.aspect = aspect;
