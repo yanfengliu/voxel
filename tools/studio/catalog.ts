@@ -13,6 +13,10 @@ import {
   createBedroomFurnitureSetRecipe,
   createBlanketRecipe,
   createChairRecipe,
+  createCarRecipe,
+  createFenceRecipe,
+  createGarageRecipe,
+  createTreeRecipe,
   createBathSinkRecipe,
   createBathtubRecipe,
   createCoffeeTableRecipe,
@@ -315,6 +319,17 @@ export function createStudioCatalog(): StudioCatalogV1 {
           recipeEntry(createToiletRecipe),
           recipeEntry(createBathtubRecipe),
           recipeEntry(createBathSinkRecipe),
+        ],
+      },
+      {
+        // What stands outside the home: the garage and its car, and the
+        // backyard's tree and fence.
+        name: 'Outdoors',
+        models: [
+          recipeEntry(createGarageRecipe),
+          recipeEntry(createCarRecipe),
+          recipeEntry(createTreeRecipe),
+          recipeEntry(createFenceRecipe),
         ],
       },
     ],

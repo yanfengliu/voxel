@@ -37,6 +37,7 @@ describe('the studio shelf', () => {
       { name: 'House', count: 2 },
       { name: 'Home', count: 3 },
       { name: 'Home furnishings', count: 10 },
+      { name: 'Outdoors', count: 4 },
     ]);
   });
 });

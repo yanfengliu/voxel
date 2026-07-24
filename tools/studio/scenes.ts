@@ -87,6 +87,18 @@ export function createStudioScenes(): readonly SceneV1[] {
         { id: 'bathtub', model: 'studio:bathtub', at: [7, 1, -13] },
         { id: 'toilet', model: 'studio:toilet', at: [13, 1, -5], turns: 1 },
         { id: 'sink', model: 'studio:bath-sink', at: [2, 1, -14], turns: 2 },
+        // Garage and its car, alongside the house on the right, door to the front.
+        { id: 'garage', model: 'studio:garage', at: [26, 0, 3] },
+        { id: 'car', model: 'studio:car', at: [26, 1, 3] },
+        // A tree in the front-left yard, off to the side so it never blocks the
+        // open front.
+        { id: 'tree-front', model: 'studio:tree', at: [-28, 0, 8] },
+        // The backyard, behind the house (−z): a tree, a fenced boundary, and a
+        // flowerbed.
+        { id: 'tree-back', model: 'studio:tree', at: [9, 0, -28] },
+        { id: 'fence-a', model: 'studio:fence', at: [-9, 0, -31] },
+        { id: 'fence-b', model: 'studio:fence', at: [5, 0, -31] },
+        { id: 'garden', model: 'studio:three-flower-pot', at: [-9, 0, -26] },
       ],
     },
   ];
