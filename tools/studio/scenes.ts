@@ -50,13 +50,12 @@ export function createStudioScenes(): readonly SceneV1[] {
       placements: [
         { id: 'shell', model: 'studio:house-shell', at: [0, 0, 0] },
         { id: 'roof', model: 'studio:house-roof', at: [0, 14, 0] },
-        { id: 'bed', model: 'studio:made-bed', at: [-6, 1, 3] },
+        { id: 'bed', model: 'studio:made-bed', at: [-4, 1, 4] },
         { id: 'nightstand', model: 'studio:nightstand', at: [-13, 1, 9] },
         { id: 'lamp', model: 'studio:table-lamp', at: [-13, 7, 9] },
-        { id: 'table', model: 'studio:table', at: [7, 1, -4] },
-        { id: 'chair-left', model: 'studio:chair', at: [1, 1, -4], turns: 3 },
-        { id: 'chair-right', model: 'studio:chair', at: [13, 1, -4], turns: 1 },
-        { id: 'plant', model: 'studio:three-flower-pot', at: [11, 1, 7] },
+        { id: 'table', model: 'studio:table', at: [8, 1, -4] },
+        { id: 'chair-front', model: 'studio:chair', at: [8, 1, -10], turns: 0 },
+        { id: 'chair-back', model: 'studio:chair', at: [8, 1, 2], turns: 2 },
       ],
     },
     {
@@ -68,37 +67,37 @@ export function createStudioScenes(): readonly SceneV1[] {
         + 'and a bathroom, each furnished for the family that lives here.',
       placements: [
         { id: 'shell', model: 'studio:home-shell', at: [0, 0, 0] },
-        // Living room — back-left, around the hearth on the far wall.
-        { id: 'fireplace', model: 'studio:fireplace', at: [-8.5, 1, 15] },
-        { id: 'chimney', model: 'studio:chimney', at: [-8.5, 7, 15] },
-        { id: 'sofa', model: 'studio:sofa', at: [-8.5, 1, 5], turns: 2 },
-        { id: 'coffee-table', model: 'studio:coffee-table', at: [-8.5, 1, 9] },
-        { id: 'tv', model: 'studio:tv-stand', at: [-15, 1, 9], turns: 1 },
-        // Kitchen — back-right, counter along the far wall.
-        { id: 'counter', model: 'studio:kitchen-counter', at: [7, 1, 14] },
-        { id: 'stove', model: 'studio:stove', at: [13.5, 1, 14] },
-        { id: 'fridge', model: 'studio:fridge', at: [2, 1, 13] },
-        // Bedroom — front-left.
-        { id: 'bed', model: 'studio:made-bed', at: [-10, 1, -8] },
-        { id: 'nightstand', model: 'studio:nightstand', at: [-15, 1, -1] },
-        { id: 'lamp', model: 'studio:table-lamp', at: [-15, 7, -1] },
-        { id: 'wardrobe', model: 'studio:wardrobe', at: [-5, 1, -14], turns: 2 },
+        // Living room — back-left. Fireplace and TV on the far wall, sofa facing.
+        { id: 'fireplace', model: 'studio:fireplace', at: [-15, 1, -18] },
+        { id: 'chimney', model: 'studio:chimney', at: [-15, 7, -18] },
+        { id: 'tv', model: 'studio:tv-stand', at: [-6, 1, -18] },
+        { id: 'coffee-table', model: 'studio:coffee-table', at: [-11, 1, -11] },
+        { id: 'sofa', model: 'studio:sofa', at: [-11, 1, -5], turns: 2 },
+        // Kitchen — back-right, counter and stove along the far wall.
+        { id: 'counter', model: 'studio:kitchen-counter', at: [7, 1, -17] },
+        { id: 'stove', model: 'studio:stove', at: [16, 1, -17] },
+        { id: 'fridge', model: 'studio:fridge', at: [16, 1, -7] },
+        // Bedroom — front-left. Bed along the left wall, wardrobe and nightstand beside.
+        { id: 'bed', model: 'studio:made-bed', at: [-15, 1, 10] },
+        { id: 'nightstand', model: 'studio:nightstand', at: [-7, 1, 16] },
+        { id: 'lamp', model: 'studio:table-lamp', at: [-7, 7, 16] },
+        { id: 'wardrobe', model: 'studio:wardrobe', at: [-5, 1, 4] },
         // Bathroom — front-right.
-        { id: 'bathtub', model: 'studio:bathtub', at: [7, 1, -13] },
-        { id: 'toilet', model: 'studio:toilet', at: [13, 1, -5], turns: 1 },
-        { id: 'sink', model: 'studio:bath-sink', at: [2, 1, -14], turns: 2 },
-        // Garage and its car, alongside the house on the right, door to the front.
-        { id: 'garage', model: 'studio:garage', at: [26, 0, 3] },
-        { id: 'car', model: 'studio:car', at: [26, 1, 3] },
+        { id: 'bathtub', model: 'studio:bathtub', at: [8, 1, 16] },
+        { id: 'toilet', model: 'studio:toilet', at: [17, 1, 5], turns: 3 },
+        { id: 'sink', model: 'studio:bath-sink', at: [4, 1, 5] },
+        // Garage and its car, clear of the house on the right, door to the front.
+        { id: 'garage', model: 'studio:garage', at: [31, 0, 3] },
+        { id: 'car', model: 'studio:car', at: [31, 1, 3] },
         // A tree in the front-left yard, off to the side so it never blocks the
         // open front.
-        { id: 'tree-front', model: 'studio:tree', at: [-28, 0, 8] },
+        { id: 'tree-front', model: 'studio:tree', at: [-31, 0, 6] },
         // The backyard, behind the house (−z): a tree, a fenced boundary, and a
         // flowerbed.
-        { id: 'tree-back', model: 'studio:tree', at: [9, 0, -28] },
-        { id: 'fence-a', model: 'studio:fence', at: [-9, 0, -31] },
-        { id: 'fence-b', model: 'studio:fence', at: [5, 0, -31] },
-        { id: 'garden', model: 'studio:three-flower-pot', at: [-9, 0, -26] },
+        { id: 'tree-back', model: 'studio:tree', at: [12, 0, -31] },
+        { id: 'fence-a', model: 'studio:fence', at: [-9, 0, -34] },
+        { id: 'fence-b', model: 'studio:fence', at: [5, 0, -34] },
+        { id: 'garden', model: 'studio:three-flower-pot', at: [-9, 0, -29] },
       ],
     },
   ];

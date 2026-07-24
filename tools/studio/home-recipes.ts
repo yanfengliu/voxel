@@ -21,8 +21,9 @@ const STILL = {
   scale: [0, 0, 0],
 } as const;
 
-// One 16-wide, 16-deep room per quadrant, with 1-thick walls between and around.
-const ROOM = 16;
+// One 20-wide, 20-deep room per quadrant, with 1-thick walls between and around
+// — room enough for its furniture to stand clear of the walls and each other.
+const ROOM = 20;
 const WALL = 1;
 const SPAN = ROOM * 2 + WALL * 3; // 35: wall, room, wall, room, wall
 const FLOOR = 1;
@@ -89,9 +90,6 @@ export function createHomeShellRecipe(): RecipeV1 {
     // Inner cross walls, a doorway between each pair of rooms they divide.
     ...wall('z', MID, SPAN, [[BAY0 + 5, 6, 0, 7], [BAY1 + 5, 6, 0, 7]], 'inner', 'Cross wall'),
     ...wall('x', MID, SPAN, [[BAY0 + 5, 6, 0, 7], [BAY1 + 5, 6, 0, 7]], 'inner', 'Divider wall'),
-    // The hearth: a brick back for the fireplace, against the back wall of the
-    // back-left living room.
-    box([BAY0 + 5, FLOOR, WALL], [6, 6, 1], 'brick', 'Sets the living-room hearth back'),
   ];
   return {
     schemaVersion: 'studio.voxel-recipe/1',
@@ -99,13 +97,12 @@ export function createHomeShellRecipe(): RecipeV1 {
     label: 'Family home shell',
     seed: 1,
     size: [SPAN, FLOOR + HEIGHT, SPAN],
-    roles: ['empty', 'floor', 'wall', 'inner', 'brick'],
+    roles: ['empty', 'floor', 'wall', 'inner'],
     palette: [
       { r: 0, g: 0, b: 0 },
       { r: 158, g: 118, b: 76 },
       { r: 214, g: 206, b: 190 },
       { r: 198, g: 190, b: 176 },
-      { r: 150, g: 84, b: 66 },
     ],
     motion: { ...STILL },
     steps,
