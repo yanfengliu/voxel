@@ -14,8 +14,11 @@ import {
   createBlanketRecipe,
   createChairRecipe,
   createCottageRoofRecipe,
+  createChimneyRecipe,
   createDiningSetRecipe,
+  createFireplaceRecipe,
   createFlowerRecipe,
+  createHomeShellRecipe,
   createHouseRoofRecipe,
   createHouseShellRecipe,
   createMadeBedRecipe,
@@ -275,6 +278,16 @@ export function createStudioCatalog(): StudioCatalogV1 {
         models: [
           recipeEntry(createHouseShellRecipe),
           recipeEntry(createHouseRoofRecipe),
+        ],
+      },
+      {
+        // The family-home structure: a 2x2 shell and its hearth pieces,
+        // composed with furniture into the Family home scene.
+        name: 'Home',
+        models: [
+          recipeEntry(createHomeShellRecipe),
+          recipeEntry(createFireplaceRecipe),
+          recipeEntry(createChimneyRecipe),
         ],
       },
     ],
