@@ -31,6 +31,7 @@ import { createPhysicalOverlayView } from './physical-overlay-view.js';
 import { StudioPlayer } from './player.js';
 import { referenceGridSegmentsV1, sceneReferenceGridSegmentsV1 } from './reference-grid.js';
 import type { SceneV1 } from './scene.js';
+import { createSceneEditor } from './scene-editor.js';
 import { SceneSession } from './scene-session.js';
 import { catalogPartsV1, catalogRecipesV1 } from './studio-library.js';
 import { createWireframeView } from './wireframe-view.js';
@@ -293,6 +294,36 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
   const sceneParts = catalog.parts ?? catalogPartsV1(catalog);
   let sceneSession: SceneSession | null = null;
   let sceneOpen: SceneV1 | null = null;
+  // Editing a scene hands a new scene back: the app adopts it, redraws, and
+  // re-renders the editor — the same one-way flow the model editor uses.
+  const sceneEditor = createSceneEditor({
+    recipes: sceneRecipes,
+    onChange: (next) => {
+      sceneOpen = next;
+      sceneSession?.setScene(next);
+      refresh();
+      drawFrame(lastShownMs);
+    },
+  });
+  const sceneNote = (text: string): HTMLElement => {
+    const note = element('div', 'pane');
+    const line = element('p', 'hint');
+    line.textContent = text;
+    note.append(line);
+    return note;
+  };
+  const sceneBuildNote = sceneNote('A scene is placed, not built step by step. '
+    + 'Add and arrange its models in the Edit tab.');
+  const sceneMotionNote = sceneNote('Every model with its own motion animates live here. '
+    + 'Scene-wide fields — wind that waves the trees, water that ripples — are the next step.');
+  const sceneNotesNote = sceneNote('Notes pin to one model. Open a model from the shelf to leave notes on it.');
+  // A scene's tab content sits as an opaque overlay over each model-only tab,
+  // shown while a scene is open — so the model's own content underneath keeps
+  // its visibility and is simply covered, never toggled out from under itself.
+  const sceneInspectorPanels: HTMLElement[] = [];
+  function setInspectorSceneMode(on: boolean): void {
+    for (const content of sceneInspectorPanels) content.hidden = !on;
+  }
   const player = new StudioPlayer(session.model.motion.periodMs);
   const noteStore = new NoteStore();
   // The floor, colour, and note anchor the editor, notes, and stage share.
@@ -610,17 +641,28 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
     sheetImage.hidden = true;
     shelfPanel.rebuild();
     viewChip.textContent = describeOrbit(orbit);
+    // The model-only tabs show the scene's own content, and the top-bar commands
+    // that make or note a single model step aside.
+    setInspectorSceneMode(true);
+    sceneEditor.render(scene);
+    newButton.hidden = true;
+    copyButton.hidden = true;
+    requestShortcut.hidden = true;
   }
 
   // ---- refresh ----
   function refresh(): void {
     if (sceneOpen) { refreshScene(sceneOpen); return; }
-    // Returning from a scene un-hides the model-only toggles, checks, and size
-    // control a scene hid.
+    // Returning from a scene un-hides the model-only toggles, checks, size
+    // control, tab content, and top-bar commands a scene hid.
     wireframeToggle.hidden = false;
     gridToggle.hidden = false;
     checkRow.hidden = false;
     sizeField.hidden = false;
+    setInspectorSceneMode(false);
+    newButton.hidden = !supportsEdit;
+    copyButton.hidden = !supportsEdit;
+    requestShortcut.hidden = !supportsNotes;
     const model = harness.model();
     const described = harness.describe();
     // The step list belongs to whichever model is open, so opening another
@@ -1073,6 +1115,22 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
     if (hasStudioTab('edit')) studioPanel('edit').append(...Array.from(editor.pane.childNodes));
     if (hasStudioTab('motion')) studioPanel('motion').append(...Array.from(motionPanel.pane.childNodes));
     if (hasStudioTab('notes')) studioPanel('notes').append(...Array.from(notesPanel.pane.childNodes));
+    // A scene fills the model-only tabs with its own content — the scene editor
+    // in Edit, a short note in the rest — hidden until a scene opens, so those
+    // tabs never show a stale model.
+    const attachSceneInspector = (tab: ModelStudioTabId, content: HTMLElement): void => {
+      if (!hasStudioTab(tab)) return;
+      content.classList.add('scene-inspector-overlay');
+      content.hidden = true;
+      const panel = studioPanel(tab);
+      panel.style.position = 'relative';
+      panel.append(content);
+      sceneInspectorPanels.push(content);
+    };
+    attachSceneInspector('edit', sceneEditor.element);
+    attachSceneInspector('build', sceneBuildNote);
+    attachSceneInspector('motion', sceneMotionNote);
+    attachSceneInspector('notes', sceneNotesNote);
 
     // A recipe-backed model opens on Build, whose first section is its recipe
     // parts list. Construction used to be hidden behind Examine on every open,
