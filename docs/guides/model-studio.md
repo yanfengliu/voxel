@@ -225,6 +225,24 @@ draws the whole arrangement on the stage under the same look controls, and
 opening any model leaves it. The harness reports and drives the lane —
 `scenes()`, `openScene(id)`, `sceneMode()` — like everything else.
 
+A scene is edited by arranging it, not by building steps, so a scene hides the
+Build, Motion, and Notes tabs and fills **Edit** with a scene editor: an
+add-model picker and a list of placements. Selecting one — in the list, or by
+clicking the model on the stage — opens its move, turn, and remove controls and
+outlines it. Selection is one thing the stage outline and the Edit controls
+share, so clicking a second model moves the controls to it. On the stage a
+left-drag slides the selected model across the floor, a middle-drag turns the
+view, a right-drag pans, and the wheel zooms; **snap to grid** (a scene-only
+toggle) lands a dragged model's footprint on whole cells. `Ctrl`+`Z` and
+`Ctrl`+`Shift`+`Z` undo and redo scene edits.
+
+The harness drives every one of these, so an agent can arrange a scene the way a
+person does and read the result back: `sceneState()` is the open scene as plain
+data, `selectPlacement(id)` / `selectedPlacement()` are the shared selection,
+`editScene(next)` commits an add/move/turn/remove (recording one undo step),
+`undoScene()` / `redoScene()` step the history, and `setSnapToGrid(on)` /
+`snapToGrid()` are the snap flag.
+
 Scenes are what earn a game's recipes: filling a street wants a house, a lamp,
 and a tree, so building the scene is what drives building those.
 

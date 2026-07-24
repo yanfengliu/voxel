@@ -90,6 +90,70 @@ export function placementWorldBoxesV1(
   return boxes;
 }
 
+/** A ray in world space; the direction need not be unit length. */
+export interface RayV1 {
+  readonly origin: readonly [number, number, number];
+  readonly direction: readonly [number, number, number];
+}
+
+/** How near a coordinate must be to count as on a plane the ray runs parallel to. */
+const RAY_EPSILON = 1e-9;
+
+/** The entry distance where a ray meets an axis box, or null when it misses. */
+function rayBoxEntry(ray: RayV1, box: PlacementBoxV1): number | null {
+  let near = -Infinity;
+  let far = Infinity;
+  for (let axis = 0; axis < 3; axis += 1) {
+    const origin = ray.origin[axis]!;
+    const direction = ray.direction[axis]!;
+    const lo = box.min[axis]!;
+    const hi = box.max[axis]!;
+    if (Math.abs(direction) < RAY_EPSILON) {
+      // Parallel to this pair of faces: a miss unless it starts between them.
+      if (origin < lo || origin > hi) return null;
+      continue;
+    }
+    let t1 = (lo - origin) / direction;
+    let t2 = (hi - origin) / direction;
+    if (t1 > t2) { const swap = t1; t1 = t2; t2 = swap; }
+    if (t1 > near) near = t1;
+    if (t2 < far) far = t2;
+    if (near > far) return null;
+  }
+  // A box wholly behind the ray's start is not met.
+  if (far < 0) return null;
+  return near;
+}
+
+/**
+ * The id of the smallest-volume box the ray enters, or null when it meets none.
+ * Smallest wins, not nearest, so a chair inside a house is picked over the house
+ * shell whose box encloses it; the shell is still picked where only it is met.
+ */
+export function pickPlacementV1(ray: RayV1, boxes: readonly PlacementBoxV1[]): string | null {
+  let best: string | null = null;
+  let bestVolume = Infinity;
+  for (const box of boxes) {
+    if (rayBoxEntry(ray, box) === null) continue;
+    const volume = (box.max[0] - box.min[0]) * (box.max[1] - box.min[1]) * (box.max[2] - box.min[2]);
+    if (volume < bestVolume) { bestVolume = volume; best = box.id; }
+  }
+  return best;
+}
+
+/**
+ * Where the ray meets the horizontal plane at height `y`, or null when it runs
+ * parallel to the ground or would only meet it behind the start — the plane a
+ * scene model slides across while dragged.
+ */
+export function groundHitV1(ray: RayV1, y: number): { readonly x: number; readonly z: number } | null {
+  const dy = ray.direction[1];
+  if (Math.abs(dy) < RAY_EPSILON) return null;
+  const t = (y - ray.origin[1]) / dy;
+  if (t < 0) return null;
+  return { x: ray.origin[0] + t * ray.direction[0], z: ray.origin[2] + t * ray.direction[2] };
+}
+
 /** The twelve edges of a world box, for drawing a selection outline. */
 export function boxEdgesV1(
   box: PlacementBoxV1,

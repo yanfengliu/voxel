@@ -34,7 +34,7 @@ import { physicalOverlaySegmentsV1, type PhysicalOverlaySegmentV1 } from './phys
 import type { StudioPlayer } from './player.js';
 import { buildRequest, sendRequest, type SendResult } from './requests.js';
 import type { ShelfRecipeV1, StudioCatalogV1 } from './catalog.js';
-import type { SceneV1 } from './scene.js';
+import { validateSceneV1, type SceneV1 } from './scene.js';
 import type { OrbitStateV1 } from './orbit.js';
 import { composeSpriteSheet, type SpriteSheetPlanV1 } from './sheet.js';
 import { nearestFrame, stepFrame, type FrameStepV1 } from './sweep.js';
@@ -211,6 +211,37 @@ export interface VoxelStudioHarnessV1 {
   openScene(id: string): void;
   /** Whether a scene is on the stage rather than a single model. */
   sceneMode(): boolean;
+  /**
+   * The scene on the stage right now as plain data — the same shape `openScene`
+   * placed and the editor edits — or null when a single model is open. This is
+   * how a driver reads back a move, an add, or an undo and asserts on it.
+   */
+  sceneState(): SceneV1 | null;
+  /**
+   * Selects a placement by id — the one selection the stage outline and the
+   * Edit tab's controls both follow, so selecting a second model moves the
+   * controls to it. Null clears the selection; an unknown id throws, naming it,
+   * rather than selecting nothing silently. Returns what is now selected.
+   */
+  selectPlacement(id: string | null): string | null;
+  /** Which placement is selected, or null. */
+  selectedPlacement(): string | null;
+  /**
+   * Adopts an edited scene — add, move, turn, or remove a placement — the same
+   * one-way commit the editor uses, recording one undo step. Rejects a scene
+   * that would not render, listing every reason. Throws outside scene mode,
+   * because there is no open scene to replace. Returns the now-open scene.
+   */
+  editScene(next: SceneV1): SceneV1;
+  /** Steps scene edits back and forward; a no-op at either end of the history. */
+  undoScene(): SceneV1 | null;
+  redoScene(): SceneV1 | null;
+  /**
+   * Snap-to-grid for dragging a model in a scene: on lands its footprint on
+   * whole ground cells. Off drags it freely. Reads back with `snapToGrid`.
+   */
+  setSnapToGrid(on: boolean): boolean;
+  snapToGrid(): boolean;
 
   /**
    * Every part this studio offers, as discovery info: name, title, summary,
@@ -362,6 +393,18 @@ export interface HarnessHostV1 {
   openScene(scene: SceneV1): void;
   /** Whether a scene is on the stage rather than a single model. */
   sceneMode(): boolean;
+  /** The scene on the stage right now, or null in model mode. */
+  scene(): SceneV1 | null;
+  /** Selects a placement (or clears with null); returns what is now selected. */
+  selectScenePlacement(id: string | null): string | null;
+  selectedScenePlacement(): string | null;
+  /** Adopts an edited scene, recording one undo step. */
+  commitScene(next: SceneV1): void;
+  undoSceneEdit(): void;
+  redoSceneEdit(): void;
+  /** Snap-to-grid for scene drags; the app owns the flag and its button. */
+  setSnapToGrid(on: boolean): boolean;
+  snapToGrid(): boolean;
   catalog(): StudioCatalogV1;
 }
 
@@ -634,6 +677,45 @@ export function createStudioHarness(host: HarnessHostV1): VoxelStudioHarnessV1 {
       host.openScene(scene);
     },
     sceneMode: () => host.sceneMode(),
+    sceneState: () => host.scene(),
+    selectPlacement(id) {
+      if (id !== null) {
+        const scene = host.scene();
+        if (scene === null) {
+          throw new Error('No scene is open, so there is no placement to select.');
+        }
+        if (!scene.placements.some((placement) => placement.id === id)) {
+          throw new Error(`No placement in this scene has the id ${id}.`);
+        }
+      }
+      return host.selectScenePlacement(id);
+    },
+    selectedPlacement: () => host.selectedScenePlacement(),
+    editScene(next) {
+      if (!host.sceneMode()) {
+        throw new Error('No scene is open to edit; open a scene first with openScene.');
+      }
+      const issues = validateSceneV1(next);
+      if (issues.length > 0) {
+        throw new Error(
+          `Refusing to apply an invalid scene: ${issues.map((i) => `${i.path} ${i.message}`).join('; ')}`,
+        );
+      }
+      host.commitScene(next);
+      const scene = host.scene();
+      if (scene === null) throw new Error('The scene edit did not take: no scene is open afterward.');
+      return scene;
+    },
+    undoScene() {
+      host.undoSceneEdit();
+      return host.scene();
+    },
+    redoScene() {
+      host.redoSceneEdit();
+      return host.scene();
+    },
+    setSnapToGrid: (on) => host.setSnapToGrid(on),
+    snapToGrid: () => host.snapToGrid(),
     availableParts,
     findParts: (query) => searchPartInfoV1(availableParts(), query),
     availableRecipes,

@@ -1,4 +1,4 @@
-import { Box3, OrthographicCamera, PerspectiveCamera, Plane, Raycaster, Vector2, Vector3 } from 'three';
+import { OrthographicCamera, PerspectiveCamera, Raycaster, Vector2 } from 'three';
 
 import type { StudioCatalogV1 } from './catalog.js';
 import { createConstructionPanel, type ConstructionPanelV1 } from './construction.js';
@@ -34,7 +34,10 @@ import { StudioPlayer } from './player.js';
 import { referenceGridSegmentsV1, sceneReferenceGridSegmentsV1 } from './reference-grid.js';
 import type { SceneV1 } from './scene.js';
 import { createSceneEditor } from './scene-editor.js';
-import { boxEdgesV1, placementWorldBoxesV1, type PlacementBoxV1 } from './scene-pick.js';
+import {
+  boxEdgesV1, groundHitV1, pickPlacementV1, placementWorldBoxesV1,
+  type PlacementBoxV1, type RayV1,
+} from './scene-pick.js';
 import { SceneSession } from './scene-session.js';
 import { catalogPartsV1, catalogRecipesV1 } from './studio-library.js';
 import { createWireframeView } from './wireframe-view.js';
@@ -51,6 +54,7 @@ import { element, openingModel } from './studio-app-helpers.js';
 import { createStudioEditorPanel, type StudioEditorPanelV1 } from './studio-editor.js';
 import { createStudioMotionPanel, type StudioMotionPanelV1 } from './studio-motion.js';
 import { createStudioNotesPanel, type StudioNotesPanelV1 } from './studio-notes.js';
+import { setupPanelResize } from './studio-panel-resize.js';
 import { createStudioPlayerBar, type StudioPlayerBarV1 } from './studio-player.js';
 import { createStudioShelf, type StudioShelfV1 } from './studio-shelf.js';
 
@@ -228,9 +232,14 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
   const stageHint = element('span', 'stagehint');
   // The hint teaches only what this profile offers: without Notes the click
   // is correctly ignored, so the hint must not promise it.
-  stageHint.textContent = supportsNotes
+  const modelStageHint = supportsNotes
     ? 'drag to turn · scroll to zoom · double-click to re-centre · click to pin a note'
     : 'drag to turn · scroll to zoom · double-click to re-centre';
+  // A scene is arranged, not noted: a click selects the model under the cursor
+  // and a drag moves it, so the hint speaks to that instead of pinning.
+  const sceneStageHint = 'click a model to select · drag it to move · '
+    + 'middle-drag to turn · right-drag to pan · scroll to zoom';
+  stageHint.textContent = modelStageHint;
   // Exactly one of the two looks is ever true, so the control is one switch
   // with two sides rather than two buttons that could both look pressed: the
   // knob sits on the side that is on, and clicking slides it to the other.
@@ -264,8 +273,16 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
   physToggle.textContent = 'colliders';
   physToggle.title = 'Outlines the shapes this model blocks and its attachment '
     + 'points, from its saved physical data. The picture itself is unchanged.';
+  // Shown only while a scene is open: dragging a model then lands its footprint
+  // on whole world units, so pieces line up instead of drifting off-grid. (The
+  // lattice is the one-unit voxel cell, finer than the 4-unit floor ruler.)
+  const snapToggle = element('button', 'toggle');
+  snapToggle.textContent = 'snap to grid';
+  snapToggle.title = 'While on, dragging a model in a scene lands its footprint on '
+    + 'whole world units, so models line up cleanly edge to edge. Off drags it freely.';
+  snapToggle.hidden = true;
   const toggles = element('div', 'toggles');
-  toggles.append(lookSwitch, depthToggle, lightToggle, wireframeToggle, gridToggle, physToggle);
+  toggles.append(lookSwitch, depthToggle, lightToggle, wireframeToggle, gridToggle, physToggle, snapToggle);
 
   const flatCamera = new OrthographicCamera();
   const depthCamera = new PerspectiveCamera();
@@ -306,16 +323,23 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
   const sceneRaycaster = new Raycaster();
   let sceneBoxes: readonly PlacementBoxV1[] = [];
   let selectedPlacementId: string | null = null;
-  // Editing a scene hands a new scene back: the app adopts it, redraws, and
-  // re-renders the editor — the same one-way flow the model editor uses.
+  // Undo/redo of scene edits: each edit pushes the scene before it onto undo and
+  // clears redo; the whole stack is dropped when a different scene opens.
+  const sceneUndo: SceneV1[] = [];
+  const sceneRedo: SceneV1[] = [];
+  const MAX_SCENE_HISTORY = 200;
+  // Snap-to-grid: while on, a dragged model's footprint lands on whole world
+  // units — the one-unit voxel lattice models are authored on, not the coarser
+  // 4-unit floor ruler — so edges meet cleanly.
+  let snapOn = false;
+  // Editing a scene hands a new scene back: the app adopts it (recording the
+  // step for undo) and redraws. Selecting a row routes through the app's one
+  // selection, the same one the stage's outline and drag use — so the controls
+  // always act on whatever is currently picked, list or stage.
   const sceneEditor = createSceneEditor({
     recipes: sceneRecipes,
-    onChange: (next) => {
-      sceneOpen = next;
-      sceneSession?.setScene(next);
-      refresh();
-      drawFrame(lastShownMs);
-    },
+    onChange: (next) => { commitSceneEdit(next); },
+    onSelect: (id) => { selectPlacement(id); },
   });
   const sceneNote = (text: string): HTMLElement => {
     const note = element('div', 'pane');
@@ -477,6 +501,14 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
     highlightedPart: () => highlightedPartIndex,
     openScene: (scene) => { openSceneMode(scene); },
     sceneMode: () => sceneOpen !== null,
+    scene: () => sceneOpen,
+    selectScenePlacement(id) { selectPlacement(id); return selectedPlacementId; },
+    selectedScenePlacement: () => selectedPlacementId,
+    commitScene(next) { commitSceneEdit(next); },
+    undoSceneEdit() { undoScene(); },
+    redoSceneEdit() { redoScene(); },
+    setSnapToGrid: (on) => setSnapToGrid(on),
+    snapToGrid: () => snapOn,
     setOrbit(view) {
       orbit = clampOrbit({ ...orbit, ...view });
       applyOrbit(camera, orbit, viewW, viewH, panCenter);
@@ -598,6 +630,10 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
     }
     sceneOpen = scene;
     selectedPlacementId = null;
+    // A fresh scene starts with an empty edit history — undo never reaches back
+    // into a scene you are no longer looking at.
+    sceneUndo.length = 0;
+    sceneRedo.length = 0;
     panCenter = [0, 0, 0];
     canvas.style.display = 'none';
     sceneCanvas.style.display = 'block';
@@ -633,15 +669,25 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
     gameSide.classList.toggle('on', !session.edges);
     depthToggle.classList.toggle('on', depthOn);
     lightToggle.classList.toggle('on', session.lit);
-    // A scene has no one model, so the model-only tools step aside.
+    // A scene has no one model, so the model-only tools step aside, and the
+    // scene-only snap toggle steps in.
     wireframeToggle.hidden = true;
     gridToggle.hidden = true;
     physToggle.hidden = true;
+    snapToggle.hidden = false;
+    snapToggle.classList.toggle('on', snapOn);
+    stageHint.textContent = sceneStageHint;
     wireframeView.setVisible(false);
     physicalView.setVisible(false);
     // The scene stands on its own ground grid, sized to how far it spreads.
     gridView.setSegments(sceneReferenceGridSegmentsV1(scene));
     gridView.setVisible(true);
+    // A selection whose placement is gone (removed, or a different scene) is
+    // dropped, so the outline and the editor's controls never point at nothing.
+    if (selectedPlacementId !== null
+      && !scene.placements.some((placement) => placement.id === selectedPlacementId)) {
+      selectedPlacementId = null;
+    }
     // The highlight is reused to outline the selected placement, if any.
     recomputeSceneBoxes();
     showSelection();
@@ -669,7 +715,7 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
     // The model-only tabs show the scene's own content, and the top-bar commands
     // that make or note a single model step aside.
     setInspectorSceneMode(true);
-    sceneEditor.render(scene);
+    sceneEditor.render(scene, selectedPlacementId);
     newButton.hidden = true;
     copyButton.hidden = true;
     requestShortcut.hidden = true;
@@ -679,9 +725,12 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
   function refresh(): void {
     if (sceneOpen) { refreshScene(sceneOpen); return; }
     // Returning from a scene un-hides the model-only toggles, checks, size
-    // control, tab content, and top-bar commands a scene hid.
+    // control, tab content, and top-bar commands a scene hid, and re-hides the
+    // scene-only snap toggle.
     wireframeToggle.hidden = false;
     gridToggle.hidden = false;
+    snapToggle.hidden = true;
+    stageHint.textContent = modelStageHint;
     checkRow.hidden = false;
     sizeField.hidden = false;
     setInspectorSceneMode(false);
@@ -763,50 +812,87 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
       highlightView.setVisible(false);
     }
   }
-  function cursorNdc(event: PointerEvent): Vector2 {
+  /**
+   * The one place selection changes. Both the stage (a click on a model) and the
+   * editor list (a click on a row) call this, so the outline and the editor's
+   * move/turn/remove controls always follow the same pick — selecting a second
+   * model moves the controls to it instead of leaving them on the first. It
+   * refreshes only what selection touches (the outline, the editor list, the
+   * frame), not the whole inspector.
+   */
+  function selectPlacement(id: string | null): void {
+    if (id === selectedPlacementId) return;
+    selectedPlacementId = id;
+    showSelection();
+    if (sceneOpen) sceneEditor.render(sceneOpen, selectedPlacementId);
+    drawFrame(lastShownMs);
+  }
+  // The world-space ray under the cursor, as plain numbers the scene-pick
+  // helpers work in — so the picking and ground maths stay testable off-GPU.
+  function cursorRay(event: PointerEvent): RayV1 {
     const rect = canvasWrap.getBoundingClientRect();
-    return new Vector2(
+    const ndc = new Vector2(
       ((event.clientX - rect.left) / Math.max(1, rect.width)) * 2 - 1,
       -(((event.clientY - rect.top) / Math.max(1, rect.height)) * 2 - 1),
     );
+    sceneRaycaster.setFromCamera(ndc, camera);
+    const { origin, direction } = sceneRaycaster.ray;
+    return { origin: [origin.x, origin.y, origin.z], direction: [direction.x, direction.y, direction.z] };
   }
-  function groundPoint(event: PointerEvent, groundY: number): { readonly x: number; readonly z: number } | null {
-    sceneRaycaster.setFromCamera(cursorNdc(event), camera);
-    const hit = sceneRaycaster.ray.intersectPlane(new Plane(new Vector3(0, 1, 0), -groundY), new Vector3());
-    return hit ? { x: hit.x, z: hit.z } : null;
-  }
-  function pickPlacement(event: PointerEvent): string | null {
-    sceneRaycaster.setFromCamera(cursorNdc(event), camera);
-    const box = new Box3();
-    const point = new Vector3();
-    let best: string | null = null;
-    let bestVolume = Infinity;
-    // The smallest box the ray meets, not the nearest — so a chair inside a
-    // house is picked over the house shell whose box encloses it. The shell is
-    // still picked where only it is hit, a bare wall or the floor.
-    for (const candidate of sceneBoxes) {
-      box.min.set(candidate.min[0], candidate.min[1], candidate.min[2]);
-      box.max.set(candidate.max[0], candidate.max[1], candidate.max[2]);
-      if (sceneRaycaster.ray.intersectBox(box, point) === null) continue;
-      const volume = (candidate.max[0] - candidate.min[0])
-        * (candidate.max[1] - candidate.min[1])
-        * (candidate.max[2] - candidate.min[2]);
-      if (volume < bestVolume) { bestVolume = volume; best = candidate.id; }
-    }
-    return best;
-  }
-  function moveSelectedBy(dx: number, dz: number): void {
-    if (sceneOpen === null || selectedPlacementId === null) return;
-    sceneOpen = {
-      ...sceneOpen,
-      placements: sceneOpen.placements.map((placement) => (placement.id === selectedPlacementId
-        ? { ...placement, at: [placement.at[0] + dx, placement.at[1], placement.at[2] + dz] }
-        : placement)),
-    };
-    sceneSession?.setScene(sceneOpen);
+  const groundPoint = (event: PointerEvent, groundY: number): { readonly x: number; readonly z: number } | null =>
+    groundHitV1(cursorRay(event), groundY);
+  const pickPlacement = (event: PointerEvent): string | null =>
+    pickPlacementV1(cursorRay(event), sceneBoxes);
+  // Adopts an edited scene and redraws, without touching history — used for the
+  // live frames of a drag and by undo/redo.
+  function applySceneLive(next: SceneV1): void {
+    sceneOpen = next;
+    sceneSession?.setScene(next);
     recomputeSceneBoxes();
     showSelection();
     drawFrame(lastShownMs);
+  }
+  // The same, plus a full refresh so the editor list and readouts catch up —
+  // used at the end of a discrete edit, not on every drag frame.
+  function applyScene(next: SceneV1): void {
+    applySceneLive(next);
+    refresh();
+  }
+  function pushHistory(): void {
+    if (sceneOpen === null) return;
+    sceneUndo.push(sceneOpen);
+    if (sceneUndo.length > MAX_SCENE_HISTORY) sceneUndo.shift();
+    sceneRedo.length = 0;
+  }
+  function commitSceneEdit(next: SceneV1): void {
+    pushHistory();
+    applyScene(next);
+  }
+  function undoScene(): void {
+    // Guard before the pop, so a stray call in model mode can never discard a
+    // history entry it would then refuse to apply.
+    if (sceneOpen === null) return;
+    const previous = sceneUndo.pop();
+    if (previous === undefined) return;
+    sceneRedo.push(sceneOpen);
+    applyScene(previous);
+  }
+  function redoScene(): void {
+    if (sceneOpen === null) return;
+    const next = sceneRedo.pop();
+    if (next === undefined) return;
+    sceneUndo.push(sceneOpen);
+    applyScene(next);
+  }
+  // Sets the selected placement's world x and z (its base y is unchanged), live.
+  function setSelectedAt(x: number, z: number): void {
+    if (sceneOpen === null || selectedPlacementId === null) return;
+    applySceneLive({
+      ...sceneOpen,
+      placements: sceneOpen.placements.map((placement) => (placement.id === selectedPlacementId
+        ? { ...placement, at: [x, placement.at[1], z] }
+        : placement)),
+    });
   }
 
   type StageGesture = 'none' | 'orbit' | 'pan' | 'move';
@@ -814,7 +900,19 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
   let moved = false;
   let lastX = 0;
   let lastY = 0;
-  let dragGround: { readonly x: number; readonly z: number } | null = null;
+  // A live drag of a scene model: the plane it slides on (its footprint's base
+  // y), the grab offset that keeps the grabbed point under the cursor, and the
+  // footprint's corner offset from the model's base — so snap lands the
+  // footprint, not the base, on whole cells. `dragPushed` records whether this
+  // drag's one undo step is banked yet.
+  let dragGrab: {
+    readonly baseY: number;
+    readonly offX: number;
+    readonly offZ: number;
+    readonly cornerX: number;
+    readonly cornerZ: number;
+  } | null = null;
+  let dragPushed = false;
   // The browser's own context menu would swallow a right-drag pan.
   canvasWrap.addEventListener('contextmenu', (event) => { event.preventDefault(); });
   canvasWrap.addEventListener('pointerdown', (event) => {
@@ -827,13 +925,22 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
     if (event.button !== 0) { gesture = 'none'; return; }
     if (!sceneOpen) { gesture = 'orbit'; return; }
     // Left in a scene selects the model under the cursor and starts dragging it.
-    selectedPlacementId = pickPlacement(event);
-    showSelection();
-    drawFrame(lastShownMs);
-    if (selectedPlacementId === null) { gesture = 'none'; return; }
-    const box = sceneBoxes.find((candidate) => candidate.id === selectedPlacementId);
-    dragGround = groundPoint(event, box ? box.min[1] : 0);
-    gesture = dragGround ? 'move' : 'none';
+    const picked = pickPlacement(event);
+    selectPlacement(picked);
+    if (picked === null) { gesture = 'none'; return; }
+    const box = sceneBoxes.find((candidate) => candidate.id === picked);
+    const placement = sceneOpen.placements.find((entry) => entry.id === picked);
+    const hit = groundPoint(event, box ? box.min[1] : 0);
+    if (!box || !placement || !hit) { gesture = 'none'; return; }
+    dragGrab = {
+      baseY: box.min[1],
+      offX: placement.at[0] - hit.x,
+      offZ: placement.at[2] - hit.z,
+      cornerX: box.min[0] - placement.at[0],
+      cornerZ: box.min[2] - placement.at[2],
+    };
+    dragPushed = false;
+    gesture = 'move';
   });
   canvasWrap.addEventListener('pointermove', (event) => {
     if (gesture === 'none') return;
@@ -850,12 +957,20 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
       applyOrbit(camera, orbit, viewW, viewH, panCenter);
       viewChip.textContent = describeOrbit(orbit);
       drawFrame(lastShownMs);
-    } else if (dragGround) {
-      const box = sceneBoxes.find((candidate) => candidate.id === selectedPlacementId);
-      const point = groundPoint(event, box ? box.min[1] : 0);
-      if (point) {
-        moveSelectedBy(point.x - dragGround.x, point.z - dragGround.z);
-        dragGround = point;
+    } else if (dragGrab) {
+      const hit = groundPoint(event, dragGrab.baseY);
+      if (hit) {
+        // Bank the pre-drag scene once, on the first move, so one drag is one
+        // undo step — and a drag that never moves banks nothing.
+        if (!dragPushed) { pushHistory(); dragPushed = true; }
+        let x = hit.x + dragGrab.offX;
+        let z = hit.z + dragGrab.offZ;
+        if (snapOn) {
+          // Land the footprint's corner on a whole cell, not the model's base.
+          x = Math.round(x + dragGrab.cornerX) - dragGrab.cornerX;
+          z = Math.round(z + dragGrab.cornerZ) - dragGrab.cornerZ;
+        }
+        setSelectedAt(x, z);
       }
     }
   });
@@ -865,9 +980,9 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
     const finished = gesture;
     gesture = 'none';
     moved = false;
-    dragGround = null;
+    dragGrab = null;
     // A finished drag of a scene model syncs the editor list to its new spot.
-    if (finished === 'move') { refresh(); return; }
+    if (finished === 'move') { if (wasDrag) refresh(); return; }
     // A scene has no single model to pin a note against, so a clean click on
     // one only ever selected — never pins.
     if (wasDrag || !supportsNotes || sceneOpen) return;
@@ -895,6 +1010,7 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
   wireframeToggle.addEventListener('click', () => { harness.setWireframe(!session.wireframe); });
   gridToggle.addEventListener('click', () => { setGridOn(!gridOn); });
   physToggle.addEventListener('click', () => { harness.setPhysicalOverlay(!physicalOn); });
+  snapToggle.addEventListener('click', () => { setSnapToGrid(!snapOn); });
   sizeSlider.addEventListener('input', () => {
     // Set the grain, then re-fit so the model stays framed at any size — the
     // ground grid, not the model's screen size, is what shows the scale.
@@ -910,111 +1026,22 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
     refresh();
   }
 
+  /**
+   * Turns snap-to-grid on or off, the one funnel the toggle button and the
+   * harness both use, so the flag and the button stay in step. A live drag
+   * reads the flag on each move, so nothing else needs to redraw here.
+   */
+  function setSnapToGrid(on: boolean): boolean {
+    snapOn = on;
+    snapToggle.classList.toggle('on', snapOn);
+    return snapOn;
+  }
+
   /** Frames the open model at its current grain, so scaling never buries or crops it. */
   function refitView(): void {
     orbit = clampOrbit({ ...orbit, viewHeight: fitViewHeight(session.model.size, session.voxelSize) });
     applyOrbit(camera, orbit, viewW, viewH, panCenter);
     viewChip.textContent = describeOrbit(orbit);
-  }
-
-  /**
-   * Makes the library and inspector columns draggable, so a panel can be given
-   * the room its content needs. It sets the grid template inline on the shell
-   * root — the shell's own CSS is untouched — and adds a grab handle over each
-   * column boundary. Widths persist with the same store the look does, keyed
-   * separately. The stage between them follows every drag through the frame
-   * loop's own resize.
-   */
-  const LAYOUT_KEY = 'voxel-studio-layout/1';
-  const RAIL_MIN = 160;
-  const RAIL_MAX = 440;
-  const INSPECTOR_MIN = 260;
-  const INSPECTOR_MAX = 620;
-  const clampRail = (value: number): number => Math.min(RAIL_MAX, Math.max(RAIL_MIN, value));
-  const clampInspector = (value: number): number => Math.min(INSPECTOR_MAX, Math.max(INSPECTOR_MIN, value));
-
-  /**
-   * Returns a dispose that stops watching the window. The grid template is set
-   * inline ONLY once a custom width exists — from storage or a first drag — so
-   * a studio nobody resized keeps the shared shell's own responsive columns
-   * (which narrow the inspector on small screens, and which a browser test
-   * depends on). Until then the handles are placed by measuring the real
-   * regions, so they follow whatever the shell lays out.
-   */
-  function setupPanelResize(grid: HTMLElement, railRegion: HTMLElement, inspectorRegion: HTMLElement): () => void {
-    let custom: { rail: number; inspector: number } | null = null;
-    try {
-      const raw = viewStore.getItem(LAYOUT_KEY);
-      if (raw !== null) {
-        const parsed = JSON.parse(raw) as { rail?: unknown; inspector?: unknown };
-        if (typeof parsed.rail === 'number' && typeof parsed.inspector === 'number') {
-          custom = { rail: clampRail(parsed.rail), inspector: clampInspector(parsed.inspector) };
-        }
-      }
-    } catch { /* No custom width; keep the shell's own columns. */ }
-
-    const railHandle = element('div', 'col-resize');
-    railHandle.title = 'Drag to resize the library';
-    railHandle.setAttribute('aria-label', 'Resize the library panel');
-    railHandle.style.marginLeft = '-4px';
-    const inspectorHandle = element('div', 'col-resize');
-    inspectorHandle.title = 'Drag to resize the inspector';
-    inspectorHandle.setAttribute('aria-label', 'Resize the inspector panel');
-    inspectorHandle.style.marginRight = '-4px';
-    // A positioned parent so the handles' offsets are relative to the grid, not
-    // the page; harmless for a grid container.
-    grid.style.position = 'relative';
-    grid.append(railHandle, inspectorHandle);
-
-    const sync = (): void => {
-      if (custom) {
-        grid.style.gridTemplateColumns = `${String(custom.rail)}px minmax(200px, 1fr) ${String(custom.inspector)}px`;
-      }
-      // Placed from the measured layout, so the handles sit on the real
-      // boundaries whether the width came from the shell CSS or a custom drag.
-      railHandle.style.left = `${String(railRegion.offsetWidth)}px`;
-      inspectorHandle.style.right = `${String(inspectorRegion.offsetWidth)}px`;
-    };
-    sync();
-    // Only re-place the handles on resize; custom widths are fixed pixels and do
-    // not move, but the shell's responsive columns do.
-    const onWindowResize = (): void => { sync(); };
-    window.addEventListener('resize', onWindowResize);
-
-    const dragHandle = (handle: HTMLElement, axis: 'rail' | 'inspector'): void => {
-      handle.addEventListener('pointerdown', (event) => {
-        event.preventDefault();
-        handle.setPointerCapture(event.pointerId);
-        handle.classList.add('dragging');
-        // The first drag adopts the current measured widths as the baseline,
-        // and from here the studio keeps its own columns.
-        custom ??= { rail: railRegion.offsetWidth, inspector: inspectorRegion.offsetWidth };
-        const startX = event.clientX;
-        const startRail = custom.rail;
-        const startInspector = custom.inspector;
-        const move = (moveEvent: PointerEvent): void => {
-          const dx = moveEvent.clientX - startX;
-          if (custom === null) return;
-          if (axis === 'rail') custom.rail = clampRail(startRail + dx);
-          // Dragging the inspector handle left widens the inspector.
-          else custom.inspector = clampInspector(startInspector - dx);
-          sync();
-        };
-        const up = (upEvent: PointerEvent): void => {
-          handle.releasePointerCapture(upEvent.pointerId);
-          handle.classList.remove('dragging');
-          handle.removeEventListener('pointermove', move);
-          handle.removeEventListener('pointerup', up);
-          try { viewStore.setItem(LAYOUT_KEY, JSON.stringify(custom)); } catch { /* ignore */ }
-        };
-        handle.addEventListener('pointermove', move);
-        handle.addEventListener('pointerup', up);
-      });
-    };
-    dragHandle(railHandle, 'rail');
-    dragHandle(inspectorHandle, 'inspector');
-
-    return () => { window.removeEventListener('resize', onWindowResize); };
   }
 
   /**
@@ -1109,6 +1136,14 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
     const typing = event.target instanceof HTMLInputElement
       || event.target instanceof HTMLTextAreaElement;
     if (typing) return;
+    // Undo/redo of scene edits, while a scene is open: Ctrl/Cmd+Z steps back,
+    // add Shift to step forward. A text field keeps its own undo (returned
+    // above), so this only ever fires against the scene.
+    if (sceneOpen && (event.ctrlKey || event.metaKey) && (event.key === 'z' || event.key === 'Z')) {
+      event.preventDefault();
+      if (event.shiftKey) redoScene(); else undoScene();
+      return;
+    }
     if (event.key === 'ArrowLeft') { harness.step(-1); playerBar.syncPlayButton(); }
     if (event.key === 'ArrowRight') { harness.step(1); playerBar.syncPlayButton(); }
   };
@@ -1225,7 +1260,12 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
     // the room it needs. The grid is the shell root, the regions' shared parent.
     const gridElement = studioShell.regions.stage.parentElement;
     if (gridElement instanceof HTMLElement) {
-      disposePanelResize = setupPanelResize(gridElement, studioShell.regions.shelf, studioShell.regions.inspector);
+      disposePanelResize = setupPanelResize({
+        grid: gridElement,
+        railRegion: studioShell.regions.shelf,
+        inspectorRegion: studioShell.regions.inspector,
+        store: viewStore,
+      });
     }
     if (hasStudioTab('examine')) studioPanel('examine').append(...Array.from(examinePane.childNodes));
     if (hasStudioTab('build')) studioPanel('build').append(...Array.from(construction.element.childNodes));

@@ -4,19 +4,21 @@ import { element } from './studio-app-helpers.js';
 
 /**
  * The Edit tab, for a scene. A scene is an arrangement of models, so editing it
- * is placing them: add a model, then select it to move, turn, or remove it.
- * Every change hands a new scene back through `onChange`, which redraws and
- * re-renders this list — the same one-way flow the model editor uses, so the
- * picture and the data never disagree.
+ * is placing them: add a model, then select it — in this list or by clicking it
+ * on the stage — to move, turn, or remove it. Every change hands a new scene
+ * back through `onChange`, which redraws and re-renders this list.
  *
- * It edits an in-memory scene; saving a scene back to a game's catalog is the
- * game's own concern, the way saving a model is.
+ * Selection is owned by the app, not this panel: the app holds which placement
+ * is selected (shared with the stage's outline and drag), tells this panel via
+ * `render`, and hears clicks back through `onSelect`. That one source of truth
+ * is why clicking a second model on the stage moves the controls here to it,
+ * rather than leaving them on the first.
  */
 
 export interface SceneEditorV1 {
   readonly element: HTMLElement;
-  /** Draws the list for a scene; call whenever the scene changes. */
-  render(scene: SceneV1): void;
+  /** Draws the list, opening the controls under the selected placement's row. */
+  render(scene: SceneV1, selectedId: string | null): void;
 }
 
 /** A stable id for a newly added placement, never colliding with an existing one. */
@@ -29,17 +31,18 @@ function freshId(model: string, taken: ReadonlySet<string>): string {
 
 export function createSceneEditor(options: {
   readonly recipes: RecipeBookV1;
-  /** Given the edited scene; the app sets it, redraws, and calls render back. */
+  /** Given the edited scene; the app adopts it, redraws, and renders back. */
   readonly onChange: (scene: SceneV1) => void;
+  /** A row was clicked; the app records the selection and renders back. */
+  readonly onSelect: (id: string | null) => void;
 }): SceneEditorV1 {
-  const { recipes, onChange } = options;
+  const { recipes, onChange, onSelect } = options;
   let scene: SceneV1 | null = null;
-  let selectedId: string | null = null;
 
   const pane = element('div', 'pane scene-editor');
   const intro = element('p', 'hint');
-  intro.textContent = 'Arrange the scene: add a model, then select it to move it, '
-    + 'turn it, or take it out. Every change redraws.';
+  intro.textContent = 'Arrange the scene: add a model, then select it here or on '
+    + 'the stage to move it, turn it, or take it out. Every change redraws.';
 
   const addRow = element('div', 'row');
   const modelSelect = element('select', 'scene-add-model');
@@ -62,12 +65,10 @@ export function createSceneEditor(options: {
     if (scene === null) return;
     onChange({ ...scene, placements: placements.map((placement) => ({ ...placement })) });
   }
-
   function edit(id: string, change: (placement: ScenePlacementV1) => ScenePlacementV1): void {
     if (scene === null) return;
     commit(scene.placements.map((placement) => (placement.id === id ? change(placement) : placement)));
   }
-
   const move = (id: string, dx: number, dy: number, dz: number): void => {
     edit(id, (placement) => ({
       ...placement,
@@ -79,7 +80,8 @@ export function createSceneEditor(options: {
   };
   const remove = (id: string): void => {
     if (scene === null) return;
-    if (selectedId === id) selectedId = null;
+    // The app clears a selection whose placement no longer exists, so removing
+    // the selected one leaves nothing selected.
     commit(scene.placements.filter((placement) => placement.id !== id));
   };
 
@@ -88,8 +90,8 @@ export function createSceneEditor(options: {
     const model = modelSelect.value;
     if (model === '') return;
     const id = freshId(model, new Set(scene.placements.map((placement) => placement.id)));
-    selectedId = id;
-    commit([...scene.placements, { id, model, at: [0, 0, 0] }]);
+    onChange({ ...scene, placements: [...scene.placements, { id, model, at: [0, 0, 0] }] });
+    onSelect(id);
   });
 
   function button(text: string, title: string, onClick: () => void): HTMLButtonElement {
@@ -100,7 +102,7 @@ export function createSceneEditor(options: {
     return control;
   }
 
-  function render(next: SceneV1): void {
+  function render(next: SceneV1, selectedId: string | null): void {
     scene = next;
     emptyHint.hidden = next.placements.length > 0;
     list.replaceChildren();
@@ -110,10 +112,7 @@ export function createSceneEditor(options: {
       const name = element('button', 'placement-name');
       const turned = placement.turns ? ` · turn ${String(placement.turns)}` : '';
       name.textContent = `${label} · (${placement.at.join(', ')})${turned}`;
-      name.addEventListener('click', () => {
-        selectedId = selectedId === placement.id ? null : placement.id;
-        render(next);
-      });
+      name.addEventListener('click', () => { onSelect(placement.id); });
       row.append(name);
       if (placement.id === selectedId) {
         const controls = element('div', 'placement-controls');
