@@ -37,6 +37,13 @@ export interface ScenePlacementV1 {
   readonly turns?: number;
   /** Voxel size for this placement, overriding the model's own grain. */
   readonly grain?: number;
+  /**
+   * Varies this placement from others of the same model: it is folded into the
+   * model's own seed before building, so a seed-varying recipe — a tree, a
+   * fence — comes out different here. Omitted means the model's own version.
+   * Placements sharing a seed still share one instanced geometry.
+   */
+  readonly seed?: number;
 }
 
 export interface SceneV1 {
@@ -116,6 +123,10 @@ export function validateSceneV1(value: unknown): readonly GenomeIssueV1[] {
     if (placement.turns !== undefined
       && (typeof placement.turns !== 'number' || !Number.isInteger(placement.turns))) {
       issues.push({ path: `${path}.turns`, message: 'Expected an integer number of quarter-turns.' });
+    }
+    if (placement.seed !== undefined
+      && (typeof placement.seed !== 'number' || !Number.isInteger(placement.seed))) {
+      issues.push({ path: `${path}.seed`, message: 'Expected an integer seed, or omit it.' });
     }
     if (placement.grain !== undefined
       && (!isFiniteNumber(placement.grain) || placement.grain < MIN_VOXEL_SIZE || placement.grain > MAX_VOXEL_SIZE)) {

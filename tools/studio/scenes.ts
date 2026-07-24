@@ -90,13 +90,14 @@ export function createStudioScenes(): readonly SceneV1[] {
         { id: 'garage', model: 'studio:garage', at: [31, 0, 3] },
         { id: 'car', model: 'studio:car', at: [31, 1, 3] },
         // A tree in the front-left yard, off to the side so it never blocks the
-        // open front.
-        { id: 'tree-front', model: 'studio:tree', at: [-31, 0, 6] },
+        // open front. Each tree and fence run carries its own seed, so the
+        // seed-varying foliage and pickets make them different from each other.
+        { id: 'tree-front', model: 'studio:tree', at: [-31, 0, 6], seed: 3 },
         // The backyard, behind the house (−z): a tree, a fenced boundary, and a
         // flowerbed.
-        { id: 'tree-back', model: 'studio:tree', at: [12, 0, -31] },
-        { id: 'fence-a', model: 'studio:fence', at: [-9, 0, -34] },
-        { id: 'fence-b', model: 'studio:fence', at: [5, 0, -34] },
+        { id: 'tree-back', model: 'studio:tree', at: [12, 0, -31], seed: 7 },
+        { id: 'fence-a', model: 'studio:fence', at: [-9, 0, -34], seed: 2 },
+        { id: 'fence-b', model: 'studio:fence', at: [5, 0, -34], seed: 5 },
         { id: 'garden', model: 'studio:three-flower-pot', at: [-9, 0, -29] },
       ],
     },

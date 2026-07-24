@@ -84,7 +84,11 @@ export function createCarRecipe(): RecipeV1 {
   };
 }
 
-/** A rounded tree: a trunk and a layered leaf crown. */
+/**
+ * A tree: a trunk under a leafy crown. The crown is the seed-varying foliage
+ * part, so re-seeding the tree — which a scene does per placement — grows a
+ * different crown, and a row of trees never repeats.
+ */
 export function createTreeRecipe(): RecipeV1 {
   return {
     schemaVersion: 'studio.voxel-recipe/1',
@@ -100,33 +104,30 @@ export function createTreeRecipe(): RecipeV1 {
     ],
     steps: [
       box([4, 0, 4], [1, 8, 1], 'bark', 'Grows the trunk'),
-      box([1, 7, 1], [7, 3, 7], 'leaf', 'Spreads the lower crown'),
-      box([2, 10, 2], [5, 3, 5], 'leaf', 'Rounds the upper crown'),
-      box([3, 13, 3], [3, 2, 3], 'leaf', 'Caps the crown'),
+      {
+        kind: 'part',
+        part: 'foliage',
+        at: [0, 6, 0],
+        settings: { width: 9, height: 10, depth: 9, role: 'leaf' },
+        note: 'Spreads the leafy crown',
+      },
     ],
     motion: { ...STILL },
   };
 }
 
-/** A run of picket fence: two posts, a top and bottom rail, and pickets. */
+/**
+ * A run of picket fence. Its shape is the seed-varying picket-run part — which
+ * pickets are missing and which stand short roll from the seed — so a fenced
+ * yard built from several runs, each placed with its own seed, never repeats.
+ */
 export function createFenceRecipe(): RecipeV1 {
-  const L = 12;
-  const H = 5;
-  const steps: RecipeStepV1[] = [
-    box([0, 0, 0], [1, H, 1], 'post', 'Sets the left post'),
-    box([L - 1, 0, 0], [1, H, 1], 'post', 'Sets the right post'),
-    box([0, 1, 0], [L, 1, 1], 'rail', 'Runs the bottom rail'),
-    box([0, 3, 0], [L, 1, 1], 'rail', 'Runs the top rail'),
-  ];
-  for (let x = 1; x < L - 1; x += 2) {
-    steps.push(box([x, 0, 0], [1, H - 1, 1], 'picket', `Nails picket at ${String(x)}`));
-  }
   return {
     schemaVersion: 'studio.voxel-recipe/1',
     id: 'studio:fence',
     label: 'Fence',
     seed: 1,
-    size: [L, H, 1],
+    size: [12, 5, 1],
     roles: ['empty', 'post', 'rail', 'picket'],
     palette: [
       { r: 0, g: 0, b: 0 },
@@ -134,7 +135,15 @@ export function createFenceRecipe(): RecipeV1 {
       { r: 210, g: 208, b: 202 },
       { r: 236, g: 234, b: 228 },
     ],
-    steps,
+    steps: [
+      {
+        kind: 'part',
+        part: 'picket-run',
+        at: [0, 0, 0],
+        settings: { length: 12, height: 5 },
+        note: 'Runs the picket fence',
+      },
+    ],
     motion: { ...STILL },
   };
 }

@@ -15,7 +15,7 @@ import {
 describe('the studio library', () => {
   it('lists every part with its metadata, sorted by name', () => {
     const parts = partInfoListV1(createStudioParts());
-    expect(parts.map((part) => part.name)).toEqual(['box', 'brick-course']);
+    expect(parts.map((part) => part.name)).toEqual(['box', 'brick-course', 'foliage', 'picket-run']);
     const box = parts.find((part) => part.name === 'box');
     expect(box).toBeDefined();
     expect(box?.selfDescribed).toBe(true);

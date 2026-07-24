@@ -1,7 +1,7 @@
 import { modelCenterV1 } from './build.js';
 import { setVoxelSize } from './edit.js';
 import { modelVoxelSizeV1, type StudioModelV1 } from './model.js';
-import { buildRecipe, type PartShelfV1, type RecipeBookV1 } from './recipe.js';
+import { buildRecipe, mixSeed, type PartShelfV1, type RecipeBookV1 } from './recipe.js';
 import { validateSceneV1, type ScenePlacementV1, type SceneV1 } from './scene.js';
 
 /**
@@ -126,10 +126,14 @@ export function sceneOverlapsV1(
     const recipe = recipes[placement.model];
     if (!recipe) continue;
     const grain = placement.grain ?? modelVoxelSizeV1(recipe);
-    const key = `${placement.model}@${String(grain)}`;
+    const seed = placement.seed ?? 0;
+    // Keyed by seed too, and built with it folded in, so the check sees the same
+    // varied body the scene renders — not the model's default.
+    const key = `${placement.model}@${String(grain)}@${String(seed)}`;
     let entry = byModel.get(key);
     if (!entry) {
-      let model = buildRecipe(recipe, parts, recipes).model;
+      const seeded = seed === 0 ? recipe : { ...recipe, seed: mixSeed(recipe.seed, seed) };
+      let model = buildRecipe(seeded, parts, recipes).model;
       if (modelVoxelSizeV1(model) !== grain) model = setVoxelSize(model, grain);
       entry = { model, grain };
       byModel.set(key, entry);

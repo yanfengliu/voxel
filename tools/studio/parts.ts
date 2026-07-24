@@ -136,10 +136,131 @@ export const brickCoursePart: PartDefinitionV1 = {
   },
 };
 
+/**
+ * A small deterministic generator seeded by one number: same seed, same
+ * stream. Parts that vary use it so a variation is a roll of the seed, and the
+ * same seed always rebuilds the same thing — which is what lets a scene place
+ * randomized copies that still round-trip and rebuild exactly.
+ */
+function seededRandom(seed: number): () => number {
+  let state = seed >>> 0;
+  return () => {
+    state = (state + 0x6d2b79f5) | 0;
+    let t = Math.imul(state ^ (state >>> 15), 1 | state);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+const FOLIAGE_SETTINGS: readonly PartSettingSpecV1[] = [
+  { key: 'width', label: 'Width', kind: 'int', default: 7 },
+  { key: 'height', label: 'Height', kind: 'int', default: 8 },
+  { key: 'depth', label: 'Depth', kind: 'int', default: 7 },
+  { key: 'role', label: 'Role', kind: 'name', default: 'leaf' },
+];
+
+/**
+ * A leafy crown: a rounded mass whose fullness and eroded surface roll from the
+ * seed, so every tree that uses it comes out a little different. The first part
+ * the studio made that reads its seed — the box and brick course ignore theirs
+ * because their whole job is to be exact, but a crown's job is to vary.
+ */
+export const foliagePart: PartDefinitionV1 = {
+  title: 'Foliage',
+  summary: 'A rounded leaf crown whose fullness and surface vary with the seed.',
+  category: 'plants',
+  tags: ['leaf', 'crown', 'tree', 'foliage', 'varies'],
+  settings: FOLIAGE_SETTINGS,
+  presets: [
+    { name: 'Round', summary: 'A full, even crown.', settings: {} },
+    { name: 'Tall', summary: 'A taller crown.', settings: { height: 11 } },
+  ],
+  build(settings, seed): PartFragmentV1 {
+    const resolved = resolvePartSettingsV1(FOLIAGE_SETTINGS, settings);
+    const width = resolved.width as number;
+    const height = resolved.height as number;
+    const depth = resolved.depth as number;
+    const role = resolved.role as string;
+    const random = seededRandom(seed);
+    // One roll for the whole crown's fullness, so a tree is fuller or sparser
+    // as a whole rather than speckled; then a roll per surface cell erodes it.
+    const fullness = 0.82 + random() * 0.3;
+    const cx = (width - 1) / 2;
+    const cy = (height - 1) / 2;
+    const cz = (depth - 1) / 2;
+    const rx = Math.max(0.5, width / 2);
+    const ry = Math.max(0.5, height / 2);
+    const rz = Math.max(0.5, depth / 2);
+    const voxels = new Array<number>(width * height * depth).fill(0);
+    for (let z = 0; z < depth; z += 1) {
+      for (let y = 0; y < height; y += 1) {
+        for (let x = 0; x < width; x += 1) {
+          const nx = (x - cx) / rx;
+          const ny = (y - cy) / ry;
+          const nz = (z - cz) / rz;
+          const distance = nx * nx + ny * ny + nz * nz;
+          let leaf = false;
+          if (distance <= 0.68 * fullness) leaf = true;
+          else if (distance <= fullness) leaf = random() > 0.42;
+          if (leaf) voxels[x + width * (y + height * z)] = 1;
+        }
+      }
+    }
+    return { size: [width, height, depth], roles: ['empty', role], voxels };
+  },
+};
+
+const PICKET_RUN_SETTINGS: readonly PartSettingSpecV1[] = [
+  { key: 'length', label: 'Length', kind: 'int', default: 12 },
+  { key: 'height', label: 'Height', kind: 'int', default: 5 },
+];
+
+/**
+ * A run of picket fence — two posts, a top and bottom rail, and pickets — where
+ * the seed decides which pickets are missing and which stand a notch shorter,
+ * so a fence built from several runs never repeats. Roles are fixed rather than
+ * settings: a fence is posts, rails, and pickets, and the recipe colours them.
+ */
+export const picketRunPart: PartDefinitionV1 = {
+  title: 'Picket run',
+  summary: 'A length of picket fence with seed-varied missing and shortened pickets.',
+  category: 'outdoor',
+  tags: ['fence', 'picket', 'yard', 'varies'],
+  settings: PICKET_RUN_SETTINGS,
+  presets: [
+    { name: 'Run', summary: 'A standard length.', settings: {} },
+    { name: 'Short', summary: 'A short length.', settings: { length: 8 } },
+  ],
+  build(settings, seed): PartFragmentV1 {
+    const resolved = resolvePartSettingsV1(PICKET_RUN_SETTINGS, settings);
+    const length = resolved.length as number;
+    const height = resolved.height as number;
+    const random = seededRandom(seed);
+    const voxels = new Array<number>(length * height).fill(0);
+    const set = (x: number, y: number, role: number): void => { voxels[x + length * y] = role; };
+    for (let y = 0; y < height; y += 1) {
+      set(0, y, 1);
+      set(length - 1, y, 1);
+    }
+    for (let x = 0; x < length; x += 1) {
+      if (voxels[x] === 0) set(x, 1, 2);
+      if (height > 3 && voxels[x + length * 3] === 0) set(x, 3, 2);
+    }
+    for (let x = 1; x < length - 1; x += 2) {
+      if (random() < 0.16) continue; // a missing picket
+      const top = height - 1 - (random() < 0.22 ? 1 : 0); // some stand a notch short
+      for (let y = 0; y < top; y += 1) if (voxels[x + length * y] === 0) set(x, y, 3);
+    }
+    return { size: [length, height, 1], roles: ['empty', 'post', 'rail', 'picket'], voxels };
+  },
+};
+
 /** The shelf the studio builds its own recipes against. */
 export function createStudioParts(): PartShelfV1 {
   return {
     box: boxPart,
     'brick-course': brickCoursePart,
+    foliage: foliagePart,
+    'picket-run': picketRunPart,
   };
 }

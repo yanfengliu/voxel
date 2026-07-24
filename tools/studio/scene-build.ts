@@ -3,7 +3,7 @@ import type { RenderSnapshotV1 } from '../../src/core/index.js';
 import { buildSnapshot } from './build.js';
 import { setVoxelSize } from './edit.js';
 import { modelVoxelSizeV1, type GenomeIssueV1 } from './model.js';
-import { buildRecipe, type PartShelfV1, type RecipeBookV1 } from './recipe.js';
+import { buildRecipe, mixSeed, type PartShelfV1, type RecipeBookV1 } from './recipe.js';
 import { validateSceneV1, type ScenePlacementV1, type SceneV1 } from './scene.js';
 
 /**
@@ -113,6 +113,8 @@ function sceneDescriptor(id: string): RenderSnapshotV1['descriptor'] {
 interface PlacementGroupV1 {
   readonly recipe: RecipeBookV1[string];
   readonly grain: number;
+  /** The placement seed shared by this group; 0 means the model's own version. */
+  readonly seed: number;
   readonly placements: ScenePlacementV1[];
 }
 
@@ -140,10 +142,13 @@ export function buildSceneSnapshot(
       return;
     }
     const grain = placement.grain ?? modelVoxelSizeV1(recipe);
-    const key = `${placement.model}@${String(grain)}`;
+    const seed = placement.seed ?? 0;
+    // Placements that share a model, grain, and seed build the same geometry, so
+    // they group and instance together; a different seed builds its own body.
+    const key = `${placement.model}@${String(grain)}@${String(seed)}`;
     const group = groups.get(key);
     if (group) group.placements.push(placement);
-    else groups.set(key, { recipe, grain, placements: [placement] });
+    else groups.set(key, { recipe, grain, seed, placements: [placement] });
   });
   if (missing.length > 0) throw new SceneBuildError(missing);
 
@@ -154,7 +159,12 @@ export function buildSceneSnapshot(
     // The placed model is exactly the model shown on its own, at this grain.
     // The whole book is the resolver, so a placed recipe that itself nests
     // sub-recipes (a flower pot placing pots and flowers) builds correctly.
-    let model = buildRecipe(group.recipe, parts, recipes).model;
+    // Fold the placement seed into the recipe's own, so a seed-varying recipe
+    // builds a different body here while a seed of 0 leaves it unchanged.
+    const seeded = group.seed === 0
+      ? group.recipe
+      : { ...group.recipe, seed: mixSeed(group.recipe.seed, group.seed) };
+    let model = buildRecipe(seeded, parts, recipes).model;
     if (modelVoxelSizeV1(model) !== group.grain) model = setVoxelSize(model, group.grain);
     const built = buildSnapshot(model, {
       revision: 1,
