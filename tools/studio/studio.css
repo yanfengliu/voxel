@@ -198,13 +198,18 @@ button:disabled { opacity: 0.45; cursor: default; }
   place-items: center;
   overflow: hidden;
 }
-.canvas-wrap { position: absolute; inset: 0; }
+/* The wrap is the stage's interaction surface: the drag/zoom handlers live
+   here, not on a canvas, so they work whether the model canvas or the scene
+   canvas is the one showing. */
+.canvas-wrap { position: absolute; inset: 0; cursor: grab; }
+.canvas-wrap:active { cursor: grabbing; }
 /* The canvas is a positioned layer so the ground grid can sit behind it: the
    WebGL canvas is transparent where there is no model and opaque where there
    is, so a grid drawn under it is hidden by the model and shows around it —
    a real floor, not lines painted over a see-through model. */
-canvas { position: absolute; inset: 0; display: block; width: 100%; height: 100%; cursor: grab; }
-canvas:active { cursor: grabbing; }
+/* Both canvases are display layers; pointer events pass through to the wrap,
+   which owns the handlers. */
+canvas { position: absolute; inset: 0; display: block; width: 100%; height: 100%; pointer-events: none; }
 .marks { position: absolute; inset: 0; pointer-events: none; }
 .physical-marks { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
 .physical-marks line { fill: none; stroke-width: 1.2; }

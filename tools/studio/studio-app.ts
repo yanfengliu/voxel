@@ -685,14 +685,14 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
   let moved = false;
   let lastX = 0;
   let lastY = 0;
-  canvas.addEventListener('pointerdown', (event) => {
+  canvasWrap.addEventListener('pointerdown', (event) => {
     dragging = true;
     moved = false;
     lastX = event.clientX;
     lastY = event.clientY;
-    canvas.setPointerCapture(event.pointerId);
+    canvasWrap.setPointerCapture(event.pointerId);
   });
-  canvas.addEventListener('pointermove', (event) => {
+  canvasWrap.addEventListener('pointermove', (event) => {
     if (!dragging) return;
     const dx = event.clientX - lastX;
     const dy = event.clientY - lastY;
@@ -704,29 +704,31 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
     lastY = event.clientY;
     harness.setViewAngles(dragOrbit(orbit, dx, dy));
   });
-  canvas.addEventListener('pointerup', (event) => {
-    canvas.releasePointerCapture(event.pointerId);
+  canvasWrap.addEventListener('pointerup', (event) => {
+    canvasWrap.releasePointerCapture(event.pointerId);
     const wasDrag = moved;
     dragging = false;
     moved = false;
-    if (wasDrag || !supportsNotes) return;
+    // A scene has no single model to pin a note against, so a clean click on
+    // one only ever turned or zoomed — never pins.
+    if (wasDrag || !supportsNotes || sceneOpen) return;
     // A clean click is pointing at something seen; freeze that moment.
     if (player.playing) {
       harness.pause();
       playerBar.syncPlayButton();
     }
-    const rect = canvas.getBoundingClientRect();
+    const rect = canvasWrap.getBoundingClientRect();
     const u = (event.clientX - rect.left) / rect.width;
     const v = (event.clientY - rect.top) / rect.height;
     state.pending = { kind: 'moment', timeMs: player.timeAt(performance.now()), u, v };
     positionRings();
     notesPanel.openNoteEditor(`Pinned at ${String(Math.round(player.timeAt(performance.now())))} ms — say what you see…`);
   });
-  canvas.addEventListener('wheel', (event) => {
+  canvasWrap.addEventListener('wheel', (event) => {
     event.preventDefault();
     harness.setViewAngles(zoomOrbit(orbit, Math.sign(event.deltaY)));
   }, { passive: false });
-  canvas.addEventListener('dblclick', () => { harness.setViewAngles(DEFAULT_ORBIT); });
+  canvasWrap.addEventListener('dblclick', () => { harness.setViewAngles(DEFAULT_ORBIT); });
 
   lookSwitch.addEventListener('click', () => { harness.setEdges(!session.edges); });
   depthToggle.addEventListener('click', () => { setDepth(!depthOn); });
