@@ -36,6 +36,7 @@ describe('the studio shelf', () => {
       { name: 'Roof studies', count: 3 },
       { name: 'House', count: 2 },
       { name: 'Home', count: 3 },
+      { name: 'Home furnishings', count: 10 },
     ]);
   });
 });

@@ -59,5 +59,35 @@ export function createStudioScenes(): readonly SceneV1[] {
         { id: 'plant', model: 'studio:three-flower-pot', at: [11, 1, 7] },
       ],
     },
+    {
+      schemaVersion: VOXEL_SCENE_SCHEMA_V1,
+      id: 'studio:scene:home',
+      label: 'Family home',
+      summary: 'A whole family home with its front and roof off so every room is '
+        + 'in view: a living room with a fireplace and chimney, a kitchen, a bedroom, '
+        + 'and a bathroom, each furnished for the family that lives here.',
+      placements: [
+        { id: 'shell', model: 'studio:home-shell', at: [0, 0, 0] },
+        // Living room — back-left, around the hearth on the far wall.
+        { id: 'fireplace', model: 'studio:fireplace', at: [-8.5, 1, 15] },
+        { id: 'chimney', model: 'studio:chimney', at: [-8.5, 7, 15] },
+        { id: 'sofa', model: 'studio:sofa', at: [-8.5, 1, 5], turns: 2 },
+        { id: 'coffee-table', model: 'studio:coffee-table', at: [-8.5, 1, 9] },
+        { id: 'tv', model: 'studio:tv-stand', at: [-15, 1, 9], turns: 1 },
+        // Kitchen — back-right, counter along the far wall.
+        { id: 'counter', model: 'studio:kitchen-counter', at: [7, 1, 14] },
+        { id: 'stove', model: 'studio:stove', at: [13.5, 1, 14] },
+        { id: 'fridge', model: 'studio:fridge', at: [2, 1, 13] },
+        // Bedroom — front-left.
+        { id: 'bed', model: 'studio:made-bed', at: [-10, 1, -8] },
+        { id: 'nightstand', model: 'studio:nightstand', at: [-15, 1, -1] },
+        { id: 'lamp', model: 'studio:table-lamp', at: [-15, 7, -1] },
+        { id: 'wardrobe', model: 'studio:wardrobe', at: [-5, 1, -14], turns: 2 },
+        // Bathroom — front-right.
+        { id: 'bathtub', model: 'studio:bathtub', at: [7, 1, -13] },
+        { id: 'toilet', model: 'studio:toilet', at: [13, 1, -5], turns: 1 },
+        { id: 'sink', model: 'studio:bath-sink', at: [2, 1, -14], turns: 2 },
+      ],
+    },
   ];
 }
