@@ -3,6 +3,7 @@ import type { VoxelStudioHarnessV1 } from './harness.js';
 import type { ModelStudioTabId } from './shared-ui/index.js';
 import type { RecipeInfoV1 } from './studio-library.js';
 import { element } from './studio-app-helpers.js';
+import { createStudioSceneMenu } from './studio-scene-menu.js';
 
 /**
  * The library on the left: the game's whole palette to browse before building.
@@ -30,6 +31,8 @@ export interface StudioShelfV1 {
   readonly body: HTMLElement;
   /** Rebuilds the current view and marks the open model. Called on refresh. */
   rebuild(): void;
+  /** Removes any body-level scene menu or dialog and its temporary listeners. */
+  dispose(): void;
 }
 
 /** A setting spec in one readable line: what it is, its bounds, its default. */
@@ -78,8 +81,25 @@ export function createStudioShelf(deps: StudioShelfDepsV1): StudioShelfV1 {
   heading.append(tabs, search);
 
   const body = element('div', 'rail-body');
+  const focusScene = (id: string | null): void => {
+    const rows = Array.from(body.querySelectorAll<HTMLButtonElement>('[data-scene-id]'));
+    const target = id === null ? undefined : rows.find((row) => row.dataset.sceneId === id);
+    (target ?? search).focus();
+  };
+  const sceneMenu = createStudioSceneMenu({
+    visibleSceneIds: () => Array.from(
+      body.querySelectorAll<HTMLButtonElement>('[data-scene-id]'),
+      (row) => row.dataset.sceneId ?? '',
+    ),
+    sceneExists: (id) => harness.scenes().some((scene) => scene.id === id),
+    renameScene: (id, label) => { harness.renameScene(id, label); },
+    deleteScene: (id) => { harness.deleteScene(id); },
+    rebuild: () => { rebuild(); },
+    focusScene,
+  });
 
   function rebuild(): void {
+    sceneMenu.close();
     for (const [name, button] of viewButtons) button.classList.toggle('on', view === name);
     search.placeholder = view === 'models' ? 'Search models…'
       : view === 'parts' ? 'Search parts…'
@@ -249,6 +269,7 @@ export function createStudioShelf(deps: StudioShelfDepsV1): StudioShelfV1 {
       if (needle !== ''
         && !`${scene.label} ${scene.id} ${scene.summary ?? ''}`.toLowerCase().includes(needle)) continue;
       const row = element('button', 'model-row');
+      row.classList.toggle('active', harness.sceneState()?.id === scene.id);
       const label = element('span');
       label.textContent = scene.label;
       const count = element('span', 'scene-count');
@@ -256,10 +277,16 @@ export function createStudioShelf(deps: StudioShelfDepsV1): StudioShelfV1 {
       row.append(label, count);
       if (scene.summary) row.title = scene.summary;
       row.addEventListener('click', () => { harness.openScene(scene.id); });
+      sceneMenu.connect(row, scene);
       body.appendChild(row);
       shown += 1;
     }
-    if (shown === 0) { emptyNote('No scenes match.'); return; }
+    if (shown === 0) {
+      emptyNote(scenes.length === 0 && needle === ''
+        ? 'No scenes remain in this Studio session.'
+        : 'No scenes match.');
+      return;
+    }
     emptyNote('A scene stands finished models together in one world. Open one to view it.');
   }
 
@@ -269,5 +296,5 @@ export function createStudioShelf(deps: StudioShelfDepsV1): StudioShelfV1 {
     body.appendChild(note);
   }
 
-  return { heading, body, rebuild };
+  return { heading, body, rebuild, dispose: () => { sceneMenu.dispose(); } };
 }

@@ -1,3 +1,4 @@
+/* eslint-disable max-lines -- This composition root intentionally owns the paired render sessions, camera, rollback, and scene-to-model lifecycle; the scene registry and menu remain extracted modules. */
 import { OrthographicCamera, PerspectiveCamera, Raycaster, Vector2 } from 'three';
 
 import type { StudioCatalogV1 } from './catalog.js';
@@ -34,6 +35,7 @@ import { createPhysicalOverlayView } from './physical-overlay-view.js';
 import { StudioPlayer } from './player.js';
 import { referenceGridSegmentsV1, sceneReferenceGridSegmentsV1 } from './reference-grid.js';
 import type { SceneV1 } from './scene.js';
+import { createSceneWorkspace } from './scene-workspace.js';
 import { createSceneEditor } from './scene-editor.js';
 import {
   boxEdgesV1, groundHitV1, pickPlacementV1, placementWorldBoxesV1,
@@ -169,6 +171,10 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
   const root = options.root ?? document.getElementById('studio');
   if (!root) throw new Error('The studio needs a #studio host element.');
   const catalog = options.catalog;
+  // Catalog scenes are consumer-owned readonly input. The Studio edits an
+  // isolated working copy so opening, editing, renaming, deleting, and reopening
+  // all read one mount-local source of truth without mutating the game.
+  const sceneWorkspace = createSceneWorkspace(catalog.scenes ?? []);
   // The look this studio last wore, so the next model opens the way the last one
   // was left rather than resetting to the resting look. Read once here; written
   // back whenever a view control changes.
@@ -500,7 +506,10 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
     physicalOverlay: () => physicalOn,
     highlightPart: setHighlightedPart,
     highlightedPart: () => highlightedPartIndex,
+    scenes: () => sceneWorkspace.scenes(),
     openScene: (scene) => { openSceneMode(scene); },
+    renameScene: (id, label) => renameStudioScene(id, label),
+    deleteScene: (id) => deleteStudioScene(id),
     sceneMode: () => sceneOpen !== null,
     scene: () => sceneOpen,
     selectScenePlacement(id) { selectPlacement(id); return selectedPlacementId; },
@@ -653,6 +662,71 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
     sceneOpen = null;
     canvas.style.display = 'block';
     sceneCanvas.style.display = 'none';
+  }
+
+  /**
+   * Renaming is a scene edit when that scene is open, so its history behaves
+   * predictably: undoing the rename restores the former name, and undoing an
+   * older placement change after it cannot resurrect a stale catalog label.
+   */
+  function renameStudioScene(id: string, label: string): SceneV1 {
+    const renamed = sceneWorkspace.rename(id, label);
+    if (sceneOpen?.id === id) commitSceneEdit(renamed);
+    else shelfPanel.rebuild();
+    return renamed;
+  }
+
+  /**
+   * Removing the shown scene returns to the model session kept alive beneath
+   * it. All scene-owned render and edit state is dropped before the model is
+   * refreshed, so neither an outline nor undo history can survive deletion.
+   */
+  function deleteStudioScene(id: string): SceneV1 {
+    const removed = sceneWorkspace.delete(id);
+    if (sceneOpen?.id !== id) {
+      shelfPanel.rebuild();
+      return removed;
+    }
+    sceneOpen = null;
+    selectedPlacementId = null;
+    highlightedPartIndex = null;
+    sceneBoxes = [];
+    sceneUndo.length = 0;
+    sceneRedo.length = 0;
+    const retiringSession = sceneSession;
+    sceneSession = null;
+    let disposalFailure: unknown;
+    try {
+      retiringSession?.dispose();
+    } catch (error) {
+      disposalFailure = error;
+    } finally {
+      // Renderer cleanup is allowed to fail. The visible state transition is
+      // not: the deleted scene must never remain on screen after it is gone.
+      canvas.style.display = 'block';
+      sceneCanvas.style.display = 'none';
+      panCenter = [0, 0, 0];
+      orbit = clampOrbit({
+        ...orbit,
+        viewHeight: fitViewHeight(session.model.size, session.voxelSize),
+      });
+      applyOrbit(camera, orbit, viewW, viewH, panCenter);
+      refresh();
+      drawFrame(lastShownMs);
+    }
+    if (disposalFailure !== undefined) {
+      const reason = disposalFailure instanceof Error
+        ? disposalFailure.message
+        : typeof disposalFailure === 'string'
+          ? disposalFailure
+          : 'an unknown non-Error value was thrown';
+      throw new Error(
+        `Scene '${id}' was deleted and the model view was restored, but releasing its renderer failed: `
+        + `${reason}. Reload the page to release any remaining browser resources.`,
+        { cause: disposalFailure },
+      );
+    }
+    return removed;
   }
 
   /**
@@ -847,6 +921,7 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
   // Adopts an edited scene and redraws, without touching history — used for the
   // live frames of a drag and by undo/redo.
   function applySceneLive(next: SceneV1): void {
+    if (sceneOpen !== null) sceneWorkspace.replace(sceneOpen.id, next);
     sceneOpen = next;
     sceneSession?.setScene(next);
     recomputeSceneBoxes();
@@ -1215,6 +1290,7 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
   const acquired: { dispose(): void }[] = [];
   let rootWritten = false;
   try {
+    acquired.push(shelfPanel);
     // Watching a model get made. Its previews go through the harness, so the
     // agent walks the same construction the panel shows.
     construction = createConstructionPanel({
@@ -1331,6 +1407,7 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
       disposed = true;
       cancelAnimationFrame(frameHandle);
       construction.dispose();
+      shelfPanel.dispose();
       studioShell.dispose();
       keyboard.dispose();
       window.removeEventListener('resize', followStage);

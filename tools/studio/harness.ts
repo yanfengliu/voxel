@@ -199,8 +199,9 @@ export interface VoxelStudioHarnessV1 {
   openFromShelf(id: string): ReturnType<StudioSession['describe']>;
 
   /**
-   * The scenes this studio offers: arrangements of its models standing together
-   * in one world. Empty when the catalog declares none.
+   * The scenes in this mounted Studio: arrangements of its models standing
+   * together in one world. Empty when the catalog declares none or all have
+   * been deleted for this session.
    */
   scenes(): readonly SceneInfoV1[];
   /**
@@ -209,6 +210,16 @@ export interface VoxelStudioHarnessV1 {
    * that id, naming it, rather than opening nothing.
    */
   openScene(id: string): void;
+  /**
+   * Renames a scene for this mounted Studio, preserving its stable id and
+   * placements. The open title and shelf update through the same path as the UI.
+   */
+  renameScene(id: string, label: string): SceneV1;
+  /**
+   * Deletes a scene from this mounted Studio. Deleting the open scene returns
+   * the stage to its underlying model. Returns the scene that was removed.
+   */
+  deleteScene(id: string): SceneV1;
   /** Whether a scene is on the stage rather than a single model. */
   sceneMode(): boolean;
   /**
@@ -391,6 +402,12 @@ export interface HarnessHostV1 {
   highlightedPart(): number | null;
   /** Opens a scene on the stage; the model session stays alive underneath. */
   openScene(scene: SceneV1): void;
+  /** The mount-owned scene collection, distinct from the readonly input catalog. */
+  scenes(): readonly SceneV1[];
+  /** Renames a scene and refreshes every affected Studio surface. */
+  renameScene(id: string, label: string): SceneV1;
+  /** Deletes a scene and refreshes every affected Studio surface. */
+  deleteScene(id: string): SceneV1;
   /** Whether a scene is on the stage rather than a single model. */
   sceneMode(): boolean;
   /** The scene on the stage right now, or null in model mode. */
@@ -665,17 +682,19 @@ export function createStudioHarness(host: HarnessHostV1): VoxelStudioHarnessV1 {
       }
       throw new Error(`No model on the shelf is called ${id}.`);
     },
-    scenes: () => (host.catalog().scenes ?? []).map((scene) => ({
+    scenes: () => host.scenes().map((scene) => ({
       id: scene.id,
       label: scene.label,
       ...(scene.summary === undefined ? {} : { summary: scene.summary }),
       models: scene.placements.length,
     })),
     openScene(id) {
-      const scene = (host.catalog().scenes ?? []).find((entry) => entry.id === id);
-      if (!scene) throw new Error(`No scene in this studio is called ${id}.`);
+      const scene = host.scenes().find((entry) => entry.id === id);
+      if (!scene) throw new Error(`No scene in this studio has the id '${id}', so it cannot be opened.`);
       host.openScene(scene);
     },
+    renameScene: (id, label) => host.renameScene(id, label),
+    deleteScene: (id) => host.deleteScene(id),
     sceneMode: () => host.sceneMode(),
     sceneState: () => host.scene(),
     selectPlacement(id) {
@@ -692,8 +711,15 @@ export function createStudioHarness(host: HarnessHostV1): VoxelStudioHarnessV1 {
     },
     selectedPlacement: () => host.selectedScenePlacement(),
     editScene(next) {
-      if (!host.sceneMode()) {
+      const open = host.scene();
+      if (open === null) {
         throw new Error('No scene is open to edit; open a scene first with openScene.');
+      }
+      if (next.id !== open.id) {
+        throw new Error(
+          `Refusing to edit scene '${open.id}': the replacement id '${next.id}' would change `
+          + 'its stable identity; rename the label instead.',
+        );
       }
       const issues = validateSceneV1(next);
       if (issues.length > 0) {
