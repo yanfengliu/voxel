@@ -1,4 +1,5 @@
 import { spawn } from 'node:child_process';
+import assert from 'node:assert/strict';
 import { readFile, stat } from 'node:fs/promises';
 import { delimiter, dirname, join, resolve as resolvePath } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -84,26 +85,101 @@ async function runNpm(args) {
     // npm audit exits non-zero when it finds anything at all, so the exit code
     // cannot distinguish "vulnerable" from "failed to run". The parsed report
     // is the authority; a missing report is the real failure.
-    child.on('close', () => { resolve({ stdout, stderr }); });
+    child.on('close', (code, signal) => { resolve({ stdout, stderr, code, signal }); });
   });
 }
 
-async function auditFindings(label, args) {
-  const { stdout, stderr } = await runNpm(['audit', '--json', ...args]);
+function parseAuditReport(label, { stdout, stderr, code, signal }) {
   let report;
   try {
     report = JSON.parse(stdout);
   } catch {
     throw new Error(
-      `${label} audit produced no parseable report. npm said: ${stderr.trim() || '(nothing)'}`,
+      `${label} audit produced no parseable report (exit ${String(code)}, signal `
+      + `${signal ?? 'none'}). npm said: ${stderr.trim() || '(nothing)'}. A successful audit `
+      + 'must return JSON vulnerability metadata.',
     );
   }
-  const vulnerabilities = report.vulnerabilities ?? {};
+  const total = report?.metadata?.vulnerabilities?.total;
+  if (
+    typeof report?.auditReportVersion !== 'number'
+    || report.vulnerabilities === null
+    || typeof report.vulnerabilities !== 'object'
+    || Array.isArray(report.vulnerabilities)
+    || typeof total !== 'number'
+    || !Number.isFinite(total)
+  ) {
+    const npmMessage = [
+      report?.message,
+      report?.error?.summary,
+      report?.error?.detail,
+      stderr,
+    ].find((value) => typeof value === 'string' && value.trim().length > 0)?.trim() ?? '(nothing)';
+    throw new Error(
+      `${label} audit returned an error instead of vulnerability metadata (exit ${String(code)}, `
+      + `signal ${signal ?? 'none'}). npm said: ${npmMessage}. A successful audit must include `
+      + 'auditReportVersion, a vulnerabilities object, and metadata.vulnerabilities.total.',
+    );
+  }
+  const vulnerabilities = report.vulnerabilities;
   const blocking = Object.values(vulnerabilities)
     .filter((entry) => BLOCKING_SEVERITIES.includes(entry.severity))
     .map((entry) => `${entry.name} (${entry.severity})`);
-  const total = report.metadata?.vulnerabilities?.total ?? 0;
   return { blocking, total };
+}
+
+async function auditFindings(label, args) {
+  return parseAuditReport(label, await runNpm(['audit', '--json', ...args]));
+}
+
+function selfTest() {
+  const clean = parseAuditReport('clean', {
+    stdout: JSON.stringify({
+      auditReportVersion: 2,
+      vulnerabilities: {},
+      metadata: { vulnerabilities: { total: 0 } },
+    }),
+    stderr: '',
+    code: 0,
+    signal: null,
+  });
+  assert.deepEqual(clean, { blocking: [], total: 0 });
+
+  const vulnerable = parseAuditReport('vulnerable', {
+    stdout: JSON.stringify({
+      auditReportVersion: 2,
+      vulnerabilities: { example: { name: 'example', severity: 'high' } },
+      metadata: { vulnerabilities: { total: 1 } },
+    }),
+    stderr: '',
+    code: 1,
+    signal: null,
+  });
+  assert.deepEqual(vulnerable, { blocking: ['example (high)'], total: 1 });
+
+  assert.throws(
+    () => {
+      parseAuditReport('offline', {
+        stdout: JSON.stringify({ error: { summary: 'registry unavailable' } }),
+        stderr: '',
+        code: 1,
+        signal: null,
+      });
+    },
+    /offline audit returned an error.*registry unavailable.*must include auditReportVersion/s,
+  );
+  assert.throws(
+    () => {
+      parseAuditReport('broken', {
+        stdout: '',
+        stderr: 'connection refused',
+        code: 1,
+        signal: null,
+      });
+    },
+    /broken audit produced no parseable report.*connection refused/s,
+  );
+  console.log(`${LOG_PREFIX} audit-report parser self-test passed`);
 }
 
 async function readLicense(name) {
@@ -175,4 +251,11 @@ async function main() {
   );
 }
 
-await main();
+try {
+  if (process.argv.includes('--self-test')) selfTest();
+  else await main();
+} catch (error) {
+  const message = error instanceof Error ? error.message : String(error);
+  console.error(`${LOG_PREFIX} verification failed:\n  - ${message}`);
+  process.exitCode = 1;
+}
