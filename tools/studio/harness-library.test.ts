@@ -15,6 +15,11 @@ import {
   type RecipeV1,
 } from './recipe.js';
 import { VOXEL_SCENE_SCHEMA_V1 } from './scene.js';
+import {
+  createStudioShelfOrderWorkspace,
+  type StudioShelfItemKindV1,
+  type StudioShelfMoveV1,
+} from './studio-shelf-order.js';
 
 const STILL = {
   periodMs: 0,
@@ -100,6 +105,7 @@ function createHarnessFixture(options: {
     scenes: [scene],
   };
   const labels = createModelLabelWorkspace(catalog.sections);
+  const order = createStudioShelfOrderWorkspace();
   let current = buildRecipe(savedRecipe, parts, book).model;
   let replaceFailure = options.replaceFailureAfterAccept;
   let updateFailure = options.updateFailureAfterAccept;
@@ -139,6 +145,12 @@ function createHarnessFixture(options: {
     modelDisplayLabel: (id: string, fallback = id) => labels.label(id, fallback),
     renameModel: (id: string, label: string) => labels.rename(id, label),
     restoreModelName: (id: string) => labels.restore(id),
+    orderShelfItems: (
+      kind: StudioShelfItemKindV1,
+      ids: readonly string[],
+      sectionIndex?: number,
+    ) => order.order(kind, ids, sectionIndex),
+    moveShelfItem: (request: StudioShelfMoveV1, ids: readonly string[]) => order.move(request, ids),
     initialShelfModelId: () => shelfModel.id,
     catalog: () => catalog,
   } as unknown as HarnessHostV1;
@@ -151,6 +163,55 @@ function createHarnessFixture(options: {
 }
 
 describe('Studio harness library actions', () => {
+  it('reorders library projections by stable ID without changing catalog data or the active source', () => {
+    const other: ShelfModelV1 = {
+      id: 'test:other',
+      label: 'Other',
+      load: () => { throw new Error('this ordering fixture is not opened'); },
+      howItsMade: () => { throw new Error('this ordering fixture is not inspected'); },
+    };
+    const first = createHarnessFixture({ extraModels: [other] });
+    const catalogModels = first.catalog.sections[0]!.models;
+    const activeModel = first.harness.model();
+    const steps = first.harness.buildSteps();
+
+    expect(first.harness.shelfOrder('model', 0)).toEqual(['test:tower', 'test:other']);
+    expect(first.harness.moveShelfItem({
+      kind: 'model',
+      sectionIndex: 0,
+      id: 'test:other',
+      targetId: 'test:tower',
+      position: 'before',
+    })).toEqual(['test:other', 'test:tower']);
+    expect(first.harness.shelf()[0]?.models.map((model) => model.id)).toEqual([
+      'test:other',
+      'test:tower',
+    ]);
+    expect(catalogModels.map((model) => model.id)).toEqual(['test:tower', 'test:other']);
+    expect(first.harness.model()).toBe(activeModel);
+    expect(first.harness.activeShelfModel()).toBe('test:tower');
+    expect(first.harness.buildSteps()).toEqual(steps);
+
+    const recipeOrder = first.harness.shelfOrder('recipe');
+    const lastRecipe = recipeOrder.at(-1)!;
+    first.harness.moveShelfItem({
+      kind: 'recipe',
+      id: lastRecipe,
+      targetId: recipeOrder[0]!,
+      position: 'before',
+    });
+    expect(first.harness.availableRecipes()[0]?.id).toBe(lastRecipe);
+    expect(first.harness.findRecipes('test').map((entry) => entry.id)[0]).toBe(lastRecipe);
+    expect(Object.keys(first.catalog.recipes ?? {})).toEqual([
+      'test:tower',
+      LIBRARY_RECIPE_KEY,
+      'test:broken',
+    ]);
+
+    const remounted = createHarnessFixture({ extraModels: [other] });
+    expect(remounted.harness.shelfOrder('model', 0)).toEqual(['test:tower', 'test:other']);
+  });
+
   it('renames only the display alias while recipe and scene references keep their stable ids', () => {
     const { harness, catalog, shelfModel } = createHarnessFixture();
     const stepsBefore = harness.buildSteps();
@@ -253,6 +314,20 @@ describe('Studio harness library actions', () => {
     expect(() => duplicateFixture.harness.openFromShelf('test:tower')).toThrow(
       "Model id 'test:tower' appears 2 times on this Studio's shelf, "
       + 'so it cannot be opened; give every shelf model a unique id.',
+    );
+    expect(() => duplicateFixture.harness.shelfOrder('model', 0)).toThrow(
+      "Model id 'test:tower' appears 2 times on this Studio's shelf, "
+      + 'so its section cannot be rearranged; give every shelf model a unique id.',
+    );
+    expect(() => duplicateFixture.harness.moveShelfItem({
+      kind: 'model',
+      sectionIndex: 0,
+      id: 'test:tower',
+      targetId: 'test:tower',
+      position: 'before',
+    })).toThrow(
+      "Model id 'test:tower' appears 2 times on this Studio's shelf, "
+      + 'so its section cannot be rearranged; give every shelf model a unique id.',
     );
     expect(duplicateFixture.current()).toBe(duplicateBefore);
     expect(duplicateFixture.harness.activeShelfModel()).toBe('test:tower');

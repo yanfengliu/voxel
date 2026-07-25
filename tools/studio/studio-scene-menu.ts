@@ -2,6 +2,7 @@ import type { SceneInfoV1 } from './harness.js';
 import { element } from './studio-app-helpers.js';
 import {
   createStudioContextMenu,
+  type StudioContextMenuActionV1,
   type StudioContextMenuInvocationV1,
   type StudioContextMenuV1,
 } from './studio-context-menu.js';
@@ -16,7 +17,12 @@ export interface StudioSceneMenuDepsV1 {
 }
 
 export interface StudioSceneMenuV1 {
-  connect(row: HTMLElement, scene: SceneInfoV1, overflowTrigger?: HTMLElement): void;
+  connect(
+    row: HTMLElement,
+    scene: SceneInfoV1,
+    overflowTrigger?: HTMLElement,
+    extraActions?: readonly StudioContextMenuActionV1[],
+  ): void;
   close(): void;
   dispose(): void;
 }
@@ -209,7 +215,7 @@ export function createStudioSceneMenu(
   };
 
   return {
-    connect(row, scene, overflowTrigger) {
+    connect(row, scene, overflowTrigger, extraActions = []) {
       if (disposed) return;
       row.dataset.sceneId = scene.id;
       contextMenu.connect(row, {
@@ -220,6 +226,7 @@ export function createStudioSceneMenu(
             label: 'Rename scene',
             run: (invocation) => { openRenameDialog(scene, invocation); },
           },
+          ...extraActions,
           {
             label: 'Delete scene',
             danger: true,

@@ -1,4 +1,3 @@
-import type { PartInfoV1, PartSettingSpecV1 } from './part-definition.js';
 import type { VoxelStudioHarnessV1 } from './harness.js';
 import type { ModelStudioTabId } from './shared-ui/index.js';
 import type { RecipeInfoV1 } from './studio-library.js';
@@ -6,6 +5,11 @@ import { element } from './studio-app-helpers.js';
 import { createStudioContextMenu } from './studio-context-menu.js';
 import { createStudioModelMenu } from './studio-model-menu.js';
 import { createStudioSceneMenu } from './studio-scene-menu.js';
+import { renderStudioShelfPart } from './studio-shelf-part.js';
+import {
+  createStudioShelfSorter,
+  type StudioShelfSortableIdentityV1,
+} from './studio-shelf-sortable.js';
 
 /**
  * The library on the left: the game's whole palette to browse before building.
@@ -36,14 +40,6 @@ export interface StudioShelfV1 {
   rebuild(): void;
   /** Removes any body-level scene menu or dialog and its temporary listeners. */
   dispose(): void;
-}
-
-/** A setting spec in one readable line: what it is, its bounds, its default. */
-function describeSetting(spec: PartSettingSpecV1): string {
-  const bounds = spec.kind === 'int' || spec.kind === 'count'
-    ? ` ${String(spec.min ?? (spec.kind === 'int' ? 1 : 0))}–${String(spec.max ?? 64)}`
-    : '';
-  return `${spec.label} — ${spec.kind}${bounds} · default ${String(spec.default)}`;
 }
 
 export function createStudioShelf(deps: StudioShelfDepsV1): StudioShelfV1 {
@@ -91,19 +87,32 @@ export function createStudioShelf(deps: StudioShelfDepsV1): StudioShelfV1 {
   const clearActionStatus = (): void => {
     actionStatus.hidden = true;
     actionStatus.textContent = '';
+    actionStatus.classList.remove('success');
   };
   const reportActionError = (message: string): void => {
+    actionStatus.setAttribute('role', 'alert');
+    actionStatus.classList.remove('success');
+    actionStatus.textContent = message;
+    actionStatus.hidden = false;
+  };
+  const reportActionSuccess = (message: string): void => {
+    actionStatus.setAttribute('role', 'status');
+    actionStatus.classList.add('success');
     actionStatus.textContent = message;
     actionStatus.hidden = false;
   };
   const focusLibraryItem = (
     kind: 'model' | 'part' | 'recipe' | 'scene',
     key: string | null,
+    sectionIndex?: number,
   ): void => {
     queueMicrotask(() => {
       const items = Array.from(body.querySelectorAll<HTMLElement>('[data-library-kind]'));
       const target = key === null ? undefined : items.find(
-        (item) => item.dataset.libraryKind === kind && item.dataset.libraryKey === key,
+        (item) => item.dataset.libraryKind === kind
+          && item.dataset.libraryKey === key
+          && (sectionIndex === undefined
+            || item.dataset.librarySectionIndex === String(sectionIndex)),
       );
       (target ?? search).focus({ preventScroll: true });
     });
@@ -121,6 +130,15 @@ export function createStudioShelf(deps: StudioShelfDepsV1): StudioShelfV1 {
     return button;
   };
   const contextMenu = createStudioContextMenu();
+  const sorter = createStudioShelfSorter({
+    order: (kind, sectionIndex) => harness.shelfOrder(kind, sectionIndex),
+    move: (request) => harness.moveShelfItem(request),
+    focus: focusLibraryItem,
+    report: reportActionSuccess,
+    reportError: reportActionError,
+    closeMenu: () => { contextMenu.close(); },
+    enabled: () => query.trim() === '',
+  });
   const openModel = (id: string, tab: 'examine' | 'build' | 'automatic'): void => {
     clearActionStatus();
     harness.openFromShelf(id);
@@ -158,6 +176,7 @@ export function createStudioShelf(deps: StudioShelfDepsV1): StudioShelfV1 {
     search.placeholder = view === 'models' ? 'Search models…'
       : view === 'parts' ? 'Search parts…'
         : view === 'recipes' ? 'Search recipes…' : 'Search scenes…';
+    sorter.disconnectWithin(body);
     contextMenu.disconnectWithin(body);
     body.replaceChildren();
     if (view === 'models') renderModels();
@@ -173,7 +192,7 @@ export function createStudioShelf(deps: StudioShelfDepsV1): StudioShelfV1 {
   function renderModels(): void {
     const currentId = harness.activeShelfModel();
     let shown = 0;
-    for (const section of harness.shelf()) {
+    for (const [sectionIndex, section] of harness.shelf().entries()) {
       const models = section.models.filter((entry) => matchesModel(entry.label, entry.id));
       if (models.length === 0) continue;
       const isFolded = folded.has(section.name) && query.trim() === '';
@@ -192,6 +211,7 @@ export function createStudioShelf(deps: StudioShelfDepsV1): StudioShelfV1 {
         const row = element('button', 'model-row');
         row.dataset.libraryKind = 'model';
         row.dataset.libraryKey = entry.id;
+        row.dataset.librarySectionIndex = String(sectionIndex);
         row.classList.toggle('active', entry.id === currentId);
         const label = element('span');
         label.textContent = entry.label;
@@ -207,141 +227,44 @@ export function createStudioShelf(deps: StudioShelfDepsV1): StudioShelfV1 {
           }
         });
         const more = overflowButton('Model', entry.label);
-        modelMenu.connect(row, entry, more);
         wrap.append(row, more);
+        const sortable: StudioShelfSortableIdentityV1 = {
+          kind: 'model', id: entry.id, label: entry.label, sectionIndex,
+        };
+        modelMenu.connect(row, entry, more, sorter.actions(sortable));
+        sorter.connect({ ...sortable, container: wrap, trigger: row });
         body.appendChild(wrap);
         shown += 1;
       }
     }
     if (shown === 0) emptyNote('No models match.');
-    else emptyNote('Open a model directly, or use ⋯ / right-click / Shift+F10 for more actions.');
+    else emptyNote(query.trim() === ''
+      ? 'Drag to rearrange models within their section. Use ⋯ / right-click / Shift+F10 for all actions.'
+      : 'Clear search to rearrange models. Open a model directly or use its actions menu.');
   }
 
   function renderParts(): void {
     const parts = harness.findParts(query);
     if (parts.length === 0) { emptyNote('No parts match.'); return; }
-    for (const part of parts) body.appendChild(renderPart(part));
-    emptyNote('Click for defaults; use ⋯ / right-click / Shift+F10 to render a named preset.');
-  }
-
-  function renderPart(part: PartInfoV1): HTMLElement {
-    const key = `part:${part.name}`;
-    const active = harness.activePart() === part.name;
-    const activePreset = active ? harness.activePartPreset() : null;
-    const wrap = element('div', 'lib-item-wrap');
-    const details = element('details', 'lib-item');
-    details.classList.toggle('active', active);
-    details.open = expanded.has(key);
-    details.addEventListener('toggle', () => {
-      if (details.open) expanded.add(key);
-      else expanded.delete(key);
-    });
-    const summary = element('summary', 'lib-summary');
-    summary.dataset.partName = part.name;
-    summary.dataset.libraryKind = 'part';
-    summary.dataset.libraryKey = part.name;
-    summary.title = part.selfDescribed
-      ? `Render ${part.title} using its declared defaults`
-      : `Render ${part.title} using empty settings`;
-    if (active) summary.setAttribute('aria-current', 'true');
-    const title = element('span', 'lib-title');
-    title.textContent = part.title;
-    summary.append(title);
-    if (part.category) {
-      const badge = element('span', 'lib-badge');
-      badge.textContent = part.category;
-      summary.append(badge);
+    for (const part of parts) {
+      const sortable: StudioShelfSortableIdentityV1 = {
+        kind: 'part', id: part.name, label: part.title,
+      };
+      const entry = renderStudioShelfPart(part, {
+        harness,
+        expanded,
+        contextMenu,
+        showExamine: () => { showTab('examine'); },
+        clearActionStatus,
+        focusPart,
+        orderActions: sorter.actions(sortable),
+      });
+      sorter.connect({ ...sortable, container: entry.element, trigger: entry.trigger });
+      body.appendChild(entry.element);
     }
-    if (!part.selfDescribed) {
-      const badge = element('span', 'lib-badge lib-bare');
-      badge.textContent = 'undescribed';
-      badge.title = 'A bare function with no published schema. Promote it to a definition to describe it.';
-      summary.append(badge);
-    }
-    if (active && activePreset !== null) {
-      const badge = element('span', 'lib-badge lib-active-variant');
-      badge.textContent = activePreset;
-      badge.title = `Rendering the ${activePreset} preset`;
-      summary.append(badge);
-    }
-    details.append(summary);
-    const detail = element('div', 'lib-detail');
-    if (part.summary) { const p = element('p', 'lib-text'); p.textContent = part.summary; detail.append(p); }
-    if (part.settings.length > 0) {
-      const head = element('p', 'lib-subhead'); head.textContent = 'Settings'; detail.append(head);
-      const list = element('ul', 'lib-list');
-      for (const spec of part.settings) {
-        const item = element('li'); item.textContent = describeSetting(spec);
-        if (spec.summary) item.title = spec.summary;
-        list.append(item);
-      }
-      detail.append(list);
-    }
-    if (part.presets.length > 0) {
-      const head = element('p', 'lib-subhead'); head.textContent = 'Presets'; detail.append(head);
-      const list = element('ul', 'lib-list');
-      for (const preset of part.presets) {
-        const item = element('li');
-        item.textContent = preset.summary ? `${preset.name} — ${preset.summary}` : preset.name;
-        list.append(item);
-      }
-      detail.append(list);
-    }
-    const usage = element('p', 'lib-code');
-    usage.textContent = `use: { kind: 'part', part: '${part.name}', at: [x,y,z], settings: {…} }`;
-    detail.append(usage);
-    const actionError = element('p', 'lib-error');
-    actionError.hidden = true;
-    actionError.setAttribute('role', 'alert');
-    detail.append(actionError);
-    details.append(detail);
-    const renderVariant = (preset: string | null): void => {
-      actionError.hidden = true;
-      actionError.textContent = '';
-      clearActionStatus();
-      try {
-        harness.openPart(part.name, preset === null ? undefined : { preset });
-        showTab('examine');
-        focusPart(part.name);
-      } catch (error) {
-        expanded.add(key);
-        details.open = true;
-        actionError.textContent = `Could not render ${part.title}${
-          preset === null ? '' : ` with the “${preset}” preset`
-        }: ${error instanceof Error ? error.message : String(error)}`;
-        actionError.hidden = false;
-        focusPart(part.name);
-      }
-    };
-    summary.addEventListener('click', (event) => {
-      event.preventDefault();
-      const nextOpen = !details.open;
-      if (nextOpen) expanded.add(key);
-      else expanded.delete(key);
-      details.open = nextOpen;
-      actionError.hidden = true;
-      actionError.textContent = '';
-
-      if (active && activePreset === null) {
-        showTab('examine');
-        return;
-      }
-      renderVariant(null);
-    });
-    const more = overflowButton('Part', part.title);
-    contextMenu.connect(summary, {
-      ariaLabel: `Part actions for ${part.title}`,
-      restoreFocus: () => { focusPart(part.name); },
-      actions: [
-        { label: 'Render defaults', run: () => { renderVariant(null); } },
-        ...part.presets.map((preset) => ({
-          label: `Render “${preset.name}”`,
-          run: () => { renderVariant(preset.name); },
-        })),
-      ],
-    }, more);
-    wrap.append(details, more);
-    return wrap;
+    emptyNote(query.trim() === ''
+      ? 'Click to render defaults; drag to rearrange. Shift+F10 opens presets and move commands.'
+      : 'Clear search to rearrange parts. Click to render defaults or open the actions menu for presets.');
   }
 
   function renderRecipes(): void {
@@ -349,7 +272,9 @@ export function createStudioShelf(deps: StudioShelfDepsV1): StudioShelfV1 {
     if (recipes.length === 0) { emptyNote('No recipes match.'); return; }
     const shelfIds = new Set(harness.shelf().flatMap((section) => section.models.map((model) => model.id)));
     for (const recipe of recipes) body.appendChild(renderRecipeEntry(recipe, shelfIds));
-    emptyNote('Render the current recipe, or open its shelf model when one exists. More actions: ⋯ / right-click / Shift+F10.');
+    emptyNote(query.trim() === ''
+      ? 'Drag to rearrange recipes. Render the current recipe or open its shelf model from the actions menu.'
+      : 'Clear search to rearrange recipes. Render the current recipe or open its shelf model.');
   }
 
   function renderRecipeEntry(recipe: RecipeInfoV1, shelfIds: ReadonlySet<string>): HTMLElement {
@@ -357,6 +282,9 @@ export function createStudioShelf(deps: StudioShelfDepsV1): StudioShelfV1 {
     const fresh = harness.activeRecipe() === recipe.id;
     const shelf = harness.activeShelfModel() === recipe.recipeId;
     const active = fresh || shelf;
+    const sortable: StudioShelfSortableIdentityV1 = {
+      kind: 'recipe', id: recipe.id, label: recipe.label,
+    };
     const wrap = element('div', 'lib-item-wrap');
     const details = element('details', 'lib-item');
     details.classList.toggle('active', active);
@@ -439,9 +367,11 @@ export function createStudioShelf(deps: StudioShelfDepsV1): StudioShelfV1 {
           label: 'Open shelf model',
           run: () => { runRecipeAction('shelf'); },
         }] : []),
+        ...sorter.actions(sortable),
       ],
     }, more);
     wrap.append(details, more);
+    sorter.connect({ ...sortable, container: wrap, trigger: summary });
     return wrap;
   }
 
@@ -475,8 +405,12 @@ export function createStudioShelf(deps: StudioShelfDepsV1): StudioShelfV1 {
         }
       });
       const more = overflowButton('Scene', scene.label);
-      sceneMenu.connect(row, scene, more);
       wrap.append(row, more);
+      const sortable: StudioShelfSortableIdentityV1 = {
+        kind: 'scene', id: scene.id, label: scene.label,
+      };
+      sceneMenu.connect(row, scene, more, sorter.actions(sortable));
+      sorter.connect({ ...sortable, container: wrap, trigger: row });
       body.appendChild(wrap);
       shown += 1;
     }
@@ -486,7 +420,9 @@ export function createStudioShelf(deps: StudioShelfDepsV1): StudioShelfV1 {
         : 'No scenes match.');
       return;
     }
-    emptyNote('Open a scene directly, or use ⋯ / right-click / Shift+F10 to rename or delete it.');
+    emptyNote(query.trim() === ''
+      ? 'Drag to rearrange scenes. Use ⋯ / right-click / Shift+F10 to move, rename, or delete.'
+      : 'Clear search to rearrange scenes. Open one directly or use its actions menu.');
   }
 
   function emptyNote(text: string): void {
@@ -495,5 +431,5 @@ export function createStudioShelf(deps: StudioShelfDepsV1): StudioShelfV1 {
     body.appendChild(note);
   }
   return { heading, body, rebuild, dispose: () => {
-    modelMenu.dispose(); sceneMenu.dispose(); contextMenu.dispose(); } };
+    sorter.dispose(); modelMenu.dispose(); sceneMenu.dispose(); contextMenu.dispose(); } };
 }

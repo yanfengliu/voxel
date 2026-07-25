@@ -1,6 +1,6 @@
 # Giving a game its own model studio
 
-Status: current from 2026-07-22. The renderer-neutral shell is consumed by Harborform, while Voxel's own page and the Harbor fixture (`tools/studio/game-fixture.ts`) prove the grid-renderer adapter.
+Status: current from 2026-07-25. The renderer-neutral shell is consumed by Harborform, while Voxel's own page and the Harbor fixture (`tools/studio/game-fixture.ts`) prove the grid-renderer adapter.
 
 The model studio is the pattern every game using this engine gets. The engine owns the reusable half; each game brings its own models. This guide covers the two-file browser UI setup, the optional local request-writer route, and the boundary between them.
 
@@ -146,11 +146,11 @@ Declare the game's whole palette on the catalog — `parts` and `recipes` — so
 
 The studio then offers discovery for free, to people and agents alike:
 
-- the left rail switches between **Models**, **Parts**, **Recipes**, and — when the catalog ships any — **Scenes**, over one search box; the visible **⋯** button, right-click, and `Shift`+`F10` open the same keyboard-navigable action menu;
+- the left rail switches between **Models**, **Parts**, **Recipes**, and — when the catalog ships any — **Scenes**, over one search box; drag an unfiltered entry to rearrange it, or use **Move up** / **Move down** in the same keyboard-navigable **⋯**, right-click, and `Shift`+`F10` action menu; models remain inside their catalog section;
 - model actions open the model for examination or construction and rename its mount-local display alias; the immutable id, catalog model, recipe keys, and scene placements do not change, so references keep resolving and another mount still sees the catalog name;
 - clicking a part renders its declared defaults (or empty settings for a bare part), while its action menu renders any named preset with the same fixed seed and neutral preview skin;
 - every recipe can render a fresh output from the current parts and recipe book, and a shelf-backed recipe can separately open its shelf model for comparison;
-- the harness reports the same as data — `shelf()`, `activeShelfModel()`, `modelDisplayLabel(id)`, `renameModel(id, label)`, `restoreModelName(id)`, `availableParts()`, `findParts(query)`, `openPart(name, { preset })`, `activePart()`, `activePartPreset()`, `availableRecipes()`, `findRecipes(query)`, `openRecipe(id)`, and `activeRecipe()` — so an agent browses and renders the whole palette through one `page.evaluate`; recipe discovery exposes both the authoritative book-key `id` used by `openRecipe` and the declared `recipeId` used by its built model and matching shelf entry.
+- the harness reports and rearranges the same data — `shelf()`, `shelfOrder(kind, sectionIndex?)`, `moveShelfItem(request)`, `activeShelfModel()`, `modelDisplayLabel(id)`, `renameModel(id, label)`, `restoreModelName(id)`, `availableParts()`, `findParts(query)`, `openPart(name, { preset })`, `activePart()`, `activePartPreset()`, `availableRecipes()`, `findRecipes(query)`, `openRecipe(id)`, and `activeRecipe()` — so an agent browses and renders the whole palette through one `page.evaluate`; recipe discovery exposes both the authoritative book-key `id` used by `openRecipe` and the declared `recipeId` used by its built model and matching shelf entry.
 
 The full design, including how craft lessons and parts are shared between
 games, is in
@@ -183,13 +183,13 @@ const catalog: StudioCatalogV1 = {
 
 A placement names a model by its authoritative recipe-book key, the spot its base stands on (a scene grounds every model on one floor), an optional quarter-`turns` about the up axis, and an optional `grain` to override the model's voxel size — so a fine flower and a coarse building stand side by side. Repeated models render as instances, so a street of identical houses stays one geometry and many transforms.
 
-When a catalog ships scenes, the rail grows a **Scenes** lane; opening a scene draws the whole arrangement on the stage under the same look controls, and opening any model leaves it. Use its **⋯** button, right-click the row, or press `Shift`+`F10` while it is focused to rename or delete it. Renaming the open scene participates in its undo history; deleting the open scene returns to the underlying model and clears its selection and history.
+When a catalog ships scenes, the rail grows a **Scenes** lane; opening a scene draws the whole arrangement on the stage under the same look controls, and opening any model leaves it. Drag a scene to rearrange the lane, or use its **⋯** button, right-click the row, or press `Shift`+`F10` while it is focused to move, rename, or delete it. Renaming the open scene participates in its undo history; deleting the open scene returns to the underlying model and clears its selection and history.
 
 A scene is edited by arranging it, not by building steps, so a scene hides the Build, Motion, and Notes tabs and fills **Edit** with a scene editor: an add-model picker and a list of placements. Selecting one — in the list, or by clicking the model on the stage — opens its move, turn, and remove controls and outlines it. Selection is one thing the stage outline and the Edit controls share, so clicking a second model moves the controls to it. On the stage a left-drag slides the selected model across the floor, a middle-drag turns the view, a right-drag pans, and the wheel zooms; **snap to grid** (a scene-only toggle) lands a dragged model's footprint on whole cells. `Ctrl`/`Cmd`+`Z` undoes a scene edit; `Ctrl`+`Y` or `Ctrl`/`Cmd`+`Shift`+`Z` redoes it.
 
 The harness drives every one of these, so an agent can arrange and manage a scene the way a person does and read the result back: `scenes()` lists the mount's working collection; `openScene(id)`, `renameScene(id, label)`, and `deleteScene(id)` manage it; `sceneState()` is the open scene as plain data; `selectPlacement(id)` / `selectedPlacement()` are the shared selection; `editScene(next)` commits an add/move/turn/remove (recording one undo step); `undoScene()` / `redoScene()` step the history; and `setSnapToGrid(on)` / `snapToGrid()` are the snap flag.
 
-Scene changes are isolated to the current Studio mount. The input catalog remains untouched, and a reload reconstructs the working collection from it; a game that wants durable scene content must persist the plain scene data in its own save layer.
+Scene changes and every library lane's custom order are isolated to the current Studio mount. Ordering moves only stable IDs, so catalog objects, model aliases, recipes, and scene placement references remain untouched; a reload reconstructs the catalog order. A game that wants durable scene content or shelf preferences must persist the corresponding plain data in its own save layer.
 
 Scenes are what earn a game's recipes: filling a street wants a house, a lamp,
 and a tree, so building the scene is what drives building those.

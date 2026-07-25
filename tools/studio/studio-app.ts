@@ -64,6 +64,7 @@ import { createStudioNotesPanel, type StudioNotesPanelV1 } from './studio-notes.
 import { setupPanelResize } from './studio-panel-resize.js';
 import { createStudioPlayerBar, type StudioPlayerBarV1 } from './studio-player.js';
 import { createStudioShelf, type StudioShelfV1 } from './studio-shelf.js';
+import { createStudioShelfOrderWorkspace } from './studio-shelf-order.js';
 
 /**
  * The studio as an app: shelf on the left, the stage in the middle, one
@@ -183,6 +184,10 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
   // isolated working copy so opening, editing, renaming, deleting, and reopening
   // all read one mount-local source of truth without mutating the game.
   const sceneWorkspace = createSceneWorkspace(catalog.scenes ?? []);
+  // Shelf order is another mount-local overlay: only stable ID lists move, so
+  // consumer catalog objects and every recipe/scene reference remain untouched.
+  const shelfOrderWorkspace = createStudioShelfOrderWorkspace();
+  let rebuildShelf = (): void => { /* the shelf is connected after the harness */ };
   // The look this studio last wore, so the next model opens the way the last one
   // was left rather than resetting to the resting look. Read once here; written
   // back whenever a view control changes.
@@ -594,6 +599,24 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
     restoreModelName(id) {
       return changeModelLabel(id, 'Restoring the name of', () => modelLabelWorkspace.restore(id));
     },
+    orderShelfItems: (kind, ids, sectionIndex) => shelfOrderWorkspace.order(kind, ids, sectionIndex),
+    moveShelfItem(request, ids) {
+      try {
+        return shelfOrderWorkspace.move(request, ids, rebuildShelf);
+      } catch (error) {
+        try {
+          rebuildShelf();
+        } catch (restoreFailure) {
+          throw new AggregateError(
+            [error, restoreFailure],
+            `Rearranging shelf ${request.kind} '${request.id}' failed, and restoring the previous library `
+            + 'order also failed. Reload this Studio before continuing.',
+            { cause: restoreFailure },
+          );
+        }
+        throw error;
+      }
+    },
     initialShelfModelId: () => initialShelfModelId,
     setOrbit(view) {
       orbit = clampOrbit({ ...orbit, ...view });
@@ -616,6 +639,7 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
   const playerBar: StudioPlayerBarV1 = createStudioPlayerBar({ harness, player, noteStore });
   const motionPanel: StudioMotionPanelV1 = createStudioMotionPanel({ harness });
   const shelfPanel: StudioShelfV1 = createStudioShelf({ harness, showTab });
+  rebuildShelf = () => { shelfPanel.rebuild(); };
   const editor: StudioEditorPanelV1 = createStudioEditorPanel({
     harness,
     supportsEdit,

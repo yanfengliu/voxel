@@ -1,6 +1,7 @@
 import type { ModelLabelInfoV1 } from './model-label-workspace.js';
 import { element } from './studio-app-helpers.js';
 import type {
+  StudioContextMenuActionV1,
   StudioContextMenuInvocationV1,
   StudioContextMenuTargetV1,
   StudioContextMenuV1,
@@ -15,7 +16,12 @@ export interface StudioModelMenuDepsV1 {
 }
 
 export interface StudioModelMenuV1 {
-  connect(row: HTMLElement, model: ModelLabelInfoV1, overflowTrigger?: HTMLElement): void;
+  connect(
+    row: HTMLElement,
+    model: ModelLabelInfoV1,
+    overflowTrigger?: HTMLElement,
+    extraActions?: readonly StudioContextMenuActionV1[],
+  ): void;
   dispose(): void;
 }
 
@@ -149,7 +155,7 @@ export function createStudioModelMenu(
   };
 
   return {
-    connect(row, model, overflowTrigger) {
+    connect(row, model, overflowTrigger, extraActions = []) {
       const target: StudioContextMenuTargetV1 = {
         ariaLabel: `Model actions for ${model.label}`,
         restoreFocus: () => { focusModel(model.id); },
@@ -176,6 +182,7 @@ export function createStudioModelMenu(
               runModelAction('Restoring the name of', model, () => { deps.restoreModelName(model.id); });
             },
           }] : []),
+          ...extraActions,
         ],
       };
       contextMenu.connect(row, target, overflowTrigger);

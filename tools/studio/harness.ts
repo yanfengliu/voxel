@@ -46,7 +46,20 @@ import { validateSceneV1, type SceneV1 } from './scene.js';
 import type { OrbitStateV1 } from './orbit.js';
 import { composeSpriteSheet, type SpriteSheetPlanV1 } from './sheet.js';
 import { nearestFrame, stepFrame, type FrameStepV1 } from './sweep.js';
-import type { StudioSession, StudioSweepResultV1 } from './session.js';
+import type { StudioSession } from './session.js';
+import {
+  createStudioHarnessLibrary,
+  type SceneInfoV1,
+} from './studio-harness-library.js';
+import {
+  summarizeStudioSweep as summarize,
+  type HarnessSweepSummaryV1,
+  type PlayerReportV1,
+} from './studio-harness-reports.js';
+import type { StudioShelfItemKindV1, StudioShelfMoveV1 } from './studio-shelf-order.js';
+
+export type { SceneInfoV1 } from './studio-harness-library.js';
+export type { HarnessSweepSummaryV1, PlayerReportV1 } from './studio-harness-reports.js';
 
 /**
  * The agent-facing surface of the studio, exposed on `window.voxelStudio`.
@@ -61,21 +74,6 @@ import type { StudioSession, StudioSweepResultV1 } from './session.js';
  * call it through one `page.evaluate` and get an answer it can assert on rather
  * than a screenshot it has to interpret.
  */
-
-export interface HarnessSweepSummaryV1 {
-  readonly ok: boolean;
-  readonly issues: readonly { readonly kind: string; readonly message: string }[];
-  readonly frameCount: number;
-  readonly distinctFrames: number;
-  readonly mirroredFrames: number;
-  readonly periodMs: number;
-  readonly frames: readonly {
-    readonly nowMs: number;
-    readonly drawCalls: number;
-    readonly triangles: number;
-    readonly presentedRevision: number | null;
-  }[];
-}
 
 export interface VoxelStudioHarnessV1 {
   /** Replaces the model under inspection. Returns what the studio now holds. */
@@ -216,6 +214,10 @@ export interface VoxelStudioHarnessV1 {
   renameModel(id: string, label: string): ModelLabelInfoV1;
   /** Removes a mount-local alias and returns the model's catalog name. */
   restoreModelName(id: string): ModelLabelInfoV1;
+  /** The mount-local stable-ID order shown for one library lane. Models require their shelf section index. */
+  shelfOrder(kind: StudioShelfItemKindV1, sectionIndex?: number): readonly string[];
+  /** Rearranges one library entry without changing its stable ID or source data. */
+  moveShelfItem(request: StudioShelfMoveV1): readonly string[];
 
   /**
    * The scenes in this mounted Studio: arrangements of its models standing
@@ -351,15 +353,6 @@ export interface VoxelStudioHarnessV1 {
   validate(value: unknown): readonly { readonly path: string; readonly message: string }[];
 }
 
-/** A scene reduced to what browsing needs, before it is opened. */
-export interface SceneInfoV1 {
-  readonly id: string;
-  readonly label: string;
-  readonly summary?: string;
-  /** How many model placements the scene holds. */
-  readonly models: number;
-}
-
 /** One step of a model's construction, as plain data an agent can assert on. */
 export interface StudioBuildStepV1 {
   /** 0 is the empty grid it starts from; step n is after the recipe's step n. */
@@ -367,30 +360,6 @@ export interface StudioBuildStepV1 {
   readonly summary: string;
   readonly voxelsAfter: number;
   readonly voxelsAdded: number;
-}
-
-export interface PlayerReportV1 {
-  readonly playing: boolean;
-  readonly speed: number;
-  readonly timeMs: number;
-  readonly periodMs: number;
-}
-
-function summarize(result: StudioSweepResultV1): HarnessSweepSummaryV1 {
-  return {
-    ok: result.verdict.ok,
-    issues: result.verdict.issues.map((issue) => ({ kind: issue.kind, message: issue.message })),
-    frameCount: result.verdict.frameCount,
-    distinctFrames: result.verdict.distinctFrames,
-    mirroredFrames: result.verdict.mirroredFrames,
-    periodMs: result.plan.periodMs,
-    frames: result.frames.map((frame) => ({
-      nowMs: frame.nowMs,
-      drawCalls: frame.drawCalls,
-      triangles: frame.triangles,
-      presentedRevision: frame.presentedRevision,
-    })),
-  };
 }
 
 export interface HarnessHostV1 {
@@ -463,6 +432,14 @@ export interface HarnessHostV1 {
   renameModel(id: string, label: string): ModelLabelInfoV1;
   /** Restores one model's catalog display name and refreshes affected UI. */
   restoreModelName(id: string): ModelLabelInfoV1;
+  /** Applies one mount-local stable-ID order to a library collection. */
+  orderShelfItems(
+    kind: StudioShelfItemKindV1,
+    ids: readonly string[],
+    sectionIndex?: number,
+  ): readonly string[];
+  /** Commits one shelf move and republishes the library UI. */
+  moveShelfItem(request: StudioShelfMoveV1, ids: readonly string[]): readonly string[];
   /** Identifies the shelf entry used to create the opening session, when there is one. */
   initialShelfModelId?(): string | null;
   catalog(): StudioCatalogV1;
@@ -535,10 +512,18 @@ export function createStudioHarness(host: HarnessHostV1): VoxelStudioHarnessV1 {
     (libraryModelIdsCache ??= host.catalog().sections.flatMap(
       (section) => section.models.map((model) => model.id),
     ));
-  const availableParts = (): readonly PartInfoV1[] =>
+  const canonicalParts = (): readonly PartInfoV1[] =>
     (libraryPartsCache ??= partInfoListV1(libraryPartShelf()));
-  const availableRecipes = (): readonly RecipeInfoV1[] =>
+  const canonicalRecipes = (): readonly RecipeInfoV1[] =>
     (libraryRecipesCache ??= recipeInfoListV1(libraryRecipeBook()));
+  const library = createStudioHarnessLibrary({
+    modelSections: () => host.modelLabels(),
+    parts: canonicalParts,
+    recipes: canonicalRecipes,
+    scenes: () => host.scenes(),
+    order: (kind, ids, sectionIndex) => host.orderShelfItems(kind, ids, sectionIndex),
+    move: (request, ids) => host.moveShelfItem(request, ids),
+  });
 
   const installPreparedSource = (prepared: PreparedRecipeSourceV1): void => {
     cachedRecipe = { key: prepared.key, source: prepared.source };
@@ -820,7 +805,7 @@ export function createStudioHarness(host: HarnessHostV1): VoxelStudioHarnessV1 {
       on: host.physicalOverlay(),
       available: shapesForOpenModel().length > 0,
     }),
-    shelf: () => host.modelLabels(),
+    shelf: library.shelf,
     openFromShelf(id) {
       const opened = prepareShelfOpenV1(host.catalog(), id);
       return replaceModel(opened.model, { kind: 'shelf', id: opened.id }, opened.prepared);
@@ -830,12 +815,9 @@ export function createStudioHarness(host: HarnessHostV1): VoxelStudioHarnessV1 {
     modelDisplayLabel: (id, fallback = id) => host.modelDisplayLabel(id, fallback),
     renameModel: (id, label) => host.renameModel(id, label),
     restoreModelName: (id) => host.restoreModelName(id),
-    scenes: () => host.scenes().map((scene) => ({
-      id: scene.id,
-      label: scene.label,
-      ...(scene.summary === undefined ? {} : { summary: scene.summary }),
-      models: scene.placements.length,
-    })),
+    shelfOrder: library.order,
+    moveShelfItem: library.move,
+    scenes: library.scenes,
     openScene(id) {
       const scene = host.scenes().find((entry) => entry.id === id);
       if (!scene) throw new Error(`No scene in this studio has the id '${id}', so it cannot be opened.`);
@@ -890,8 +872,8 @@ export function createStudioHarness(host: HarnessHostV1): VoxelStudioHarnessV1 {
     },
     setSnapToGrid: (on) => host.setSnapToGrid(on),
     snapToGrid: () => host.snapToGrid(),
-    availableParts,
-    findParts: (query) => searchPartInfoV1(availableParts(), query),
+    availableParts: library.parts,
+    findParts: (query) => searchPartInfoV1(library.parts(), query),
     openPart(name, options) {
       const shelf = libraryPartShelf();
       if (!Object.hasOwn(shelf, name)) {
@@ -916,8 +898,8 @@ export function createStudioHarness(host: HarnessHostV1): VoxelStudioHarnessV1 {
       host.sceneMode() || activeSource?.kind !== 'part' ? null : activeSource.name,
     activePartPreset: () =>
       host.sceneMode() || activeSource?.kind !== 'part' ? null : activeSource.preset,
-    availableRecipes,
-    findRecipes: (query) => searchRecipeInfoV1(availableRecipes(), query),
+    availableRecipes: library.recipes,
+    findRecipes: (query) => searchRecipeInfoV1(library.recipes(), query),
     openRecipe(id) {
       const book = libraryRecipeBook();
       if (!Object.hasOwn(book, id)) {
