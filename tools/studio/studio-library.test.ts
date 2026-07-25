@@ -35,6 +35,18 @@ describe('the studio library', () => {
     expect((set?.recipes.length ?? 0)).toBeGreaterThan(0);
   });
 
+  it('keeps an aliased recipe addressable by its authoritative book key', () => {
+    const recipe = createStudioRecipeBook()['studio:chair']!;
+    const [info] = recipeInfoListV1({ 'consumer:chair-alias': recipe });
+
+    expect(info).toMatchObject({
+      id: 'consumer:chair-alias',
+      recipeId: 'studio:chair',
+      label: recipe.label,
+    });
+    expect(searchRecipeInfoV1([info!], 'studio:chair')).toEqual([info]);
+  });
+
   it('searches parts and recipes across their fields, empty matching all', () => {
     const parts = partInfoListV1(createStudioParts());
     expect(searchPartInfoV1(parts, 'brick').map((part) => part.name)).toEqual(['brick-course']);

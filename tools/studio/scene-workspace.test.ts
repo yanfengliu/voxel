@@ -31,12 +31,15 @@ describe('scene workspace', () => {
   it('renames with a trimmed non-empty label while preserving identity and placements', () => {
     const workspace = createSceneWorkspace([scene('scene:one', 'One')]);
 
+    const prepared = workspace.prepareRename('scene:one', '  Dining room  ');
+    expect(workspace.find('scene:one')?.label).toBe('One');
     const renamed = workspace.rename('scene:one', '  Dining room  ');
 
-    expect(renamed).toEqual({
+    expect(prepared).toEqual({
       ...scene('scene:one', 'One'),
       label: 'Dining room',
     });
+    expect(renamed).toEqual(prepared);
     expect(workspace.scenes()).toEqual([renamed]);
     expect(() => workspace.rename('scene:one', '   ')).toThrow(
       "Scene 'scene:one' cannot be renamed to an empty name; "

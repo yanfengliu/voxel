@@ -29,7 +29,7 @@ const MAX_COORD = 1_000_000;
 export interface ScenePlacementV1 {
   /** Stable id for this placement, unique within the scene. */
   readonly id: string;
-  /** Which model to place, by the recipe id it is built from. */
+  /** Which model to place, by its authoritative key in the scene's recipe book. */
   readonly model: string;
   /** Where its base sits, in world units — a scene stands its models on a floor. */
   readonly at: readonly [number, number, number];

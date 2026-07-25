@@ -29,14 +29,21 @@ function freshId(model: string, taken: ReadonlySet<string>): string {
   return `${base}-${String(n)}`;
 }
 
+/** Resolves a scene's authoritative recipe-book key to the model id that owns its display alias. */
+export function sceneModelAliasIdV1(recipes: RecipeBookV1, bookKey: string): string {
+  return Object.hasOwn(recipes, bookKey) ? recipes[bookKey]!.id : bookKey;
+}
+
 export function createSceneEditor(options: {
   readonly recipes: RecipeBookV1;
+  /** Applies mount-local model display aliases without changing recipe ids. */
+  readonly modelDisplayLabel: (id: string, fallback: string) => string;
   /** Given the edited scene; the app adopts it, redraws, and renders back. */
   readonly onChange: (scene: SceneV1) => void;
   /** A row was clicked; the app records the selection and renders back. */
   readonly onSelect: (id: string | null) => void;
 }): SceneEditorV1 {
-  const { recipes, onChange, onSelect } = options;
+  const { recipes, modelDisplayLabel, onChange, onSelect } = options;
   let scene: SceneV1 | null = null;
 
   const pane = element('div', 'pane scene-editor');
@@ -49,7 +56,8 @@ export function createSceneEditor(options: {
   for (const [id, recipe] of Object.entries(recipes).sort((a, b) => a[0].localeCompare(b[0]))) {
     const option = element('option');
     option.value = id;
-    option.textContent = recipe.label;
+    option.textContent = modelDisplayLabel(sceneModelAliasIdV1(recipes, id), recipe.label);
+    option.title = id;
     modelSelect.append(option);
   }
   const addButton = element('button', 'primary');
@@ -104,14 +112,25 @@ export function createSceneEditor(options: {
 
   function render(next: SceneV1, selectedId: string | null): void {
     scene = next;
+    for (const option of Array.from(modelSelect.options)) {
+      const recipe = recipes[option.value];
+      option.textContent = modelDisplayLabel(
+        sceneModelAliasIdV1(recipes, option.value),
+        recipe?.label ?? option.value,
+      );
+    }
     emptyHint.hidden = next.placements.length > 0;
     list.replaceChildren();
     for (const placement of next.placements) {
       const row = element('li', placement.id === selectedId ? 'placement selected' : 'placement');
-      const label = recipes[placement.model]?.label ?? placement.model;
+      const label = modelDisplayLabel(
+        sceneModelAliasIdV1(recipes, placement.model),
+        recipes[placement.model]?.label ?? placement.model,
+      );
       const name = element('button', 'placement-name');
       const turned = placement.turns ? ` · turn ${String(placement.turns)}` : '';
       name.textContent = `${label} · (${placement.at.join(', ')})${turned}`;
+      name.title = `Model id: ${placement.model}`;
       name.addEventListener('click', () => { onSelect(placement.id); });
       row.append(name);
       if (placement.id === selectedId) {

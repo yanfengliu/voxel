@@ -1,12 +1,8 @@
 # Giving a game its own model studio
 
-Status: current from 2026-07-22. The renderer-neutral shell is consumed by
-Harborform, while Voxel's own page and the Harbor fixture
-(`tools/studio/game-fixture.ts`) prove the grid-renderer adapter.
+Status: current from 2026-07-22. The renderer-neutral shell is consumed by Harborform, while Voxel's own page and the Harbor fixture (`tools/studio/game-fixture.ts`) prove the grid-renderer adapter.
 
-The model studio is the pattern every game using this engine gets. The engine
-owns the reusable half; each game brings its own models. This guide is the
-two-file setup and the boundary between them.
+The model studio is the pattern every game using this engine gets. The engine owns the reusable half; each game brings its own models. This guide covers the two-file browser UI setup, the optional local request-writer route, and the boundary between them.
 
 ## What each side owns
 
@@ -81,19 +77,9 @@ window.addEventListener('pagehide', (event) => {
 });
 ```
 
-That is the whole integration. `mountStudio` returns a handle carrying the
-harness and an idempotent `dispose()`, for a game that mounts the studio
-inside its own page rather than on a page of its own. A mount that fails —
-an invalid V2 profile, an `instanceId` already mounted in the document, a
-model the engine rejects, or catalog data whose recipe or physical sidecar
-throws while the studio first reads it — throws before anything global
-exists and puts back whatever it briefly held: the render session is
-released, a connected shell is taken down, and the studio's own markup is
-cleared from the root, while a mount that failed before writing the root
-leaves the host's own content untouched. The
-harness and listeners attach only after everything else has succeeded, so a
-failed mount never replaces another mount's `window.voxelStudio` and never
-leaves a document listener behind.
+That is the whole browser UI integration. `mountStudio` returns a handle carrying the harness and an idempotent `dispose()`, for a game that mounts the studio inside its own page rather than on a page of its own. A mount that fails — an invalid V2 profile, an `instanceId` already mounted in the document, a model the engine rejects, or catalog data whose recipe or physical sidecar throws while the studio first reads it — throws before anything global exists and puts back whatever it briefly held: the render session is released, a connected shell is taken down, and the studio's own markup is cleared from the root, while a mount that failed before writing the root leaves the host's own content untouched. The harness and listeners attach only after everything else has succeeded, so a failed mount never replaces another mount's `window.voxelStudio` and never leaves a document listener behind.
+
+Saving a **Send request** file has one additional development-server requirement: Voxel's `tools/studio/vite.config.ts` supplies the local `POST /studio/requests` writer. A consumer served through another Vite config must proxy or provide that endpoint; without it, the Studio reports the rejected request and does not claim a file was saved.
 
 The grid adapter import path is relative to the engine repository, not a
 published runtime subpath. The UI-only boundary is a private file package,
@@ -142,6 +128,8 @@ import { buildRecipe } from '../../voxel/tools/studio/index.js';
 const createBoat = () => buildRecipe(boatRecipe, harborParts).model;
 ```
 
+On Voxel's Studio dev server, **Send request** saves a timestamped JSON file under `tools/studio/requests/`; it starts no agent and sends no notification. Ask an agent to process the reported file when ready.
+
 ## Recipes and parts
 
 A model saved only as a grid can never be improved except by hand. A recipe is how the model was made — hand-placed voxels, parts run with settings and a seed, mirrors — so improving a part improves every model whose recipe uses it.
@@ -158,8 +146,11 @@ Declare the game's whole palette on the catalog — `parts` and `recipes` — so
 
 The studio then offers discovery for free, to people and agents alike:
 
-- the left rail switches between **Models**, **Parts**, **Recipes**, and — when the catalog ships any — **Scenes**, over one search box; clicking a part renders its declared defaults (or empty settings for a bare part) with a fixed seed and neutral preview skin while expanding its settings and presets, and each recipe shows its grain, size, and what it places, with the step that places it;
-- the harness reports the same as data — `availableParts()`, `availableRecipes()`, `findParts(query)`, `findRecipes(query)`, `openPart(name)`, and `activePart()` — so an agent browses and renders the whole palette through one `page.evaluate`.
+- the left rail switches between **Models**, **Parts**, **Recipes**, and — when the catalog ships any — **Scenes**, over one search box; the visible **⋯** button, right-click, and `Shift`+`F10` open the same keyboard-navigable action menu;
+- model actions open the model for examination or construction and rename its mount-local display alias; the immutable id, catalog model, recipe keys, and scene placements do not change, so references keep resolving and another mount still sees the catalog name;
+- clicking a part renders its declared defaults (or empty settings for a bare part), while its action menu renders any named preset with the same fixed seed and neutral preview skin;
+- every recipe can render a fresh output from the current parts and recipe book, and a shelf-backed recipe can separately open its shelf model for comparison;
+- the harness reports the same as data — `shelf()`, `activeShelfModel()`, `modelDisplayLabel(id)`, `renameModel(id, label)`, `restoreModelName(id)`, `availableParts()`, `findParts(query)`, `openPart(name, { preset })`, `activePart()`, `activePartPreset()`, `availableRecipes()`, `findRecipes(query)`, `openRecipe(id)`, and `activeRecipe()` — so an agent browses and renders the whole palette through one `page.evaluate`; recipe discovery exposes both the authoritative book-key `id` used by `openRecipe` and the declared `recipeId` used by its built model and matching shelf entry.
 
 The full design, including how craft lessons and parts are shared between
 games, is in
@@ -190,14 +181,9 @@ const catalog: StudioCatalogV1 = {
 };
 ```
 
-A placement names a model by its recipe id, the spot its base stands on (a
-scene grounds every model on one floor), an optional quarter-`turns` about the
-up axis, and an optional `grain` to override the model's voxel size — so a fine
-flower and a coarse building stand side by side. Repeated models render as
-instances, so a street of identical houses stays one geometry and many
-transforms.
+A placement names a model by its authoritative recipe-book key, the spot its base stands on (a scene grounds every model on one floor), an optional quarter-`turns` about the up axis, and an optional `grain` to override the model's voxel size — so a fine flower and a coarse building stand side by side. Repeated models render as instances, so a street of identical houses stays one geometry and many transforms.
 
-When a catalog ships scenes, the rail grows a **Scenes** lane; opening a scene draws the whole arrangement on the stage under the same look controls, and opening any model leaves it. Right-click a scene row (or press `Shift`+`F10` while it is focused) to rename or delete it. Renaming the open scene participates in its undo history; deleting the open scene returns to the underlying model and clears its selection and history.
+When a catalog ships scenes, the rail grows a **Scenes** lane; opening a scene draws the whole arrangement on the stage under the same look controls, and opening any model leaves it. Use its **⋯** button, right-click the row, or press `Shift`+`F10` while it is focused to rename or delete it. Renaming the open scene participates in its undo history; deleting the open scene returns to the underlying model and clears its selection and history.
 
 A scene is edited by arranging it, not by building steps, so a scene hides the Build, Motion, and Notes tabs and fills **Edit** with a scene editor: an add-model picker and a list of placements. Selecting one — in the list, or by clicking the model on the stage — opens its move, turn, and remove controls and outlines it. Selection is one thing the stage outline and the Edit controls share, so clicking a second model moves the controls to it. On the stage a left-drag slides the selected model across the floor, a middle-drag turns the view, a right-drag pans, and the wheel zooms; **snap to grid** (a scene-only toggle) lands a dragged model's footprint on whole cells. `Ctrl`/`Cmd`+`Z` undoes a scene edit; `Ctrl`+`Y` or `Ctrl`/`Cmd`+`Shift`+`Z` redoes it.
 

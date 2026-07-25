@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest';
 
 import type { PartDefinitionV1 } from './part-definition.js';
-import { buildPartPreviewModelV1 } from './part-preview.js';
+import { buildPartPreviewModelV1, partPreviewPresetOptionsV1 } from './part-preview.js';
 import { validateModelV1 } from './model.js';
 import { boxPart, brickCoursePart, createStudioParts } from './parts.js';
-import { mixSeed, type PartV1 } from './recipe.js';
+import { mixSeed, type PartSettingsV1, type PartV1 } from './recipe.js';
 
 describe('part preview models', () => {
   it('builds every published part into the same valid still preview every time', () => {
@@ -39,12 +39,67 @@ describe('part preview models', () => {
   });
 
   it('avoids every consumer model id that collides with its preview namespace', () => {
-    const model = buildPartPreviewModelV1('box', boxPart, [
-      'studio:part-preview:box',
-      'studio:part-preview:box:2',
-    ]);
+    const model = buildPartPreviewModelV1('box', boxPart, {
+      reservedModelIds: [
+        'studio:part-preview:box',
+        'studio:part-preview:box:2',
+      ],
+    });
 
     expect(model.id).toBe('studio:part-preview:box:3');
+  });
+
+  it('renders supplied preset settings under a variant label without borrowing the caller object', () => {
+    const supplied: PartSettingsV1 = { width: 4 };
+    const received: PartSettingsV1[] = [];
+    const sized: PartV1 = (settings) => {
+      received.push(settings);
+      const width = settings.width as number;
+      return {
+        size: [width, 1, 1],
+        roles: ['empty', 'body'],
+        voxels: new Array<number>(width).fill(1),
+      };
+    };
+
+    const model = buildPartPreviewModelV1('sized', sized, {
+      settings: supplied,
+      variantLabel: 'Wide',
+    });
+
+    expect(model).toMatchObject({
+      label: 'Part: sized — Wide',
+      size: [4, 1, 1],
+      voxels: [1, 1, 1, 1],
+    });
+    expect(supplied).toEqual({ width: 4 });
+    expect(received).toHaveLength(2);
+    expect(received.every((settings) => settings !== supplied)).toBe(true);
+  });
+
+  it('resolves one exact named preset and rejects invalid or ambiguous choices', () => {
+    const duplicatePresets: PartDefinitionV1 = {
+      title: 'Duplicate presets',
+      summary: 'A deliberately ambiguous fixture.',
+      settings: [],
+      presets: [
+        { name: 'Same', settings: { width: 1 } },
+        { name: 'Same', settings: { width: 2 } },
+      ],
+      build: boxPart.build,
+    };
+
+    expect(partPreviewPresetOptionsV1('box', boxPart, 'Slab')).toEqual({
+      settings: { sizeX: 6, sizeY: 1, sizeZ: 6 },
+      variantLabel: 'Slab',
+    });
+    expect(() => partPreviewPresetOptionsV1('box', boxPart, 42)).toThrow(
+      "Part 'box' cannot render a preset because its preset name must be a string; received number.",
+    );
+    expect(() => partPreviewPresetOptionsV1('duplicate', duplicatePresets, 'Same')).toThrow(
+      "Part 'duplicate' publishes 2 presets named 'Same', so the choice is ambiguous; "
+      + 'give every preset a unique name.',
+    );
   });
 
   it('generates a safe preview id even when a part name contains a lone surrogate', () => {
@@ -82,7 +137,27 @@ describe('part preview models', () => {
 
     expect(() => buildPartPreviewModelV1('broken', broken)).toThrow(
       "Part 'broken' cannot be rendered with its declared default settings: "
-      + "its build failed with boom. Fix the part's defaults or build function.",
+      + "its build failed with boom. Fix the part's declared defaults or build function.",
+    );
+  });
+
+  it.each([
+    {
+      options: { settings: { width: 4 }, variantLabel: 'Wide' },
+      input: 'the Wide preset',
+      guidance: "Fix the 'Wide' preset settings or the part's build function.",
+    },
+    {
+      options: { settings: { width: 4 } },
+      input: 'supplied settings',
+      guidance: "Fix the supplied settings or the part's build function.",
+    },
+  ])('identifies $input when custom preview settings fail', ({ options, input, guidance }) => {
+    const broken: PartV1 = () => { throw new Error('no shape'); };
+
+    expect(() => buildPartPreviewModelV1('broken', broken, options)).toThrow(
+      `Part 'broken' cannot be rendered with ${input}: its build failed with no shape. `
+      + guidance,
     );
   });
 

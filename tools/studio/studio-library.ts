@@ -15,7 +15,10 @@ import type { PartShelfV1, RecipeBookV1, RecipeV1 } from './recipe.js';
 
 /** A reusable recipe reduced to what discovery needs. */
 export interface RecipeInfoV1 {
+  /** The authoritative key callers pass back to the recipe book. */
   readonly id: string;
+  /** The identity declared inside the recipe and copied to the model it builds. */
+  readonly recipeId: string;
   readonly label: string;
   readonly summary?: string;
   readonly tags: readonly string[];
@@ -35,8 +38,8 @@ export function partInfoListV1(shelf: PartShelfV1): readonly PartInfoV1[] {
     .sort((a, b) => a.name.localeCompare(b.name));
 }
 
-/** One recipe reduced to discovery info: its metadata and what it directly places. */
-export function recipeInfoV1(recipe: RecipeV1): RecipeInfoV1 {
+/** One recipe reduced to discovery info: its book address, metadata, and direct placements. */
+export function recipeInfoV1(recipe: RecipeV1, id = recipe.id): RecipeInfoV1 {
   const parts = new Set<string>();
   const recipes = new Set<string>();
   for (const step of recipe.steps) {
@@ -44,7 +47,8 @@ export function recipeInfoV1(recipe: RecipeV1): RecipeInfoV1 {
     else if (step.kind === 'recipe') recipes.add(step.recipe);
   }
   return {
-    id: recipe.id,
+    id,
+    recipeId: recipe.id,
     label: recipe.label,
     ...(recipe.summary === undefined ? {} : { summary: recipe.summary }),
     tags: recipe.tags ?? [],
@@ -55,10 +59,10 @@ export function recipeInfoV1(recipe: RecipeV1): RecipeInfoV1 {
   };
 }
 
-/** Every recipe in a book as discovery info, by id. */
+/** Every recipe in a book as discovery info, addressed by its authoritative book key. */
 export function recipeInfoListV1(book: RecipeBookV1): readonly RecipeInfoV1[] {
-  return Object.values(book)
-    .map(recipeInfoV1)
+  return Object.entries(book)
+    .map(([id, recipe]) => recipeInfoV1(recipe, id))
     .sort((a, b) => a.id.localeCompare(b.id));
 }
 
@@ -76,7 +80,15 @@ export function searchPartInfoV1(parts: readonly PartInfoV1[], query: string): r
 
 export function searchRecipeInfoV1(recipes: readonly RecipeInfoV1[], query: string): readonly RecipeInfoV1[] {
   return recipes.filter((recipe) =>
-    matchesQuery([recipe.id, recipe.label, recipe.summary, ...recipe.tags, ...recipe.parts, ...recipe.recipes], query));
+    matchesQuery([
+      recipe.id,
+      recipe.recipeId,
+      recipe.label,
+      recipe.summary,
+      ...recipe.tags,
+      ...recipe.parts,
+      ...recipe.recipes,
+    ], query));
 }
 
 /** A model's construction, or null if reading it throws (catalog data can). */

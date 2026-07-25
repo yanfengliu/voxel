@@ -96,32 +96,33 @@ export class SceneSession {
   /** Swaps the scene — used by the editor as placements change. Redraws. */
   setScene(scene: SceneV1): void {
     this.#assertLive();
+    if (this.#scene === scene) return;
+    this.#accept({ scene });
     this.#scene = scene;
-    this.#accept();
   }
 
   get edges(): boolean { return this.#edges; }
   setEdges(on: boolean): void {
     this.#assertLive();
     if (this.#edges === on) return;
+    this.#accept({ edges: on });
     this.#edges = on;
-    this.#accept();
   }
 
   get lit(): boolean { return this.#lit; }
   setLit(on: boolean): void {
     this.#assertLive();
     if (this.#lit === on) return;
+    this.#accept({ lit: on });
     this.#lit = on;
-    this.#accept();
   }
 
   get wireframe(): boolean { return this.#wireframe; }
   setWireframe(on: boolean): void {
     this.#assertLive();
     if (this.#wireframe === on) return;
+    this.#accept({ wireframe: on });
     this.#wireframe = on;
-    this.#accept();
   }
 
   /** Draws one exact time on the canvas and nothing more. */
@@ -158,20 +159,30 @@ export class SceneSession {
     this.#runtime.dispose();
   }
 
-  #accept(): void {
-    this.#revision += 1;
+  #accept(next: {
+    readonly scene?: SceneV1;
+    readonly edges?: boolean;
+    readonly lit?: boolean;
+    readonly wireframe?: boolean;
+  } = {}): void {
+    const nextRevision = this.#revision + 1;
     const result = this.#runtime.acceptSnapshot(buildSceneSnapshot(
-      this.#scene,
+      next.scene ?? this.#scene,
       this.#recipes,
       this.#parts,
-      { edges: this.#edges, lit: this.#lit, wireframe: this.#wireframe },
-      this.#revision,
+      {
+        edges: next.edges ?? this.#edges,
+        lit: next.lit ?? this.#lit,
+        wireframe: next.wireframe ?? this.#wireframe,
+      },
+      nextRevision,
     ));
     if (result.status !== 'accepted') {
       throw new Error(
-        `The runtime rejected scene revision ${String(this.#revision)}: ${result.code} at ${result.path}`,
+        `The runtime rejected scene revision ${String(nextRevision)}: ${result.code} at ${result.path}`,
       );
     }
+    this.#revision = nextRevision;
   }
 
   #assertLive(): void {

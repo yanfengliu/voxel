@@ -36,6 +36,10 @@ import { StudioPlayer } from './player.js';
 import { referenceGridSegmentsV1, sceneReferenceGridSegmentsV1 } from './reference-grid.js';
 import type { SceneV1 } from './scene.js';
 import { createSceneWorkspace } from './scene-workspace.js';
+import {
+  createModelLabelWorkspace,
+  type ModelLabelInfoV1,
+} from './model-label-workspace.js';
 import { createSceneEditor } from './scene-editor.js';
 import {
   boxEdgesV1, groundHitV1, pickPlacementV1, placementWorldBoxesV1,
@@ -171,6 +175,10 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
   const root = options.root ?? document.getElementById('studio');
   if (!root) throw new Error('The studio needs a #studio host element.');
   const catalog = options.catalog;
+  // Catalog models are consumer-owned readonly input. A rename in Studio is a
+  // mount-local display alias keyed by the model's stable id, so recipes and
+  // scenes keep resolving the same data and another mount sees the catalog name.
+  const modelLabelWorkspace = createModelLabelWorkspace(catalog.sections);
   // Catalog scenes are consumer-owned readonly input. The Studio edits an
   // isolated working copy so opening, editing, renaming, deleting, and reopening
   // all read one mount-local source of truth without mutating the game.
@@ -300,6 +308,11 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
   let depthOn = view.depth;
   let camera: OrthographicCamera | PerspectiveCamera = depthOn ? depthCamera : flatCamera;
   const firstModel = openingModel(catalog, options.openModelId);
+  const initialShelfModelId = catalog.sections
+    .flatMap((section) => section.models)
+    .filter((entry) => entry.id === firstModel.id).length === 1
+    ? firstModel.id
+    : null;
   // Fitted to the model it opens on, for the same reason every later open is:
   // a shelf's models are not one size.
   let orbit: OrbitStateV1 = clampOrbit({
@@ -345,6 +358,7 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
   // always act on whatever is currently picked, list or stage.
   const sceneEditor = createSceneEditor({
     recipes: sceneRecipes,
+    modelDisplayLabel: (id, fallback) => modelLabelWorkspace.label(id, fallback),
     onChange: (next) => { commitSceneEdit(next); },
     onSelect: (id) => { selectPlacement(id); },
   });
@@ -426,24 +440,77 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
   sheetImage.alt = 'Every frame of the movement, in time order';
   sheetImage.hidden = true;
 
+  const changeModelLabel = (
+    id: string,
+    action: string,
+    change: () => ModelLabelInfoV1,
+  ): ModelLabelInfoV1 => {
+    const previous = modelLabelWorkspace.sections()
+      .flatMap((section) => section.models)
+      .find((model) => model.id === id);
+    const changed = change();
+    try {
+      refresh();
+      return changed;
+    } catch (refreshFailure) {
+      try {
+        if (previous?.renamed === true) modelLabelWorkspace.rename(id, previous.label);
+        else modelLabelWorkspace.restore(id);
+      } catch (restoreFailure) {
+        throw new AggregateError(
+          [refreshFailure, restoreFailure],
+          `${action} model '${id}' changed its alias, but Studio refresh failed and the former alias could `
+          + 'not be restored. Reload this Studio before continuing.',
+          { cause: restoreFailure },
+        );
+      }
+      throw new Error(
+        `${action} model '${id}' was rolled back because Studio could not refresh: ${
+          refreshFailure instanceof Error ? refreshFailure.message : String(refreshFailure)
+        }`,
+        { cause: refreshFailure },
+      );
+    }
+  };
+
   // ---- the harness: the one surface both the buttons and the agent use ----
   const harness = createStudioHarness({
     session: () => session,
     replace(model: StudioModelV1) {
-      // Opening a model leaves any shown scene, so the model canvas shows and
-      // the scene's is hidden again.
-      closeSceneMode();
       // The look carries onto the next model: opening one keeps the edges and
       // light choices the last was left on rather than snapping back to the
       // resting look, which is the whole of "remember my last choice".
+      const previousModel = session.model;
       const carriedEdges = session.edges;
       const carriedLit = session.lit;
       const carriedWireframe = session.wireframe;
-      session.dispose();
-      session = new StudioSession(model, {
+      const createSession = (next: StudioModelV1): StudioSession => new StudioSession(next, {
         canvas, width: viewW, height: viewH, camera,
         edges: carriedEdges, lit: carriedLit, wireframe: carriedWireframe,
       });
+      try {
+        session.dispose();
+        session = createSession(model);
+      } catch (openingFailure) {
+        try {
+          session = createSession(previousModel);
+        } catch (restoreFailure) {
+          throw new AggregateError(
+            [openingFailure, restoreFailure],
+            `Opening model '${model.id}' failed, and the previous model '${previousModel.id}' could not be `
+            + 'restored. Reload this Studio before continuing.',
+            { cause: restoreFailure },
+          );
+        }
+        throw new Error(
+          `Opening model '${model.id}' failed before it replaced '${previousModel.id}'; the previous model `
+          + `was restored. ${openingFailure instanceof Error ? openingFailure.message : String(openingFailure)}`,
+          { cause: openingFailure },
+        );
+      }
+      // Opening a model leaves any shown scene only after the replacement
+      // session is accepted; a rejected model must not destroy scene state.
+      closeSceneMode();
       // Opening a model fits the view to it, because a shelf holds a game's
       // whole asset set and those are not one size. Only on open: an edit
       // must not re-zoom under your hands, and a construction's stages must
@@ -519,6 +586,15 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
     redoSceneEdit() { redoScene(); },
     setSnapToGrid: (on) => setSnapToGrid(on),
     snapToGrid: () => snapOn,
+    modelLabels: () => modelLabelWorkspace.sections(),
+    modelDisplayLabel: (id, fallback = id) => modelLabelWorkspace.label(id, fallback),
+    renameModel(id, label) {
+      return changeModelLabel(id, 'Renaming', () => modelLabelWorkspace.rename(id, label));
+    },
+    restoreModelName(id) {
+      return changeModelLabel(id, 'Restoring the name of', () => modelLabelWorkspace.restore(id));
+    },
+    initialShelfModelId: () => initialShelfModelId,
     setOrbit(view) {
       orbit = clampOrbit({ ...orbit, ...view });
       applyOrbit(camera, orbit, viewW, viewH, panCenter);
@@ -676,9 +752,13 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
    * older placement change after it cannot resurrect a stale catalog label.
    */
   function renameStudioScene(id: string, label: string): SceneV1 {
+    if (sceneOpen?.id === id) {
+      const renamed = sceneWorkspace.prepareRename(id, label);
+      commitSceneEdit(renamed);
+      return renamed;
+    }
     const renamed = sceneWorkspace.rename(id, label);
-    if (sceneOpen?.id === id) commitSceneEdit(renamed);
-    else shelfPanel.rebuild();
+    shelfPanel.rebuild();
     return renamed;
   }
 
@@ -781,7 +861,10 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
     motionText.textContent = scene.summary ?? `A scene of ${String(count)} models.`;
     modelLine.textContent = [...counts.entries()]
       .map(([id, n]) => {
-        const label = sceneRecipes[id]?.label ?? id;
+        const label = modelLabelWorkspace.label(
+          Object.hasOwn(sceneRecipes, id) ? sceneRecipes[id]!.id : id,
+          sceneRecipes[id]?.label ?? id,
+        );
         return n === 1 ? label : `${label} ×${String(n)}`;
       })
       .join(' · ');
@@ -826,7 +909,7 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
     construction.refresh();
     playerBar.applyPeriod(model.motion.periodMs);
     playerBar.syncPlayButton();
-    modelName.textContent = described.label;
+    modelName.textContent = modelLabelWorkspace.label(model.id, described.label);
     statusChip.textContent = described.state === 'running'
       ? 'drawing normally'
       : `engine reports "${described.state}"`;
@@ -927,44 +1010,63 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
   // Adopts an edited scene and redraws, without touching history — used for the
   // live frames of a drag and by undo/redo.
   function applySceneLive(next: SceneV1): void {
-    if (sceneOpen !== null) sceneWorkspace.replace(sceneOpen.id, next);
-    sceneOpen = next;
+    const previous = sceneOpen;
     sceneSession?.setScene(next);
+    try {
+      if (previous !== null) sceneWorkspace.replace(previous.id, next);
+    } catch (workspaceFailure) {
+      if (previous !== null && sceneSession !== null) {
+        try {
+          sceneSession.setScene(previous);
+        } catch (restoreFailure) {
+          throw new AggregateError(
+            [workspaceFailure, restoreFailure],
+            `Scene '${next.id}' was accepted for rendering, but its workspace update failed and the prior `
+            + 'rendered scene could not be restored. Reload this Studio before continuing.',
+            { cause: restoreFailure },
+          );
+        }
+      }
+      throw workspaceFailure;
+    }
+    sceneOpen = next;
     recomputeSceneBoxes();
     showSelection();
     drawFrame(lastShownMs);
   }
-  // The same, plus a full refresh so the editor list and readouts catch up —
-  // used at the end of a discrete edit, not on every drag frame.
-  function applyScene(next: SceneV1): void {
-    applySceneLive(next);
-    refresh();
-  }
-  function pushHistory(): void {
-    if (sceneOpen === null) return;
-    sceneUndo.push(sceneOpen);
+  function pushHistory(previous: SceneV1): void {
+    sceneUndo.push(previous);
     if (sceneUndo.length > MAX_SCENE_HISTORY) sceneUndo.shift();
     sceneRedo.length = 0;
   }
   function commitSceneEdit(next: SceneV1): void {
-    pushHistory();
-    applyScene(next);
+    if (sceneOpen === null) return;
+    const previous = sceneOpen;
+    applySceneLive(next);
+    pushHistory(previous);
+    refresh();
   }
   function undoScene(): void {
     // Guard before the pop, so a stray call in model mode can never discard a
     // history entry it would then refuse to apply.
     if (sceneOpen === null) return;
-    const previous = sceneUndo.pop();
+    const previous = sceneUndo.at(-1);
     if (previous === undefined) return;
-    sceneRedo.push(sceneOpen);
-    applyScene(previous);
+    const current = sceneOpen;
+    applySceneLive(previous);
+    sceneUndo.pop();
+    sceneRedo.push(current);
+    refresh();
   }
   function redoScene(): void {
     if (sceneOpen === null) return;
-    const next = sceneRedo.pop();
+    const next = sceneRedo.at(-1);
     if (next === undefined) return;
-    sceneUndo.push(sceneOpen);
-    applyScene(next);
+    const current = sceneOpen;
+    applySceneLive(next);
+    sceneRedo.pop();
+    sceneUndo.push(current);
+    refresh();
   }
   // Sets the selected placement's world x and z (its base y is unchanged), live.
   function setSelectedAt(x: number, z: number): void {
@@ -1044,7 +1146,7 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
       if (hit) {
         // Bank the pre-drag scene once, on the first move, so one drag is one
         // undo step — and a drag that never moves banks nothing.
-        if (!dragPushed) { pushHistory(); dragPushed = true; }
+        const previous = dragPushed ? null : sceneOpen;
         let x = hit.x + dragGrab.offX;
         let z = hit.z + dragGrab.offZ;
         if (snapOn) {
@@ -1053,6 +1155,10 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
           z = Math.round(z + dragGrab.cornerZ) - dragGrab.cornerZ;
         }
         setSelectedAt(x, z);
+        if (previous !== null) {
+          pushHistory(previous);
+          dragPushed = true;
+        }
       }
     }
   });

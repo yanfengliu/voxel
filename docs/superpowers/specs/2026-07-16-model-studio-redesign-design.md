@@ -35,13 +35,7 @@ serves that:
   floor square, the note keeps the voxel). The timeline shows a dot at each
   moment-note. A Notes panel lists them; notes can be removed. Whole-motion
   notes were declined; a moment note with no mark covers the need in practice.
-- **Revision by request (owner decision).** A request box bundles the owner's
-  words plus every pinned note plus the current model into a small JSON file.
-  The page cannot write files, so the studio dev server accepts a POST and
-  writes `tools/studio/requests/<stamp>.json`. A live agent watches that
-  folder, applies the request through the same harness the buttons use, and
-  the page updates. No API key in the page; requests queue when no agent is
-  running; every request is durable evidence of what was asked.
+- **Revision by request (owner decision; implemented boundary).** A request box bundles the owner's words, every pinned note, and the current model into a small JSON file. The page cannot write files, so the Studio dev server accepts a POST and writes `tools/studio/requests/<stamp>.json`. Saving starts no agent, sends no notification, and does not update the page later; the owner must explicitly ask an agent to process the reported path. The file remains durable local evidence of what was asked. Automated pickup is future work and must not be claimed until a live watcher and page-update channel exist.
 - **Editing.** The existing editors — palette, floors, one-floor grid, the
   nine motion sliders, period and phase, open/copy/new model — move into a
   panel that opens when wanted and stays out of the way while judging.

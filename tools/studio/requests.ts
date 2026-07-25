@@ -7,9 +7,9 @@ import type { StudioNoteV1 } from './notes.js';
  * writes it into `tools/studio/requests/` — the page cannot write files, and
  * this keeps the whole path local: no key, no cloud, works offline.
  *
- * A live agent watches that folder and applies requests through the same
- * harness the buttons use. When no agent is running, requests simply wait.
- * Every file is durable evidence of what was asked and against which model.
+ * Saving starts no agent and sends no notification. The owner explicitly asks
+ * an agent to process a file when ready; until then it is durable local
+ * evidence of what was asked and against which model.
  */
 
 export const STUDIO_REQUEST_SCHEMA = 'studio.request/1' as const;
@@ -45,11 +45,46 @@ export async function sendRequest(request: StudioRequestV1): Promise<SendResult>
       body: JSON.stringify(request),
     });
     if (!response.ok) {
-      return { ok: false, reason: `The studio server said ${String(response.status)}.` };
+      let detail: string | null = null;
+      try {
+        const body = (await response.json()) as { error?: unknown };
+        if (typeof body.error === 'string' && body.error.trim().length > 0) {
+          detail = body.error.trim();
+        }
+      } catch {
+        // A proxy or generic dev server may return HTML here. The status and
+        // endpoint guidance below remain actionable without assuming JSON.
+      }
+      const status = `${String(response.status)}${response.statusText ? ` ${response.statusText}` : ''}`;
+      return {
+        ok: false,
+        reason: detail === null
+          ? `The Studio server rejected POST /studio/requests (${status}). Serve this page with the Voxel `
+            + 'Studio dev server or provide that request-saving endpoint.'
+          : `The Studio server rejected the request (${status}): ${detail}`,
+      };
     }
-    const body = (await response.json()) as { file?: string };
-    return { ok: true, file: body.file ?? '(unnamed)' };
+    let body: { file?: unknown };
+    try {
+      body = (await response.json()) as { file?: unknown };
+    } catch {
+      return {
+        ok: false,
+        reason: 'The Studio server reported success, but its response was not JSON with a saved file path.',
+      };
+    }
+    if (typeof body.file !== 'string' || body.file.trim().length === 0) {
+      return {
+        ok: false,
+        reason: 'The Studio server reported success without naming the saved request file.',
+      };
+    }
+    return { ok: true, file: body.file };
   } catch (error) {
-    return { ok: false, reason: `The request never arrived: ${String(error)}` };
+    return {
+      ok: false,
+      reason: `POST /studio/requests could not be reached: ${String(error)}. Serve this page with the `
+        + 'Voxel Studio dev server or provide that request-saving endpoint.',
+    };
   }
 }

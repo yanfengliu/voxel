@@ -8,8 +8,8 @@ import { element } from './studio-app-helpers.js';
 /**
  * The Notes tab: what a reviewer saw and what should change. A note is pinned
  * to a moment on the timeline or a place on the model, listed here, and a
- * request carries the notes to an agent. Saving goes through the harness, so a
- * note the panel shows is a note the agent has.
+ * request file can carry those notes into a later agent task. Notes remain
+ * mount-local session data until the owner explicitly saves and delegates one.
  */
 
 export interface StudioNotesDepsV1 {
@@ -175,11 +175,14 @@ export function createStudioNotesPanel(deps: StudioNotesDepsV1): StudioNotesPane
     sendButton.disabled = true;
     requestStatus.dataset.tone = 'idle';
     requestStatus.textContent = 'Sending…';
-    void harness.sendRequest(requestBox.value).then((result) => {
+    // Start from an already-created promise so synchronous request validation
+    // failures take the same recovery path as network/server failures.
+    void Promise.resolve().then(() => harness.sendRequest(requestBox.value)).then((result) => {
       sendButton.disabled = false;
       if (result.ok) {
         requestStatus.dataset.tone = 'ok';
-        requestStatus.textContent = `Saved as ${result.file}. An agent will pick it up; your notes stay until it does.`;
+        requestStatus.textContent = `Saved locally as ${result.file}. No agent was started or notified; `
+          + 'ask one to process that file when you are ready. Your pinned notes remain in this Studio session.';
         requestBox.value = '';
       } else {
         requestStatus.dataset.tone = 'bad';
@@ -188,7 +191,9 @@ export function createStudioNotesPanel(deps: StudioNotesDepsV1): StudioNotesPane
     }).catch((error: unknown) => {
       sendButton.disabled = false;
       requestStatus.dataset.tone = 'bad';
-      requestStatus.textContent = String(error);
+      requestStatus.textContent = `Request could not be saved: ${
+        error instanceof Error ? error.message : String(error)
+      }`;
     });
   });
 

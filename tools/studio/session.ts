@@ -141,8 +141,10 @@ export class StudioSession {
   setGenome(model: StudioModelV1): void {
     this.#assertLive();
     if (model === this.#model) return;
-    this.#model = model;
     this.#accept(model);
+    // Publish only what the runtime accepted. If ingestion rejects, the
+    // picture and every readback above continue to describe the prior model.
+    this.#model = model;
   }
 
   /**
@@ -318,7 +320,7 @@ export class StudioSession {
   }
 
   #accept(model: StudioModelV1): void {
-    this.#revision += 1;
+    const revision = this.#revision + 1;
     // An empty model sends no geometry, which removes the key. The engine
     // tombstones a removed key and refuses to see it come back at the same
     // incarnation -- that rule is what catches a stale resource claiming to be
@@ -326,11 +328,12 @@ export class StudioSession {
     // Reachable whenever someone clears a model, presses New, or walks a
     // construction from its empty first step.
     const filled = filledVoxelCount(model) > 0;
-    if (filled && !this.#hadGeometry) this.#incarnation += 1;
-    this.#hadGeometry = filled;
+    const incarnation = filled && !this.#hadGeometry
+      ? this.#incarnation + 1
+      : this.#incarnation;
     const result = this.#runtime.acceptSnapshot(buildSnapshot(model, {
-      revision: this.#revision,
-      incarnation: this.#incarnation,
+      revision,
+      incarnation,
       epoch: `epoch:${model.id}`,
       edges: this.#edges,
       lit: this.#lit,
@@ -342,9 +345,14 @@ export class StudioSession {
       // break rather than a user error, and continuing would draw a stale model
       // while the studio reported the new one.
       throw new Error(
-        `The runtime rejected revision ${String(this.#revision)}: ${result.code} at ${result.path}`,
+        `The runtime rejected revision ${String(revision)}: ${result.code} at ${result.path}`,
       );
     }
+    // These counters describe accepted runtime state, not attempted input.
+    // Commit them only after the runtime commits the matching snapshot.
+    this.#revision = revision;
+    this.#incarnation = incarnation;
+    this.#hadGeometry = filled;
   }
 
   #assertLive(): void {

@@ -8,18 +8,49 @@ import type { StudioModelV1 } from './model.js';
  * touches a session; each function is complete on its own.
  */
 
+function loadShelfModel(id: string, load: () => StudioModelV1): StudioModelV1 {
+  const model = load();
+  if (model.id !== id) {
+    throw new Error(
+      `Shelf entry '${id}' loaded model '${model.id}', so its stable identity is ambiguous. `
+      + `Make ShelfModelV1.id and load().id both '${id}'.`,
+    );
+  }
+  return model;
+}
+
 /** The first model on the shelf, or an empty one when a shelf is empty. */
 export function openingModel(
   catalog: StudioCatalogV1,
   openModelId: string | undefined,
 ): StudioModelV1 {
-  for (const section of catalog.sections) {
-    for (const entry of section.models) {
-      if (openModelId === undefined || entry.id === openModelId) return entry.load();
-    }
-  }
+  const shelfModels = catalog.sections.flatMap((section) => section.models);
   if (openModelId !== undefined) {
-    throw new Error(`No model on the shelf is called ${openModelId}.`);
+    const matches = shelfModels.filter((entry) => entry.id === openModelId);
+    if (matches.length === 0) {
+      throw new Error(
+        `No model on the shelf has the id '${openModelId}', so it cannot be opened. `
+        + 'Choose an id declared by the catalog.',
+      );
+    }
+    if (matches.length > 1) {
+      throw new Error(
+        `The shelf contains ${String(matches.length)} models called '${openModelId}', so none can be opened `
+        + 'unambiguously. Give every shelf model a unique id.',
+      );
+    }
+    return loadShelfModel(openModelId, () => matches[0]!.load());
+  }
+  const first = shelfModels[0];
+  if (first !== undefined) {
+    const matches = shelfModels.filter((entry) => entry.id === first.id);
+    if (matches.length > 1) {
+      throw new Error(
+        `The shelf contains ${String(matches.length)} models called '${first.id}', so none can be opened `
+        + 'unambiguously. Give every shelf model a unique id.',
+      );
+    }
+    return loadShelfModel(first.id, () => first.load());
   }
   // An empty shelf is a legitimate starting point for a game that has not
   // authored anything yet, so it opens on an empty model rather than refusing.

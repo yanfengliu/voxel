@@ -1,5 +1,10 @@
 import type { SceneInfoV1 } from './harness.js';
 import { element } from './studio-app-helpers.js';
+import {
+  createStudioContextMenu,
+  type StudioContextMenuInvocationV1,
+  type StudioContextMenuV1,
+} from './studio-context-menu.js';
 
 export interface StudioSceneMenuDepsV1 {
   readonly visibleSceneIds: () => readonly string[];
@@ -11,7 +16,7 @@ export interface StudioSceneMenuDepsV1 {
 }
 
 export interface StudioSceneMenuV1 {
-  connect(row: HTMLButtonElement, scene: SceneInfoV1): void;
+  connect(row: HTMLElement, scene: SceneInfoV1, overflowTrigger?: HTMLElement): void;
   close(): void;
   dispose(): void;
 }
@@ -23,37 +28,23 @@ function errorMessage(error: unknown): string {
 }
 
 /**
- * Owns the body-level menu and modal dialogs used by scene rows.
- *
- * The shelf itself is scrollable, so the menu is fixed against the viewport
- * rather than clipped inside the rail. Every document/window listener exists
- * only while the menu is open and is removed again by close or dispose.
+ * Adapts scene commands to the Studio context menu and owns their modal
+ * dialogs. A caller-supplied menu remains caller-owned; otherwise this adapter
+ * creates and disposes a private manager for backward compatibility.
  */
-export function createStudioSceneMenu(deps: StudioSceneMenuDepsV1): StudioSceneMenuV1 {
-  let menu: HTMLElement | null = null;
-  let menuTrigger: HTMLButtonElement | null = null;
+export function createStudioSceneMenu(
+  deps: StudioSceneMenuDepsV1,
+  sharedContextMenu?: StudioContextMenuV1,
+): StudioSceneMenuV1 {
+  const contextMenu = sharedContextMenu ?? createStudioContextMenu();
+  const ownsContextMenu = sharedContextMenu === undefined;
   let activeDialog: HTMLDialogElement | null = null;
   let disposed = false;
-  let detachMenuGlobals = (): void => { /* no open menu */ };
 
   const focusScene = (id: string | null): void => {
     queueMicrotask(() => {
       if (!disposed) deps.focusScene(id);
     });
-  };
-
-  const closeMenu = (restoreFocus: boolean): void => {
-    detachMenuGlobals();
-    detachMenuGlobals = () => { /* no open menu */ };
-    const trigger = menuTrigger;
-    menuTrigger = null;
-    menu?.remove();
-    menu = null;
-    if (trigger) trigger.setAttribute('aria-expanded', 'false');
-    if (restoreFocus) {
-      if (trigger?.isConnected) trigger.focus();
-      else focusScene(trigger?.dataset.sceneId ?? null);
-    }
   };
 
   const removeDialog = (): void => {
@@ -64,7 +55,7 @@ export function createStudioSceneMenu(deps: StudioSceneMenuDepsV1): StudioSceneM
   const showDialog = (
     dialog: HTMLDialogElement,
     initialFocus: HTMLElement,
-    focusAfterClose: () => string | null,
+    restoreFocus: () => void,
   ): void => {
     removeDialog();
     activeDialog = dialog;
@@ -72,7 +63,11 @@ export function createStudioSceneMenu(deps: StudioSceneMenuDepsV1): StudioSceneM
     dialog.addEventListener('close', () => {
       if (activeDialog === dialog) activeDialog = null;
       dialog.remove();
-      focusScene(focusAfterClose());
+      // Native dialog focus restoration completes after the close event.
+      // Restore on the next microtask so it cannot overwrite our exact target.
+      queueMicrotask(() => {
+        if (!disposed) restoreFocus();
+      });
     }, { once: true });
     dialog.addEventListener('click', (event) => {
       if (event.target !== dialog) return;
@@ -87,7 +82,10 @@ export function createStudioSceneMenu(deps: StudioSceneMenuDepsV1): StudioSceneM
     });
   };
 
-  const openRenameDialog = (scene: SceneInfoV1): void => {
+  const openRenameDialog = (
+    scene: SceneInfoV1,
+    invocation?: StudioContextMenuInvocationV1,
+  ): void => {
     const id = String(++dialogId);
     const dialog = element('dialog', 'scene-dialog');
     const form = element('form', 'scene-dialog-form');
@@ -116,7 +114,6 @@ export function createStudioSceneMenu(deps: StudioSceneMenuDepsV1): StudioSceneM
     form.append(title, label, error, actions);
     dialog.append(form);
 
-    let focusId: string | null = scene.id;
     cancel.addEventListener('click', () => { dialog.close(); });
     form.addEventListener('submit', (event) => {
       event.preventDefault();
@@ -130,7 +127,6 @@ export function createStudioSceneMenu(deps: StudioSceneMenuDepsV1): StudioSceneM
       try {
         deps.renameScene(scene.id, nextLabel);
         deps.rebuild();
-        focusId = scene.id;
         dialog.close();
       } catch (caught) {
         error.textContent = errorMessage(caught);
@@ -139,11 +135,17 @@ export function createStudioSceneMenu(deps: StudioSceneMenuDepsV1): StudioSceneM
       }
     });
 
-    showDialog(dialog, input, () => focusId);
+    showDialog(dialog, input, () => {
+      if (invocation) invocation.restoreFocus();
+      else focusScene(scene.id);
+    });
     queueMicrotask(() => { if (dialog.open) input.select(); });
   };
 
-  const openDeleteDialog = (scene: SceneInfoV1): void => {
+  const openDeleteDialog = (
+    scene: SceneInfoV1,
+    invocation?: StudioContextMenuInvocationV1,
+  ): void => {
     const id = String(++dialogId);
     const dialog = element('dialog', 'scene-dialog');
     const form = element('form', 'scene-dialog-form');
@@ -169,6 +171,7 @@ export function createStudioSceneMenu(deps: StudioSceneMenuDepsV1): StudioSceneM
     dialog.append(form);
 
     let focusId: string | null = scene.id;
+    let wasDeleted = false;
     cancel.addEventListener('click', () => { dialog.close(); });
     form.addEventListener('submit', (event) => {
       event.preventDefault();
@@ -177,6 +180,7 @@ export function createStudioSceneMenu(deps: StudioSceneMenuDepsV1): StudioSceneM
       const fallback = index < 0 ? null : before[index + 1] ?? before[index - 1] ?? null;
       try {
         deps.deleteScene(scene.id);
+        wasDeleted = true;
         deps.rebuild();
         focusId = fallback;
         dialog.close();
@@ -185,6 +189,7 @@ export function createStudioSceneMenu(deps: StudioSceneMenuDepsV1): StudioSceneM
           // Deletion can finish even when renderer cleanup reports a failure.
           // Reflect the committed state and make the diagnostic non-retryable.
           deps.rebuild();
+          wasDeleted = true;
           focusId = fallback;
           remove.disabled = true;
           remove.textContent = 'Deleted';
@@ -196,121 +201,39 @@ export function createStudioSceneMenu(deps: StudioSceneMenuDepsV1): StudioSceneM
       }
     });
 
-    showDialog(dialog, cancel, () => focusId);
-  };
-
-  const openMenu = (
-    row: HTMLButtonElement,
-    scene: SceneInfoV1,
-    left: number,
-    top: number,
-  ): void => {
-    if (disposed) return;
-    closeMenu(false);
-    menuTrigger = row;
-    row.setAttribute('aria-expanded', 'true');
-    const nextMenu = element('div', 'scene-context-menu');
-    nextMenu.setAttribute('role', 'menu');
-    nextMenu.setAttribute('aria-label', `Scene actions for ${scene.label}`);
-    const rename = element('button');
-    rename.type = 'button';
-    rename.setAttribute('role', 'menuitem');
-    rename.textContent = 'Rename scene';
-    const remove = element('button', 'danger');
-    remove.type = 'button';
-    remove.setAttribute('role', 'menuitem');
-    remove.textContent = 'Delete scene';
-    nextMenu.append(rename, remove);
-    document.body.append(nextMenu);
-    menu = nextMenu;
-
-    const bounds = nextMenu.getBoundingClientRect();
-    const gutter = 8;
-    const windowWidth = document.defaultView?.innerWidth ?? bounds.width + gutter * 2;
-    const windowHeight = document.defaultView?.innerHeight ?? bounds.height + gutter * 2;
-    nextMenu.style.left = `${String(Math.max(gutter, Math.min(left, windowWidth - bounds.width - gutter)))}px`;
-    nextMenu.style.top = `${String(Math.max(gutter, Math.min(top, windowHeight - bounds.height - gutter)))}px`;
-
-    const items = [rename, remove];
-    nextMenu.addEventListener('keydown', (event) => {
-      const current = items.indexOf(document.activeElement as HTMLButtonElement);
-      let target: number;
-      if (event.key === 'ArrowDown') target = (current + 1) % items.length;
-      else if (event.key === 'ArrowUp') target = (current - 1 + items.length) % items.length;
-      else if (event.key === 'Home') target = 0;
-      else if (event.key === 'End') target = items.length - 1;
-      else if (event.key === 'Tab') {
-        // Put focus back on the trigger before the browser performs its normal
-        // Tab move, so the menu closes and the key continues through the shelf.
-        closeMenu(true);
-        return;
-      } else if (event.key === 'Escape') {
-        event.preventDefault();
-        closeMenu(true);
-        return;
-      } else return;
-      event.preventDefault();
-      items[target]?.focus();
+    showDialog(dialog, cancel, () => {
+      if (wasDeleted) focusScene(focusId);
+      else if (invocation) invocation.restoreFocus();
+      else focusScene(scene.id);
     });
-    rename.addEventListener('click', () => {
-      closeMenu(false);
-      openRenameDialog(scene);
-    });
-    remove.addEventListener('click', () => {
-      closeMenu(false);
-      openDeleteDialog(scene);
-    });
-
-    const onOutsidePointer = (event: PointerEvent): void => {
-      if (!nextMenu.contains(event.target as Node)) closeMenu(false);
-    };
-    const onViewportChange = (): void => { closeMenu(false); };
-    let initialScrollMaySettle = true;
-    const settleFrame = window.requestAnimationFrame(() => {
-      initialScrollMaySettle = false;
-    });
-    const onScroll = (): void => {
-      // Playwright and browsers may finish scrolling a just-clicked row after
-      // contextmenu fires. Only that opening-frame scroll may be ignored.
-      if (initialScrollMaySettle && nextMenu.contains(document.activeElement)) return;
-      closeMenu(false);
-    };
-    document.addEventListener('pointerdown', onOutsidePointer, true);
-    document.addEventListener('scroll', onScroll, true);
-    document.addEventListener('wheel', onViewportChange, true);
-    window.addEventListener('resize', onViewportChange);
-    detachMenuGlobals = () => {
-      window.cancelAnimationFrame(settleFrame);
-      document.removeEventListener('pointerdown', onOutsidePointer, true);
-      document.removeEventListener('scroll', onScroll, true);
-      document.removeEventListener('wheel', onViewportChange, true);
-      window.removeEventListener('resize', onViewportChange);
-    };
-    rename.focus({ preventScroll: true });
   };
 
   return {
-    connect(row, scene) {
+    connect(row, scene, overflowTrigger) {
+      if (disposed) return;
       row.dataset.sceneId = scene.id;
-      row.setAttribute('aria-haspopup', 'menu');
-      row.setAttribute('aria-expanded', 'false');
-      row.setAttribute('aria-keyshortcuts', 'Shift+F10');
-      row.addEventListener('contextmenu', (event) => {
-        event.preventDefault();
-        openMenu(row, scene, event.clientX, event.clientY);
-      });
-      row.addEventListener('keydown', (event) => {
-        if (event.key !== 'ContextMenu' && !(event.key === 'F10' && event.shiftKey)) return;
-        event.preventDefault();
-        const bounds = row.getBoundingClientRect();
-        openMenu(row, scene, bounds.left + 12, bounds.bottom);
-      });
+      contextMenu.connect(row, {
+        ariaLabel: `Scene actions for ${scene.label}`,
+        restoreFocus: () => { focusScene(scene.id); },
+        actions: [
+          {
+            label: 'Rename scene',
+            run: (invocation) => { openRenameDialog(scene, invocation); },
+          },
+          {
+            label: 'Delete scene',
+            danger: true,
+            run: (invocation) => { openDeleteDialog(scene, invocation); },
+          },
+        ],
+      }, overflowTrigger);
     },
-    close: () => { closeMenu(false); },
+    close: () => { contextMenu.close(); },
     dispose() {
       if (disposed) return;
       disposed = true;
-      closeMenu(false);
+      contextMenu.close();
+      if (ownsContextMenu) contextMenu.dispose();
       removeDialog();
     },
   };
