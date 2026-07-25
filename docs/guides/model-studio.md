@@ -144,45 +144,22 @@ const createBoat = () => buildRecipe(boatRecipe, harborParts).model;
 
 ## Recipes and parts
 
-A model saved only as a grid can never be improved except by hand. A recipe is
-how the model was made — hand-placed voxels, parts run with settings and a
-seed, mirrors — so improving a part improves every model whose recipe uses it.
+A model saved only as a grid can never be improved except by hand. A recipe is how the model was made — hand-placed voxels, parts run with settings and a seed, mirrors — so improving a part improves every model whose recipe uses it.
 
-Parts are pure: settings and a seed in, a voxel fragment out, the same
-fragment every time. They paint *role names* ('hull', 'mortar', 'trim') rather
-than colours, and the recipe's palette gives the names their colours — so the
-same part can wear two games' art directions.
+Parts are pure: settings and a seed in, a voxel fragment out, the same fragment every time. They paint *role names* ('hull', 'mortar', 'trim') rather than colours, and the recipe's palette gives the names their colours — so the same part can wear two games' art directions. A standalone part preview uses deterministic neutral colours only for inspection; it does not assign consumer art direction to those roles.
 
-Keep the parts a game actually reuses, and no more. Build each model the
-fastest honest way, with raw voxels wherever no part fits; when the same shape
-gets hand-sculpted a second time, promote it into a part. A part built ahead
-of need is a part nobody calls.
+Keep the parts a game actually reuses, and no more. Build each model the fastest honest way, with raw voxels wherever no part fits; when the same shape gets hand-sculpted a second time, promote it into a part. A part built ahead of need is a part nobody calls.
 
 ### Discovering parts and recipes
 
-A part may be a bare function or a self-describing `PartDefinitionV1` — a
-title, summary, category, tags, a settings schema with bounds and defaults, and
-named presets, alongside its `build` function. The shelf accepts either and the
-builder runs both the same way through `partBuildV1`, so a game adopts
-definitions where they earn their keep. The schema is honest rather than
-decoration: the build reads its inputs through it (`resolvePartSettingsV1`), so
-the bounds a browser shows are the bounds the part enforces.
+A part may be a bare function or a self-describing `PartDefinitionV1` — a title, summary, category, tags, a settings schema with bounds and defaults, and named presets, alongside its `build` function. The shelf accepts either and the builder runs both the same way through `partBuildV1`, so a game adopts definitions where they earn their keep. The schema is honest rather than decoration: the build reads its inputs through it (`resolvePartSettingsV1`), so the bounds a browser shows are the bounds the part enforces.
 
-Declare the game's whole palette on the catalog — `parts` and `recipes` — so
-the studio can list every part and reusable recipe, not only the ones some
-shelf model already uses. Omit them and the studio falls back to the union of
-what its models call. Recipes may carry an optional `summary` and `tags` for
-the same browsing.
+Declare the game's whole palette on the catalog — `parts` and `recipes` — so the studio can list every part and reusable recipe, not only the ones some shelf model already uses. Omit them and the studio falls back to the union of what its models call. Recipes may carry an optional `summary` and `tags` for the same browsing.
 
 The studio then offers discovery for free, to people and agents alike:
 
-- the left rail switches between **Models**, **Parts**, **Recipes**, and — when
-  the catalog ships any — **Scenes**, over one search box; each part shows its
-  settings and presets and each recipe shows its grain, size, and what it
-  places, with the step that places it;
-- the harness reports the same as data — `availableParts()`,
-  `availableRecipes()`, `findParts(query)`, and `findRecipes(query)` — so an
-  agent browses the whole palette through one `page.evaluate`.
+- the left rail switches between **Models**, **Parts**, **Recipes**, and — when the catalog ships any — **Scenes**, over one search box; clicking a part renders its declared defaults (or empty settings for a bare part) with a fixed seed and neutral preview skin while expanding its settings and presets, and each recipe shows its grain, size, and what it places, with the step that places it;
+- the harness reports the same as data — `availableParts()`, `availableRecipes()`, `findParts(query)`, `findRecipes(query)`, `openPart(name)`, and `activePart()` — so an agent browses and renders the whole palette through one `page.evaluate`.
 
 The full design, including how craft lessons and parts are shared between
 games, is in

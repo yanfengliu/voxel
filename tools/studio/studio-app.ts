@@ -656,10 +656,16 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
     drawFrame(0);
   }
 
-  /** Leaves the scene view for the model lane; a no-op outside a scene. */
+  /** Leaves the scene view for the model lane and drops every scene-only edit/selection reference. */
   function closeSceneMode(): void {
     if (sceneOpen === null) return;
     sceneOpen = null;
+    selectedPlacementId = null;
+    sceneBoxes = [];
+    sceneUndo.length = 0;
+    sceneRedo.length = 0;
+    highlightView.setSegments([]);
+    highlightView.setVisible(false);
     canvas.style.display = 'block';
     sceneCanvas.style.display = 'none';
   }

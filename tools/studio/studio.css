@@ -191,6 +191,7 @@ button:disabled { opacity: 0.45; cursor: default; }
   padding: 5px 8px;
 }
 .lib-item { border: 1px solid var(--line); border-radius: 6px; background: var(--sunk); margin: 0 6px 5px; }
+.lib-item.active { border-color: var(--accent); background: var(--panel); }
 .lib-summary {
   display: flex;
   align-items: center;
@@ -201,6 +202,9 @@ button:disabled { opacity: 0.45; cursor: default; }
   font-size: 12.5px;
 }
 .lib-summary:hover { color: var(--text); }
+.lib-summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.lib-item.active > .lib-summary,
+.lib-item.active > .lib-summary .lib-title { color: var(--accent); }
 .lib-title { font-weight: 600; color: var(--text); }
 .lib-badge {
   font-size: 8.5px;
@@ -235,6 +239,7 @@ button:disabled { opacity: 0.45; cursor: default; }
   overflow-x: auto;
   white-space: nowrap;
 }
+.lib-error { margin: 0; color: var(--bad); font-size: 11px; line-height: 1.4; }
 .lib-open { justify-self: start; padding: 4px 8px; font-size: 11px; color: var(--accent); }
 /* ---- stage ---- */
 .stage {

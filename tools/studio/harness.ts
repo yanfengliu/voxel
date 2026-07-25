@@ -24,11 +24,13 @@ import {
   listRecipeComponentsV1,
   listRecipePartsV1,
   listRecipePartsWithCellsV1,
+  type PartShelfV1,
   type RecipeComponentV1,
   type RecipePartV1,
   type RecipeStageV1,
 } from './recipe.js';
 import type { NoteStore, StudioNoteV1 } from './notes.js';
+import { buildPartPreviewModelV1 } from './part-preview.js';
 import { compilePhysicalModelV1 } from './physical-compile.js';
 import { physicalOverlaySegmentsV1, type PhysicalOverlaySegmentV1 } from './physical-overlay.js';
 import type { StudioPlayer } from './player.js';
@@ -263,6 +265,10 @@ export interface VoxelStudioHarnessV1 {
   availableParts(): readonly PartInfoV1[];
   /** Those parts filtered by a search over name, title, summary, category, and tags. */
   findParts(query: string): readonly PartInfoV1[];
+  /** Renders one library part with declared defaults (or empty settings for a bare part). */
+  openPart(name: string): ReturnType<StudioSession['describe']>;
+  /** The library part currently rendered by `openPart`, or null for models and scenes. */
+  activePart(): string | null;
   /**
    * Every reusable recipe this studio offers, as discovery info: id, label,
    * summary, tags, grid size, voxel size, and the parts and sub-recipes it
@@ -426,10 +432,27 @@ export interface HarnessHostV1 {
 }
 
 export function createStudioHarness(host: HarnessHostV1): VoxelStudioHarnessV1 {
-  const edit = (next: StudioModelV1) => {
-    host.update(next);
-    return host.session().describe();
+  let activePartName: string | null = null;
+  const withActivePart = <T>(next: string | null, action: () => T): T => {
+    const previous = activePartName;
+    activePartName = next;
+    try {
+      return action();
+    } catch (error) {
+      activePartName = previous;
+      throw error;
+    }
   };
+  const replaceModel = (model: StudioModelV1, part: string | null) =>
+    withActivePart(part, () => {
+      host.replace(model);
+      return host.session().describe();
+    });
+  const edit = (next: StudioModelV1) =>
+    withActivePart(null, () => {
+      host.update(next);
+      return host.session().describe();
+    });
 
   // Construction preview state. `restoreModel` holds whatever was open when
   // the preview began -- the edited model, not the recipe's output -- so
@@ -442,14 +465,23 @@ export function createStudioHarness(host: HarnessHostV1): VoxelStudioHarnessV1 {
   let cachedPartCells: { readonly id: string; readonly cells: readonly (readonly number[])[] } | null = null;
   // The library is the game's whole palette; the catalog is fixed for a mount,
   // so it is computed once and kept.
+  let libraryPartShelfCache: PartShelfV1 | null = null;
+  let libraryModelIdsCache: readonly string[] | null = null;
   let libraryPartsCache: readonly PartInfoV1[] | null = null;
   let libraryRecipesCache: readonly RecipeInfoV1[] | null = null;
+  const libraryPartShelf = (): PartShelfV1 =>
+    (libraryPartShelfCache ??= catalogPartsV1(host.catalog()));
+  const libraryModelIds = (): readonly string[] =>
+    (libraryModelIdsCache ??= host.catalog().sections.flatMap(
+      (section) => section.models.map((model) => model.id),
+    ));
   const availableParts = (): readonly PartInfoV1[] =>
-    (libraryPartsCache ??= partInfoListV1(catalogPartsV1(host.catalog())));
+    (libraryPartsCache ??= partInfoListV1(libraryPartShelf()));
   const availableRecipes = (): readonly RecipeInfoV1[] =>
     (libraryRecipesCache ??= recipeInfoListV1(catalogRecipesV1(host.catalog())));
 
   function recipeForOpenModel(): ShelfRecipeV1 | null {
+    if (activePartName !== null) return null;
     const id = restoreModel?.id ?? host.session().model.id;
     if (cachedRecipe?.id === id) return cachedRecipe.source;
     for (const section of host.catalog().sections) {
@@ -470,6 +502,7 @@ export function createStudioHarness(host: HarnessHostV1): VoxelStudioHarnessV1 {
    * which is an empty answer rather than an error.
    */
   function stagesForOpenModel(): readonly RecipeStageV1[] {
+    if (activePartName !== null) return [];
     const id = restoreModel?.id ?? host.session().model.id;
     if (cachedStages?.id === id) return cachedStages.stages;
     const made = recipeForOpenModel();
@@ -490,6 +523,7 @@ export function createStudioHarness(host: HarnessHostV1): VoxelStudioHarnessV1 {
    * same stance `buildSteps` takes for a broken recipe.
    */
   function shapesForOpenModel(): readonly PhysicalOverlaySegmentV1[] {
+    if (activePartName !== null) return [];
     const id = restoreModel?.id ?? host.session().model.id;
     if (cachedShapes?.id === id) return cachedShapes.shapes;
     const made = recipeForOpenModel();
@@ -508,6 +542,7 @@ export function createStudioHarness(host: HarnessHostV1): VoxelStudioHarnessV1 {
    * and shapes; empty for a New/Copy model that matches no shelf recipe.
    */
   function partCellsForOpenModel(): readonly (readonly number[])[] {
+    if (activePartName !== null) return [];
     const id = restoreModel?.id ?? host.session().model.id;
     if (cachedPartCells?.id === id) return cachedPartCells.cells;
     const made = recipeForOpenModel();
@@ -526,15 +561,14 @@ export function createStudioHarness(host: HarnessHostV1): VoxelStudioHarnessV1 {
 
   return {
     load(model) {
-      dropPreview();
       const issues = validateModelV1(model);
       if (issues.length > 0) {
         throw new Error(
           `Refusing to load an invalid model: ${issues.map((i) => `${i.path} ${i.message}`).join('; ')}`,
         );
       }
-      host.replace(model);
-      return host.session().describe();
+      dropPreview();
+      return replaceModel(model, null);
     },
     model: () => host.session().model,
     describe: () => host.session().describe(),
@@ -546,8 +580,10 @@ export function createStudioHarness(host: HarnessHostV1): VoxelStudioHarnessV1 {
       edit(setPaletteColor(host.session().model, paletteIndex, color)),
     addColor(color) {
       const result = addPaletteColor(host.session().model, color);
-      host.update(result.model);
-      return { paletteIndex: result.paletteIndex };
+      return withActivePart(null, () => {
+        host.update(result.model);
+        return { paletteIndex: result.paletteIndex };
+      });
     },
     animate: (motion) => edit(setMotion(host.session().model, motion)),
     stop: () => edit(stopMotion(host.session().model)),
@@ -674,9 +710,9 @@ export function createStudioHarness(host: HarnessHostV1): VoxelStudioHarnessV1 {
       for (const section of host.catalog().sections) {
         for (const entry of section.models) {
           if (entry.id === id) {
+            const model = entry.load();
             dropPreview();
-            host.replace(entry.load());
-            return host.session().describe();
+            return replaceModel(model, null);
           }
         }
       }
@@ -744,6 +780,20 @@ export function createStudioHarness(host: HarnessHostV1): VoxelStudioHarnessV1 {
     snapToGrid: () => host.snapToGrid(),
     availableParts,
     findParts: (query) => searchPartInfoV1(availableParts(), query),
+    openPart(name) {
+      const shelf = libraryPartShelf();
+      if (!Object.hasOwn(shelf, name)) {
+        throw new Error(
+          `No part in this studio has the name '${name}', so it cannot be rendered. `
+          + 'Choose a name returned by availableParts().',
+        );
+      }
+      const entry = shelf[name]!;
+      const model = buildPartPreviewModelV1(name, entry, libraryModelIds());
+      dropPreview();
+      return replaceModel(model, name);
+    },
+    activePart: () => host.sceneMode() ? null : activePartName,
     availableRecipes,
     findRecipes: (query) => searchRecipeInfoV1(availableRecipes(), query),
 

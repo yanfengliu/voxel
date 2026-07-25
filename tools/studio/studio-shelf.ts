@@ -10,9 +10,10 @@ import { createStudioSceneMenu } from './studio-scene-menu.js';
  * Three views share one search box — Models (the shelf, in the sections the
  * game named), Parts (every part with its settings and presets), and Recipes
  * (every reusable recipe with what it places). Opening a model or a shelf-backed
- * recipe goes through the harness; a part cannot be opened, so it expands to
- * show how to call it instead. Everything here reads the harness's own manifest,
- * so a game gets the same browser by declaring its parts and recipes.
+ * recipe goes through the harness; a part renders its declared defaults with a
+ * neutral preview skin and also expands to show how to call it. Everything here
+ * reads the harness's own manifest, so a game gets the same browser by declaring
+ * its parts and recipes.
  */
 
 type LibraryView = 'models' | 'parts' | 'recipes' | 'scenes';
@@ -63,6 +64,7 @@ export function createStudioShelf(deps: StudioShelfDepsV1): StudioShelfV1 {
   for (const name of views) {
     const button = element('button');
     button.textContent = VIEW_LABELS[name];
+    button.setAttribute('aria-pressed', String(view === name));
     button.addEventListener('click', () => {
       if (view === name) return;
       view = name;
@@ -86,6 +88,12 @@ export function createStudioShelf(deps: StudioShelfDepsV1): StudioShelfV1 {
     const target = id === null ? undefined : rows.find((row) => row.dataset.sceneId === id);
     (target ?? search).focus();
   };
+  const focusPart = (name: string): void => {
+    queueMicrotask(() => {
+      const summaries = Array.from(body.querySelectorAll<HTMLElement>('[data-part-name]'));
+      summaries.find((summary) => summary.dataset.partName === name)?.focus({ preventScroll: true });
+    });
+  };
   const sceneMenu = createStudioSceneMenu({
     visibleSceneIds: () => Array.from(
       body.querySelectorAll<HTMLButtonElement>('[data-scene-id]'),
@@ -100,7 +108,11 @@ export function createStudioShelf(deps: StudioShelfDepsV1): StudioShelfV1 {
 
   function rebuild(): void {
     sceneMenu.close();
-    for (const [name, button] of viewButtons) button.classList.toggle('on', view === name);
+    for (const [name, button] of viewButtons) {
+      const active = view === name;
+      button.classList.toggle('on', active);
+      button.setAttribute('aria-pressed', String(active));
+    }
     search.placeholder = view === 'models' ? 'Search models…'
       : view === 'parts' ? 'Search parts…'
         : view === 'recipes' ? 'Search recipes…' : 'Search scenes…';
@@ -154,18 +166,25 @@ export function createStudioShelf(deps: StudioShelfDepsV1): StudioShelfV1 {
     const parts = harness.findParts(query);
     if (parts.length === 0) { emptyNote('No parts match.'); return; }
     for (const part of parts) body.appendChild(renderPart(part));
-    emptyNote('Parts are the shapes recipes are built from. Expand one to see how to call it.');
+    emptyNote('Click a part to render its defaults (or empty settings for a bare part) and see how to call it.');
   }
 
   function renderPart(part: PartInfoV1): HTMLElement {
     const key = `part:${part.name}`;
+    const active = harness.activePart() === part.name;
     const details = element('details', 'lib-item');
+    details.classList.toggle('active', active);
     details.open = expanded.has(key);
     details.addEventListener('toggle', () => {
       if (details.open) expanded.add(key);
       else expanded.delete(key);
     });
     const summary = element('summary', 'lib-summary');
+    summary.dataset.partName = part.name;
+    summary.title = part.selfDescribed
+      ? `Render ${part.title} using its declared defaults`
+      : `Render ${part.title} using empty settings`;
+    if (active) summary.setAttribute('aria-current', 'true');
     const title = element('span', 'lib-title');
     title.textContent = part.title;
     summary.append(title);
@@ -206,7 +225,39 @@ export function createStudioShelf(deps: StudioShelfDepsV1): StudioShelfV1 {
     const usage = element('p', 'lib-code');
     usage.textContent = `use: { kind: 'part', part: '${part.name}', at: [x,y,z], settings: {…} }`;
     detail.append(usage);
+    const actionError = element('p', 'lib-error');
+    actionError.hidden = true;
+    actionError.setAttribute('role', 'alert');
+    detail.append(actionError);
     details.append(detail);
+    summary.addEventListener('click', (event) => {
+      event.preventDefault();
+      const nextOpen = !details.open;
+      if (nextOpen) expanded.add(key);
+      else expanded.delete(key);
+      details.open = nextOpen;
+      actionError.hidden = true;
+      actionError.textContent = '';
+
+      if (active) {
+        showTab('examine');
+        return;
+      }
+
+      try {
+        harness.openPart(part.name);
+        showTab('examine');
+        focusPart(part.name);
+      } catch (error) {
+        expanded.add(key);
+        details.open = true;
+        actionError.textContent = `Could not render ${part.title}: ${
+          error instanceof Error ? error.message : String(error)
+        }`;
+        actionError.hidden = false;
+        focusPart(part.name);
+      }
+    });
     return details;
   }
 
