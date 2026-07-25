@@ -539,21 +539,30 @@ test('document shortcuts belong to one Studio and are removed on disposal', asyn
     };
     const stageTags = [firstRoot, secondRoot].map((studioRoot) =>
       studioRoot.querySelector('[data-studio-region="stage"]')?.tagName);
+    firstRoot.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }));
     firstRoot.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }));
     const afterFirst = { firstSteps, secondSteps };
+    firstRoot.querySelector('button')?.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }),
+    );
+    const afterButton = { firstSteps, secondSteps };
     first.dispose();
     firstRoot.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }));
     const afterDisposedFirst = { firstSteps, secondSteps };
+    document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }));
+    const afterBodyWithSecond = { firstSteps, secondSteps };
     secondRoot.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }));
     const afterSecond = { firstSteps, secondSteps };
     second.dispose();
-    return { afterFirst, afterDisposedFirst, afterSecond, stageTags };
+    return { afterFirst, afterButton, afterDisposedFirst, afterBodyWithSecond, afterSecond, stageTags };
   });
 
   expect(calls).toEqual({
     afterFirst: { firstSteps: 1, secondSteps: 0 },
+    afterButton: { firstSteps: 1, secondSteps: 0 },
     afterDisposedFirst: { firstSteps: 1, secondSteps: 0 },
-    afterSecond: { firstSteps: 1, secondSteps: 1 },
+    afterBodyWithSecond: { firstSteps: 1, secondSteps: 1 },
+    afterSecond: { firstSteps: 1, secondSteps: 2 },
     stageTags: ['SECTION', 'SECTION'],
   });
 });

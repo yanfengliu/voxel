@@ -283,3 +283,70 @@ test('dragging a model on the scene canvas moves only it, as one undo step', asy
   const undone = await page.evaluate(() => window.voxelStudio!.sceneState());
   expect(undone).toEqual(before);
 });
+
+test('switching scenes clears the previous scene placement outline', async ({ page }) => {
+  await page.goto(studioOrigin, { waitUntil: 'load' });
+  await page.waitForFunction(() => typeof window.voxelStudio === 'object');
+
+  const evidence = await page.evaluate(() => {
+    const harness = window.voxelStudio!;
+    const outlineLines = (): number => document.querySelectorAll('.highlight-marks line').length;
+    harness.openScene('studio:scene:dining');
+    harness.selectPlacement('table');
+    const beforeSwitch = {
+      selected: harness.selectedPlacement(),
+      outlineLines: outlineLines(),
+    };
+    harness.openScene('studio:scene:village');
+    return {
+      beforeSwitch,
+      selectedAfterSwitch: harness.selectedPlacement(),
+      outlineLinesAfterSwitch: outlineLines(),
+    };
+  });
+
+  expect(evidence.beforeSwitch.selected).toBe('table');
+  expect(evidence.beforeSwitch.outlineLines).toBeGreaterThan(0);
+  expect(evidence.selectedAfterSwitch).toBeNull();
+  expect(evidence.outlineLinesAfterSwitch).toBe(0);
+});
+
+test('real keyboard shortcuts undo and redo when the unfocusable scene canvas leaves focus on the page', async ({ page }) => {
+  await page.goto(studioOrigin, { waitUntil: 'load' });
+  await page.waitForFunction(() => typeof window.voxelStudio === 'object');
+
+  await page.evaluate(() => {
+    const harness = window.voxelStudio!;
+    harness.openScene('studio:scene:dining');
+    harness.selectPlacement('chair-e');
+    const scene = harness.sceneState();
+    if (scene === null) throw new Error('No scene is open for the keyboard history test.');
+    harness.editScene({
+      ...scene,
+      placements: scene.placements.map((placement) => placement.id === 'chair-e'
+        ? { ...placement, at: [placement.at[0] + 1, placement.at[1], placement.at[2]] }
+        : placement),
+    });
+    const editor = document.createElement('div');
+    editor.contentEditable = 'true';
+    document.getElementById('studio')?.append(editor);
+    editor.focus();
+  });
+
+  const chairX = async (): Promise<number> => page.evaluate(() =>
+    window.voxelStudio!.sceneState()?.placements.find((placement) => placement.id === 'chair-e')?.at[0]
+      ?? Number.NaN);
+
+  expect(await chairX()).toBe(11);
+  await page.keyboard.press('Control+z');
+  expect(await chairX()).toBe(11);
+  await page.evaluate(() => { (document.activeElement as HTMLElement | null)?.blur(); });
+  await page.keyboard.press('Control+z');
+  expect(await chairX()).toBe(10);
+  await page.keyboard.press('Control+y');
+  expect(await chairX()).toBe(11);
+  await page.keyboard.press('Control+z');
+  expect(await chairX()).toBe(10);
+  await page.keyboard.press('Control+Shift+z');
+  expect(await chairX()).toBe(11);
+});

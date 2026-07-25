@@ -15,6 +15,7 @@ import {
 } from './shared-ui/index.js';
 import { describeMotion } from './describe.js';
 import { createStudioHarness, type VoxelStudioHarnessV1 } from './harness.js';
+import { createStudioKeyboard } from './studio-keyboard.js';
 import { modelVoxelSizeV1, type StudioModelV1 } from './model.js';
 import { NoteStore } from './notes.js';
 import {
@@ -566,9 +567,9 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
     if (sceneOpen && sceneSession) {
       sceneSession.showAt(timeMs);
       gridView.draw(camera, { x: 0, y: 0, z: 0 }, viewW, viewH, viewSignature, 1);
-      if (selectedPlacementId !== null) {
-        highlightView.draw(camera, { x: 0, y: 0, z: 0 }, viewW, viewH, viewSignature, 1);
-      }
+      // Draw even when no placement is selected: the hidden draw clears any
+      // pooled SVG lines left by the previous scene's selection.
+      highlightView.draw(camera, { x: 0, y: 0, z: 0 }, viewW, viewH, viewSignature, 1);
       return;
     }
     session.showAt(timeMs);
@@ -1130,23 +1131,15 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
     })();
   });
 
-  const onDocumentKeyDown = (event: KeyboardEvent): void => {
-    if (!(event.target instanceof Node) || !root.contains(event.target)) return;
-    if (event.key === 'Escape' && (state.pending || state.armedForPlace)) notesPanel.closeNoteEditor();
-    const typing = event.target instanceof HTMLInputElement
-      || event.target instanceof HTMLTextAreaElement;
-    if (typing) return;
-    // Undo/redo of scene edits, while a scene is open: Ctrl/Cmd+Z steps back,
-    // add Shift to step forward. A text field keeps its own undo (returned
-    // above), so this only ever fires against the scene.
-    if (sceneOpen && (event.ctrlKey || event.metaKey) && (event.key === 'z' || event.key === 'Z')) {
-      event.preventDefault();
-      if (event.shiftKey) redoScene(); else undoScene();
-      return;
-    }
-    if (event.key === 'ArrowLeft') { harness.step(-1); playerBar.syncPlayButton(); }
-    if (event.key === 'ArrowRight') { harness.step(1); playerBar.syncPlayButton(); }
-  };
+  const keyboard = createStudioKeyboard({
+    root,
+    sceneOpen: () => sceneOpen !== null,
+    noteEditorOpen: () => Boolean(state.pending ?? state.armedForPlace),
+    closeNoteEditor: () => { notesPanel.closeNoteEditor(); },
+    undoScene,
+    redoScene,
+    step: (direction) => { harness.step(direction); playerBar.syncPlayButton(); },
+  });
   // Registered with the other globals at the end of the mount, after nothing
   // can fail anymore, so a refused mount leaves the document untouched.
 
@@ -1326,7 +1319,7 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
   // Nothing below can fail, so the globals a failed mount must never own —
   // the document shortcut, the resize follow, and the published harness —
   // attach only now.
-  document.addEventListener('keydown', onDocumentKeyDown);
+  keyboard.attach();
   window.addEventListener('resize', followStage);
   frameHandle = requestAnimationFrame(tick);
   if (options.publishHarness !== false) window.voxelStudio = harness;
@@ -1339,7 +1332,7 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
       cancelAnimationFrame(frameHandle);
       construction.dispose();
       studioShell.dispose();
-      document.removeEventListener('keydown', onDocumentKeyDown);
+      keyboard.dispose();
       window.removeEventListener('resize', followStage);
       disposePanelResize();
       physicalView.dispose();
