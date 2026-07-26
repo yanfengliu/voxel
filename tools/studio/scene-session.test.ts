@@ -405,6 +405,7 @@ describe('SceneSession acceptance', () => {
     const batch = markers(threeScene);
 
     expect(instancePosition(batch, 0)).toEqual([10, 4, 0]);
+    session.setLit(true);
     session.showAt(1_000);
     expect(instancePosition(batch, 0).map((value) => Math.round(value * 1e9) / 1e9))
       .toEqual([0, 4, -10]);
@@ -437,7 +438,11 @@ describe('SceneSession acceptance', () => {
     runtimeControl.animatedBatches = 0;
     runtimeControl.animatedInstances = 0;
     const movingLightSession = createSession(movingScene('scene:moving-light'));
+    expect(movingLightSession.hasMotion()).toBe(false);
+    movingLightSession.setLit(true);
     expect(movingLightSession.hasMotion()).toBe(true);
+    movingLightSession.setLit(false);
+    expect(movingLightSession.hasMotion()).toBe(false);
     movingLightSession.dispose();
   });
 });

@@ -137,7 +137,7 @@ function appendRecipeDetails(root: HTMLElement, recipe: RecipeInfoV1): void {
   appendUsage(root, `use: { kind: 'recipe', recipe: '${recipe.id}', at: [x,y,z] }`);
 }
 
-function appendSceneDetails(root: HTMLElement, scene: SceneV1): void {
+function appendSceneDetails(root: HTMLElement, scene: SceneV1, lightingOn: boolean): void {
   const kind = element('p', 'grouphead');
   kind.textContent = 'Library source';
   const title = element('h3', 'library-detail-title');
@@ -151,7 +151,14 @@ function appendSceneDetails(root: HTMLElement, scene: SceneV1): void {
   addFact(facts, 'Models', String(scene.placements.length));
   addFact(facts, 'Lights', movingLights === 0
     ? String(lights)
-    : `${String(lights)} · ${String(movingLights)} moving`);
+    : `${String(lights)} · ${String(movingLights)} ${lightingOn ? 'moving' : 'animated when on'}`);
+  if (lights > 0) {
+    addFact(
+      facts,
+      'Lighting',
+      lightingOn ? 'On · sources illuminate models' : 'Off · source handles only',
+    );
+  }
   addFact(facts, 'Schema', scene.schemaVersion);
   root.append(kind, title, facts);
 }
@@ -176,7 +183,7 @@ export function createStudioLibraryDetails(
       root.hidden = false;
       root.dataset.libraryDetailKind = 'scene';
       root.dataset.libraryDetailKey = scene.id;
-      appendSceneDetails(root, scene);
+      appendSceneDetails(root, scene, harness.lit());
       return;
     }
 

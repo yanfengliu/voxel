@@ -4,13 +4,19 @@ export interface ReceiverLightingProof {
   readonly totalPixels: number;
   readonly changedPixels: number;
   readonly chromaticPixels: number;
+  readonly strongChangedPixels: number;
+  readonly strongChromaticPixels: number;
   readonly warmPixels: number;
   readonly coolPixels: number;
   readonly greenPixels: number;
   readonly movingContributionPixels: number;
+  readonly strongMovingContributionPixels: number;
   readonly changedRatio: number;
   readonly chromaticRatio: number;
+  readonly strongChangedRatio: number;
+  readonly strongChromaticRatio: number;
   readonly movingContributionRatio: number;
+  readonly strongMovingContributionRatio: number;
   readonly programsBefore: number;
   readonly programsAfter: number;
 }
@@ -85,10 +91,13 @@ export async function measureReceiverLightingProof(
 
     let changedPixels = 0;
     let chromaticPixels = 0;
+    let strongChangedPixels = 0;
+    let strongChromaticPixels = 0;
     let warmPixels = 0;
     let coolPixels = 0;
     let greenPixels = 0;
     let movingContributionPixels = 0;
+    let strongMovingContributionPixels = 0;
     for (let index = 0; index < startContribution.length; index += 3) {
       const redDelta = startContribution[index]!;
       const greenDelta = startContribution[index + 1]!;
@@ -103,23 +112,29 @@ export async function measureReceiverLightingProof(
         Math.abs(laterContribution[index + 1]!),
         Math.abs(laterContribution[index + 2]!),
       );
-      if (startMagnitude >= 8 && laterMagnitude >= 8 && Math.max(
+      const movingMagnitude = Math.max(
         Math.abs(redDelta - laterContribution[index]!),
         Math.abs(greenDelta - laterContribution[index + 1]!),
         Math.abs(blueDelta - laterContribution[index + 2]!),
-      ) >= 8) {
+      );
+      if (startMagnitude >= 8 && laterMagnitude >= 8 && movingMagnitude >= 8) {
         // Requiring a local-light contribution at both times excludes the
         // moving unlit marker wherever it occludes a receiver in either frame.
         movingContributionPixels += 1;
       }
+      if (startMagnitude >= 24 && laterMagnitude >= 24 && movingMagnitude >= 24) {
+        strongMovingContributionPixels += 1;
+      }
       if (startMagnitude < 8) continue;
       changedPixels += 1;
-      if (
-        Math.max(redDelta, greenDelta, blueDelta)
-          - Math.min(redDelta, greenDelta, blueDelta)
-        >= 6
-      ) {
+      const contributionSpread = Math.max(redDelta, greenDelta, blueDelta)
+        - Math.min(redDelta, greenDelta, blueDelta);
+      if (contributionSpread >= 6) {
         chromaticPixels += 1;
+      }
+      if (startMagnitude >= 24) {
+        strongChangedPixels += 1;
+        if (contributionSpread >= 12) strongChromaticPixels += 1;
       }
       if (redDelta - blueDelta >= 8 && redDelta - greenDelta >= 4) warmPixels += 1;
       if (blueDelta - redDelta >= 8 && blueDelta - greenDelta >= 4) coolPixels += 1;
@@ -130,13 +145,19 @@ export async function measureReceiverLightingProof(
       totalPixels,
       changedPixels,
       chromaticPixels,
+      strongChangedPixels,
+      strongChromaticPixels,
       warmPixels,
       coolPixels,
       greenPixels,
       movingContributionPixels,
+      strongMovingContributionPixels,
       changedRatio: changedPixels / totalPixels,
       chromaticRatio: chromaticPixels / Math.max(1, changedPixels),
+      strongChangedRatio: strongChangedPixels / totalPixels,
+      strongChromaticRatio: strongChromaticPixels / Math.max(1, strongChangedPixels),
       movingContributionRatio: movingContributionPixels / totalPixels,
+      strongMovingContributionRatio: strongMovingContributionPixels / totalPixels,
       programsBefore,
       programsAfter: programCount(),
     };

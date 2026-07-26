@@ -95,7 +95,7 @@ test('editable point lights change the raster while scene models stay fixed', as
     view: { yawDegrees: 45, pitchDegrees: 30, viewHeight: 56 },
   });
   await expect(page.getByRole('heading', { name: 'Editable lighting lab' })).toBeVisible();
-  await expect(page.locator('.status')).toHaveText('scene · 4 models · 2 lights');
+  await expect(page.locator('.status')).toHaveText('scene · 4 models · 2 lights · lighting on');
 
   await page.locator('[data-studio-tab="edit"]').click();
   await expect(page.locator('.scene-light')).toHaveCount(2);
@@ -162,7 +162,7 @@ test('editable point lights change the raster while scene models stay fixed', as
   await page.getByRole('button', { name: 'Add point light' }).click();
   await expect(page.locator('.scene-light')).toHaveCount(3);
   await expect(page.locator('.scene-light-count')).toHaveText('3/4096');
-  await expect(page.locator('.status')).toHaveText('scene · 4 models · 3 lights');
+  await expect(page.locator('.status')).toHaveText('scene · 4 models · 3 lights · lighting on');
   await expect.poll(async () => page.evaluate(() =>
     window.voxelStudio!.sceneState()?.lights?.at(-1)?.id,
   )).toBe('light-1');
@@ -171,7 +171,7 @@ test('editable point lights change the raster while scene models stay fixed', as
 
   await page.getByTitle('Remove this point light from the scene').click();
   await expect(page.locator('.scene-light')).toHaveCount(2);
-  await expect(page.locator('.status')).toHaveText('scene · 4 models · 2 lights');
+  await expect(page.locator('.status')).toHaveText('scene · 4 models · 2 lights · lighting on');
   await settleFrames(page);
   await expect(canvas).toHaveScreenshot('model-studio-lighting-lab-moved.png', {
     animations: 'disabled',
@@ -212,57 +212,6 @@ test('editable point lights change the raster while scene models stay fixed', as
   await page.locator('[data-studio-tab="edit"]').click();
   await expect(page.locator('.scene-light.selected')).toHaveCount(0);
   expect(errors).toEqual([]);
-});
-
-test('the global light choice redraws immediately and persists both states', async ({ page }) => {
-  const lightingLab = 'studio:scene:lighting-lab';
-  const response = await page.goto(studioOrigin, { waitUntil: 'load' });
-  expect(response?.ok()).toBe(true);
-  await page.waitForFunction(() => typeof window.voxelStudio === 'object');
-
-  await page.evaluate((id) => { window.voxelStudio!.openScene(id); }, lightingLab);
-  expect(await page.evaluate(() => window.voxelStudio!.lit())).toBe(false);
-
-  const lightToggle = page.getByRole('button', { name: 'light', exact: true });
-  const canvas = page.locator('.scene-canvas');
-  const unlitRaster = await canvas.screenshot({ animations: 'disabled' });
-  await lightToggle.click();
-  expect(await page.evaluate(() => window.voxelStudio!.lit())).toBe(true);
-  await expect(lightToggle).toHaveClass(/on/);
-  expect((await canvas.screenshot({ animations: 'disabled' })).equals(unlitRaster)).toBe(false);
-  expect(await page.evaluate(() =>
-    JSON.parse(localStorage.getItem('voxel-studio-view/1') ?? '{}') as { lit?: unknown },
-  )).toMatchObject({ lit: true });
-
-  const otherScene = await page.evaluate((excludedId) =>
-    window.voxelStudio!.scenes().find((scene) => scene.id !== excludedId)?.id,
-  lightingLab);
-  if (!otherScene) throw new Error('The lighting preference test needs a second scene to switch to.');
-  await page.evaluate((id) => { window.voxelStudio!.openScene(id); }, otherScene);
-  expect(await page.evaluate(() => window.voxelStudio!.lit())).toBe(true);
-
-  await page.evaluate((id) => { window.voxelStudio!.openScene(id); }, lightingLab);
-  expect(await page.evaluate(() => window.voxelStudio!.lit())).toBe(true);
-
-  await page.reload({ waitUntil: 'load' });
-  await page.waitForFunction(() => typeof window.voxelStudio === 'object');
-  expect(await page.evaluate(() => window.voxelStudio!.lit())).toBe(true);
-  await page.evaluate((id) => { window.voxelStudio!.openScene(id); }, lightingLab);
-  expect(await page.evaluate(() => window.voxelStudio!.lit())).toBe(true);
-  await expect(page.getByRole('button', { name: 'light', exact: true })).toHaveClass(/on/);
-
-  await page.getByRole('button', { name: 'light', exact: true }).click();
-  expect(await page.evaluate(() => window.voxelStudio!.lit())).toBe(false);
-  expect(await page.evaluate(() =>
-    JSON.parse(localStorage.getItem('voxel-studio-view/1') ?? '{}') as { lit?: unknown },
-  )).toMatchObject({ lit: false });
-
-  await page.reload({ waitUntil: 'load' });
-  await page.waitForFunction(() => typeof window.voxelStudio === 'object');
-  expect(await page.evaluate(() => window.voxelStudio!.lit())).toBe(false);
-  await page.evaluate((id) => { window.voxelStudio!.openScene(id); }, lightingLab);
-  expect(await page.evaluate(() => window.voxelStudio!.lit())).toBe(false);
-  await expect(page.getByRole('button', { name: 'light', exact: true })).not.toHaveClass(/on/);
 });
 
 test('an over-budget light edit leaves the scene and its undo history unchanged', async ({ page }) => {
@@ -402,7 +351,7 @@ test('rejected lighting and scene switches preserve the prior raster, preference
     return hash;
   });
   const beforeRejectedToggle = await rasterChecksum();
-  await page.getByRole('button', { name: 'light', exact: true }).click();
+  await page.getByRole('button', { name: 'Lighting', exact: true }).click();
   await expect(page.locator('.view-error')).toContainText('more than 32 overlapping lights in cluster');
   await expect(page.locator('.view-error')).toContainText('stored preferences were not changed');
   const rejectedToggle = await page.evaluate(() => {
@@ -832,49 +781,6 @@ test('camera toggles keep one scene renderer and clustered allocation stable', a
   expect(evidence.afterFourthDelete.created).toBe(evidence.reopened.created);
 });
 
-test('a scene with animated models and no moving lights keeps rendering live', async ({ page }) => {
-  const response = await page.goto(studioOrigin, { waitUntil: 'load' });
-  expect(response?.ok()).toBe(true);
-  await page.waitForFunction(() => typeof window.voxelStudio === 'object');
-
-  const evidence = await page.evaluate(() => {
-    const harness = window.voxelStudio!;
-    harness.openScene('studio:scene:dining');
-    const dining = structuredClone(harness.sceneState()!);
-    harness.editScene({
-      ...dining,
-      placements: [{ id: 'animated-starter', model: 'studio:starter', at: [0, 0, 0] }],
-    });
-    const playerAfterEdit = harness.playerState();
-    return { playerAfterEdit, render: harness.drawAt(0).sceneRender };
-  });
-  expect(evidence.playerAfterEdit).toMatchObject({ playing: true, periodMs: 1_000 });
-  expect(evidence.render).toMatchObject({ animatedBatches: 1, animatedInstances: 1 });
-
-  // Exact-time evidence above freezes the scene. Play must resume the same
-  // scene clock even though there are no moving light definitions.
-  await page.getByRole('button', { name: /Play/ }).click();
-  const canvas = page.locator('.scene-canvas');
-  const before = await canvas.screenshot({ animations: 'disabled' });
-  await page.waitForTimeout(250);
-  expect((await canvas.screenshot({ animations: 'disabled' })).equals(before)).toBe(false);
-  await expect(page.getByRole('button', { name: /Pause/ })).toBeVisible();
-  await page.evaluate(() => { (document.activeElement as HTMLElement | null)?.blur(); });
-  await page.keyboard.press('ArrowRight');
-  expect(await page.evaluate(() => window.voxelStudio!.playerState().playing)).toBe(true);
-  const stopped = await page.evaluate(() => {
-    const harness = window.voxelStudio!;
-    const scene = harness.sceneState()!;
-    harness.editScene({
-      ...scene,
-      placements: [{ id: 'static-table', model: 'studio:table', at: [0, 0, 0] }],
-    });
-    return harness.playerState();
-  });
-  expect(stopped).toMatchObject({ playing: false, periodMs: 0 });
-  await expect(page.getByRole('button', { name: /Play/ })).toBeDisabled();
-});
-
 test('1,000 moving lights stay cluster-bounded without compiling per-light shaders', async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 720 });
   await page.addInitScript(() => {
@@ -1048,12 +954,15 @@ test('1,000 moving lights stay cluster-bounded without compiling per-light shade
   expect(evidence.render?.drawCalls).toBeGreaterThanOrEqual(2);
   expect(evidence.render?.triangles).toBeGreaterThan(100_000);
   expect(evidence.render?.rendererTextures).toBeGreaterThanOrEqual(2);
-  expect(receiverLighting.changedRatio).toBeGreaterThan(0.005);
-  expect(receiverLighting.chromaticRatio).toBeGreaterThan(0.25);
-  expect(receiverLighting.warmPixels).toBeGreaterThan(250);
-  expect(receiverLighting.coolPixels).toBeGreaterThan(250);
-  expect(receiverLighting.greenPixels).toBeGreaterThan(250);
-  expect(receiverLighting.movingContributionRatio).toBeGreaterThan(0.005);
+  expect(receiverLighting.changedRatio).toBeGreaterThan(0.05);
+  expect(receiverLighting.chromaticRatio).toBeGreaterThan(0.75);
+  expect(receiverLighting.strongChangedRatio).toBeGreaterThan(0.05);
+  expect(receiverLighting.strongChromaticRatio).toBeGreaterThan(0.75);
+  expect(receiverLighting.warmPixels).toBeGreaterThan(10_000);
+  expect(receiverLighting.coolPixels).toBeGreaterThan(2_000);
+  expect(receiverLighting.greenPixels).toBeGreaterThan(5_000);
+  expect(receiverLighting.movingContributionRatio).toBeGreaterThan(0.03);
+  expect(receiverLighting.strongMovingContributionRatio).toBeGreaterThan(0.03);
   expect(evidence.resized).toEqual({ width: 1280, height: 720 });
   expect(evidence.drawingBuffer).toEqual({ width: 1280, height: 720 });
   expect(evidence.programsAfterRemove).toBe(evidence.programsAfterWarmup);

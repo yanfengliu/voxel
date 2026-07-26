@@ -1,4 +1,4 @@
-/* eslint-disable max-lines -- This composition root intentionally owns the paired render sessions, camera, rollback, and scene-to-model lifecycle; the scene registry and menu remain extracted modules. */
+/* eslint-disable max-lines -- This composition root intentionally owns the paired render sessions, camera, rollback, transport, and scene-to-model lifecycle; the scene registry and menu remain extracted modules. */
 import { OrthographicCamera, PerspectiveCamera, Raycaster, Vector2 } from 'three';
 
 import type { StudioCatalogV1 } from './catalog.js';
@@ -35,6 +35,7 @@ import { createPhysicalOverlayView } from './physical-overlay-view.js';
 import { StudioPlayer } from './player.js';
 import { referenceGridSegmentsV1, sceneReferenceGridSegmentsV1 } from './reference-grid.js';
 import type { SceneV1 } from './scene.js';
+import { sceneMotionWindowMsV1 } from './scene-motion.js';
 import { clampSceneViewV1 } from './scene-orbit.js';
 import { createSceneWorkspace } from './scene-workspace.js';
 import {
@@ -61,6 +62,8 @@ import type { StudioEditStateV1 } from './studio-app-context.js';
 import { element, openingModel } from './studio-app-helpers.js';
 import { createStudioEditorPanel, type StudioEditorPanelV1 } from './studio-editor.js';
 import { createStudioLibraryDetails } from './studio-library-details.js';
+import { createStudioLightingControl, sceneLightingStageHint,
+  sceneLightingStatusSuffix } from './studio-lighting-control.js';
 import { createStudioMotionPanel, type StudioMotionPanelV1 } from './studio-motion.js';
 import { createStudioNotesPanel, type StudioNotesPanelV1 } from './studio-notes.js';
 import { setupPanelResize } from './studio-panel-resize.js';
@@ -289,11 +292,8 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
   depthToggle.textContent = 'real depth';
   depthToggle.title = 'Nearer really is bigger. The flat view can read backwards — '
     + 'equal sizes at every distance look like they grow away from you.';
-  const lightToggle = element('button', 'toggle');
-  lightToggle.textContent = 'light';
-  lightToggle.title = 'Lights the model so each face shades by how it faces the light — '
-    + 'the way to see a colour change across a surface. Off is the flat, honest '
-    + "look at the model's own colours.";
+  const lightingControl = createStudioLightingControl();
+  const lightToggle = lightingControl.element;
   const wireframeToggle = element('button', 'toggle');
   wireframeToggle.textContent = 'wireframe';
   wireframeToggle.title = 'Hides the solid faces and draws the model as lines, so you '
@@ -415,7 +415,7 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
   };
   const sceneBuildNote = sceneNote('A scene is placed, not built step by step. '
     + 'Add and arrange its models in the Edit tab.');
-  const sceneMotionNote = sceneNote('Models and orbiting point lights animate live here. '
+  const sceneMotionNote = sceneNote('Models animate live here. Orbiting point-light handles animate while lighting is on. '
     + 'Other scene-wide fields — wind that waves trees or water that ripples — are the next step.');
   const sceneNotesNote = sceneNote('Notes pin to one model. Open a model from the shelf to leave notes on it.');
   // A scene's tab content sits as an opaque overlay over each model-only tab,
@@ -627,6 +627,7 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
     setLit(on: boolean): boolean {
       const previousModelLit = session.lit;
       const previousSceneLit = sceneSession?.lit;
+      const previousSceneHadMotion = sceneSession?.hasMotion() ?? false;
       const previousOrbit = orbit;
       const previousPanCenter = panCenter;
       try {
@@ -687,7 +688,11 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
       refresh();
       // Scene refresh updates controls and inspector text but intentionally
       // does not draw; the candidate raster above is already current.
-      if (sceneOpen !== null) drawSceneOverlays();
+      if (sceneOpen !== null) {
+        drawSceneOverlays();
+        // Disabled sources stop their transport; enabling starts it again.
+        syncSceneTransport(sceneOpen, previousSceneHadMotion);
+      }
       return session.lit;
     },
     setWireframe(on: boolean): boolean {
@@ -904,20 +909,6 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
     return reach * 2.4;
   }
 
-  /** Longest source period, used only as a finite scene scrub window. */
-  function sceneMotionWindowMs(scene: SceneV1): number {
-    let periodMs = 0;
-    for (const placement of scene.placements) {
-      periodMs = Math.max(periodMs, sceneRecipes[placement.model]?.motion.periodMs ?? 0);
-    }
-    for (const light of scene.schemaVersion === 'studio.scene/3' ? (scene.lights ?? []) : []) {
-      if (light.motion !== undefined) {
-        periodMs = Math.max(periodMs, light.motion.periodMs);
-      }
-    }
-    return periodMs;
-  }
-
   /**
    * Keeps the shared transport truthful as scene edits add/remove motion. A
    * null previous state means a freshly opened scene and restarts at zero.
@@ -930,7 +921,11 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
     const now = performance.now();
     const previousPlaying = player.playing;
     const previousManual = sceneAnimationManual;
-    const transportPeriodMs = hasMotion ? Math.max(1, sceneMotionWindowMs(scene)) : 0;
+    const transportPeriodMs = hasMotion ? Math.max(
+      1, sceneMotionWindowMsV1(scene, sceneRecipes, sceneSession?.lit === true),
+    ) : 0;
+    const presentedPhaseMs = transportPeriodMs > 0
+      ? ((lastShownMs % transportPeriodMs) + transportPeriodMs) % transportPeriodMs : 0;
     playerBar.applyPeriod(transportPeriodMs);
 
     if (!hasMotion) {
@@ -938,12 +933,18 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
       sceneAnimationManual = true;
     } else if (!previousHasMotion) {
       const startMs = previousHasMotion === null ? 0 : lastShownMs;
-      player.seek(startMs, now);
+      // Re-enabled motion wraps its bounded phase while the scene clock stays absolute.
+      player.seek(previousHasMotion === null ? 0 : presentedPhaseMs, now);
       player.play(now);
       sceneOpenedAtMs = now - startMs / Math.max(player.speed, 0.1);
       sceneAnimationManual = false;
     } else {
+      // A light toggle changes the scrub window, never the shown time or pose.
+      player.seek(presentedPhaseMs, now);
       sceneAnimationManual = previousManual;
+      if (!previousManual) {
+        sceneOpenedAtMs = now - lastShownMs / Math.max(player.speed, 0.1);
+      }
       if (previousPlaying) player.play(now); else player.pause(now);
     }
     playerBar.showSceneTime(lastShownMs);
@@ -1180,13 +1181,13 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
     const lightCount = scene.lights?.length ?? 0;
     modelName.textContent = scene.label;
     statusChip.textContent = `scene · ${String(count)} model${count === 1 ? '' : 's'}`
-      + (lightCount === 0 ? '' : ` · ${String(lightCount)} light${lightCount === 1 ? '' : 's'}`);
+      + sceneLightingStatusSuffix(lightCount, session.lit);
     lookSwitch.dataset.side = session.edges ? 'left' : 'right';
     lookSwitch.setAttribute('aria-checked', String(session.edges));
     edgesSide.classList.toggle('on', session.edges);
     gameSide.classList.toggle('on', !session.edges);
     depthToggle.classList.toggle('on', depthOn);
-    lightToggle.classList.toggle('on', session.lit);
+    lightingControl.sync(session.lit, lightCount);
     // A scene has no one model, so the model-only tools step aside, and the
     // scene-only snap toggle steps in.
     wireframeToggle.hidden = true;
@@ -1194,8 +1195,7 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
     physToggle.hidden = true;
     snapToggle.hidden = false;
     snapToggle.classList.toggle('on', snapOn);
-    stageHint.textContent = sceneStageHint
-      + (lightCount === 0 ? '' : ' · edit light sources in the Edit tab');
+    stageHint.textContent = sceneLightingStageHint(sceneStageHint, lightCount, session.lit);
     wireframeView.setVisible(false);
     physicalView.setVisible(false);
     // The scene stands on its own ground grid, sized to how far it spreads.
@@ -1286,7 +1286,7 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
     edgesSide.classList.toggle('on', session.edges);
     gameSide.classList.toggle('on', !session.edges);
     depthToggle.classList.toggle('on', depthOn);
-    lightToggle.classList.toggle('on', session.lit);
+    lightingControl.sync(session.lit, 0);
     // The wireframe follows the open model: its lines are recomputed while it
     // is on, and cleared on the next draw once it is off. Computed only when
     // shown, so the solid path pays nothing for it.

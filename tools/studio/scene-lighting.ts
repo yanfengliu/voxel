@@ -25,6 +25,7 @@ import {
 export const STUDIO_SCENE_LIGHT_ROOT_NAME = 'studio-scene-lights';
 export const STUDIO_SCENE_LIGHT_MARKERS_NAME = 'studio-scene-light-markers';
 const MARKER_SIZE = 0.28;
+const DISABLED_MARKER_BRIGHTNESS = 0.09;
 
 interface ResolvedStudioSceneLight {
   readonly definition: ScenePointLightV3;
@@ -222,7 +223,15 @@ export class StudioSceneLighting {
       }
       if (this.#markers.instanceColor) this.#markers.instanceColor.needsUpdate = true;
     }
-    this.#commitMarkersAtInternal(0);
+    // A prepared growth batch may outlive an intervening enable/disable
+    // change. Reapply the live state when it becomes the presented batch.
+    this.#syncMarkerPresentationInternal();
+    // Keep the last presented phase when an accepted look change rebuilds the
+    // scene snapshot. In particular, disabling lighting must dim and freeze
+    // moving handles where they were, not snap them back to authored phase 0.
+    // A fresh rig starts with sampleTimeMs=0, so initial presentation is
+    // unchanged.
+    this.#commitMarkersAtInternal(this.#sampleTimeMs);
     plan.state = 'committed';
     this.#pending = null;
     this.#drainRetiredMarkersInternal();
@@ -245,6 +254,7 @@ export class StudioSceneLighting {
     this.#assertActive();
     this.#enabled = enabled;
     this.#clustered.setEnabledInternal(enabled);
+    this.#syncMarkerPresentationInternal();
   }
 
   /** Decorates one MaterialPresenter-owned material before it enters a mesh. */
@@ -264,13 +274,15 @@ export class StudioSceneLighting {
     let movingLights = 0;
     let positionChecksum = 0;
     for (const [index, entry] of this.#resolved.entries()) {
-      writeResolvedPositionInternal(entry.definition, nowMs, entry.position);
       if (entry.definition.motion !== undefined) movingLights += 1;
-      positionChecksum += (index + 1) * (
-        entry.position[0] * 0.31
-        + entry.position[1] * 0.17
-        + entry.position[2] * 0.13
-      );
+      if (this.#enabled) {
+        writeResolvedPositionInternal(entry.definition, nowMs, entry.position);
+        positionChecksum += (index + 1) * (
+          entry.position[0] * 0.31
+          + entry.position[1] * 0.17
+          + entry.position[2] * 0.13
+        );
+      }
     }
     const clustered = this.#enabled
       ? this.#clustered.updateInternal(
@@ -280,9 +292,14 @@ export class StudioSceneLighting {
           height,
         )
       : this.#disabledClusteredMetricsInternal();
-    this.#commitMarkersInternal();
-    this.#sampleTimeMs = nowMs;
-    this.#positionChecksum = positionChecksum;
+    if (this.#enabled) {
+      // Publish handle matrices and timing only after the matching clustered
+      // candidate succeeds; a rejected phase must leave the last presented
+      // marker batch and metrics intact.
+      this.#commitMarkersInternal();
+      this.#sampleTimeMs = nowMs;
+      this.#positionChecksum = positionChecksum;
+    }
     return Object.freeze({
       ...clustered,
       movingLights,
@@ -372,6 +389,9 @@ export class StudioSceneLighting {
     // `vertexColors: true` would additionally request a geometry `color`
     // attribute; BoxGeometry has none, so that missing factor blacks out every
     // otherwise valid per-instance color in WebGL.
+    // Markers remain available as edit handles while raster lighting is off,
+    // but a disabled source must not still look emissive. Multiplying the one
+    // shared material color subdues the batch without blending or a new shader.
     const material = new MeshBasicMaterial();
     const markers = new InstancedMesh(this.#markerGeometry, material, capacity);
     markers.name = STUDIO_SCENE_LIGHT_MARKERS_NAME;
@@ -380,7 +400,15 @@ export class StudioSceneLighting {
     for (let index = 0; index < capacity; index += 1) {
       markers.setColorAt(index, this.#color.setRGB(1, 1, 1));
     }
+    this.#syncMarkerPresentationInternal(markers);
     return markers;
+  }
+
+  #syncMarkerPresentationInternal(
+    markers: InstancedMesh<BoxGeometry, MeshBasicMaterial> | null = this.#markers,
+  ): void {
+    if (!markers) return;
+    markers.material.color.setScalar(this.#enabled ? 1 : DISABLED_MARKER_BRIGHTNESS);
   }
 
   #commitMarkersAtInternal(nowMs: number): void {

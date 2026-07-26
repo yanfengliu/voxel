@@ -267,7 +267,10 @@ export class SceneSession {
   /** Whether injected time can change either scene geometry or scene lighting. */
   hasMotion(): boolean {
     this.#assertLive();
-    return this.#lighting.metrics().movingLights > 0
+    // Disabled light definitions remain editable and their handles remain
+    // visible, but they do not drive playback: a source that contributes no
+    // light must not keep visibly orbiting as if it were active.
+    return (this.#lit && this.#lighting.metrics().movingLights > 0)
       || this.#runtime.metrics().animatedInstances > 0;
   }
 

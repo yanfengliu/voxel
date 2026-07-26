@@ -109,6 +109,8 @@ describe('StudioSceneLighting', () => {
     expect(batch.geometry).toBeInstanceOf(BoxGeometry);
     expect(markerMaterial(batch)).toBeInstanceOf(MeshBasicMaterial);
     expect(markerMaterial(batch).vertexColors).toBe(false);
+    expect(markerMaterial(batch).transparent).toBe(false);
+    expect(markerMaterial(batch).color.r).toBeCloseTo(0.09);
     expect(batch.frustumCulled).toBe(false);
     expect(rig.ids()).toEqual([WARM.id, COOL.id]);
     expect(instancePosition(batch, 0)).toEqual(WARM.at);
@@ -116,6 +118,11 @@ describe('StudioSceneLighting', () => {
     expect(instanceColorHex(batch, 0)).toBe(0xff9448);
     expect(instanceColorHex(batch, 1)).toBe(0x489aff);
     expect(nativePointLightCount(scene)).toBe(0);
+
+    rig.setEnabled(true);
+    expect(markerMaterial(batch).color.r).toBe(1);
+    rig.setEnabled(false);
+    expect(markerMaterial(batch).color.r).toBeCloseTo(0.09);
 
     rig.dispose();
   });
@@ -168,6 +175,20 @@ describe('StudioSceneLighting', () => {
     rig.dispose();
   });
 
+  it('applies the live enabled state to a marker batch prepared before that state changed', () => {
+    const scene = new Scene();
+    const rig = new StudioSceneLighting(scene);
+    install(rig, [WARM, COOL]);
+
+    const plan = rig.prepare([WARM, COOL, ORBITING]);
+    expect(markerMaterial(plan.replacementMarkers!).color.r).toBeCloseTo(0.09);
+    rig.setEnabled(true);
+    rig.commit(plan);
+
+    expect(markerMaterial(markers(scene)).color.r).toBe(1);
+    rig.dispose();
+  });
+
   it('disposes rejected marker growth while retaining one live marker batch for retry', () => {
     const scene = new Scene();
     const rig = new StudioSceneLighting(scene);
@@ -206,6 +227,7 @@ describe('StudioSceneLighting', () => {
     const camera = new OrthographicCamera(-20, 20, 20, -20, 0.1, 100);
 
     expect(instancePosition(batch, 0)).toEqual([10, 4, 0]);
+    rig.setEnabled(true);
     const metrics = rig.updateAt(1_000, camera, 320, 240);
     expect(instancePosition(batch, 0).map((value) => Math.round(value * 1e9) / 1e9))
       .toEqual([0, 4, -10]);
@@ -213,6 +235,69 @@ describe('StudioSceneLighting', () => {
     expect(rig.ids()).toEqual([ORBITING.id]);
     expect(metrics).toMatchObject({ movingLights: 1, markerInstances: 1 });
     expect(nativePointLightCount(scene)).toBe(0);
+
+    rig.dispose();
+  });
+
+  it('keeps disabled orbit handles fixed until raster lighting is enabled again', () => {
+    const scene = new Scene();
+    const rig = new StudioSceneLighting(scene);
+    const camera = new OrthographicCamera(-20, 20, 20, -20, 0.1, 100);
+    install(rig, [ORBITING]);
+    const batch = markers(scene);
+    const initialChecksum = rig.metrics().positionChecksum;
+
+    const disabled = rig.updateAt(1_000, camera, 320, 240);
+    expect(instancePosition(batch, 0)).toEqual([10, 4, 0]);
+    expect(disabled.positionChecksum).toBe(initialChecksum);
+    expect(disabled.sampleTimeMs).toBe(0);
+
+    rig.setEnabled(true);
+    rig.updateAt(1_000, camera, 320, 240);
+    const enabledPosition = instancePosition(batch, 0)
+      .map((value) => Math.round(value * 1e9) / 1e9);
+    expect(enabledPosition).toEqual([0, 4, -10]);
+
+    // SceneSession accepts a new material snapshot before changing the rig's
+    // enabled state. Re-preparing the same definitions must preserve the
+    // presented phase through that transaction.
+    install(rig, [ORBITING]);
+    rig.setEnabled(false);
+    const refrozen = rig.updateAt(2_000, camera, 320, 240);
+    expect(instancePosition(batch, 0)
+      .map((value) => Math.round(value * 1e9) / 1e9)).toEqual(enabledPosition);
+    expect(refrozen.sampleTimeMs).toBe(1_000);
+
+    rig.dispose();
+  });
+
+  it('keeps the presented marker phase when clustered preparation rejects a later phase', () => {
+    const scene = new Scene();
+    const rig = new StudioSceneLighting(scene);
+    const camera = new OrthographicCamera(-50, 50, 30, -30, 0.1, 200);
+    camera.position.set(0, 0, 100);
+    camera.lookAt(0, 0, 0);
+    camera.updateProjectionMatrix();
+    camera.updateMatrixWorld();
+    const overlapping = Array.from({ length: 33 }, (_, index): ScenePointLightV3 => ({
+      ...ORBITING,
+      id: `light:overlap-${String(index)}`,
+      range: 2,
+    }));
+    install(rig, overlapping);
+    rig.setEnabled(true);
+    const batch = markers(scene);
+    const beforePosition = instancePosition(batch, 0);
+    const beforeMetrics = rig.metrics();
+
+    expect(() => rig.updateAt(1_000, camera, 320, 240)).toThrow(
+      'more than 32 overlapping lights in cluster',
+    );
+    expect(instancePosition(batch, 0)).toEqual(beforePosition);
+    expect(rig.metrics()).toMatchObject({
+      sampleTimeMs: beforeMetrics.sampleTimeMs,
+      positionChecksum: beforeMetrics.positionChecksum,
+    });
 
     rig.dispose();
   });
