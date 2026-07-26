@@ -14,13 +14,16 @@ import {
 } from 'three';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import type { RenderSnapshotV1 } from '../../src/core/index.js';
+import type { RenderDeltaV1, RenderSnapshotV1 } from '../../src/core/index.js';
+import { createStudioCatalog } from './catalog.js';
+import { sampleScenePoseReplayV1 } from './scene-pose-replay.js';
 import { THREE_MATERIAL_DECORATOR_INTERNAL } from '../../src/three/materialDecoratorInternal.js';
 import {
   VOXEL_SCENE_SCHEMA_V1,
   VOXEL_SCENE_SCHEMA_V2,
   VOXEL_SCENE_SCHEMA_V3,
   type ScenePointLightV3,
+  type SceneSchemaV4,
   type SceneV1,
 } from './scene.js';
 import {
@@ -37,6 +40,7 @@ interface RuntimeRejection {
 
 const runtimeControl = vi.hoisted(() => ({
   snapshots: [] as RenderSnapshotV1[],
+  deltas: [] as RenderDeltaV1[],
   options: [] as unknown[],
   frames: [] as unknown[],
   frameFailure: null as Error | null,
@@ -46,6 +50,8 @@ const runtimeControl = vi.hoisted(() => ({
   disposeFailures: 0,
   animatedBatches: 0,
   animatedInstances: 0,
+  acceptedRevision: null as number | null,
+  deltaResyncsRemaining: 0,
 }));
 
 vi.mock('../../src/three/index.js', () => ({
@@ -59,7 +65,35 @@ vi.mock('../../src/three/index.js', () => ({
       runtimeControl.snapshots.push(snapshot);
       const rejection = runtimeControl.rejectNext;
       runtimeControl.rejectNext = null;
-      return rejection ?? { status: 'accepted', revision: snapshot.revision };
+      if (rejection) return rejection;
+      runtimeControl.acceptedRevision = snapshot.revision;
+      return { status: 'accepted', revision: snapshot.revision };
+    }
+
+    acceptDelta(delta: RenderDeltaV1) {
+      runtimeControl.deltas.push(delta);
+      if (runtimeControl.deltaResyncsRemaining > 0) {
+        runtimeControl.deltaResyncsRemaining -= 1;
+        return {
+          status: 'resync-required',
+          reason: 'base-revision-mismatch',
+          expected: {
+            worldId: delta.worldId,
+            epoch: delta.epoch,
+            revision: delta.baseRevision + 10,
+          },
+          received: {
+            worldId: delta.worldId,
+            epoch: delta.epoch,
+            revision: delta.baseRevision,
+          },
+        };
+      }
+      const rejection = runtimeControl.rejectNext;
+      runtimeControl.rejectNext = null;
+      if (rejection) return rejection;
+      runtimeControl.acceptedRevision = delta.revision;
+      return { status: 'accepted', revision: delta.revision };
     }
 
     frame(context: unknown) {
@@ -69,7 +103,7 @@ vi.mock('../../src/three/index.js', () => ({
       if (failure) throw failure;
       if (runtimeControl.frameUnavailableState !== null) return undefined;
       return {
-        presentedRevision: runtimeControl.snapshots.at(-1)?.revision ?? null,
+        presentedRevision: runtimeControl.acceptedRevision,
       };
     }
 
@@ -171,6 +205,10 @@ function movingScene(id: string): SceneV1 {
   };
 }
 
+function isReplayScene(scene: SceneV1): scene is SceneSchemaV4 {
+  return scene.schemaVersion === 'studio.scene/4';
+}
+
 function camera(): OrthographicCamera {
   const result = new OrthographicCamera(-20, 20, 20, -20, 0.1, 100);
   result.position.set(16, 16, 16);
@@ -236,6 +274,7 @@ function nativePointLightCount(threeScene: Scene): number {
 describe('SceneSession acceptance', () => {
   beforeEach(() => {
     runtimeControl.snapshots.length = 0;
+    runtimeControl.deltas.length = 0;
     runtimeControl.options.length = 0;
     runtimeControl.frames.length = 0;
     runtimeControl.frameFailure = null;
@@ -245,6 +284,21 @@ describe('SceneSession acceptance', () => {
     runtimeControl.disposeFailures = 0;
     runtimeControl.animatedBatches = 0;
     runtimeControl.animatedInstances = 0;
+    runtimeControl.acceptedRevision = null;
+    runtimeControl.deltaResyncsRemaining = 0;
+  });
+
+  it('preserves V1, V2, and V3 document identity for legacy editor callers', () => {
+    const documents = [
+      scene('scene:identity-v1'),
+      scene('scene:identity-v2', [WARM]),
+      movingScene('scene:identity-v3'),
+    ];
+    for (const document of documents) {
+      const session = createSession(document);
+      expect(session.scene).toBe(document);
+      session.dispose();
+    }
   });
 
   it('publishes marker changes only after acceptance and reuses a rejected revision', () => {
@@ -503,5 +557,300 @@ describe('SceneSession acceptance', () => {
     movingLightSession.setLit(false);
     expect(movingLightSession.hasMotion()).toBe(true);
     movingLightSession.dispose();
+  });
+
+  it('presents the catalog Machine Works consumer replay through sparse scene deltas', () => {
+    const catalog = createStudioCatalog();
+    const machineWorks = catalog.scenes?.find(isReplayScene);
+    if (machineWorks === undefined || catalog.recipes === undefined || catalog.parts === undefined
+      || catalog.scenePoseReplays === undefined) {
+      throw new Error('The Studio catalog must provide Machine Works and its replay dependencies.');
+    }
+    const replay = catalog.scenePoseReplays[machineWorks.poseReplay.id];
+    if (replay === undefined) {
+      throw new Error(`Machine Works is missing replay '${machineWorks.poseReplay.id}'.`);
+    }
+    const session = new SceneSession(machineWorks, catalog.recipes, catalog.parts, {
+      canvas: {} as HTMLCanvasElement,
+      camera: camera(),
+      poseReplays: catalog.scenePoseReplays,
+    });
+    expect(session.hasMotion()).toBe(true);
+    expect(session.poseReplayStatus()).toMatchObject({
+      replayId: machineWorks.poseReplay.id,
+      sceneId: machineWorks.id,
+      durationMs: machineWorks.poseReplay.durationMs,
+      provenance: {
+        solver: replay.provenance.solver,
+        inputHash: replay.provenance.inputHash,
+        finalHash: replay.provenance.finalHash,
+      },
+      sample: null,
+    });
+
+    session.showAt(0);
+    session.showAt(9_000);
+    session.showAt(9_000);
+    const expectedSample = sampleScenePoseReplayV1(replay, 9_000);
+    expect(session.poseReplayStatus()?.sample).toMatchObject({
+      wrappedTimeMs: 9_000,
+      frameA: expectedSample.frameA,
+      frameB: expectedSample.frameB,
+      alpha: expectedSample.alpha,
+      latestEvent: {
+        id: 'machine-works:assembled',
+        type: 'assembled',
+        timeMs: 9_000,
+        placementId: 'product-base',
+        assemblyId: 'signal-module',
+        memberPlacementIds: ['product-base', 'product-core', 'product-cap'],
+      },
+    });
+
+    expect(runtimeControl.deltas).toHaveLength(2);
+    expect(runtimeControl.deltas.map(({ baseRevision, revision }) => ({
+      baseRevision,
+      revision,
+    }))).toEqual([
+      { baseRevision: 1, revision: 2 },
+      { baseRevision: 2, revision: 3 },
+    ]);
+    const changedKeys = runtimeControl.deltas[1]!.operations.flatMap((operation) =>
+      operation.op === 'patch-batch-instances' ? operation.upserts.instanceKeys : []);
+    expect(changedKeys).toEqual(expect.arrayContaining([
+      'assembly-carriage',
+      'core-head',
+      'cap-head',
+      'product-base',
+      'product-core',
+      'product-cap',
+      'collection-bucket',
+    ]));
+    expect(runtimeControl.frames).toHaveLength(3);
+    session.dispose();
+  });
+
+  it('reports and defensively copies every typed replay event field', () => {
+    const catalog = createStudioCatalog();
+    const replayScene = catalog.scenes?.find(isReplayScene);
+    if (replayScene === undefined || catalog.recipes === undefined || catalog.parts === undefined
+      || catalog.scenePoseReplays === undefined) {
+      throw new Error('The Studio catalog must provide one complete V4 replay fixture.');
+    }
+    const replay = catalog.scenePoseReplays[replayScene.poseReplay.id];
+    if (replay === undefined) {
+      throw new Error(`The V4 scene is missing replay '${replayScene.poseReplay.id}'.`);
+    }
+    const session = new SceneSession(replayScene, catalog.recipes, catalog.parts, {
+      canvas: {} as HTMLCanvasElement,
+      camera: camera(),
+      poseReplays: catalog.scenePoseReplays,
+    });
+
+    for (const event of replay.events) {
+      session.showAt(event.timeMs);
+      const returned = session.poseReplayStatus()?.sample?.latestEvent;
+      expect(returned).toEqual(event);
+      if (returned === null || returned === undefined) {
+        throw new Error(`Expected latest event '${event.id}' at ${String(event.timeMs)} ms.`);
+      }
+      switch (returned.type) {
+        case 'assembled':
+          (returned.memberPlacementIds as string[])[0] = 'mutated-member';
+          break;
+        case 'released':
+          (returned.remainingMemberPlacementIds as string[])[0] = 'mutated-member';
+          break;
+        case 'contact':
+          (returned.point as unknown as number[])[0] = 999;
+          (returned.normal as unknown as number[])[1] = 999;
+          (returned as { normalImpulse: number }).normalImpulse = 999;
+          break;
+        case 'collected':
+          (returned as { collectorPlacementId: string }).collectorPlacementId = 'mutated-collector';
+          break;
+      }
+      expect(session.poseReplayStatus()?.sample?.latestEvent).toEqual(event);
+    }
+
+    session.dispose();
+  });
+
+  it('owns V4 documents across construction, replacement, inspection, status, and resync', () => {
+    const catalog = createStudioCatalog();
+    const catalogScene = catalog.scenes?.find(isReplayScene);
+    if (catalogScene === undefined || catalog.recipes === undefined || catalog.parts === undefined
+      || catalog.scenePoseReplays === undefined) {
+      throw new Error('The Studio catalog must provide one complete V4 replay fixture.');
+    }
+    const expectedScene = structuredClone(catalogScene);
+    const constructorInput = structuredClone(catalogScene);
+    const session = new SceneSession(constructorInput, catalog.recipes, catalog.parts, {
+      canvas: {} as HTMLCanvasElement,
+      camera: camera(),
+      poseReplays: catalog.scenePoseReplays,
+    });
+
+    const firstInspection = session.scene;
+    expect(firstInspection).not.toBe(constructorInput);
+    expect(firstInspection).toEqual(expectedScene);
+    if (firstInspection.schemaVersion !== 'studio.scene/4') {
+      throw new Error('The defensive scene getter must preserve the accepted V4 schema.');
+    }
+    (constructorInput.poseReplay as { id: string; durationMs: number }).id = 'mutated:constructor';
+    (constructorInput.poseReplay as { id: string; durationMs: number }).durationMs = 1;
+    (constructorInput.placements[0] as { model: string }).model = 'missing:constructor-model';
+    (constructorInput.placements[0]!.at as unknown as number[])[0] = 999;
+    (firstInspection.poseReplay as { id: string; durationMs: number }).id = 'mutated:getter';
+    (firstInspection.poseReplay as { id: string; durationMs: number }).durationMs = 2;
+    (firstInspection.placements[0] as { model: string }).model = 'missing:getter-model';
+    (firstInspection.placements[0]!.at as unknown as number[])[0] = 998;
+
+    expect(session.scene).toEqual(expectedScene);
+    expect(session.scene).not.toBe(firstInspection);
+    expect(session.poseReplayStatus()).toMatchObject({
+      replayId: expectedScene.poseReplay.id,
+      durationMs: expectedScene.poseReplay.durationMs,
+    });
+
+    runtimeControl.deltaResyncsRemaining = 1;
+    session.showAt(1_000);
+
+    const replacementInput = structuredClone(expectedScene);
+    session.setScene(replacementInput);
+    const replacementInspection = session.scene;
+    if (replacementInspection.schemaVersion !== 'studio.scene/4') {
+      throw new Error('A replacement V4 scene must remain V4 when inspected.');
+    }
+    (replacementInput.poseReplay as { id: string }).id = 'mutated:replacement';
+    (replacementInput.placements[0] as { model: string }).model = 'missing:replacement-model';
+    (replacementInspection.poseReplay as { id: string }).id = 'mutated:replacement-getter';
+    (replacementInspection.placements[0] as { model: string }).model = 'missing:replacement-getter-model';
+
+    runtimeControl.deltaResyncsRemaining = 1;
+    session.showAt(2_000);
+
+    expect(session.scene).toEqual(expectedScene);
+    expect(session.poseReplayStatus()).toMatchObject({
+      replayId: expectedScene.poseReplay.id,
+      durationMs: expectedScene.poseReplay.durationMs,
+      sample: { wrappedTimeMs: 2_000 },
+    });
+    expect(runtimeControl.snapshots.map(({ revision }) => revision)).toEqual([1, 12, 24]);
+    const snapshotPlacementMatrices = runtimeControl.snapshots.map(({ batches }) =>
+      batches.map(({ instanceKeys, matrices }) => ({
+        instanceKeys: [...instanceKeys],
+        matrices: Array.from(matrices),
+      })));
+    expect(snapshotPlacementMatrices[1]).toEqual(snapshotPlacementMatrices[0]);
+    expect(snapshotPlacementMatrices[2]).toEqual(snapshotPlacementMatrices[0]);
+    session.dispose();
+  });
+
+  it('takes private ownership of accepted replay frames, events, and provenance', () => {
+    const catalog = createStudioCatalog();
+    const replayScene = catalog.scenes?.find(isReplayScene);
+    if (replayScene === undefined || catalog.recipes === undefined || catalog.parts === undefined
+      || catalog.scenePoseReplays === undefined) {
+      throw new Error('The Studio catalog must provide one complete V4 replay fixture.');
+    }
+    const replay = catalog.scenePoseReplays[replayScene.poseReplay.id];
+    if (replay === undefined) {
+      throw new Error(`The V4 scene is missing replay '${replayScene.poseReplay.id}'.`);
+    }
+    const event = replay.events[0];
+    const firstTrack = replay.tracks[0];
+    if (event === undefined || firstTrack === undefined) {
+      throw new Error('The V4 replay fixture must contain at least one event and pose track.');
+    }
+    const sampleBeforeMutation = sampleScenePoseReplayV1(replay, event.timeMs);
+    const trackedBeforeMutation = sampleBeforeMutation.placements[0]!;
+    const translationsBeforeMutation = new Float32Array(firstTrack.translations);
+    const gravityBeforeMutation = [...replay.provenance.gravity] as [number, number, number];
+    const eventIdBeforeMutation = event.id;
+    const session = new SceneSession(replayScene, catalog.recipes, catalog.parts, {
+      canvas: {} as HTMLCanvasElement,
+      camera: camera(),
+      poseReplays: catalog.scenePoseReplays,
+    });
+
+    try {
+      firstTrack.translations.fill(999);
+      (replay.provenance.gravity as unknown as number[])[1] = 999;
+      (event as unknown as { id: string }).id = 'mutated-after-acceptance';
+      session.showAt(event.timeMs);
+
+      const upsert = runtimeControl.deltas.flatMap(({ operations }) => operations)
+        .find((operation) => operation.op === 'patch-batch-instances'
+          && operation.upserts.instanceKeys.includes(trackedBeforeMutation.placementId));
+      if (upsert?.op !== 'patch-batch-instances') {
+        throw new Error(`Expected a pose patch for '${trackedBeforeMutation.placementId}'.`);
+      }
+      const slot = upsert.upserts.instanceKeys.indexOf(trackedBeforeMutation.placementId);
+      expect(Array.from(upsert.upserts.matrices.slice(slot * 16 + 12, slot * 16 + 15)))
+        .toEqual(trackedBeforeMutation.translation);
+      expect(session.poseReplayStatus()).toMatchObject({
+        provenance: { gravity: gravityBeforeMutation },
+        sample: {
+          latestEvent: { id: eventIdBeforeMutation },
+        },
+      });
+    } finally {
+      firstTrack.translations.set(translationsBeforeMutation);
+      (replay.provenance.gravity as unknown as number[])[1] = gravityBeforeMutation[1];
+      (event as unknown as { id: string }).id = eventIdBeforeMutation;
+      session.dispose();
+    }
+  });
+
+  it('recovers one pose delta resync request with a full snapshot and one retry', () => {
+    const catalog = createStudioCatalog();
+    const replayScene = catalog.scenes?.find(isReplayScene);
+    if (replayScene === undefined || catalog.recipes === undefined || catalog.parts === undefined
+      || catalog.scenePoseReplays === undefined) {
+      throw new Error('The Studio catalog must provide one complete V4 replay fixture.');
+    }
+    const session = new SceneSession(replayScene, catalog.recipes, catalog.parts, {
+      canvas: {} as HTMLCanvasElement,
+      camera: camera(),
+      poseReplays: catalog.scenePoseReplays,
+    });
+    runtimeControl.deltaResyncsRemaining = 1;
+
+    session.showAt(1_000);
+
+    expect(runtimeControl.snapshots.map(({ revision }) => revision)).toEqual([1, 12]);
+    expect(runtimeControl.deltas.map(({ baseRevision, revision }) => ({
+      baseRevision,
+      revision,
+    }))).toEqual([
+      { baseRevision: 1, revision: 2 },
+      { baseRevision: 12, revision: 13 },
+    ]);
+    expect(session.poseReplayStatus()?.sample?.wrappedTimeMs).toBe(1_000);
+    session.dispose();
+  });
+
+  it('stops after one full snapshot when the retried pose delta still requests resync', () => {
+    const catalog = createStudioCatalog();
+    const replayScene = catalog.scenes?.find(isReplayScene);
+    if (replayScene === undefined || catalog.recipes === undefined || catalog.parts === undefined
+      || catalog.scenePoseReplays === undefined) {
+      throw new Error('The Studio catalog must provide one complete V4 replay fixture.');
+    }
+    const session = new SceneSession(replayScene, catalog.recipes, catalog.parts, {
+      canvas: {} as HTMLCanvasElement,
+      camera: camera(),
+      poseReplays: catalog.scenePoseReplays,
+    });
+    runtimeControl.deltaResyncsRemaining = 2;
+
+    expect(() => { session.showAt(1_000); }).toThrow(
+      'still requires renderer resync at 1000 ms after one full snapshot retry',
+    );
+    expect(runtimeControl.snapshots.map(({ revision }) => revision)).toEqual([1, 12]);
+    expect(runtimeControl.deltas).toHaveLength(2);
+    expect(session.poseReplayStatus()?.sample).toBeNull();
+    session.dispose();
   });
 });

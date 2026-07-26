@@ -5,6 +5,7 @@ import {
   MAX_SCENE_LIGHTS,
   VOXEL_SCENE_SCHEMA_V2,
   VOXEL_SCENE_SCHEMA_V3,
+  VOXEL_SCENE_SCHEMA_V4,
   type ScenePlacementV1,
   type ScenePointLightOrbitMotionV1,
   type ScenePointLightV1,
@@ -99,10 +100,17 @@ function clonePointLight<T extends ScenePointLightV1>(light: T): T {
   };
 }
 
-function editedLightSchema(scene: SceneV1): typeof VOXEL_SCENE_SCHEMA_V2 | typeof VOXEL_SCENE_SCHEMA_V3 {
-  return scene.schemaVersion === VOXEL_SCENE_SCHEMA_V3
-    ? VOXEL_SCENE_SCHEMA_V3
-    : VOXEL_SCENE_SCHEMA_V2;
+function withEditedLights(
+  scene: SceneV1,
+  lights: readonly ScenePointLightV1[],
+): SceneV1 {
+  if (scene.schemaVersion === VOXEL_SCENE_SCHEMA_V4) {
+    return { ...scene, lights };
+  }
+  if (scene.schemaVersion === VOXEL_SCENE_SCHEMA_V3) {
+    return { ...scene, lights };
+  }
+  return { ...scene, schemaVersion: VOXEL_SCENE_SCHEMA_V2, lights };
 }
 
 /** Adds one deterministic point light without changing any placement or model reference. */
@@ -125,11 +133,7 @@ export function addScenePointLightV1(
     range: 30,
   };
   return {
-    scene: {
-      ...scene,
-      schemaVersion: editedLightSchema(scene),
-      lights: [...current, light],
-    },
+    scene: withEditedLights(scene, [...current, light]),
     light,
   };
 }
@@ -150,11 +154,10 @@ export function replaceScenePointLightV1(
       + 'change its editable values instead.',
     );
   }
-  return {
-    ...scene,
-    schemaVersion: editedLightSchema(scene),
-    lights: current.map((light) => (light.id === id ? clonePointLight(next) : light)),
-  };
+  return withEditedLights(
+    scene,
+    current.map((light) => (light.id === id ? clonePointLight(next) : light)),
+  );
 }
 
 /** Removes one light by stable id without touching any model placement. */
@@ -163,11 +166,7 @@ export function removeScenePointLightV1(scene: SceneV1, id: string): SceneV1 {
   if (!current.some((light) => light.id === id)) {
     throw new Error(`No point light in scene '${scene.id}' has the id '${id}', so it cannot be removed.`);
   }
-  return {
-    ...scene,
-    schemaVersion: editedLightSchema(scene),
-    lights: current.filter((light) => light.id !== id),
-  };
+  return withEditedLights(scene, current.filter((light) => light.id !== id));
 }
 
 /** Resolves a scene's authoritative recipe-book key to the model id that owns its display alias. */

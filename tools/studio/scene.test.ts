@@ -9,11 +9,13 @@ import {
   MAX_SCENE_LIGHT_ORBIT_PERIOD_MS,
   MAX_SCENE_LIGHT_RANGE,
   MAX_SCENE_LIGHTS,
+  MAX_SCENE_POSE_REPLAY_ID_LENGTH,
   resolveScenePointLightAtV3,
   validateSceneV1,
   VOXEL_SCENE_SCHEMA_V1,
   VOXEL_SCENE_SCHEMA_V2,
   VOXEL_SCENE_SCHEMA_V3,
+  VOXEL_SCENE_SCHEMA_V4,
   type ScenePlacementV1,
   type ScenePointLightV1,
   type ScenePointLightV3,
@@ -70,7 +72,73 @@ describe('scene validation', () => {
   });
 
   it('rejects an unknown schema version rather than misrendering it', () => {
-    expect(validateSceneV1({ ...scene([]), schemaVersion: 'studio.scene/4' })).not.toEqual([]);
+    expect(validateSceneV1({ ...scene([]), schemaVersion: 'studio.scene/99' })).not.toEqual([]);
+  });
+
+  it('accepts a bounded V4 pose-replay reference and rejects it on older schemas', () => {
+    const replayed: SceneV1 = {
+      ...scene([]),
+      schemaVersion: VOXEL_SCENE_SCHEMA_V4,
+      poseReplay: {
+        id: 'consumer:replay:test',
+        durationMs: 18_000,
+      },
+    };
+    expect(validateSceneV1(replayed)).toEqual([]);
+    expect(structuredClone(replayed)).toEqual(replayed);
+    const legacyIssues = validateSceneV1({
+      ...scene([]),
+      poseReplay: replayed.poseReplay,
+    });
+    expect(legacyIssues.map(({ path }) => path)).toContain('$.poseReplay');
+    expect(legacyIssues.find(({ path }) => path === '$.poseReplay')?.message)
+      .toContain(`require ${VOXEL_SCENE_SCHEMA_V4}`);
+  });
+
+  it('reports malformed V4 pose-replay fields instead of silently freezing a scene', () => {
+    const issues = validateSceneV1({
+      ...scene([]),
+      schemaVersion: VOXEL_SCENE_SCHEMA_V4,
+      poseReplay: {
+        id: '',
+        durationMs: Number.POSITIVE_INFINITY,
+      },
+    });
+    expect(issues).toEqual(expect.arrayContaining([
+      expect.objectContaining({ path: '$.poseReplay.id' }),
+      expect.objectContaining({ path: '$.poseReplay.durationMs' }),
+    ]));
+  });
+
+  it('rejects unknown V4 pose-replay fields and overlong lookup ids with repair guidance', () => {
+    const unexpectedField = 'embeddedSolverState';
+    const issues = validateSceneV1({
+      ...scene([]),
+      schemaVersion: VOXEL_SCENE_SCHEMA_V4,
+      poseReplay: {
+        id: 'consumer:replay:test',
+        durationMs: 18_000,
+        [unexpectedField]: { arbitrary: 'state' },
+      },
+    });
+    expect(issues).toContainEqual({
+      path: `$.poseReplay.${unexpectedField}`,
+      message: `Unexpected pose-replay reference field '${unexpectedField}'; allowed fields are id and durationMs.`,
+    });
+
+    const longId = 'r'.repeat(MAX_SCENE_POSE_REPLAY_ID_LENGTH + 1);
+    expect(validateSceneV1({
+      ...scene([]),
+      schemaVersion: VOXEL_SCENE_SCHEMA_V4,
+      poseReplay: {
+        id: longId,
+        durationMs: 18_000,
+      },
+    })).toContainEqual({
+      path: '$.poseReplay.id',
+      message: `Expected a non-empty, trimmed pose-replay id of at most `
+        + `${String(MAX_SCENE_POSE_REPLAY_ID_LENGTH)} characters.`,
+    });
   });
 
   it('accepts bounded point lights as clone-safe scene data', () => {

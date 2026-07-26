@@ -58,7 +58,10 @@ import {
 } from './studio-harness-reports.js';
 import type { StudioShelfItemKindV1, StudioShelfMoveV1 } from './studio-shelf-order.js';
 import type { StudioSceneLightingMetricsV1 } from './scene-lighting.js';
-import type { SceneRenderMetricsV1 } from './scene-session.js';
+import type {
+  ScenePoseReplayStatusV1,
+  SceneRenderMetricsV1,
+} from './scene-session.js';
 
 export type { SceneInfoV1 } from './studio-harness-library.js';
 export type { HarnessSweepSummaryV1, PlayerReportV1 } from './studio-harness-reports.js';
@@ -110,6 +113,7 @@ export interface VoxelStudioHarnessV1 {
   drawAt(nowMs: number): {
     readonly sceneLighting: StudioSceneLightingMetricsV1 | null;
     readonly sceneRender: SceneRenderMetricsV1 | null;
+    readonly scenePoseReplay: ScenePoseReplayStatusV1 | null;
   };
   /**
    * Sweeps one period and judges it. `images: true` returns every frame's data
@@ -414,6 +418,8 @@ export interface HarnessHostV1 {
   sceneLightingMetrics?(): StudioSceneLightingMetricsV1 | null;
   /** Plain renderer workload metrics for the currently open scene, when any. */
   sceneRenderMetrics?(): SceneRenderMetricsV1 | null;
+  /** Consumer provenance, accepted pose frame, and latest causal event for a replay scene. */
+  scenePoseReplayStatus?(): ScenePoseReplayStatusV1 | null;
   /** Tells the UI the notes changed, so lists and timeline dots catch up. */
   notesChanged(): void;
   /** The stage viewpoint, owned by the page; setting it redraws. */
@@ -810,6 +816,7 @@ export function createStudioHarness(host: HarnessHostV1): VoxelStudioHarnessV1 {
       return {
         sceneLighting: host.sceneLightingMetrics?.() ?? null,
         sceneRender: host.sceneRenderMetrics?.() ?? null,
+        scenePoseReplay: host.scenePoseReplayStatus?.() ?? null,
       };
     },
 

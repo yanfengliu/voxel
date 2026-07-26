@@ -36,6 +36,7 @@ describe('the studio shelf', () => {
       { name: 'Contrast: radial mechanics', count: 5 },
       { name: 'Contrast: branching forms', count: 5 },
       { name: 'Contrast: asymmetric hybrids', count: 5 },
+      { name: 'Machine Works', count: 7 },
       { name: 'Walls', count: 2 },
       { name: 'Garden', count: 7 },
       { name: 'Furniture', count: 3 },
@@ -46,5 +47,23 @@ describe('the studio shelf', () => {
       { name: 'Home furnishings', count: 10 },
       { name: 'Outdoors', count: 4 },
     ]);
+  });
+
+  it('links every V4 scene to one valid catalog replay for that exact scene', () => {
+    const catalog = createStudioCatalog();
+    const replayScenes = (catalog.scenes ?? []).filter(
+      (scene) => scene.schemaVersion === 'studio.scene/4',
+    );
+    expect(replayScenes).not.toHaveLength(0);
+    for (const scene of replayScenes) {
+      const replay = catalog.scenePoseReplays?.[scene.poseReplay.id];
+      expect(replay, scene.poseReplay.id).toBeDefined();
+      if (replay === undefined) {
+        throw new Error(`Catalog V4 scene '${scene.id}' is missing replay '${scene.poseReplay.id}'.`);
+      }
+      expect(replay.sceneId).toBe(scene.id);
+      expect(replay.frameCount * replay.provenance.fixedTimestepMs)
+        .toBeCloseTo(scene.poseReplay.durationMs, 8);
+    }
   });
 });

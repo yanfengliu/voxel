@@ -1,5 +1,6 @@
 import { Scene, type Camera } from 'three';
 
+import type { RenderSnapshotV1 } from '../../src/core/index.js';
 import {
   ThreeRenderRuntime,
   type ThreePresentedManifestV1,
@@ -15,10 +16,31 @@ import { replaceRuntimeBorrowedCameraInternal } from '../../src/three/runtimeBor
 import { buildSceneSnapshot } from './scene-build.js';
 import type { PartShelfV1, RecipeBookV1 } from './recipe.js';
 import {
+  buildScenePoseDeltaV1,
+  type ValidatedScenePlacementPoseMapV1,
+} from './scene-pose-delta.js';
+import {
+  copyScenePoseReplayEventV1,
+  copyScenePoseReplayV1,
+} from './scene-pose-replay-copy.js';
+import {
+  sampleValidatedScenePoseReplayV1,
+  scenePoseReplayDurationMsV1,
+  validateScenePoseReplayV1,
+  type ScenePoseReplayEventV1,
+  type ScenePoseReplayProvenanceV1,
+  type ScenePoseReplayV1,
+} from './scene-pose-replay.js';
+import {
   StudioSceneLighting,
   type StudioSceneLightingMetricsV1,
 } from './scene-lighting.js';
-import { validateSceneV1, type ScenePlacementV1, type SceneV1 } from './scene.js';
+import {
+  validateSceneV1,
+  type ScenePlacementV1,
+  type SceneSchemaV4,
+  type SceneV1,
+} from './scene.js';
 
 /**
  * One live scene session: a scene, the runtime drawing it, and the look it is
@@ -67,6 +89,26 @@ export interface SceneSessionOptionsV1 {
   readonly edges?: boolean;
   readonly lit?: boolean;
   readonly wireframe?: boolean;
+  /** Consumer-produced observations addressable by a V4 scene reference. */
+  readonly poseReplays?: Readonly<Record<string, ScenePoseReplayV1>>;
+}
+
+export interface ScenePoseReplaySampleStatusV1 {
+  readonly wrappedTimeMs: number;
+  readonly frameA: number;
+  readonly frameB: number;
+  readonly alpha: number;
+  /** Complete typed evidence for the latest causal event through this sample. */
+  readonly latestEvent: ScenePoseReplayEventV1 | null;
+}
+
+/** Read-only evidence for the replay and latest pose accepted by the runtime. */
+export interface ScenePoseReplayStatusV1 {
+  readonly replayId: string;
+  readonly sceneId: string;
+  readonly durationMs: number;
+  readonly provenance: ScenePoseReplayProvenanceV1;
+  readonly sample: ScenePoseReplaySampleStatusV1 | null;
 }
 
 const DEFAULT_WIDTH = 320;
@@ -87,10 +129,77 @@ function samePlacementInternal(
 }
 
 function samePresentedPlacementsInternal(left: SceneV1, right: SceneV1): boolean {
+  const sameReplay = left.schemaVersion === 'studio.scene/4'
+    && right.schemaVersion === 'studio.scene/4'
+    ? left.poseReplay.id === right.poseReplay.id
+      && left.poseReplay.durationMs === right.poseReplay.durationMs
+    : left.schemaVersion !== 'studio.scene/4' && right.schemaVersion !== 'studio.scene/4';
   return left.id === right.id
+    && sameReplay
     && left.placements.length === right.placements.length
     && left.placements.every((placement, index) =>
       samePlacementInternal(placement, right.placements[index]!));
+}
+
+function copySceneV4Internal(scene: SceneSchemaV4): SceneSchemaV4 {
+  return {
+    schemaVersion: scene.schemaVersion,
+    id: scene.id,
+    label: scene.label,
+    ...(scene.summary === undefined ? {} : { summary: scene.summary }),
+    placements: scene.placements.map((placement) => ({
+      id: placement.id,
+      model: placement.model,
+      at: [...placement.at],
+      ...(placement.turns === undefined ? {} : { turns: placement.turns }),
+      ...(placement.grain === undefined ? {} : { grain: placement.grain }),
+      ...(placement.seed === undefined ? {} : { seed: placement.seed }),
+    })),
+    ...(scene.lights === undefined
+      ? {}
+      : {
+          lights: scene.lights.map((light) => ({
+            id: light.id,
+            kind: light.kind,
+            at: [...light.at],
+            color: { ...light.color },
+            intensity: light.intensity,
+            range: light.range,
+            ...(light.motion === undefined
+              ? {}
+              : {
+                  motion: {
+                    kind: light.motion.kind,
+                    center: [...light.motion.center],
+                    axis: light.motion.axis,
+                    periodMs: light.motion.periodMs,
+                    phaseRadians: light.motion.phaseRadians,
+                  },
+                }),
+          })),
+        }),
+    poseReplay: {
+      id: scene.poseReplay.id,
+      durationMs: scene.poseReplay.durationMs,
+    },
+  };
+}
+
+/**
+ * V4 carries a catalog lookup capability, so the session owns the validated
+ * reference and every field that can affect a later resync. Legacy scene
+ * identity remains unchanged for editor callers that use it as an edit token.
+ */
+function takeSceneForSessionInternal(scene: SceneV1): SceneV1 {
+  if (scene.schemaVersion !== 'studio.scene/4') return scene;
+  const issues = validateSceneV1(scene);
+  if (issues.length > 0) {
+    throw new Error(
+      'Scene session cannot accept the V4 scene before taking private ownership: '
+      + issues.map((issue) => `${issue.path} ${issue.message}`).join('; '),
+    );
+  }
+  return copySceneV4Internal(scene);
 }
 
 export class SceneSession {
@@ -99,6 +208,11 @@ export class SceneSession {
   #scene: SceneV1;
   readonly #recipes: RecipeBookV1;
   readonly #parts: PartShelfV1;
+  readonly #poseReplays: Readonly<Record<string, ScenePoseReplayV1>>;
+  #poseReplay: ScenePoseReplayV1 | null = null;
+  #poseSnapshot: RenderSnapshotV1 | null = null;
+  #acceptedPoseTimeMs: number | null = null;
+  #acceptedPoseSample: ScenePoseReplaySampleStatusV1 | null = null;
   #revision = 0;
   #frameIndex = 0;
   #disposed = false;
@@ -117,9 +231,10 @@ export class SceneSession {
     parts: PartShelfV1,
     options: SceneSessionOptionsV1,
   ) {
-    this.#scene = scene;
+    this.#scene = takeSceneForSessionInternal(scene);
     this.#recipes = recipes;
     this.#parts = parts;
+    this.#poseReplays = options.poseReplays ?? {};
     this.#edges = options.edges ?? true;
     this.#lit = options.lit ?? false;
     this.#wireframe = options.wireframe ?? false;
@@ -180,19 +295,22 @@ export class SceneSession {
   }
 
   get scene(): SceneV1 {
-    return this.#scene;
+    return this.#scene.schemaVersion === 'studio.scene/4'
+      ? copySceneV4Internal(this.#scene)
+      : this.#scene;
   }
 
   /** Swaps the scene — used by the editor as placements change. Redraws. */
   setScene(scene: SceneV1): void {
     this.#assertLive();
-    if (this.#scene === scene) return;
-    if (samePresentedPlacementsInternal(this.#scene, scene)) {
-      this.#acceptLightingOnly(scene);
+    const ownedScene = takeSceneForSessionInternal(scene);
+    if (this.#scene === ownedScene) return;
+    if (samePresentedPlacementsInternal(this.#scene, ownedScene)) {
+      this.#acceptLightingOnly(ownedScene);
     } else {
-      this.#accept({ scene });
+      this.#accept({ scene: ownedScene });
     }
-    this.#scene = scene;
+    this.#scene = ownedScene;
   }
 
   get edges(): boolean { return this.#edges; }
@@ -249,6 +367,7 @@ export class SceneSession {
    * lifecycle-unavailable result explicitly.
    */
   #frameAtInternal(nowMs: number): ThreePresentedManifestV1 {
+    this.#acceptPoseAtInternal(nowMs);
     const previousLightingTimeMs = this.#lighting.metrics().sampleTimeMs;
     this.#lighting.updateAt(nowMs, this.#camera, this.#width, this.#height);
     try {
@@ -311,7 +430,8 @@ export class SceneSession {
   /** Whether injected time can change either scene geometry or scene lighting. */
   hasMotion(): boolean {
     this.#assertLive();
-    return this.#lighting.metrics().movingLights > 0
+    return this.#poseReplay !== null
+      || this.#lighting.metrics().movingLights > 0
       || this.#runtime.metrics().animatedInstances > 0;
   }
 
@@ -332,6 +452,39 @@ export class SceneSession {
       rendererGeometries: metrics.rendererGeometries,
       rendererTextures: metrics.rendererTextures,
     });
+  }
+
+  /**
+   * Reports producer provenance and the latest replay sample accepted by the
+   * renderer. Returned nested arrays are copies, so inspection cannot alter
+   * future playback.
+   */
+  poseReplayStatus(): ScenePoseReplayStatusV1 | null {
+    this.#assertLive();
+    const replay = this.#poseReplay;
+    if (replay === null || this.#scene.schemaVersion !== 'studio.scene/4') return null;
+    return {
+      replayId: this.#scene.poseReplay.id,
+      sceneId: replay.sceneId,
+      durationMs: scenePoseReplayDurationMsV1(replay),
+      provenance: {
+        solver: { ...replay.provenance.solver },
+        fixedTimestepMs: replay.provenance.fixedTimestepMs,
+        gravity: [...replay.provenance.gravity],
+        inputHash: replay.provenance.inputHash,
+        finalHash: replay.provenance.finalHash,
+        lawLabels: [...replay.provenance.lawLabels],
+        capabilityLabels: [...replay.provenance.capabilityLabels],
+      },
+      sample: this.#acceptedPoseSample === null
+        ? null
+        : {
+            ...this.#acceptedPoseSample,
+            latestEvent: this.#acceptedPoseSample.latestEvent === null
+              ? null
+              : copyScenePoseReplayEventV1(this.#acceptedPoseSample.latestEvent),
+          },
+    };
   }
 
   dispose(): void {
@@ -390,6 +543,7 @@ export class SceneSession {
       },
       nextRevision,
     );
+    const poseReplay = this.#resolvePoseReplayInternal(candidateScene);
     const lighting = this.#lighting.prepare(candidateScene.lights ?? []);
     let result: ReturnType<ThreeRenderRuntime['acceptSnapshot']>;
     try {
@@ -409,6 +563,10 @@ export class SceneSession {
     this.#lighting.commit(lighting);
     this.#lighting.setIlluminationEnabled(next.lit ?? this.#lit);
     this.#revision = nextRevision;
+    this.#poseReplay = poseReplay;
+    this.#poseSnapshot = poseReplay === null ? null : snapshot;
+    this.#acceptedPoseTimeMs = null;
+    this.#acceptedPoseSample = null;
   }
 
   /**
@@ -427,6 +585,149 @@ export class SceneSession {
     const lighting = this.#lighting.prepare(scene.lights ?? []);
     this.#lighting.commit(lighting);
     this.#lighting.setIlluminationEnabled(this.#lit);
+  }
+
+  #resolvePoseReplayInternal(scene: SceneV1): ScenePoseReplayV1 | null {
+    if (scene.schemaVersion !== 'studio.scene/4') return null;
+    const replay = this.#poseReplays[scene.poseReplay.id];
+    if (replay === undefined) {
+      throw new Error(
+        `Scene '${scene.id}' references pose replay '${scene.poseReplay.id}', but its catalog did not `
+        + 'provide that replay. Add the immutable consumer trace to scenePoseReplays or remove the V4 scene.',
+      );
+    }
+    const issues = validateScenePoseReplayV1(replay);
+    if (issues.length > 0) {
+      throw new Error(
+        `Scene '${scene.id}' cannot use pose replay '${scene.poseReplay.id}': `
+        + issues.map((issue) => `${issue.path} ${issue.message}`).join('; '),
+      );
+    }
+    const ownedReplay = copyScenePoseReplayV1(replay);
+    if (ownedReplay.sceneId !== scene.id) {
+      throw new Error(
+        `Scene '${scene.id}' cannot use pose replay '${scene.poseReplay.id}' because the replay belongs `
+        + `to scene '${ownedReplay.sceneId}'. Regenerate the trace for the intended scene id.`,
+      );
+    }
+    const actualDurationMs = scenePoseReplayDurationMsV1(ownedReplay);
+    if (Math.abs(actualDurationMs - scene.poseReplay.durationMs) > 1e-6) {
+      throw new Error(
+        `Scene '${scene.id}' declares pose replay duration ${String(scene.poseReplay.durationMs)} ms, `
+        + `but '${scene.poseReplay.id}' contains ${String(actualDurationMs)} ms. Update the scene reference `
+        + 'and transport together so scrubbing cannot wrap at the wrong time.',
+      );
+    }
+    const placements = new Set(scene.placements.map(({ id }) => id));
+    const missing = ownedReplay.tracks
+      .map(({ placementId }) => placementId)
+      .filter((placementId) => !placements.has(placementId));
+    if (missing.length > 0) {
+      throw new Error(
+        `Scene '${scene.id}' cannot use pose replay '${scene.poseReplay.id}' because tracked placement`
+        + `${missing.length === 1 ? '' : 's'} ${missing.map((id) => `'${id}'`).join(', ')} `
+        + `${missing.length === 1 ? 'is' : 'are'} absent from the scene.`,
+      );
+    }
+    return ownedReplay;
+  }
+
+  #acceptPoseAtInternal(nowMs: number, allowResync = true): void {
+    const replay = this.#poseReplay;
+    const snapshot = this.#poseSnapshot;
+    if (replay === null || snapshot === null) return;
+    const sample = sampleValidatedScenePoseReplayV1(replay, nowMs);
+    if (sample.wrappedTimeMs === this.#acceptedPoseTimeMs) return;
+    const poses: ValidatedScenePlacementPoseMapV1 = new Map(
+      sample.placements.map((placement) => [
+        placement.placementId,
+        {
+          translation: placement.translation,
+          quaternion: placement.quaternion,
+        },
+      ]),
+    );
+    const nextRevision = this.#revision + 1;
+    const delta = buildScenePoseDeltaV1(snapshot, poses, nextRevision);
+    const result = this.#runtime.acceptDelta(delta);
+    if (result.status === 'resync-required') {
+      const replayId = this.#scene.schemaVersion === 'studio.scene/4'
+        ? this.#scene.poseReplay.id
+        : 'unknown';
+      if (!allowResync) {
+        throw new Error(
+          `Scene '${this.#scene.id}' pose replay '${replayId}' still requires renderer resync at `
+          + `${String(nowMs)} ms after one full snapshot retry: ${result.reason}. Expected `
+          + `${JSON.stringify(result.expected)}, received ${JSON.stringify(result.received)}. `
+          + 'No second automatic resync was attempted; recreate the scene session before retrying.',
+        );
+      }
+      this.#acceptPoseResyncSnapshotInternal(
+        replayId,
+        nowMs,
+        result.expected?.revision ?? null,
+      );
+      this.#acceptPoseAtInternal(nowMs, false);
+      return;
+    }
+    if (result.status !== 'accepted') {
+      throw new Error(
+        `The runtime rejected scene pose revision ${String(nextRevision)} at ${String(nowMs)} ms: `
+        + `${result.code} at ${result.path}. ${result.message}`,
+      );
+    }
+    this.#revision = nextRevision;
+    this.#poseSnapshot = { ...snapshot, revision: nextRevision };
+    this.#acceptedPoseTimeMs = sample.wrappedTimeMs;
+    const latestEvent = sample.eventsThroughTime.at(-1);
+    this.#acceptedPoseSample = {
+      wrappedTimeMs: sample.wrappedTimeMs,
+      frameA: sample.frameA,
+      frameB: sample.frameB,
+      alpha: sample.alpha,
+      latestEvent: latestEvent === undefined
+        ? null
+        : copyScenePoseReplayEventV1(latestEvent),
+    };
+  }
+
+  #acceptPoseResyncSnapshotInternal(
+    replayId: string,
+    nowMs: number,
+    runtimeRevision: number | null,
+  ): void {
+    const latestRevision = Math.max(this.#revision, runtimeRevision ?? this.#revision);
+    if (!Number.isSafeInteger(latestRevision) || latestRevision >= Number.MAX_SAFE_INTEGER) {
+      throw new Error(
+        `Scene '${this.#scene.id}' pose replay '${replayId}' cannot resync at ${String(nowMs)} ms `
+        + `because the runtime reported revision ${String(runtimeRevision)}, which leaves no safe next `
+        + 'integer revision. Recreate the scene session with a new world epoch.',
+      );
+    }
+    const nextRevision = latestRevision + 1;
+    const snapshot = buildSceneSnapshot(
+      this.#scene,
+      this.#recipes,
+      this.#parts,
+      {
+        edges: this.#edges,
+        lit: this.#lit,
+        wireframe: this.#wireframe,
+      },
+      nextRevision,
+    );
+    const result = this.#runtime.acceptSnapshot(snapshot);
+    if (result.status !== 'accepted') {
+      throw new Error(
+        `Scene '${this.#scene.id}' pose replay '${replayId}' requested a full renderer resync at `
+        + `${String(nowMs)} ms, but replacement snapshot revision ${String(nextRevision)} was rejected: `
+        + `${result.code} at ${result.path}. Recreate the scene session before retrying.`,
+      );
+    }
+    this.#revision = nextRevision;
+    this.#poseSnapshot = snapshot;
+    this.#acceptedPoseTimeMs = null;
+    this.#acceptedPoseSample = null;
   }
 
   #assertLive(): void {

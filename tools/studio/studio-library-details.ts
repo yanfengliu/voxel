@@ -174,6 +174,18 @@ function appendSceneDetails(
         : 'Disabled · scene held at its current time',
     );
   }
+  if (scene.schemaVersion === 'studio.scene/4') {
+    addFact(
+      facts,
+      'Replay',
+      `${scene.poseReplay.id} · ${(scene.poseReplay.durationMs / 1_000).toFixed(2)} s · consumer supplied`,
+    );
+    addFact(
+      facts,
+      'Editing',
+      'Read-only · change and regenerate the consumer replay at its source',
+    );
+  }
   addFact(facts, 'Schema', scene.schemaVersion);
   root.append(kind, title, facts);
 }

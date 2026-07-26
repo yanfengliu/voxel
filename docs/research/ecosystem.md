@@ -15,6 +15,7 @@ Reviewed: 2026-07-13. Re-check versions, activity, licenses, and browser support
 ## Verification toolchain provenance
 
 - `@playwright/test` `1.59.1` is locked from the npm registry, is Apache-2.0 licensed, and is used only for the headless real-WebGL lifecycle gate. Neither Playwright nor its downloaded browser is included in the package's `dist`-only tarball.
+- `@dimforge/rapier3d-compat` `0.19.3` is locked from the npm registry, is Apache-2.0 licensed, and is used only by the headless Machine Works consumer fixture to generate a committed pose replay. Its JS/WASM implementation is not imported by `src/` or included in the `dist`-only tarball.
 - `@types/node` `22.14.1` is locked from the npm registry's DefinitelyTyped package, is MIT licensed, and is used only to typecheck the Node-owned browser fixture server and configuration. It is not a runtime or packed dependency.
 - `package-lock.json` records the exact registry sources and integrity hashes. A dependency change must continue to pass both runtime-only and complete audits.
 

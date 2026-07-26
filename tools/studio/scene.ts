@@ -22,13 +22,16 @@ import { MAX_UNBOUNDED_CLUSTERED_POINT_LIGHTS_INTERNAL } from '../../src/three/c
  *
  * Plain data, like a model and a recipe: it must survive JSON, `structuredClone`,
  * and an IndexedDB round trip. V1 arranges models only. V2 adds bounded editable
- * point lights. V3 lets an individual light orbit deterministically; older
- * Studios reject newer behavior-bearing schemas instead of silently omitting
- * them.
+ * point lights. V3 lets an individual light orbit deterministically. V4 may
+ * reference an immutable pose replay supplied by the catalog's consumer; the
+ * scene stores only the bounded reference and duration, never solver state.
+ * Older Studios reject newer behavior-bearing schemas instead of silently
+ * omitting them.
  */
 export const VOXEL_SCENE_SCHEMA_V1 = 'studio.scene/1' as const;
 export const VOXEL_SCENE_SCHEMA_V2 = 'studio.scene/2' as const;
 export const VOXEL_SCENE_SCHEMA_V3 = 'studio.scene/3' as const;
+export const VOXEL_SCENE_SCHEMA_V4 = 'studio.scene/4' as const;
 
 /** How many placements a scene may hold; a hard ceiling, not a throughput promise. */
 const MAX_PLACEMENTS = 100_000;
@@ -40,6 +43,10 @@ export const MAX_SCENE_LIGHT_INTENSITY = 100_000;
 export const MAX_SCENE_LIGHT_RANGE = 1_000_000;
 /** One deterministic light orbit may take at most an hour. */
 export const MAX_SCENE_LIGHT_ORBIT_PERIOD_MS = 3_600_000;
+/** Replay lookup keys stay bounded before catalog resolution or diagnostic formatting. */
+export const MAX_SCENE_POSE_REPLAY_ID_LENGTH = 256;
+/** A replay may cover at most one hour before it wraps to its first immutable frame. */
+export const MAX_SCENE_POSE_REPLAY_DURATION_MS = 3_600_000;
 /** How far a placement may sit from the origin, in world units. */
 const MAX_COORD = 1_000_000;
 
@@ -100,6 +107,16 @@ export interface ScenePointLightV3 extends ScenePointLightV1 {
   readonly motion?: ScenePointLightOrbitMotionV1;
 }
 
+/**
+ * A catalog-owned replay reference. The referenced data is an authoritative
+ * consumer trace, not authored animation and not physics executed by Voxel.
+ */
+export interface ScenePoseReplayRefV1 {
+  readonly id: string;
+  /** Exact finite scrub/loop duration, which must match the resolved replay. */
+  readonly durationMs: number;
+}
+
 interface SceneFieldsV1 {
   readonly id: string;
   readonly label: string;
@@ -129,11 +146,21 @@ export interface SceneSchemaV3 extends SceneFieldsV1 {
 }
 
 /**
+ * A scene whose placement poses may be replayed from a consumer-generated
+ * physical trace. Voxel presents the trace; it does not solve or mutate it.
+ */
+export interface SceneSchemaV4 extends SceneFieldsV1 {
+  readonly schemaVersion: typeof VOXEL_SCENE_SCHEMA_V4;
+  readonly lights?: readonly ScenePointLightV3[];
+  readonly poseReplay: ScenePoseReplayRefV1;
+}
+
+/**
  * Stable Studio scene API input. Its document schema is discriminated so V1
  * and V2 catalogs remain valid while newer behavior cannot be silently read by
  * an older document schema.
  */
-export type SceneV1 = SceneSchemaV1 | SceneSchemaV2 | SceneSchemaV3;
+export type SceneV1 = SceneSchemaV1 | SceneSchemaV2 | SceneSchemaV3 | SceneSchemaV4;
 
 function isFiniteNumber(value: unknown): value is number {
   return typeof value === 'number' && Number.isFinite(value);
@@ -209,10 +236,12 @@ export function validateSceneV1(value: unknown): readonly GenomeIssueV1[] {
   const scene = value as Record<string, unknown>;
   if (scene.schemaVersion !== VOXEL_SCENE_SCHEMA_V1
     && scene.schemaVersion !== VOXEL_SCENE_SCHEMA_V2
-    && scene.schemaVersion !== VOXEL_SCENE_SCHEMA_V3) {
+    && scene.schemaVersion !== VOXEL_SCENE_SCHEMA_V3
+    && scene.schemaVersion !== VOXEL_SCENE_SCHEMA_V4) {
     return [{
       path: '$.schemaVersion',
-      message: `Expected ${VOXEL_SCENE_SCHEMA_V1}, ${VOXEL_SCENE_SCHEMA_V2}, or ${VOXEL_SCENE_SCHEMA_V3}; `
+      message: `Expected ${VOXEL_SCENE_SCHEMA_V1}, ${VOXEL_SCENE_SCHEMA_V2}, `
+        + `${VOXEL_SCENE_SCHEMA_V3}, or ${VOXEL_SCENE_SCHEMA_V4}; `
         + 'unknown versions need migration, never a silent misrender.',
     }];
   }
@@ -276,6 +305,51 @@ export function validateSceneV1(value: unknown): readonly GenomeIssueV1[] {
       });
     }
   });
+
+  const poseReplay: unknown = scene.poseReplay;
+  if (scene.schemaVersion !== VOXEL_SCENE_SCHEMA_V4) {
+    if (poseReplay !== undefined) {
+      issues.push({
+        path: '$.poseReplay',
+        message: `Pose replays require ${VOXEL_SCENE_SCHEMA_V4}; change schemaVersion so older Studios `
+          + 'reject the scene instead of silently presenting its placements as static.',
+      });
+    }
+  } else if (typeof poseReplay !== 'object' || poseReplay === null || Array.isArray(poseReplay)) {
+    issues.push({
+      path: '$.poseReplay',
+      message: 'Expected a consumer pose-replay reference with a non-empty id and finite durationMs.',
+    });
+  } else {
+    const replay = poseReplay as Record<string, unknown>;
+    for (const key of Object.keys(replay)) {
+      if (key !== 'id' && key !== 'durationMs') {
+        issues.push({
+          path: `$.poseReplay.${key}`,
+          message: `Unexpected pose-replay reference field '${key}'; allowed fields are id and durationMs.`,
+        });
+      }
+    }
+    if (typeof replay.id !== 'string'
+      || replay.id.length === 0
+      || replay.id.trim() !== replay.id
+      || replay.id.length > MAX_SCENE_POSE_REPLAY_ID_LENGTH) {
+      issues.push({
+        path: '$.poseReplay.id',
+        message: `Expected a non-empty, trimmed pose-replay id of at most `
+          + `${String(MAX_SCENE_POSE_REPLAY_ID_LENGTH)} characters.`,
+      });
+    }
+    if (!isFiniteNumber(replay.durationMs)
+      || replay.durationMs <= 0
+      || replay.durationMs > MAX_SCENE_POSE_REPLAY_DURATION_MS) {
+      issues.push({
+        path: '$.poseReplay.durationMs',
+        message: `Expected a finite replay duration greater than 0 and at most `
+          + `${String(MAX_SCENE_POSE_REPLAY_DURATION_MS)} milliseconds.`,
+      });
+    }
+  }
 
   const lights: unknown = scene.lights;
   if (scene.schemaVersion === VOXEL_SCENE_SCHEMA_V1) {
@@ -385,7 +459,8 @@ export function validateSceneV1(value: unknown): readonly GenomeIssueV1[] {
     }
     const motion: unknown = light.motion;
     if (motion === undefined) return;
-    if (scene.schemaVersion !== VOXEL_SCENE_SCHEMA_V3) {
+    if (scene.schemaVersion !== VOXEL_SCENE_SCHEMA_V3
+      && scene.schemaVersion !== VOXEL_SCENE_SCHEMA_V4) {
       issues.push({
         path: `${path}.motion`,
         message: `Orbiting point lights require ${VOXEL_SCENE_SCHEMA_V3}; change schemaVersion so older Studios `

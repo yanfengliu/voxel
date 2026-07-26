@@ -1,7 +1,14 @@
 import { spawn } from 'node:child_process';
 import { cp, mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { basename, delimiter, dirname, join, resolve as resolvePath } from 'node:path';
+import {
+  basename,
+  delimiter,
+  dirname,
+  join,
+  resolve as resolvePath,
+  sep,
+} from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const LOG_PREFIX = '[three-package]';
@@ -11,14 +18,6 @@ const THREE_TYPES_PACKAGE_ROOT = join(PROJECT_ROOT, 'node_modules', '@types', 't
 const TYPESCRIPT_CLI = join(PROJECT_ROOT, 'node_modules', 'typescript', 'bin', 'tsc');
 const EXPECTED_THREE_VERSION = '0.185.1';
 const EXPECTED_THREE_TYPES_VERSION = '0.185.0';
-const THREE_TYPES_DEPENDENCY_ROOTS = Object.freeze([
-  ['@dimforge/rapier3d-compat', join(PROJECT_ROOT, 'node_modules', '@dimforge', 'rapier3d-compat')],
-  ['@tweenjs/tween.js', join(PROJECT_ROOT, 'node_modules', '@tweenjs', 'tween.js')],
-  ['@types/stats.js', join(PROJECT_ROOT, 'node_modules', '@types', 'stats.js')],
-  ['@types/webxr', join(PROJECT_ROOT, 'node_modules', '@types', 'webxr')],
-  ['fflate', join(PROJECT_ROOT, 'node_modules', 'fflate')],
-  ['meshoptimizer', join(PROJECT_ROOT, 'node_modules', 'meshoptimizer')],
-]);
 const OFFLINE_NPM_ENVIRONMENT = {
   ...process.env,
   npm_config_audit: 'false',
@@ -134,6 +133,37 @@ async function assertPathMissing(path, description) {
   }
 
   throw new Error(`${description} unexpectedly exists at ${path}`);
+}
+
+async function resolveInstalledDependencyRoot(packageRoot, dependencyName) {
+  const normalizedRoot = resolvePath(packageRoot);
+  const normalizedProjectRoot = resolvePath(PROJECT_ROOT);
+  if (normalizedRoot !== normalizedProjectRoot
+    && !normalizedRoot.startsWith(`${normalizedProjectRoot}${sep}`)) {
+    throw new Error(
+      `Cannot resolve installed dependency '${dependencyName}' from '${packageRoot}': `
+      + `the package root is outside project root '${PROJECT_ROOT}'.`,
+    );
+  }
+  const segments = dependencyName.split('/');
+  let searchRoot = normalizedRoot;
+  while (true) {
+    const candidate = join(searchRoot, 'node_modules', ...segments);
+    if (await isFile(join(candidate, 'package.json'))) return candidate;
+    if (searchRoot === normalizedProjectRoot) break;
+    const parent = dirname(searchRoot);
+    if (parent === searchRoot
+      || (parent !== normalizedProjectRoot
+        && !parent.startsWith(`${normalizedProjectRoot}${sep}`))) {
+      break;
+    }
+    searchRoot = parent;
+  }
+  throw new Error(
+    `Cannot pack @types/three dependency '${dependencyName}': no installed package was found `
+    + `from '${THREE_TYPES_PACKAGE_ROOT}' through project root '${PROJECT_ROOT}'. `
+    + 'Run npm install from the lockfile before retrying the offline package gate.',
+  );
 }
 
 function parsePackedTarball(stdout, packDirectory, description) {
@@ -271,13 +301,20 @@ async function verifyThreePackage(temporaryRoot) {
     'Three.js declarations',
     stagingDirectory,
   );
+  const threeTypesManifest = JSON.parse(
+    await readFile(join(THREE_TYPES_PACKAGE_ROOT, 'package.json'), 'utf8'),
+  );
   const threeTypesDependencyTarballs = [];
-  for (const [description, packageRoot] of THREE_TYPES_DEPENDENCY_ROOTS) {
+  for (const dependencyName of Object.keys(threeTypesManifest.dependencies ?? {}).sort()) {
+    const packageRoot = await resolveInstalledDependencyRoot(
+      THREE_TYPES_PACKAGE_ROOT,
+      dependencyName,
+    );
     threeTypesDependencyTarballs.push(await packPackage(
       packageRoot,
       packDirectory,
       npmEnvironment,
-      description,
+      dependencyName,
       stagingDirectory,
     ));
   }

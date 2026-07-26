@@ -1,6 +1,6 @@
 # Supply chain and artifact record
 
-Status: recorded 2026-07-15 against `voxel@0.1.4`.
+Status: updated 2026-07-26 against `voxel@1.0.0`.
 
 This is the E-05 record: what this package redistributes, under what terms, and
 which checks hold each claim. Every figure here is produced by
@@ -36,12 +36,11 @@ asset is not automatically appropriate for a reusable engine package; if one is
 ever imported, its source, version, license, and redistribution terms belong in
 this document before it ships.
 
-Development dependencies are MIT or Apache-2.0 and are not redistributed. The
-gate checks each declared license against an allowed permissive set and fails on
-an unknown or non-permissive one.
+Development dependencies are MIT or Apache-2.0 and are not redistributed. The gate checks each declared license against an allowed permissive set and fails on an unknown or non-permissive one. `@dimforge/rapier3d-compat` is used only by the headless Machine Works consumer fixture to generate a committed numeric pose replay; `src/`, `dist`, and the package tarball do not import or include its JS/WASM implementation. Its source is the npm registry package locked at `0.19.3`, its declared license is Apache-2.0, the lockfile records registry integrity, and the generation test pins the trace byte-for-byte with SHA-256 input and final hashes.
 
 | Dependency | Version | License |
 | --- | --- | --- |
+| `@dimforge/rapier3d-compat` | 0.19.3 | Apache-2.0 |
 | `@eslint/js` | 10.0.1 | MIT |
 | `@playwright/test` | 1.59.1 | Apache-2.0 |
 | `@types/node` | 22.14.1 | MIT |
@@ -58,8 +57,7 @@ an unknown or non-permissive one.
 
 ## Audits
 
-Both audits npm supports run on every `verify`, and both report zero findings at
-`voxel@0.1.4`:
+Both audits npm supports run on every `verify`, and both reported zero findings on 2026-07-26 at `voxel@1.0.0`:
 
 - **runtime-only** (`npm audit --omit=dev`) — the surface a consumer actually
   installs. With no runtime dependencies this is necessarily empty, which is the
@@ -99,15 +97,12 @@ inspection, not a second implementation of it:
 npm run test:supply-chain
 ```
 
-Expected output at `voxel@0.1.4`:
+Expected output at `voxel@1.0.0`:
 
 ```
 [supply-chain] 0 runtime dependencies; @types/three and three optional peers;
-13 dev dependencies all permissively licensed; runtime-only audit 0 findings,
+14 dev dependencies all permissively licensed; runtime-only audit 0 findings,
 full audit 0 findings, none high or critical
 ```
 
-Re-run before any release candidate. The audit result is a claim about a moment
-in time: advisories are published against versions that have not changed, so a
-green audit at `0.1.4` says nothing about the same tree next month, which is why
-this runs in `verify` rather than being recorded here once.
+Re-run before any release candidate. The audit result is a claim about a moment in time: advisories are published against versions that have not changed, so a green audit at `1.0.0` says nothing about the same tree next month, which is why this runs in `verify` rather than being recorded here once.

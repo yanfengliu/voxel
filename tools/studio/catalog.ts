@@ -1,6 +1,10 @@
 import { addPaletteColor, createEmptyModel, setMotion, setVoxel } from './edit.js';
 import { createHouseholdPhysicalBook } from './household-physical-assets.js';
 import {
+  MACHINE_WORKS_POSE_REPLAY,
+  MACHINE_WORKS_POSE_REPLAY_ID,
+} from './generated-machine-works-replay.js';
+import {
   ARCH_VOID_CONTRAST_RECIPES,
   ASYMMETRIC_HYBRID_CONTRAST_RECIPES,
   BRANCHING_ORGANIC_CONTRAST_RECIPES,
@@ -10,10 +14,12 @@ import {
   type CuratedContrastRecipeV1,
 } from './contrast-recipes.js';
 import type { StudioModelV1 } from './model.js';
+import { createMachineWorksPhysicalBook } from './machine-works-physical-assets.js';
 import { createStudioParts } from './parts.js';
 import type { PhysicalAssetBookV1 } from './physical-asset.js';
 import { buildRecipe, type PartShelfV1, type RecipeBookV1, type RecipeV1 } from './recipe.js';
 import type { SceneV1 } from './scene.js';
+import type { ScenePoseReplayV1 } from './scene-pose-replay.js';
 import { createStudioScenes } from './scenes.js';
 import {
   createBrickCottageRecipe,
@@ -45,6 +51,13 @@ import {
   createHouseRoofRecipe,
   createHouseShellRecipe,
   createLightingReceiverRecipe,
+  createMachineWorksCollectionBucketRecipe,
+  createMachineWorksInsertionHeadRecipe,
+  createMachineWorksProductBaseRecipe,
+  createMachineWorksProductCapRecipe,
+  createMachineWorksProductCoreRecipe,
+  createMachineWorksRailFoundationRecipe,
+  createMachineWorksTransferCarriageRecipe,
   createMadeBedRecipe,
   createMattressRecipe,
   createNightstandRecipe,
@@ -123,6 +136,11 @@ export interface StudioCatalogV1 {
    * a game earns them as it composes its models, and needs none to start.
    */
   readonly scenes?: readonly SceneV1[];
+  /**
+   * Immutable pose observations produced outside Voxel and referenced by
+   * scene id. Studio may present them; it does not advance their solver.
+   */
+  readonly scenePoseReplays?: Readonly<Record<string, ScenePoseReplayV1>>;
 }
 
 /** A small model that is obviously a model, so the studio never opens on noise. */
@@ -231,6 +249,10 @@ function recipeEntry(
 const bedroomEntry = (make: () => RecipeV1): ShelfModelV1 =>
   recipeEntry(make, { physical: createHouseholdPhysicalBook });
 
+/** Machine Works entries expose the exact declarations consumed by the fixture adapter. */
+const machineWorksEntry = (make: () => RecipeV1): ShelfModelV1 =>
+  recipeEntry(make, { physical: createMachineWorksPhysicalBook });
+
 /** Promoted contrast recipes keep their curatorial metadata beside RecipeV1;
  * the ordinary shelf consumes only the persisted recipe contract. */
 const contrastEntries = (
@@ -276,6 +298,21 @@ export function createStudioCatalog(): StudioCatalogV1 {
       {
         name: 'Contrast: asymmetric hybrids',
         models: contrastEntries(ASYMMETRIC_HYBRID_CONTRAST_RECIPES),
+      },
+      {
+        // Static, reusable pieces from the consumer-owned Machine Works
+        // assembly trace. The scene gives them process semantics; each recipe
+        // remains independently inspectable and reusable here.
+        name: 'Machine Works',
+        models: [
+          machineWorksEntry(createMachineWorksRailFoundationRecipe),
+          machineWorksEntry(createMachineWorksCollectionBucketRecipe),
+          machineWorksEntry(createMachineWorksTransferCarriageRecipe),
+          machineWorksEntry(createMachineWorksInsertionHeadRecipe),
+          machineWorksEntry(createMachineWorksProductBaseRecipe),
+          machineWorksEntry(createMachineWorksProductCoreRecipe),
+          machineWorksEntry(createMachineWorksProductCapRecipe),
+        ],
       },
       {
         name: 'Walls',
@@ -395,5 +432,8 @@ export function createStudioCatalog(): StudioCatalogV1 {
     // Example scenes: the shelf's own models arranged together, so the scene
     // view opens on something real rather than an empty world.
     scenes: createStudioScenes(),
+    scenePoseReplays: {
+      [MACHINE_WORKS_POSE_REPLAY_ID]: MACHINE_WORKS_POSE_REPLAY,
+    },
   };
 }

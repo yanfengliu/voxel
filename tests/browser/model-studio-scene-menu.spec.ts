@@ -257,7 +257,11 @@ test('deleting the last scene shown behind model mode retires its renderer conte
   });
 
   expect(evidence.acceptedIds).toContain('studio:scene:retired-renderer');
-  expect(evidence.modelDraw).toEqual({ sceneLighting: null, sceneRender: null });
+  expect(evidence.modelDraw).toEqual({
+    sceneLighting: null,
+    scenePoseReplay: null,
+    sceneRender: null,
+  });
   expect(evidence.listed).toBe(false);
   expect(evidence.reopened).toBe('studio:scene:village');
 });

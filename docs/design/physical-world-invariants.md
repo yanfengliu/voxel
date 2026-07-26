@@ -1,12 +1,6 @@
 # Physical world invariants
 
-Status: accepted design direction on 2026-07-20. Exact recipe-occurrence
-occupancy is implemented in Model Studio, and so is authoring-time physical
-data: versioned `PhysicalAssetV1` sidecars beside saved recipes, validated
-and compiled into distinct per-occurrence bodies, colliders, joints, and
-ports ([design](../superpowers/specs/2026-07-21-physical-asset-sidecar-design.md)).
-Runtime collision response, rigid bodies, forces, and joints are not
-implemented in Voxel; the compiled data has no solver behind it.
+Status: accepted design direction on 2026-07-20. Exact recipe-occurrence occupancy is implemented in Model Studio, and so is authoring-time physical data: versioned `PhysicalAssetV1` sidecars beside saved recipes, validated and compiled into distinct per-occurrence bodies, colliders, joints, and ports ([design](../superpowers/specs/2026-07-21-physical-asset-sidecar-design.md)). Runtime collision response, rigid bodies, forces, and joints are not implemented in Voxel; the compiled data has no solver behind it.
 
 ## Outcome
 
@@ -169,10 +163,9 @@ cover [rigid bodies and continuous collision detection][rapier-bodies],
 [overlap and shape-cast queries][rapier-queries], and [deterministic WASM
 execution under controlled inputs and ordering][rapier-determinism].
 
-No dependency is added by this design. A spike must first prove the narrow
-adapter, license and supply-chain gates, browser lifecycle, fixed-step replay,
-performance, and teardown. Solver objects stay private behind that adapter;
-public snapshots remain bounded structured data.
+`@dimforge/rapier3d-compat` `0.19.3` is now pinned as a development-only dependency for the headless `fixtures/machine-works-consumer` proof. It generates an 18-second fixed-step trace from dynamic and kinematic rigid bodies, compound colliders, fixed joints, gravity, friction, restitution, continuous collision detection, contact manifolds, and bucket containment; the committed replay carries input/output hashes and exact assembly, release, contact, and collection evidence. Rapier is not imported by `src/`, emitted into `dist`, or made authoritative by Studio.
+
+The private `studio.scene/4` lane resolves that committed trace from the catalog, validates it once, samples supplied poses at injected time, and projects them into ordinary `patch-batch-instances` deltas. Voxel still performs no integration, collision response, attachment decision, or feedback from presented animation to the fixture. This proves a bounded consumer-to-renderer seam, not a reusable simulation package, arbitrary-world physics, rollback, persistence, picking parity, or every item in the required-evidence list below.
 
 [rapier-bodies]: https://rapier.rs/docs/user_guides/javascript/rigid_bodies/
 [rapier-colliders]: https://rapier.rs/docs/user_guides/javascript/colliders/
@@ -189,14 +182,10 @@ public snapshots remain bounded structured data.
    placement rejects without mutation. Delivered: the sidecar schema,
    validation, per-occurrence compile, the bedroom worked example, and the
    viewer's collider-and-port outline toggle with browser evidence.
-3. Build a headless static-placement kernel in one consumer: exact overlap,
-   swept moves, sensors, atomic rollback, and stable conflict diagnostics.
-4. Spike Rapier behind a narrow adapter for dynamic and compound bodies,
-   gravity, contact, friction, sleeping, and continuous collision detection.
-5. Add fixed, revolute, and prismatic constraints. Use a hinged door, sliding
-   drawer, and four-wheel serving cart as generic fixtures.
-6. Project solver poses into ordinary Voxel instance matrices. Prove exact-tick
-   pose parity, interpolation isolation, presented picking parity, and replay.
+3. Build a headless static-placement kernel in one consumer: exact overlap, swept moves, sensors, atomic rollback, and stable conflict diagnostics. Not delivered by the Machine Works fixture.
+4. Spike Rapier behind a narrow adapter for dynamic and compound bodies, gravity, contact, friction, sleeping, and continuous collision detection. The single-purpose Machine Works consumer now has a fixture-local exact-sidecar adapter and exception-safe world/event-queue cleanup; its repeated resource-stability and failure-injection teardown proof, a public or production consumer adapter, and browser lifecycle/performance proof remain.
+5. Add fixed, revolute, and prismatic constraints. Use a hinged door, sliding drawer, and four-wheel serving cart as generic fixtures. Machine Works uses fixed joints only; the generic constraint set remains.
+6. Project solver poses into ordinary Voxel instance matrices. Prove exact-tick pose parity, interpolation isolation, presented picking parity, and replay. Private Studio pose replay and sparse-delta projection are delivered; presented picking parity and a production consumer adapter remain.
 7. Harden lifecycle, snapshot/restore, deterministic replay, worker teardown,
    soak behavior, and measured browser performance.
 8. Extract a shared simulation package only after a second consumer validates

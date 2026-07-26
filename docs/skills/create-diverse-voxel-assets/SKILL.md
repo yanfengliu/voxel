@@ -68,7 +68,9 @@ Start with a relationship graph and a spatial story, then place models. Give eac
 
 Align connection points, routes, elevations, clearances, focal hierarchy, and flow direction. Use contextual terrain, water, roads, rooms, or boundaries when they are necessary to make the relationship readable.
 
-If the current authoring schema cannot express the promised interaction, either build an honest composite, move behavior to the game-owned simulation and adapter, or rename the result as a study. Never imply a working system that is only co-located specimens.
+If the current authoring schema cannot express the promised interaction, either build an honest composite, move behavior to the game-owned simulation and adapter, record a deterministic consumer trace that the renderer only observes, or rename the result as a study. Never imply a working system that is only co-located specimens, and never fabricate contact or completion events from visual proximity.
+
+For physics-backed system scenes, the visual recipe, physical sidecar, consumer adapter, solver trace, and replay presentation must form one evidence chain. Reusing exact sidecars, validating named mating frames, keeping visible and physical supports synchronized, hashing every solver input, and making unsupported replay editing explicitly read-only are promotion requirements, not optional polish.
 
 ### 7. Promote deliberately
 

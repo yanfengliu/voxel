@@ -781,7 +781,11 @@ test('camera toggles keep one scene renderer and clustered allocation stable', a
   expect(evidence.rebuilds.map((sample) => sample.deleted))
     .toEqual(Array.from({ length: 6 }, () => evidence.opened.deleted));
   expect(evidence.afterDelete.deleted).toBeGreaterThan(evidence.beforeDelete.deleted);
-  expect(evidence.modelDrawMetrics).toEqual({ sceneLighting: null, sceneRender: null });
+  expect(evidence.modelDrawMetrics).toEqual({
+    sceneLighting: null,
+    scenePoseReplay: null,
+    sceneRender: null,
+  });
   // Deletion retires the scene into the existing renderer. The first
   // texture-free reopen may lazily initialize one Three internal texture; once
   // warm, repeated scene open/delete cycles must allocate nothing further.

@@ -61,6 +61,18 @@ Use a composite recipe when several pieces are one authored asset and the recipe
 
 Use the downstream game's simulation and adapter for gates, production, traffic, combat, water state, damage, pathing, triggers, or other gameplay behavior. The renderer presents state; it does not become authoritative simulation.
 
+For a deterministic physics demonstration, keep the solver in a consumer fixture or game and make the render lane observational:
+
+1. Author reusable visual recipes plus explicit bodies, solid/sensor colliders, and attachment ports without claiming that declarations themselves simulate.
+2. Make one consumer adapter read those same sidecars into the solver. Add drift tests from recipe voxels to sidecar compounds and from sidecar bodies, shapes, materials, CCD, sensors, and ports to solver objects; a second hard-coded proxy geometry defeats the proof.
+3. Define every cross-asset action as a rule with evidence. For attachment, name the two ports and require position, orientation, relative-speed, and dwell tolerances before changing membership. For release, move or remove the physical support exactly when and how its visible counterpart moves; never leave a solid render shape collisionless or an invisible collider supporting it.
+4. Advance a pinned solver at a fixed timestep from versioned inputs and stable creation order. Hash the complete canonical input: sidecars, scale, body order, trajectories, joints, contact flags, materials, sleep/CCD choices, merge/release rules, thresholds, and event criteria.
+5. Record exact poses, velocities, attachment state, causal events, solver/version/gravity metadata, and input/final hashes. Derive positive contact evidence from an active solver manifold and collection from the declared sensor or containment rule, with any solver tolerance explicit and hashed; never add a marker merely because the visual looks close.
+6. Validate and defensively own the complete trace once, then project sampled poses through the renderer's ordinary revisioned snapshot or delta path. Give replay poses explicit precedence over procedural animation. If presented-pose picking and editing are not implemented, make the replay scene read-only instead of exposing stale authored interactions.
+7. Test event order, port-relative transforms, support contact and clearance, gravity/contact behavior, containment at and around the declared tolerance boundary, repeated byte-identical generation, resynchronization, trace-to-render identity, teardown, and a real-browser phase sequence including the discrete reset. State which laws and shapes are exercised and which are not.
+
+The built-in Machine Works fixture is the narrow reference: exact sidecars drive one fixture-local Rapier adapter, named ports gate compound attachment, a colliding servo carriage visibly tips away, and positive manifold contact plus the declared bucket sensor and hashed 0.05-unit solver tolerance gate collection. It is evidence for that path, not a general simulation API or permission to say “all physics laws.”
+
 If the available authoring schema can only co-locate models, describe the artifact as a static study. Do not imply mechanical or causal interaction in its name or summary.
 
 ## Review the scene

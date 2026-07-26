@@ -34,7 +34,8 @@ import {
 import { createPhysicalOverlayView } from './physical-overlay-view.js';
 import { StudioPlayer } from './player.js';
 import { referenceGridSegmentsV1, sceneReferenceGridSegmentsV1 } from './reference-grid.js';
-import type { SceneV1 } from './scene.js';
+import type { ScenePoseReplayEventV1 } from './scene-pose-replay.js';
+import { VOXEL_SCENE_SCHEMA_V4, type SceneV1 } from './scene.js';
 import { sceneMotionWindowMsV1 } from './scene-motion.js';
 import { clampSceneViewV1 } from './scene-orbit.js';
 import { createSceneWorkspace } from './scene-workspace.js';
@@ -47,7 +48,7 @@ import {
   boxEdgesV1, groundHitV1, pickPlacementV1, placementWorldBoxesV1,
   type PlacementBoxV1, type RayV1,
 } from './scene-pick.js';
-import { SceneSession } from './scene-session.js';
+import { SceneSession, type ScenePoseReplayStatusV1 } from './scene-session.js';
 import { catalogPartsV1, catalogRecipesV1 } from './studio-library.js';
 import { createWireframeView } from './wireframe-view.js';
 import { cellSubsetOutlineSegmentsV1, modelWireframeSegmentsV1 } from './wireframe.js';
@@ -190,6 +191,55 @@ function describeVoxelSize(voxelSize: number, size: readonly [number, number, nu
   return `${num(voxelSize)} per voxel · ${num(sx * voxelSize)} × ${num(sy * voxelSize)} × ${num(sz * voxelSize)} units`;
 }
 
+function isConsumerReplayScene(scene: SceneV1 | null): boolean {
+  return scene?.schemaVersion === VOXEL_SCENE_SCHEMA_V4;
+}
+
+function replayEventStatusSuffix(event: ScenePoseReplayEventV1): string {
+  const when = `${(event.timeMs / 1_000).toFixed(2)} s`;
+  switch (event.type) {
+    case 'assembled':
+      return `assembled ${when} · ${String(event.memberPlacementIds.length)} members`;
+    case 'released':
+      return `released ${when} · ${String(event.remainingMemberPlacementIds.length)} remain`;
+    case 'contact':
+      return `contact ${when} · impulse ${event.normalImpulse.toFixed(2)}`;
+    case 'collected':
+      return `collected ${when} · ${event.collectorPlacementId}`;
+  }
+}
+
+function replayEventEvidence(event: ScenePoseReplayEventV1): string {
+  const common = `latest event ${event.id}; primary ${event.placementId}; `
+    + `time ${String(event.timeMs)} ms`;
+  switch (event.type) {
+    case 'assembled':
+      return `${common}; assembly ${event.assemblyId}; members `
+        + `[${event.memberPlacementIds.join(', ')}]`;
+    case 'released':
+      return `${common}; assembly ${event.assemblyId}; remaining members `
+        + `[${event.remainingMemberPlacementIds.join(', ')}]`;
+    case 'contact':
+      return `${common}; other ${event.otherPlacementId}; `
+        + `point [${event.point.join(', ')}]; normal [${event.normal.join(', ')}]; `
+        + `normal impulse ${String(event.normalImpulse)}`;
+    case 'collected':
+      return `${common}; collector ${event.collectorPlacementId}`;
+  }
+}
+
+function replaySceneEditError(scene: SceneV1, action: string): Error {
+  const replayId = scene.schemaVersion === VOXEL_SCENE_SCHEMA_V4
+    ? scene.poseReplay.id
+    : 'unknown';
+  return new Error(
+    `Scene '${scene.id}' is driven by consumer pose replay '${replayId}' and is read-only in Studio; `
+    + `${action} would diverge authored scene data or selection from the recorded poses. `
+    + 'Play or scrub the replay to inspect it, delete the scene from its library menu if it is no longer wanted, '
+    + 'or update the consumer simulation or trace source and regenerate the replay to change the assembly.',
+  );
+}
+
 export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
   const root = options.root ?? document.getElementById('studio');
   if (!root) throw new Error('The studio needs a #studio host element.');
@@ -277,6 +327,8 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
   // and a drag moves it, so the hint speaks to that instead of pinning.
   const sceneStageHint = 'click a model to select · drag it to move · '
     + 'middle-drag to turn · right-drag to pan · scroll to zoom';
+  const replaySceneStageHint = 'drag to turn · right-drag to pan · scroll to zoom · '
+    + 'play or scrub the consumer replay';
   stageHint.textContent = modelStageHint;
   // Exactly one of the two looks is ever true, so the control is one switch
   // with two sides rather than two buttons that could both look pressed: the
@@ -421,15 +473,22 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
   };
   const sceneBuildNote = sceneNote('A scene is placed, not built step by step. '
     + 'Add and arrange its models in the Edit tab.');
-  const sceneMotionNote = sceneNote('Animated models and moving point-light sources share the scene animation control. '
-    + 'Lighting changes illumination, not movement. Other scene-wide fields — wind that waves trees or water that ripples — are the next step.');
+  const sceneMotionNote = sceneNote('Animated models, consumer pose replays, and moving point-light sources share the scene animation control. '
+    + 'Lighting changes illumination, not movement. A replay presents supplied poses; Voxel does not advance its solver.');
   const sceneNotesNote = sceneNote('Notes pin to one model. Open a model from the shelf to leave notes on it.');
+  const sceneReplayReadOnlyNote = sceneNote(
+    'This scene is driven by a consumer-supplied pose replay and is read-only in Studio. '
+    + 'Play or scrub to inspect recorded poses, use the look and camera controls to examine them, '
+    + 'or delete the scene from its library menu. To change the assembly, update the consumer simulation '
+    + 'or trace source and regenerate the replay.',
+  );
   // A scene's tab content sits as an opaque overlay over each model-only tab,
   // shown while a scene is open — so the model's own content underneath keeps
   // its visibility and is simply covered, never toggled out from under itself.
   const sceneInspectorPanels: HTMLElement[] = [];
   // The tab buttons a scene does not use — Build, Motion, Notes — hidden while a
-  // scene is open, so the inspector shows only Examine and the scene editor.
+  // scene is open, so the inspector shows only Examine and either the scene
+  // editor or a replay's explicit read-only boundary.
   let sceneHiddenTabs: HTMLElement[] = [];
   function setInspectorSceneMode(on: boolean): void {
     for (const content of sceneInspectorPanels) content.hidden = !on;
@@ -611,6 +670,8 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
       sceneOpen === null ? null : (sceneSession?.lightingMetrics() ?? null),
     sceneRenderMetrics: () =>
       sceneOpen === null ? null : (sceneSession?.renderMetrics() ?? null),
+    scenePoseReplayStatus: (): ScenePoseReplayStatusV1 | null =>
+      sceneOpen === null ? null : (sceneSession?.poseReplayStatus() ?? null),
     notesChanged() {
       notesPanel.renderNotes();
       playerBar.renderDots();
@@ -827,6 +888,7 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
       sceneSession.showAt(timeMs);
       lastShownMs = timeMs;
       playerBar.showSceneTime(timeMs);
+      syncSceneStatus(sceneOpen);
       drawSceneOverlays();
       return;
     }
@@ -975,6 +1037,9 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
         candidateSession = new SceneSession(scene, sceneRecipes, sceneParts, {
           canvas: sceneCanvas, width: viewW, height: viewH, camera,
           edges: session.edges, lit: session.lit, wireframe: false,
+          ...(catalog.scenePoseReplays === undefined
+            ? {}
+            : { poseReplays: catalog.scenePoseReplays }),
         });
         createdCandidate = true;
       } else {
@@ -1159,6 +1224,30 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
    * single model owns. The model's own overlays and tools stay hidden while a
    * scene shows.
    */
+  function syncSceneStatus(scene: SceneV1): void {
+    const count = scene.placements.length;
+    const lightCount = scene.lights?.length ?? 0;
+    const hasMotion = sceneSession?.hasMotion() === true;
+    const replayReadOnly = isConsumerReplayScene(scene);
+    const replay = replayReadOnly ? sceneSession?.poseReplayStatus() : null;
+    const latest = replay?.sample?.latestEvent;
+    const replaySuffix = replayReadOnly
+      ? latest === undefined || latest === null
+        ? ' · replay staged'
+        : ` · ${replayEventStatusSuffix(latest)}`
+      : '';
+    statusChip.textContent = `scene · ${String(count)} model${count === 1 ? '' : 's'}`
+      + sceneLightingStatusSuffix(lightCount, session.lit)
+      + sceneAnimationStatusSuffix(hasMotion, sceneTransport.enabled)
+      + (replayReadOnly ? ' · consumer replay · read-only' : '')
+      + replaySuffix;
+    statusChip.title = replay === null || replay === undefined
+      ? ''
+      : `${replay.provenance.solver.name} ${replay.provenance.solver.version}; `
+        + `input ${replay.provenance.inputHash}; final ${replay.provenance.finalHash}`
+        + (latest === undefined || latest === null ? '' : `; ${replayEventEvidence(latest)}`);
+  }
+
   function refreshScene(scene: SceneV1): void {
     playerBar.setSceneMode(true);
     // Moment notes belong to the underlying model. Clear their stage marks as
@@ -1168,10 +1257,13 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
     const count = scene.placements.length;
     const lightCount = scene.lights?.length ?? 0;
     const hasMotion = sceneSession?.hasMotion() === true;
+    const replayReadOnly = isConsumerReplayScene(scene);
+    if (replayReadOnly) {
+      selectedPlacementId = null;
+      sceneEditor.clearLightSelection();
+    }
     modelName.textContent = scene.label;
-    statusChip.textContent = `scene · ${String(count)} model${count === 1 ? '' : 's'}`
-      + sceneLightingStatusSuffix(lightCount, session.lit)
-      + sceneAnimationStatusSuffix(hasMotion, sceneTransport.enabled);
+    syncSceneStatus(scene);
     lookSwitch.dataset.side = session.edges ? 'left' : 'right';
     lookSwitch.setAttribute('aria-checked', String(session.edges));
     edgesSide.classList.toggle('on', session.edges);
@@ -1185,10 +1277,16 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
     wireframeToggle.hidden = true;
     gridToggle.hidden = true;
     physToggle.hidden = true;
-    snapToggle.hidden = false;
+    snapToggle.hidden = replayReadOnly;
     snapToggle.classList.toggle('on', snapOn);
     stageHint.textContent = sceneAnimationStageHint(
-      sceneLightingStageHint(sceneStageHint, lightCount, session.lit), hasMotion, sceneTransport.enabled,
+      sceneLightingStageHint(
+        replayReadOnly ? replaySceneStageHint : sceneStageHint,
+        lightCount,
+        session.lit,
+      ),
+      hasMotion,
+      sceneTransport.enabled,
     );
     wireframeView.setVisible(false);
     physicalView.setVisible(false);
@@ -1231,7 +1329,9 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
     // The model-only tabs show the scene's own content, and the top-bar commands
     // that make or note a single model step aside.
     setInspectorSceneMode(true);
-    sceneEditor.render(scene, selectedPlacementId);
+    sceneEditor.element.hidden = replayReadOnly;
+    sceneReplayReadOnlyNote.hidden = !replayReadOnly;
+    if (!replayReadOnly) sceneEditor.render(scene, selectedPlacementId);
     newButton.hidden = true;
     copyButton.hidden = true;
     requestShortcut.hidden = true;
@@ -1320,7 +1420,9 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
   // the ground; in model mode, turn the view, and a clean click pins a note.
   // Middle button turns the view; right button pans it; wheel zooms.
   function recomputeSceneBoxes(): void {
-    sceneBoxes = sceneOpen ? placementWorldBoxesV1(sceneOpen, sceneRecipes, sceneParts) : [];
+    sceneBoxes = sceneOpen !== null && !isConsumerReplayScene(sceneOpen)
+      ? placementWorldBoxesV1(sceneOpen, sceneRecipes, sceneParts)
+      : [];
   }
   function showSelection(): void {
     const box = sceneBoxes.find((candidate) => candidate.id === selectedPlacementId);
@@ -1341,6 +1443,17 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
    */
   function selectPlacement(id: string | null): void {
     sceneEditor.clearLightSelection();
+    if (sceneOpen !== null && isConsumerReplayScene(sceneOpen)) {
+      selectedPlacementId = null;
+      showSelection();
+      if (id !== null) {
+        throw replaySceneEditError(
+          sceneOpen,
+          `selecting authored placement '${id}'`,
+        );
+      }
+      return;
+    }
     if (id === selectedPlacementId) return;
     selectedPlacementId = id;
     showSelection();
@@ -1371,6 +1484,13 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
     if (previous === null || activeSession === null) {
       throw new Error(
         `Scene '${next.id}' cannot be edited because no rendered scene is open; open it before editing.`,
+      );
+    }
+    if (isConsumerReplayScene(previous) || isConsumerReplayScene(next)) {
+      const replayScene = previous.schemaVersion === VOXEL_SCENE_SCHEMA_V4 ? previous : next;
+      throw replaySceneEditError(
+        replayScene,
+        `editing it as scene '${next.id}'`,
       );
     }
     const previousHadMotion = activeSession.hasMotion();
@@ -1517,6 +1637,11 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
     if (event.button === 2) { gesture = 'pan'; return; }
     if (event.button !== 0) { gesture = 'none'; return; }
     if (!sceneOpen) { gesture = 'orbit'; return; }
+    // Replayed transforms are presented observations, while authored placement
+    // boxes describe only the trace's static source. Picking or moving those
+    // boxes would select stale geometry, so every left drag remains a camera
+    // orbit in this read-only view.
+    if (isConsumerReplayScene(sceneOpen)) { gesture = 'orbit'; return; }
     // Left in a scene selects the model under the cursor and starts dragging it.
     const picked = pickPlacement(event);
     selectPlacement(picked);
@@ -1639,6 +1764,12 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
    * reads the flag on each move, so nothing else needs to redraw here.
    */
   function setSnapToGrid(on: boolean): boolean {
+    if (sceneOpen !== null && isConsumerReplayScene(sceneOpen)) {
+      throw replaySceneEditError(
+        sceneOpen,
+        `turning snap to grid ${on ? 'on' : 'off'}`,
+      );
+    }
     snapOn = on;
     snapToggle.classList.toggle('on', snapOn);
     return snapOn;
@@ -1989,8 +2120,8 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
     if (hasStudioTab('motion')) studioPanel('motion').append(...Array.from(motionPanel.pane.childNodes));
     if (hasStudioTab('notes')) studioPanel('notes').append(...Array.from(notesPanel.pane.childNodes));
     // A scene fills the model-only tabs with its own content — the scene editor
-    // in Edit, a short note in the rest — hidden until a scene opens, so those
-    // tabs never show a stale model.
+    // in Edit (or its replay read-only note), a short note in the rest — hidden
+    // until a scene opens, so those tabs never show a stale model.
     const attachSceneInspector = (tab: ModelStudioTabId, content: HTMLElement): void => {
       if (!hasStudioTab(tab)) return;
       content.classList.add('scene-inspector-overlay');
@@ -2001,6 +2132,7 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
       sceneInspectorPanels.push(content);
     };
     attachSceneInspector('edit', sceneEditor.element);
+    attachSceneInspector('edit', sceneReplayReadOnlyNote);
     attachSceneInspector('build', sceneBuildNote);
     attachSceneInspector('motion', sceneMotionNote);
     attachSceneInspector('notes', sceneNotesNote);

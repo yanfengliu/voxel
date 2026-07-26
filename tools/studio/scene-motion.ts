@@ -10,7 +10,11 @@ export function sceneMotionWindowMsV1(
   for (const placement of scene.placements) {
     periodMs = Math.max(periodMs, recipes[placement.model]?.motion.periodMs ?? 0);
   }
+  if (scene.schemaVersion === 'studio.scene/4') {
+    periodMs = Math.max(periodMs, scene.poseReplay.durationMs);
+  }
   const movingLights = scene.schemaVersion === 'studio.scene/3'
+    || scene.schemaVersion === 'studio.scene/4'
     ? (scene.lights ?? [])
     : [];
   for (const light of movingLights) {

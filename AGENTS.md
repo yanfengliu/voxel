@@ -31,6 +31,8 @@ Authoritative commands live in `package.json`. Run the smallest relevant check w
 
 Renderer changes verify to the risk: deterministic unit/property tests (storage, meshing, bounds, seams, revisions, picking); browser tests against the served app (resize, input, capture, context loss, teardown); fixed camera/viewport/DPR reference scenes with before/after screenshots; structured render metrics (draw calls, triangles, GPU resource counts, dropped stale jobs); repeated rebuild/teardown showing stable resource counts; measured performance on named scenes with hardware/browser recorded.
 
+Visual work is never complete until the rendered result has been visually inspected at the intended camera, viewport, and device scale, plus at least one adversarial angle or state appropriate to the risk. Automated pixel comparisons preserve known output but do not replace first-hand inspection; record what was inspected and fix visible discrepancies before declaring completion. (Established 2026-07-26.)
+
 ## Invariants & boundaries
 
 - The game simulation is authoritative; renderer state, scenes, meshes, materials, textures, acceleration structures, captures, and metrics are disposable derived artifacts.
