@@ -66,6 +66,7 @@
     "studio:check": "npm run build && node scripts/studio.mjs check",
     "studio:edit": "npm run build && node scripts/studio.mjs edit",
     "studio:recipes": "node scripts/studio-recipes.mjs",
+    "studio:diversity": "node scripts/studio-diversity.mjs",
     "pretest:browser": "npm run build",
     "test:browser": "playwright test",
     "test:browser:install": "playwright install chromium",

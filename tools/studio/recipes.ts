@@ -1,4 +1,5 @@
 import { createCottageRecipeBook } from './cottage-recipes.js';
+import { createContrastRecipeBook } from './contrast-recipes.js';
 import { createFurnitureRecipeBook } from './furniture-recipes.js';
 import { createGardenRecipeBook } from './garden-recipes.js';
 import { createHomeFurnishingsRecipeBook } from './home-furnishings.js';
@@ -18,6 +19,7 @@ import type { RecipeBookV1 } from './recipe.js';
  * lives in. Tests pin that every recipe here also stands on the shelf.
  */
 export * from './cottage-recipes.js';
+export * from './contrast-recipes.js';
 export * from './furniture-recipes.js';
 export * from './garden-recipes.js';
 export * from './home-furnishings.js';
@@ -36,6 +38,7 @@ export * from './wall-recipes.js';
 export function createStudioRecipeBook(): RecipeBookV1 {
   return {
     ...createShapesRecipeBook(),
+    ...createContrastRecipeBook(),
     ...createWallRecipeBook(),
     ...createGardenRecipeBook(),
     ...createCottageRecipeBook(),

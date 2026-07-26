@@ -79,6 +79,49 @@ export {
   type VoxelsStepV1,
 } from './recipe.js';
 
+// Deterministic evidence for curating broad model catalogs. These helpers
+// measure raw structural axes; a game owns its own promotion thresholds and
+// still inspects fixed-view pictures before accepting an art decision.
+export {
+  compareStudioModelFingerprintsV1,
+  fingerprintStudioModelV1,
+  nearestStudioModelNeighborV1,
+  rankStudioModelNeighborsV1,
+  STUDIO_MODEL_DIVERSITY_FINGERPRINT_V1,
+  type ModelDiversityAxisDistancesV1,
+  type StudioModelDiversityComparisonV1,
+  type StudioModelDiversityFingerprintV1,
+} from './model-diversity.js';
+export {
+  analyzeStudioCatalogDiversityV1,
+  STUDIO_CATALOG_DIVERSITY_REPORT_V1,
+  type AnalyzeStudioCatalogDiversityOptionsV1,
+  type StudioCatalogDiversityReportV1,
+} from './catalog-diversity.js';
+export {
+  CONTRAST_CANDIDATE_COUNT_V1,
+  CONTRAST_CANDIDATES_PER_FAMILY_V1,
+  generateStudioContrastCandidateReportV1,
+  STUDIO_CONTRAST_CANDIDATE_REPORT_V1,
+  type ContrastCandidateFamilySummaryV1,
+  type ContrastCandidateQuantitativeAxisV1,
+  type ContrastCandidateReasonV1,
+  type ContrastCandidateRejectionCodeV1,
+  type ContrastCandidateResultV1,
+  type ContrastCandidateSupportAxisV1,
+  type RankedCatalogCandidateNeighborV1,
+  type RejectedContrastCandidateV1,
+  type StudioContrastCandidateReportV1,
+} from './contrast-candidate-batch.js';
+export {
+  CONTRAST_CANDIDATE_PERTURBATION_KINDS_V1,
+  CONTRAST_CANDIDATE_STRUCTURAL_SALT_LIMIT_V1,
+  createContrastCandidateRecipeV1,
+  type ContrastCandidatePerturbationKindV1,
+  type ContrastCandidatePerturbationV1,
+  type PerturbedContrastCandidateRecipeV1,
+} from './contrast-candidate-perturbations.js';
+
 // Ways of arranging parts, and the patterns built on them. These are the
 // principles a later design borrows instead of rediscovering: general
 // arrangement first, then masonry as a worked example of using it.

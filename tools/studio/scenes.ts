@@ -7,6 +7,7 @@ import {
   type SceneSchemaV3,
   type SceneV1,
 } from './scene.js';
+import { createContrastScenes } from './contrast-scenes.js';
 
 const LIGHTING_1000_COLUMNS = 40;
 const LIGHTING_1000_ROWS = 25;
@@ -279,6 +280,7 @@ export function createStudioScenes(): readonly SceneV1[] {
         { id: 'classic-back-right', model: 'studio:three-flower-pot', at: [11, 0, -10] },
       ],
     },
+    ...createContrastScenes(),
     {
       schemaVersion: VOXEL_SCENE_SCHEMA_V2,
       id: 'studio:scene:lighting-lab',

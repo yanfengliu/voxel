@@ -1,0 +1,312 @@
+{
+  "schemaVersion": "studio.contrast-acceptance/1",
+  "fingerprintSchemaVersion": "studio.model-diversity-fingerprint/1",
+  "reviewProtocol": {
+    "id": "studio-diversity-fixed-four-view-v1",
+    "viewYawsDegrees": [45, 135, 225, 315],
+    "pitchDegrees": 30,
+    "motionPhases": [0, 0.25, 0.5, 0.75]
+  },
+  "recipes": {
+    "studio:contrast:canal-aqueduct": {
+      "seed": 1011,
+      "family": "arch-void",
+      "domain": "infrastructure",
+      "topologyHash": "fnv1a64:196fc692c2b8176b",
+      "renderHash": "fnv1a64:04d6016a85779b32",
+      "reviewedSheet": "arch-void.png",
+      "reviewedMotionSheet": null,
+      "visualThesis": "Two equal voids and one uninterrupted cap read as a light, load-bearing water crossing."
+    },
+    "studio:contrast:bell-arcade": {
+      "seed": 1029,
+      "family": "arch-void",
+      "domain": "civic-architectural",
+      "topologyHash": "fnv1a64:9d84723a3115940d",
+      "renderHash": "fnv1a64:dc313f18f4bee4da",
+      "reviewedSheet": "arch-void.png",
+      "reviewedMotionSheet": null,
+      "visualThesis": "A low-high-low arch rhythm concentrates attention on a small elevated civic accent."
+    },
+    "studio:contrast:foundry-kiln": {
+      "seed": 1047,
+      "family": "arch-void",
+      "domain": "mechanical-industrial",
+      "topologyHash": "fnv1a64:a7e17c38169bdfe9",
+      "renderHash": "fnv1a64:995f60c1bb10d873",
+      "reviewedSheet": "arch-void.png",
+      "reviewedMotionSheet": null,
+      "visualThesis": "One dark, deep void anchors a squat mass while unequal stacks pull the silhouette off center."
+    },
+    "studio:contrast:flood-culvert": {
+      "seed": 1063,
+      "family": "arch-void",
+      "domain": "infrastructure",
+      "topologyHash": "fnv1a64:b29000b694d9ed56",
+      "renderHash": "fnv1a64:67d251a9a484602b",
+      "reviewedSheet": "arch-void.png",
+      "reviewedMotionSheet": null,
+      "visualThesis": "Three compressed openings produce a horizontal, terrain-like mass unlike the tall civic arcade."
+    },
+    "studio:contrast:memorial-portal": {
+      "seed": 1081,
+      "family": "arch-void",
+      "domain": "civic-architectural",
+      "topologyHash": "fnv1a64:e5f9421d4bd747b6",
+      "renderHash": "fnv1a64:06e3fd9f007d4fb7",
+      "reviewedSheet": "arch-void.png",
+      "reviewedMotionSheet": null,
+      "visualThesis": "A needle-like central void rises above deliberately uneven, human-scale votive masses."
+    },
+    "studio:contrast:survey-obelisk": {
+      "seed": 2011,
+      "family": "tapered-stepped",
+      "domain": "civic-architectural",
+      "topologyHash": "fnv1a64:e4fbd0d3112aba95",
+      "renderHash": "fnv1a64:a023e8124bcbe1b2",
+      "reviewedSheet": "tapered-stepped.png",
+      "reviewedMotionSheet": null,
+      "visualThesis": "A severe square shaft carries the eye from a heavy civic base to one precise tapered point."
+    },
+    "studio:contrast:terraced-beacon": {
+      "seed": 2027,
+      "family": "tapered-stepped",
+      "domain": "infrastructure",
+      "topologyHash": "fnv1a64:2cfa6fdb68607dd5",
+      "renderHash": "fnv1a64:167a26006097af1d",
+      "reviewedSheet": "tapered-stepped.png",
+      "reviewedMotionSheet": null,
+      "visualThesis": "A low diagonal stair and a tight vertical taper make two legible routes converge at the signal."
+    },
+    "studio:contrast:cooling-stack": {
+      "seed": 2043,
+      "family": "tapered-stepped",
+      "domain": "mechanical-industrial",
+      "topologyHash": "fnv1a64:b9933d6750118ac5",
+      "renderHash": "fnv1a64:93399e81d844ef9a",
+      "reviewedSheet": "tapered-stepped.png",
+      "reviewedMotionSheet": null,
+      "visualThesis": "A monolithic taper piercing a delicate frame contrasts process mass with maintainable access."
+    },
+    "studio:contrast:stepped-forum": {
+      "seed": 2059,
+      "family": "tapered-stepped",
+      "domain": "civic-architectural",
+      "topologyHash": "fnv1a64:8f14d6d044b45910",
+      "renderHash": "fnv1a64:9f6118efb42f34dc",
+      "reviewedSheet": "tapered-stepped.png",
+      "reviewedMotionSheet": null,
+      "visualThesis": "Parallel stair masses of different widths frame a deliberately low, empty speaking court."
+    },
+    "studio:contrast:grain-hopper": {
+      "seed": 2077,
+      "family": "tapered-stepped",
+      "domain": "mechanical-industrial",
+      "topologyHash": "fnv1a64:58f8e2ab3e33944c",
+      "renderHash": "fnv1a64:7a9b8b04dbe4be89",
+      "reviewedSheet": "tapered-stepped.png",
+      "reviewedMotionSheet": null,
+      "visualThesis": "A compact top-heavy taper lifted clear of the ground makes gravity and discharge visible."
+    },
+    "studio:contrast:truss-footbridge": {
+      "seed": 3013,
+      "family": "frame-truss",
+      "domain": "infrastructure",
+      "topologyHash": "fnv1a64:dad3017accb7bada",
+      "renderHash": "fnv1a64:d2cb2a9a57668c69",
+      "reviewedSheet": "frame-truss.png",
+      "reviewedMotionSheet": null,
+      "visualThesis": "Two thin patterned walls make the empty walkable channel more prominent than the material."
+    },
+    "studio:contrast:shipyard-gantry": {
+      "seed": 3031,
+      "family": "frame-truss",
+      "domain": "mechanical-industrial",
+      "topologyHash": "fnv1a64:39481a59bb4b5170",
+      "renderHash": "fnv1a64:f9229ce0c0de7d3b",
+      "reviewedSheet": "frame-truss.png",
+      "reviewedMotionSheet": null,
+      "visualThesis": "Mass is pushed to two edge towers, leaving a working void beneath one emphatic overhead span."
+    },
+    "studio:contrast:civic-conservatory": {
+      "seed": 3047,
+      "family": "frame-truss",
+      "domain": "civic-architectural",
+      "topologyHash": "fnv1a64:f91f621b45160291",
+      "renderHash": "fnv1a64:c99ac574aba6e993",
+      "reviewedSheet": "frame-truss.png",
+      "reviewedMotionSheet": null,
+      "visualThesis": "One nearly empty envelope gains scale from low, irregular planting bars inside it."
+    },
+    "studio:contrast:transit-canopy": {
+      "seed": 3061,
+      "family": "frame-truss",
+      "domain": "infrastructure",
+      "topologyHash": "fnv1a64:d6843501681f3cba",
+      "renderHash": "fnv1a64:9020055d9f16c4e2",
+      "reviewedSheet": "frame-truss.png",
+      "reviewedMotionSheet": null,
+      "visualThesis": "A long active roof line dominates three widely spaced, human-scale supports."
+    },
+    "studio:contrast:signal-mast": {
+      "seed": 3079,
+      "family": "frame-truss",
+      "domain": "infrastructure",
+      "topologyHash": "fnv1a64:fc4b8d1ec5fc1475",
+      "renderHash": "fnv1a64:8937d1b493bdb0b9",
+      "reviewedSheet": "frame-truss.png",
+      "reviewedMotionSheet": null,
+      "visualThesis": "A narrow vertical cage is destabilized by one long side arm and a compact lamp cluster."
+    },
+    "studio:contrast:reciprocating-flywheel": {
+      "seed": 4019,
+      "family": "radial-mechanical",
+      "domain": "mechanical-industrial",
+      "topologyHash": "fnv1a64:4979784e033a1460",
+      "renderHash": "fnv1a64:656b88c8bf6b3512",
+      "reviewedSheet": "radial-mechanical.png",
+      "reviewedMotionSheet": "semantic-motion.png",
+      "visualThesis": "One oversized rim, compact hub, and sparse spokes make rotational mass unmistakable."
+    },
+    "studio:contrast:twin-gear-train": {
+      "seed": 4037,
+      "family": "radial-mechanical",
+      "domain": "mechanical-industrial",
+      "topologyHash": "fnv1a64:6db3d28896d12eca",
+      "renderHash": "fnv1a64:eaa6b63212be8374",
+      "reviewedSheet": "radial-mechanical.png",
+      "reviewedMotionSheet": null,
+      "visualThesis": "Unequal touching circles replace bilateral balance with a clear large-to-small power transfer."
+    },
+    "studio:contrast:sluice-handwheel": {
+      "seed": 4053,
+      "family": "radial-mechanical",
+      "domain": "infrastructure",
+      "topologyHash": "fnv1a64:a1b5c87c609c4aa7",
+      "renderHash": "fnv1a64:b873456525f0e170",
+      "reviewedSheet": "radial-mechanical.png",
+      "reviewedMotionSheet": null,
+      "visualThesis": "A circular point of control interrupts a severe rectangular waterworks frame."
+    },
+    "studio:contrast:cable-drum": {
+      "seed": 4071,
+      "family": "radial-mechanical",
+      "domain": "mechanical-industrial",
+      "topologyHash": "fnv1a64:2f8535bf6a5a5d2e",
+      "renderHash": "fnv1a64:40fe903e16b629ad",
+      "reviewedSheet": "radial-mechanical.png",
+      "reviewedMotionSheet": "semantic-motion.png",
+      "visualThesis": "Repeated circular faces are separated along depth, making the normally hidden axle direction dominant."
+    },
+    "studio:contrast:kinetic-compass": {
+      "seed": 4089,
+      "family": "radial-mechanical",
+      "domain": "civic-architectural",
+      "topologyHash": "fnv1a64:1020001e42c3a1ca",
+      "renderHash": "fnv1a64:92fdc5a4999f2d96",
+      "reviewedSheet": "radial-mechanical.png",
+      "reviewedMotionSheet": "semantic-motion.png",
+      "visualThesis": "A broad outer rim and deep inner rotor produce layered circular negative space from every oblique view."
+    },
+    "studio:contrast:windbreak-pine": {
+      "seed": 5021,
+      "family": "branching-organic",
+      "domain": "natural-organic",
+      "topologyHash": "fnv1a64:171404057ef7e1f7",
+      "renderHash": "fnv1a64:1bdfbf855336def5",
+      "reviewedSheet": "branching-organic.png",
+      "reviewedMotionSheet": "semantic-motion.png",
+      "visualThesis": "A narrow trunk carries a high irregular crown whose empty gaps matter as much as its branches."
+    },
+    "studio:contrast:mangrove-portal": {
+      "seed": 5039,
+      "family": "branching-organic",
+      "domain": "natural-organic",
+      "topologyHash": "fnv1a64:72d0dd55ceb0c927",
+      "renderHash": "fnv1a64:4d97d7345044a56d",
+      "reviewedSheet": "branching-organic.png",
+      "reviewedMotionSheet": null,
+      "visualThesis": "Paired irregular crowns interrupt a regular central void, blurring grown and built structure."
+    },
+    "studio:contrast:coral-candelabrum": {
+      "seed": 5057,
+      "family": "branching-organic",
+      "domain": "natural-organic",
+      "topologyHash": "fnv1a64:4af3aa6e448829ac",
+      "renderHash": "fnv1a64:66d5dc42db336971",
+      "reviewedSheet": "branching-organic.png",
+      "reviewedMotionSheet": null,
+      "visualThesis": "A tiny stone foothold releases a broad, brightly branching crown with no dominant front."
+    },
+    "studio:contrast:lightning-snag": {
+      "seed": 5073,
+      "family": "branching-organic",
+      "domain": "natural-organic",
+      "topologyHash": "fnv1a64:62748703906ed173",
+      "renderHash": "fnv1a64:236b9f14e0f33660",
+      "reviewedSheet": "branching-organic.png",
+      "reviewedMotionSheet": null,
+      "visualThesis": "The living vertical grammar is cut by one heavy horizontal scar, creating an unmistakably damaged silhouette."
+    },
+    "studio:contrast:root-pavilion": {
+      "seed": 5091,
+      "family": "branching-organic",
+      "domain": "civic-architectural",
+      "topologyHash": "fnv1a64:19a2eeeac74c1834",
+      "renderHash": "fnv1a64:4b5889ebd514f095",
+      "reviewedSheet": "branching-organic.png",
+      "reviewedMotionSheet": null,
+      "visualThesis": "A regular empty room is held up by four intentionally nonmatching living columns."
+    },
+    "studio:contrast:cliffside-lift": {
+      "seed": 6017,
+      "family": "asymmetric-hybrid",
+      "domain": "infrastructure",
+      "topologyHash": "fnv1a64:9803edd7411b8547",
+      "renderHash": "fnv1a64:c861930fedb2e990",
+      "reviewedSheet": "asymmetric-hybrid.png",
+      "reviewedMotionSheet": null,
+      "visualThesis": "A low diagonal route collides with a remote vertical cage, joined only by a high narrow bridge."
+    },
+    "studio:contrast:floodgate-station": {
+      "seed": 6035,
+      "family": "asymmetric-hybrid",
+      "domain": "infrastructure",
+      "topologyHash": "fnv1a64:430c96c9504ead06",
+      "renderHash": "fnv1a64:a3bbc34cb1d700e7",
+      "reviewedSheet": "asymmetric-hybrid.png",
+      "reviewedMotionSheet": null,
+      "visualThesis": "A heavy hydraulic void is opposed by a small exposed mechanism on a high linear service arm."
+    },
+    "studio:contrast:field-research-canopy": {
+      "seed": 6051,
+      "family": "asymmetric-hybrid",
+      "domain": "civic-architectural",
+      "topologyHash": "fnv1a64:1025b891ac82a8b5",
+      "renderHash": "fnv1a64:c9be9270127329d3",
+      "reviewedSheet": "asymmetric-hybrid.png",
+      "reviewedMotionSheet": null,
+      "visualThesis": "An orthogonal human envelope deliberately yields its center and roof line to one irregular specimen."
+    },
+    "studio:contrast:foundry-hopper-line": {
+      "seed": 6069,
+      "family": "asymmetric-hybrid",
+      "domain": "mechanical-industrial",
+      "topologyHash": "fnv1a64:51489cdd97320308",
+      "renderHash": "fnv1a64:813e72230b19a39a",
+      "reviewedSheet": "asymmetric-hybrid.png",
+      "reviewedMotionSheet": null,
+      "visualThesis": "Three incompatible vectors—diagonal access, top-heavy storage, and horizontal service—lock into one machine."
+    },
+    "studio:contrast:tidal-observatory": {
+      "seed": 6087,
+      "family": "asymmetric-hybrid",
+      "domain": "natural-organic",
+      "topologyHash": "fnv1a64:0ebe3c7512badbd2",
+      "renderHash": "fnv1a64:fc32c7b132e711fd",
+      "reviewedSheet": "asymmetric-hybrid.png",
+      "reviewedMotionSheet": null,
+      "visualThesis": "Organic height, geometric enclosure, and a single circular gauge form three separate landmarks on one base."
+    }
+  }
+}

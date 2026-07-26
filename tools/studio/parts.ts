@@ -3,6 +3,17 @@ import {
   type PartDefinitionV1,
   type PartSettingSpecV1,
 } from './part-definition.js';
+import {
+  archSpanPart,
+  openFramePart,
+  stairRunPart,
+  taperedMassPart,
+} from './architectural-parts.js';
+import {
+  branchingFormPart,
+  radialWheelPart,
+  trussSpanPart,
+} from './expressive-parts.js';
 import type { PartFragmentV1, PartShelfV1 } from './recipe.js';
 
 /**
@@ -17,9 +28,9 @@ import type { PartFragmentV1, PartShelfV1 } from './recipe.js';
  * with bounds and defaults, and named presets, so a human or an agent can find
  * the part and learn how to call it without reading this file. The build reads
  * its inputs *through* the schema (`resolvePartSettingsV1`), so the bounds a
- * caller sees are the bounds the part enforces. Both parts ignore their seed
- * because neither makes a random choice; the builder hands one down regardless,
- * so gaining variation later never changes a part's call shape.
+ * caller sees are the bounds the part enforces. Exact parts ignore their seed;
+ * varied parts consume it through deterministic bounded choices. The builder
+ * hands one down regardless, so gaining variation never changes a call shape.
  */
 
 const BOX_SETTINGS: readonly PartSettingSpecV1[] = [
@@ -262,5 +273,22 @@ export function createStudioParts(): PartShelfV1 {
     'brick-course': brickCoursePart,
     foliage: foliagePart,
     'picket-run': picketRunPart,
+    'arch-span': archSpanPart,
+    'tapered-mass': taperedMassPart,
+    'open-frame': openFramePart,
+    'stair-run': stairRunPart,
+    'radial-wheel': radialWheelPart,
+    'branching-form': branchingFormPart,
+    'truss-span': trussSpanPart,
   };
 }
+
+export {
+  archSpanPart,
+  branchingFormPart,
+  openFramePart,
+  radialWheelPart,
+  stairRunPart,
+  taperedMassPart,
+  trussSpanPart,
+};

@@ -30,6 +30,12 @@ describe('the studio shelf', () => {
     expect(catalog.sections.map(({ name, models }) => ({ name, count: models.length }))).toEqual([
       { name: 'Shapes', count: 1 },
       { name: 'Lighting studies', count: 1 },
+      { name: 'Contrast: arches and voids', count: 5 },
+      { name: 'Contrast: tapered and stepped', count: 5 },
+      { name: 'Contrast: frames and trusses', count: 5 },
+      { name: 'Contrast: radial mechanics', count: 5 },
+      { name: 'Contrast: branching forms', count: 5 },
+      { name: 'Contrast: asymmetric hybrids', count: 5 },
       { name: 'Walls', count: 2 },
       { name: 'Garden', count: 7 },
       { name: 'Furniture', count: 3 },

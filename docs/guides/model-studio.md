@@ -1,6 +1,6 @@
 # Giving a game its own model studio
 
-Status: current from 2026-07-25. The renderer-neutral shell is consumed by Harborform, while Voxel's own page and the Harbor fixture (`tools/studio/game-fixture.ts`) prove the grid-renderer adapter.
+Status: current from 2026-07-26. The renderer-neutral shell is consumed by Harborform, while Voxel's own page and the Harbor fixture (`tools/studio/game-fixture.ts`) prove the grid-renderer adapter.
 
 The model studio is the pattern every game using this engine gets. The engine owns the reusable half; each game brings its own models. This guide covers the two-file browser UI setup, the optional local request-writer route, and the boundary between them.
 
@@ -138,6 +138,26 @@ Parts are pure: settings and a seed in, a voxel fragment out, the same fragment 
 
 Keep the parts a game actually reuses, and no more. Build each model the fastest honest way, with raw voxels wherever no part fits; when the same shape gets hand-sculpted a second time, promote it into a part. A part built ahead of need is a part nobody calls.
 
+### Curating for contrast
+
+Voxel's reference catalog adds 30 manually curated recipes across six deliberately different families: arches and voids, tapered and stepped masses, frames and trusses, radial mechanics, branching organic forms, and asymmetric hybrids. They span four neutral domains: infrastructure, civic architecture, mechanical industry, and natural or organic forms. Seven shape-changing reusable parts support them: `arch-span`, `tapered-mass`, `open-frame`, `stair-run`, `radial-wheel`, `branching-form`, and `truss-span`; each was promoted only after a second real recipe use, and future parts must clear the same reuse threshold.
+
+Four domain scenes place every curated contrast recipe exactly once. The mechanical-industrial, civic-architectural, and natural-organic scenes contain four semantically chosen whole-model animations: a reciprocating flywheel, cable drum, kinetic compass, and windbreak pine, so the persisted scene-animation control has useful work outside the lighting showcase.
+
+Contrast, not count, is the acceptance rule. A palette swap or seed-only mutation is not a new design, and a promoted recipe must differ from its nearest catalog neighbors on at least two independent axes among topology or negative space, multi-view silhouette or massing, scale or proportion, construction or part grammar, spatial material rhythm, and supported motion.
+
+`fingerprintStudioModelV1` records deterministic raw model evidence: a tightly cropped topology hash, a render-content hash, occupied dimensions and proportions, density, exposed surface, connected components, horizontal symmetry, palette usage, and normalized 16-by-16 silhouettes from six axis-aligned views. `analyzeStudioCatalogDiversityV1` combines those fingerprints with category, direct-step, part, tag, seed-sensitivity, and nearest-neighbor coverage; these are inspectable partial signals, not an aesthetic score or an automatic promotion decision.
+
+The metrics are intentionally orientation-sensitive: they do not canonicalize rotations or reflections, so a rotated or mirrored version can compare as structurally different without being a new idea. They also do not automatically score construction grammar, motion semantics, or the spatial rhythm of material roles, which means a human must still inspect negative space, readability, semantic intent, and the claimed contrast axes.
+
+The bounded generate-wide/select-narrow `generateStudioContrastCandidateReportV1` pass in `contrast-candidate-batch.ts` deterministically makes 64 candidates per family through part-setting changes, subtraction, step reordering and relayout, duplication, mirrors, and bounded additive accents. It ranks each against the live catalog, rejects empty output, catalog or earlier-candidate topology duplicates, invalid builds, and changes that lack both grammar contrast and a quantitative morphology axis, and carries a frozen rebuildable `RecipeV1` for every proposal that reaches human review. Its `promotedRecipeIds` is deliberately always empty: the report preserves candidate and rejection evidence for a person to select from, but it never edits the catalog or promotes its own output.
+
+Run `npm run studio:diversity` for the visual half of review. The headless driver writes one contact sheet per family at fixed yaws of 45, 135, 225, and 315 degrees, one semantic-motion sheet at phases 0, 0.25, 0.5, and 0.75, a manifest, the accepted-catalog report, and the complete buildable candidate and rejection report under ignored `output/playwright/studio-diversity/`; those outputs are disposable review evidence, not committed approval.
+
+The independently reviewed `tools/studio/fixtures/diversity-accepted-v1.json` fixture is the durable acceptance boundary: it pins each promoted recipe's authored seed, family, domain, topology and render hashes, visual thesis, and reviewed sheets. Ordinary generation never rewrites it; accepting a changed or new recipe requires deliberate human review and a manual fixture edit.
+
+This entire loop is bounded development tooling. It does not evolve assets at runtime, auto-promote models, change the public renderer schema, or move consumer-specific art direction into Voxel.
+
 ### Discovering parts and recipes
 
 A part may be a bare function or a self-describing `PartDefinitionV1` — a title, summary, category, tags, a settings schema with bounds and defaults, and named presets, alongside its `build` function. The shelf accepts either and the builder runs both the same way through `partBuildV1`, so a game adopts definitions where they earn their keep. The schema is honest rather than decoration: the build reads its inputs through it (`resolvePartSettingsV1`), so the bounds a browser shows are the bounds the part enforces.
@@ -247,16 +267,7 @@ and its limits are in
 
 ### Where recipes live and how to add one
 
-Every shelf section keeps its recipes in its own module:
-`shapes-recipes.ts`, `wall-recipes.ts`, `garden-recipes.ts`,
-`cottage-recipes.ts`, `furniture-recipes.ts`, and
-`household-recipes.ts` under `tools/studio/`. Each module exports its
-recipe creators and a section book; `recipes.ts` is the hub that
-re-exports them all and merges the section books into
-`createStudioRecipeBook` — the book holds the whole shelf uniformly,
-because sharing is a recipe naming another, not a curated subset.
-Shelf entries are derived from the recipes themselves: the id and label
-on the shelf are the recipe's own, so the two can never disagree.
+Ordinary shelf sections keep recipes in `shapes-recipes.ts`, `wall-recipes.ts`, `garden-recipes.ts`, `cottage-recipes.ts`, `furniture-recipes.ts`, `household-recipes.ts`, `house-recipes.ts`, `home-recipes.ts`, `home-furnishings.ts`, and `outdoor-recipes.ts` under `tools/studio/`, with each module exporting its creators and section book. The contrast catalog is split by family across `contrast-arch-recipes.ts`, `contrast-tapered-recipes.ts`, `contrast-frame-recipes.ts`, `contrast-radial-recipes.ts`, `contrast-branching-recipes.ts`, and `contrast-hybrid-recipes.ts`; those modules export curated family arrays, and `contrast-recipes.ts` assembles them into `createContrastRecipeBook`. The `recipes.ts` hub re-exports and merges every book into `createStudioRecipeBook` so sharing is always a recipe naming another, not a curated subset deciding what may be reused. Shelf entries are derived from the recipes themselves: the id and label on the shelf are the recipe's own, so the two can never disagree.
 
 Adding a recipe takes three steps, and forgetting one is loud:
 

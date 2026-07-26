@@ -1,5 +1,14 @@
 import { addPaletteColor, createEmptyModel, setMotion, setVoxel } from './edit.js';
 import { createHouseholdPhysicalBook } from './household-physical-assets.js';
+import {
+  ARCH_VOID_CONTRAST_RECIPES,
+  ASYMMETRIC_HYBRID_CONTRAST_RECIPES,
+  BRANCHING_ORGANIC_CONTRAST_RECIPES,
+  FRAME_TRUSS_CONTRAST_RECIPES,
+  RADIAL_MECHANICAL_CONTRAST_RECIPES,
+  TAPERED_STEPPED_CONTRAST_RECIPES,
+  type CuratedContrastRecipeV1,
+} from './contrast-recipes.js';
 import type { StudioModelV1 } from './model.js';
 import { createStudioParts } from './parts.js';
 import type { PhysicalAssetBookV1 } from './physical-asset.js';
@@ -222,6 +231,13 @@ function recipeEntry(
 const bedroomEntry = (make: () => RecipeV1): ShelfModelV1 =>
   recipeEntry(make, { physical: createHouseholdPhysicalBook });
 
+/** Promoted contrast recipes keep their curatorial metadata beside RecipeV1;
+ * the ordinary shelf consumes only the persisted recipe contract. */
+const contrastEntries = (
+  entries: readonly CuratedContrastRecipeV1[],
+): readonly ShelfModelV1[] =>
+  entries.map(({ recipe }) => recipeEntry(() => recipe));
+
 /** The engine studio's own shelf. One section per recipe module; a test
  * pins that every recipe in the shared book stands here. */
 export function createStudioCatalog(): StudioCatalogV1 {
@@ -236,6 +252,30 @@ export function createStudioCatalog(): StudioCatalogV1 {
       {
         name: 'Lighting studies',
         models: [recipeEntry(createLightingReceiverRecipe)],
+      },
+      {
+        name: 'Contrast: arches and voids',
+        models: contrastEntries(ARCH_VOID_CONTRAST_RECIPES),
+      },
+      {
+        name: 'Contrast: tapered and stepped',
+        models: contrastEntries(TAPERED_STEPPED_CONTRAST_RECIPES),
+      },
+      {
+        name: 'Contrast: frames and trusses',
+        models: contrastEntries(FRAME_TRUSS_CONTRAST_RECIPES),
+      },
+      {
+        name: 'Contrast: radial mechanics',
+        models: contrastEntries(RADIAL_MECHANICAL_CONTRAST_RECIPES),
+      },
+      {
+        name: 'Contrast: branching forms',
+        models: contrastEntries(BRANCHING_ORGANIC_CONTRAST_RECIPES),
+      },
+      {
+        name: 'Contrast: asymmetric hybrids',
+        models: contrastEntries(ASYMMETRIC_HYBRID_CONTRAST_RECIPES),
       },
       {
         name: 'Walls',
