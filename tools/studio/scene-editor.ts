@@ -4,8 +4,11 @@ import {
   MAX_SCENE_LIGHT_RANGE,
   MAX_SCENE_LIGHTS,
   VOXEL_SCENE_SCHEMA_V2,
+  VOXEL_SCENE_SCHEMA_V3,
   type ScenePlacementV1,
+  type ScenePointLightOrbitMotionV1,
   type ScenePointLightV1,
+  type ScenePointLightV3,
   type SceneV1,
 } from './scene.js';
 import { element } from './studio-app-helpers.js';
@@ -28,6 +31,43 @@ export interface SceneEditorV1 {
   clearLightSelection(): void;
 }
 
+export type SceneEditorMutationResultV1<T> =
+  | { readonly ok: true; readonly value: T }
+  | { readonly ok: false; readonly message: string };
+
+function mutationErrorMessage(error: unknown): string {
+  if (error instanceof Error && error.message.trim() !== '') return error.message;
+  if (typeof error === 'string' && error.trim() !== '') return error;
+  return 'The scene change was rejected without an explanation; no changes were applied. '
+    + 'Try a different edit or reload the Studio before continuing.';
+}
+
+/**
+ * Runs one editor mutation and restores its panel-local state if the owning app
+ * rejects it. The app remains authoritative: a failed renderer or workspace
+ * transaction must never leak the editor's speculative selection.
+ */
+export function attemptSceneEditorMutationV1<T>(
+  apply: () => T,
+  rollback: () => void,
+): SceneEditorMutationResultV1<T> {
+  try {
+    return { ok: true, value: apply() };
+  } catch (error) {
+    const message = mutationErrorMessage(error);
+    try {
+      rollback();
+      return { ok: false, message };
+    } catch (rollbackError) {
+      return {
+        ok: false,
+        message: `${message} The editor also could not restore its prior controls: `
+          + mutationErrorMessage(rollbackError),
+      };
+    }
+  }
+}
+
 /** A stable id for a newly added placement, never colliding with an existing one. */
 function freshId(model: string, taken: ReadonlySet<string>): string {
   const base = model.split(':').pop() ?? 'model';
@@ -42,12 +82,27 @@ function freshLightId(taken: ReadonlySet<string>): string {
   return `light-${String(n)}`;
 }
 
-function clonePointLight(light: ScenePointLightV1): ScenePointLightV1 {
+function hasOrbitMotion(
+  light: ScenePointLightV1,
+): light is ScenePointLightV3 & { readonly motion: ScenePointLightOrbitMotionV1 } {
+  return 'motion' in light && light.motion !== undefined;
+}
+
+function clonePointLight<T extends ScenePointLightV1>(light: T): T {
   return {
     ...light,
     at: [...light.at],
     color: { ...light.color },
+    ...(hasOrbitMotion(light)
+      ? { motion: { ...light.motion, center: [...light.motion.center] } }
+      : {}),
   };
+}
+
+function editedLightSchema(scene: SceneV1): typeof VOXEL_SCENE_SCHEMA_V2 | typeof VOXEL_SCENE_SCHEMA_V3 {
+  return scene.schemaVersion === VOXEL_SCENE_SCHEMA_V3
+    ? VOXEL_SCENE_SCHEMA_V3
+    : VOXEL_SCENE_SCHEMA_V2;
 }
 
 /** Adds one deterministic point light without changing any placement or model reference. */
@@ -72,7 +127,7 @@ export function addScenePointLightV1(
   return {
     scene: {
       ...scene,
-      schemaVersion: VOXEL_SCENE_SCHEMA_V2,
+      schemaVersion: editedLightSchema(scene),
       lights: [...current, light],
     },
     light,
@@ -97,7 +152,7 @@ export function replaceScenePointLightV1(
   }
   return {
     ...scene,
-    schemaVersion: VOXEL_SCENE_SCHEMA_V2,
+    schemaVersion: editedLightSchema(scene),
     lights: current.map((light) => (light.id === id ? clonePointLight(next) : light)),
   };
 }
@@ -110,7 +165,7 @@ export function removeScenePointLightV1(scene: SceneV1, id: string): SceneV1 {
   }
   return {
     ...scene,
-    schemaVersion: VOXEL_SCENE_SCHEMA_V2,
+    schemaVersion: editedLightSchema(scene),
     lights: current.filter((light) => light.id !== id),
   };
 }
@@ -153,6 +208,10 @@ export function createSceneEditor(options: {
   const intro = element('p', 'hint');
   intro.textContent = 'Arrange the scene: add a model or point light, then select it '
     + 'to move, turn, recolor, or remove it. Every committed change redraws.';
+  const mutationError = element('p', 'lib-error scene-editor-error');
+  mutationError.setAttribute('role', 'alert');
+  mutationError.setAttribute('aria-live', 'assertive');
+  mutationError.hidden = true;
 
   const addRow = element('div', 'row');
   const modelSelect = element('select', 'scene-add-model');
@@ -184,6 +243,7 @@ export function createSceneEditor(options: {
 
   pane.append(
     intro,
+    mutationError,
     addRow,
     list,
     emptyHint,
@@ -192,6 +252,67 @@ export function createSceneEditor(options: {
     lightList,
     emptyLights,
   );
+
+  function clearMutationError(): void {
+    mutationError.textContent = '';
+    mutationError.hidden = true;
+  }
+
+  function showMutationError(message: string): void {
+    mutationError.textContent = message;
+    mutationError.hidden = false;
+  }
+
+  interface PendingChange {
+    readonly next: SceneV1;
+    readonly selection?: {
+      readonly placementId: string | null;
+      readonly lightId: string | null;
+      readonly notifyApp: boolean;
+    };
+  }
+
+  /**
+   * The sole scene-mutation path for this panel. `onChange` may synchronously
+   * render speculative state before rejecting it, so rollback restores both the
+   * prior scene and the private light selection before showing the error.
+   */
+  function commitChange(prepare: () => PendingChange): boolean {
+    if (scene === null) return false;
+    const previousScene = scene;
+    const previousPlacementId = selectedPlacementId;
+    const previousLightId = selectedLightId;
+    clearMutationError();
+    const result = attemptSceneEditorMutationV1(
+      () => {
+        const pending = prepare();
+        onChange(pending.next);
+        return pending;
+      },
+      () => {
+        scene = previousScene;
+        selectedPlacementId = previousPlacementId;
+        selectedLightId = previousLightId;
+        render(previousScene, previousPlacementId);
+      },
+    );
+    if (!result.ok) {
+      showMutationError(result.message);
+      return false;
+    }
+    const pending = result.value;
+    scene = pending.next;
+    if (pending.selection !== undefined) {
+      // Notify first: the app clears any panel-local light selection while it
+      // changes the shared stage selection. Assign the accepted light after
+      // that callback so Add point light opens the new light, not no light.
+      if (pending.selection.notifyApp) onSelect(pending.selection.placementId);
+      selectedPlacementId = pending.selection.placementId;
+      selectedLightId = pending.selection.lightId;
+    }
+    render(pending.next, selectedPlacementId);
+    return true;
+  }
 
   function button(text: string, title: string, onClick: () => void): HTMLButtonElement {
     const control = element('button');
@@ -211,7 +332,13 @@ export function createSceneEditor(options: {
 
   function commitPlacements(placements: readonly ScenePlacementV1[]): void {
     if (scene === null) return;
-    onChange({ ...scene, placements: placements.map((placement) => ({ ...placement })) });
+    const current = scene;
+    commitChange(() => ({
+      next: {
+        ...current,
+        placements: placements.map((placement) => ({ ...placement })),
+      },
+    }));
   }
 
   function editPlacement(
@@ -238,7 +365,10 @@ export function createSceneEditor(options: {
     if (scene === null) return;
     const light = scene.lights?.find((entry) => entry.id === id);
     if (!light) return;
-    onChange(replaceScenePointLightV1(scene, id, change(light)));
+    const current = scene;
+    commitChange(() => ({
+      next: replaceScenePointLightV1(current, id, change(light)),
+    }));
   }
 
   const moveLight = (id: string, dx: number, dy: number, dz: number): void => {
@@ -250,20 +380,31 @@ export function createSceneEditor(options: {
 
   addButton.addEventListener('click', () => {
     if (scene === null) return;
+    const current = scene;
     const model = modelSelect.value;
     if (model === '') return;
-    const id = freshId(model, new Set(scene.placements.map((placement) => placement.id)));
-    selectedLightId = null;
-    onChange({ ...scene, placements: [...scene.placements, { id, model, at: [0, 0, 0] }] });
-    onSelect(id);
+    commitChange(() => {
+      const id = freshId(model, new Set(current.placements.map((placement) => placement.id)));
+      return {
+        next: {
+          ...current,
+          placements: [...current.placements, { id, model, at: [0, 0, 0] }],
+        },
+        selection: { placementId: id, lightId: null, notifyApp: true },
+      };
+    });
   });
 
   addLightButton.addEventListener('click', () => {
     if (scene === null) return;
-    const added = addScenePointLightV1(scene);
-    onSelect(null);
-    selectedLightId = added.light.id;
-    onChange(added.scene);
+    const current = scene;
+    commitChange(() => {
+      const added = addScenePointLightV1(current);
+      return {
+        next: added.scene,
+        selection: { placementId: null, lightId: added.light.id, notifyApp: true },
+      };
+    });
   });
 
   function numberField(
@@ -377,8 +518,11 @@ export function createSceneEditor(options: {
 
         const remove = button('Remove', 'Remove this point light from the scene', () => {
           if (scene === null) return;
-          selectedLightId = null;
-          onChange(removeScenePointLightV1(scene, light.id));
+          const current = scene;
+          commitChange(() => ({
+            next: removeScenePointLightV1(current, light.id),
+            selection: { placementId: null, lightId: null, notifyApp: false },
+          }));
         });
         remove.classList.add('danger');
         controls.append(moves, values, remove);

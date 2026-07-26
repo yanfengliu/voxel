@@ -468,6 +468,17 @@ canvas { position: absolute; inset: 0; display: block; width: 100%; height: 100%
   pointer-events: none;
 }
 .toggles { position: absolute; top: 10px; right: 12px; display: flex; gap: 6px; }
+.view-error {
+  position: absolute;
+  z-index: 4;
+  top: 46px;
+  right: 12px;
+  max-width: min(520px, calc(100% - 24px));
+  padding: 7px 9px;
+  border: 1px solid color-mix(in srgb, var(--bad) 55%, transparent);
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--panel) 92%, transparent);
+}
 .toggle {
   font-size: 11.5px;
   padding: 4px 10px;

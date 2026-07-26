@@ -10,13 +10,17 @@ import {
 } from 'three';
 
 import type { MaterialPresentation } from './presentationTypes.js';
+import type { ThreeMaterialDecoratorInternal } from './materialDecoratorInternal.js';
 
 interface MaterialEntry {
   readonly version: string;
   readonly material: Material;
 }
 
-function createMaterial(resource: MaterialPresentation): Material {
+function createMaterial(
+  resource: MaterialPresentation,
+  decorator: ThreeMaterialDecoratorInternal | undefined,
+): Material {
   const color = new Color().setRGB(
     resource.color.r / 255,
     resource.color.g / 255,
@@ -31,21 +35,38 @@ function createMaterial(resource: MaterialPresentation): Material {
     vertexColors: resource.vertexColors,
     side: resource.doubleSided ? DoubleSide : FrontSide,
   };
+  let material: Material;
   if (resource.shading === 'standard') {
-    return new MeshStandardMaterial({
+    material = new MeshStandardMaterial({
       ...parameters,
       roughness: resource.roughness,
       metalness: resource.metalness,
     });
+  } else {
+    material = resource.shading === 'lambert'
+      ? new MeshLambertMaterial(parameters)
+      : new MeshBasicMaterial(parameters);
   }
-  return resource.shading === 'lambert'
-    ? new MeshLambertMaterial(parameters)
-    : new MeshBasicMaterial(parameters);
+  try {
+    decorator?.(material);
+  } catch (error) {
+    material.dispose();
+    throw new Error(
+      `Material '${resource.key}' could not install its renderer-owned presentation decorator; `
+      + 'the material was released and this presentation was not adopted.',
+      { cause: error },
+    );
+  }
+  return material;
 }
 
 export class MaterialPresenter {
   private readonly entries = new Map<string, MaterialEntry>();
   private disposed = false;
+
+  constructor(
+    private readonly decoratorInternal?: ThreeMaterialDecoratorInternal,
+  ) {}
 
   get count(): number {
     return this.entries.size;
@@ -65,7 +86,7 @@ export class MaterialPresenter {
       incoming.add(resource.key);
       const existing = this.entries.get(resource.key);
       if (existing?.version === resource.version) continue;
-      const material = createMaterial(resource);
+      const material = createMaterial(resource, this.decoratorInternal);
       this.entries.set(resource.key, { version: resource.version, material });
       existing?.material.dispose();
     }

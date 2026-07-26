@@ -45,8 +45,10 @@ export function createStudioKeyboard(options: StudioKeyboardOptionsV1): StudioKe
       return;
     }
     if (targetElement?.closest('button, select')) return;
-    if (event.key === 'ArrowLeft') options.step(-1);
-    if (event.key === 'ArrowRight') options.step(1);
+    // A scene can contain independent model and light periods, so there is no
+    // honest single "next model frame" for the hidden-model stepper to apply.
+    if (!options.sceneOpen() && event.key === 'ArrowLeft') options.step(-1);
+    if (!options.sceneOpen() && event.key === 'ArrowRight') options.step(1);
   };
 
   let attached = false;

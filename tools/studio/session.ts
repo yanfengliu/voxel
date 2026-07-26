@@ -1,6 +1,7 @@
 import type { Camera } from 'three';
 
 import { ThreeRenderRuntime } from '../../src/three/index.js';
+import { replaceRuntimeBorrowedCameraInternal } from '../../src/three/runtimeBorrowedCameraSwapInternal.js';
 
 import { buildSnapshot, filledVoxelCount, modelCenterV1 } from './build.js';
 import { modelVoxelSizeV1, type StudioModelV1 } from './model.js';
@@ -216,6 +217,12 @@ export class StudioSession {
   resize(width: number, height: number): void {
     this.#assertLive();
     this.#runtime.resize(Math.max(1, Math.floor(width)), Math.max(1, Math.floor(height)), 1);
+  }
+
+  /** Reuses the live renderer while the Studio switches between its two cameras. */
+  setCamera(camera: Camera): void {
+    this.#assertLive();
+    replaceRuntimeBorrowedCameraInternal(this.#runtime, camera);
   }
 
   /** Study edges on (examining look) or off (the game look). Redraws. */

@@ -3,16 +3,80 @@ import { describe, expect, it } from 'vitest';
 import { VOXEL_RECIPE_SCHEMA_V1, type RecipeBookV1 } from './recipe.js';
 import {
   addScenePointLightV1,
+  attemptSceneEditorMutationV1,
   removeScenePointLightV1,
   replaceScenePointLightV1,
   sceneModelAliasIdV1,
 } from './scene-editor.js';
 import {
   MAX_SCENE_LIGHTS,
+  validateSceneV1,
   VOXEL_SCENE_SCHEMA_V1,
   VOXEL_SCENE_SCHEMA_V2,
+  VOXEL_SCENE_SCHEMA_V3,
+  type ScenePointLightV3,
   type SceneV1,
 } from './scene.js';
+
+describe('scene editor mutation transaction', () => {
+  it('restores panel-local state and preserves an actionable upstream rejection', () => {
+    let selectedLightId: string | null = 'light-1';
+    const result = attemptSceneEditorMutationV1(
+      () => {
+        selectedLightId = 'light-2';
+        throw new Error(
+          "Scene 'test:scene' has 33 point lights in one cluster; move or shorten a light before retrying.",
+        );
+      },
+      () => {
+        selectedLightId = 'light-1';
+      },
+    );
+
+    expect(result).toEqual({
+      ok: false,
+      message: "Scene 'test:scene' has 33 point lights in one cluster; "
+        + 'move or shorten a light before retrying.',
+    });
+    expect(selectedLightId).toBe('light-1');
+  });
+
+  it('does not roll back an accepted mutation', () => {
+    let selectedLightId = 'light-1';
+    let rollbackCalls = 0;
+    const result = attemptSceneEditorMutationV1(
+      () => {
+        selectedLightId = 'light-2';
+      },
+      () => {
+        rollbackCalls += 1;
+        selectedLightId = 'light-1';
+      },
+    );
+
+    expect(result).toEqual({ ok: true, value: undefined });
+    expect(selectedLightId).toBe('light-2');
+    expect(rollbackCalls).toBe(0);
+  });
+
+  it('reports both failures if restoring the prior controls also fails', () => {
+    const result = attemptSceneEditorMutationV1(
+      () => {
+        throw new Error('The renderer rejected the candidate scene.');
+      },
+      () => {
+        throw new Error('The prior editor state could not be rendered.');
+      },
+    );
+
+    expect(result).toEqual({
+      ok: false,
+      message: 'The renderer rejected the candidate scene. '
+        + 'The editor also could not restore its prior controls: '
+        + 'The prior editor state could not be rendered.',
+    });
+  });
+});
 
 const recipes: RecipeBookV1 = {
   'consumer:chair': {
@@ -71,18 +135,73 @@ describe('scene point-light edits', () => {
     expect(before.lights).toBeUndefined();
   });
 
-  it('uses the next free stable id and refuses a ninth light with a clear remedy', () => {
-    let current = scene();
-    for (let index = 0; index < MAX_SCENE_LIGHTS; index += 1) {
-      current = addScenePointLightV1(current).scene;
-    }
-    expect(current.lights?.map((light) => light.id)).toEqual(
-      Array.from({ length: MAX_SCENE_LIGHTS }, (_, index) => `light-${String(index + 1)}`),
-    );
-    expect(() => addScenePointLightV1(current)).toThrow(
+  it('uses the next free stable id and refuses the bounded light ceiling with a clear remedy', () => {
+    const baseLight = addScenePointLightV1(scene()).light;
+    const gapped: SceneV1 = {
+      ...scene(),
+      schemaVersion: VOXEL_SCENE_SCHEMA_V2,
+      lights: [
+        { ...baseLight, id: 'light-1' },
+        { ...baseLight, id: 'light-3' },
+      ],
+    };
+    expect(addScenePointLightV1(gapped).light.id).toBe('light-2');
+
+    const full: SceneV1 = {
+      ...scene(),
+      schemaVersion: VOXEL_SCENE_SCHEMA_V2,
+      lights: Array.from({ length: MAX_SCENE_LIGHTS }, (_, index) => ({
+        ...baseLight,
+        id: `light-${String(index + 1)}`,
+      })),
+    };
+    expect(() => addScenePointLightV1(full)).toThrow(
       `Scene 'test:scene' already has the maximum of ${String(MAX_SCENE_LIGHTS)} point lights; `
       + 'remove one before adding another.',
     );
+  });
+
+  it('keeps V3 orbit metadata through static editor add, replace, and remove edits', () => {
+    const orbiting: ScenePointLightV3 = {
+      id: 'orbiting',
+      kind: 'point',
+      at: [10, 8, 0],
+      color: { r: 255, g: 160, b: 90 },
+      intensity: 900,
+      range: 40,
+      motion: {
+        kind: 'orbit',
+        center: [0, 8, 0],
+        axis: 'y',
+        periodMs: 5_000,
+        phaseRadians: 0.25,
+      },
+    };
+    const v3: SceneV1 = {
+      ...scene(),
+      schemaVersion: VOXEL_SCENE_SCHEMA_V3,
+      lights: [orbiting],
+    };
+
+    const added = addScenePointLightV1(v3);
+    expect(added.scene.schemaVersion).toBe(VOXEL_SCENE_SCHEMA_V3);
+    expect(added.light).not.toHaveProperty('motion');
+    expect((added.scene.lights?.[0] as ScenePointLightV3).motion).toEqual(orbiting.motion);
+
+    const changed = replaceScenePointLightV1(added.scene, orbiting.id, {
+      ...orbiting,
+      intensity: 1_100,
+    });
+    const changedOrbit = (changed.lights?.[0] as ScenePointLightV3).motion;
+    expect(changed.schemaVersion).toBe(VOXEL_SCENE_SCHEMA_V3);
+    expect(changedOrbit).toEqual(orbiting.motion);
+    expect(changedOrbit).not.toBe(orbiting.motion);
+    expect(changedOrbit?.center).not.toBe(orbiting.motion?.center);
+
+    const removed = removeScenePointLightV1(changed, added.light.id);
+    expect(removed.schemaVersion).toBe(VOXEL_SCENE_SCHEMA_V3);
+    expect((removed.lights?.[0] as ScenePointLightV3).motion).toEqual(orbiting.motion);
+    expect(validateSceneV1(removed)).toEqual([]);
   });
 
   it('moves and recolors one light immutably while its stable id and models stay unchanged', () => {

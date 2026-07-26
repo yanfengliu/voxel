@@ -1,8 +1,128 @@
 import {
   VOXEL_SCENE_SCHEMA_V1,
   VOXEL_SCENE_SCHEMA_V2,
+  VOXEL_SCENE_SCHEMA_V3,
+  type ScenePlacementV1,
+  type ScenePointLightV3,
+  type SceneSchemaV3,
   type SceneV1,
 } from './scene.js';
+
+const LIGHTING_1000_COLUMNS = 40;
+const LIGHTING_1000_ROWS = 25;
+const LIGHTING_1000_DEPTH_BANDS = 10;
+const LIGHTING_1000_SCREEN_X_SPACING = 1.3;
+const LIGHTING_1000_SCREEN_Y_SPACING = 2;
+const LIGHTING_1000_DEPTH_SPACING = 7;
+const LIGHTING_1000_WORLD_CENTER_Y = 0;
+const LIGHTING_1000_ORBIT_RADIUS = 0.25;
+const LIGHTING_1000_COLORS = [
+  { r: 255, g: 116, b: 72 },
+  { r: 255, g: 204, b: 104 },
+  { r: 104, g: 182, b: 255 },
+  { r: 180, g: 116, b: 255 },
+  { r: 104, g: 232, b: 176 },
+] as const;
+
+function lighting1000Coordinate(index: number, count: number, spacing: number): number {
+  return (index - (count - 1) / 2) * spacing;
+}
+
+/**
+ * A 40 x 25 field expressed in the default camera's right, up, and depth
+ * basis. Its interleaved depth bands keep all 1,000 sources distinguishable
+ * without collapsing the field into one cluster.
+ */
+function lighting1000Position(
+  column: number,
+  row: number,
+  layer: number,
+): readonly [number, number, number] {
+  const screenX = lighting1000Coordinate(
+    column,
+    LIGHTING_1000_COLUMNS,
+    LIGHTING_1000_SCREEN_X_SPACING,
+  );
+  const screenY = lighting1000Coordinate(
+    row,
+    LIGHTING_1000_ROWS,
+    LIGHTING_1000_SCREEN_Y_SPACING,
+  );
+  const depth = lighting1000Coordinate(
+    layer,
+    LIGHTING_1000_DEPTH_BANDS,
+    LIGHTING_1000_DEPTH_SPACING,
+  );
+  const rightX = Math.SQRT1_2;
+  const rightZ = -Math.SQRT1_2;
+  const upXz = -Math.SQRT1_2 / 2;
+  const upY = Math.sqrt(3) / 2;
+  const depthXz = Math.sqrt(3 / 8);
+  const depthY = 0.5;
+  return [
+    rightX * screenX + upXz * screenY + depthXz * depth,
+    LIGHTING_1000_WORLD_CENTER_Y + upY * screenY + depthY * depth,
+    rightZ * screenX + upXz * screenY + depthXz * depth,
+  ];
+}
+
+function createLighting1000Placements(): readonly ScenePlacementV1[] {
+  const placements: ScenePlacementV1[] = [];
+  for (let row = 0; row < LIGHTING_1000_ROWS; row += 4) {
+    for (let column = 0; column < LIGHTING_1000_COLUMNS; column += 8) {
+      const layer = ((row * LIGHTING_1000_COLUMNS + column) * 7)
+        % LIGHTING_1000_DEPTH_BANDS;
+      placements.push({
+        id: `fixture-${String(row).padStart(2, '0')}-${String(column).padStart(2, '0')}`,
+        model: 'studio:sandstone-wall',
+        at: lighting1000Position(column, row, layer),
+        // Large pale Lambert receivers make the stress lane exercise clustered
+        // fragment shading, not only motion, texture upload, and marker draw.
+        grain: 0.5,
+      });
+    }
+  }
+  return placements;
+}
+
+function createLighting1000Lights(): readonly ScenePointLightV3[] {
+  return Array.from({ length: LIGHTING_1000_COLUMNS * LIGHTING_1000_ROWS }, (_, index) => {
+    const column = index % LIGHTING_1000_COLUMNS;
+    const row = Math.floor(index / LIGHTING_1000_COLUMNS);
+    const layer = (index * 7) % LIGHTING_1000_DEPTH_BANDS;
+    const [x, fixtureY, z] = lighting1000Position(column, row, layer);
+    const y = fixtureY + 0.65;
+    const color = LIGHTING_1000_COLORS[index % LIGHTING_1000_COLORS.length]!;
+    return {
+      id: `orbit-${String(index).padStart(4, '0')}`,
+      kind: 'point',
+      at: [x + LIGHTING_1000_ORBIT_RADIUS, y, z],
+      color,
+      intensity: 90 + (index % 5) * 10,
+      range: 0.9,
+      motion: {
+        kind: 'orbit',
+        center: [x, y, z],
+        axis: 'y',
+        periodMs: 3_600 + (index % 17) * 113,
+        phaseRadians: (index * 2.399963229728653) % (Math.PI * 2),
+      },
+    };
+  });
+}
+
+function createLighting1000Scene(): SceneSchemaV3 {
+  return {
+    schemaVersion: VOXEL_SCENE_SCHEMA_V3,
+    id: 'studio:scene:lighting-1000',
+    label: '1,000 orbiting lights',
+    summary: 'One thousand independently orbiting point lights fill a compact field across '
+      + 'ten interleaved depth bands across broad sandstone receivers, showcasing dense '
+      + 'dynamic lighting without crowding any one local region.',
+    placements: createLighting1000Placements(),
+    lights: createLighting1000Lights(),
+  };
+}
 
 /**
  * The engine studio's own example scenes: arrangements of shelf models standing
@@ -157,5 +277,6 @@ export function createStudioScenes(): readonly SceneV1[] {
         },
       ],
     },
+    createLighting1000Scene(),
   ];
 }

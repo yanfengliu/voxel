@@ -4,6 +4,7 @@ import { ChunkPresenter } from './chunkPresenter.js';
 import { GeometryPresenter } from './geometryPresenter.js';
 import { InstanceBatchPresenter } from './instanceBatchPresenter.js';
 import { MaterialPresenter } from './materialPresenter.js';
+import type { ThreeMaterialDecoratorInternal } from './materialDecoratorInternal.js';
 import { runRuntimeDisposalInternal } from './runtimeDisposal.js';
 import type { ThreePresentationSnapshot } from './runtimeTypes.js';
 
@@ -23,14 +24,16 @@ export interface RuntimePresentationSurfaceMetricsInternal {
 }
 
 export interface RuntimePresentationSurfaceFactoriesInternal {
-  readonly createMaterialPresenterInternal: () => MaterialPresenter;
+  readonly createMaterialPresenterInternal: (
+    decorator?: ThreeMaterialDecoratorInternal,
+  ) => MaterialPresenter;
   readonly createGeometryPresenterInternal: () => GeometryPresenter;
   readonly createChunkPresenterInternal: (root: Group) => ChunkPresenter;
   readonly createInstancePresenterInternal: (root: Group) => InstanceBatchPresenter;
 }
 
 const DEFAULT_FACTORIES_INTERNAL: RuntimePresentationSurfaceFactoriesInternal = {
-  createMaterialPresenterInternal: () => new MaterialPresenter(),
+  createMaterialPresenterInternal: (decorator) => new MaterialPresenter(decorator),
   createGeometryPresenterInternal: () => new GeometryPresenter(),
   createChunkPresenterInternal: (root) => new ChunkPresenter(root),
   createInstancePresenterInternal: (root) => new InstanceBatchPresenter(root),
@@ -73,10 +76,11 @@ function createPresentersInternal(
   factories: RuntimePresentationSurfaceFactoriesInternal,
   chunkRoot: Group,
   instanceRoot: Group,
+  materialDecorator: ThreeMaterialDecoratorInternal | undefined,
 ): RuntimePresentersInternal {
   const rollback: (() => void)[] = [];
   try {
-    const material = factories.createMaterialPresenterInternal();
+    const material = factories.createMaterialPresenterInternal(materialDecorator);
     rollback.unshift(() => material.dispose());
     const geometry = factories.createGeometryPresenterInternal();
     rollback.unshift(() => geometry.dispose());
@@ -108,6 +112,7 @@ export class LegacyRuntimePresentationSurfaceInternal {
 
   constructor(
     factories: RuntimePresentationSurfaceFactoriesInternal = DEFAULT_FACTORIES_INTERNAL,
+    materialDecorator?: ThreeMaterialDecoratorInternal,
   ) {
     this.rootInternal = new Group();
     const chunkRoot = new Group();
@@ -116,7 +121,12 @@ export class LegacyRuntimePresentationSurfaceInternal {
     chunkRoot.name = 'voxel-chunks';
     instanceRoot.name = 'instance-batches';
     this.rootInternal.add(chunkRoot, instanceRoot);
-    const presenters = createPresentersInternal(factories, chunkRoot, instanceRoot);
+    const presenters = createPresentersInternal(
+      factories,
+      chunkRoot,
+      instanceRoot,
+      materialDecorator,
+    );
     this.materialPresenter = presenters.material;
     this.geometryPresenter = presenters.geometry;
     this.chunkPresenter = presenters.chunk;

@@ -57,6 +57,8 @@ import {
   type PlayerReportV1,
 } from './studio-harness-reports.js';
 import type { StudioShelfItemKindV1, StudioShelfMoveV1 } from './studio-shelf-order.js';
+import type { StudioSceneLightingMetricsV1 } from './scene-lighting.js';
+import type { SceneRenderMetricsV1 } from './scene-session.js';
 
 export type { SceneInfoV1 } from './studio-harness-library.js';
 export type { HarnessSweepSummaryV1, PlayerReportV1 } from './studio-harness-reports.js';
@@ -103,6 +105,11 @@ export interface VoxelStudioHarnessV1 {
     readonly drawCalls: number;
     readonly triangles: number;
     readonly presentedRevision: number | null;
+  };
+  /** Draws one exact model-or-scene time and returns plain scene-light work metrics. */
+  drawAt(nowMs: number): {
+    readonly sceneLighting: StudioSceneLightingMetricsV1 | null;
+    readonly sceneRender: SceneRenderMetricsV1 | null;
   };
   /**
    * Sweeps one period and judges it. `images: true` returns every frame's data
@@ -374,6 +381,22 @@ export interface HarnessHostV1 {
   now(): number;
   /** Draws the frame at a moment and lets the UI's readouts catch up. */
   drawAt(timeMs: number): void;
+  /**
+   * Resumes the open scene's own unwrapped animation clock. Returns true when
+   * scene mode handled the request; model-only hosts omit this hook.
+   */
+  resumeSceneAnimation?(): boolean;
+  /**
+   * Freezes the open scene at its last presented time. Returns true when scene
+   * mode handled the request, so pause need not issue a second exact-time draw.
+   */
+  pauseSceneAnimation?(): boolean;
+  /** Re-anchors an active scene clock after the shared speed changes. */
+  sceneAnimationSpeedChanged?(): void;
+  /** Plain metrics for the currently open scene's clustered lights, when any. */
+  sceneLightingMetrics?(): StudioSceneLightingMetricsV1 | null;
+  /** Plain renderer workload metrics for the currently open scene, when any. */
+  sceneRenderMetrics?(): SceneRenderMetricsV1 | null;
   /** Tells the UI the notes changed, so lists and timeline dots catch up. */
   notesChanged(): void;
   /** The stage viewpoint, owned by the page; setting it redraws. */
@@ -720,16 +743,18 @@ export function createStudioHarness(host: HarnessHostV1): VoxelStudioHarnessV1 {
 
     play() {
       host.player().play(host.now());
+      host.resumeSceneAnimation?.();
       return report();
     },
     pause() {
       const player = host.player();
       player.pause(host.now());
-      host.drawAt(player.timeAt(host.now()));
+      if (host.pauseSceneAnimation?.() !== true) host.drawAt(player.timeAt(host.now()));
       return report();
     },
     setSpeed(speed) {
       host.player().setSpeed(speed, host.now());
+      host.sceneAnimationSpeedChanged?.();
       return report();
     },
     seek(timeMs) {
@@ -759,6 +784,13 @@ export function createStudioHarness(host: HarnessHostV1): VoxelStudioHarnessV1 {
       );
     },
     playerState: () => report(),
+    drawAt(nowMs) {
+      host.drawAt(nowMs);
+      return {
+        sceneLighting: host.sceneLightingMetrics?.() ?? null,
+        sceneRender: host.sceneRenderMetrics?.() ?? null,
+      };
+    },
 
     addMomentNote(timeMs, spot, text) {
       const note = host.noteStore().addMoment(timeMs, spot, text);

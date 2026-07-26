@@ -4,6 +4,7 @@ import {
   type GenomeColorV1,
   type GenomeIssueV1,
 } from './model.js';
+import { MAX_UNBOUNDED_CLUSTERED_POINT_LIGHTS_INTERNAL } from '../../src/three/clusteredPointLightLimitsInternal.js';
 
 /**
  * A scene is a collection of standalone models placed in one viewing space and
@@ -21,20 +22,24 @@ import {
  *
  * Plain data, like a model and a recipe: it must survive JSON, `structuredClone`,
  * and an IndexedDB round trip. V1 arranges models only. V2 adds bounded editable
- * point lights; older Studios reject that schema instead of silently omitting
- * behavior-bearing lighting.
+ * point lights. V3 lets an individual light orbit deterministically; older
+ * Studios reject newer behavior-bearing schemas instead of silently omitting
+ * them.
  */
 export const VOXEL_SCENE_SCHEMA_V1 = 'studio.scene/1' as const;
 export const VOXEL_SCENE_SCHEMA_V2 = 'studio.scene/2' as const;
+export const VOXEL_SCENE_SCHEMA_V3 = 'studio.scene/3' as const;
 
 /** How many placements a scene may hold; a hard ceiling, not a throughput promise. */
 const MAX_PLACEMENTS = 100_000;
-/** Editable local lights stay small so one scene cannot create unbounded shader variants. */
-export const MAX_SCENE_LIGHTS = 8;
+/** A bounded thousands-scale ceiling for authored lights and hostile scene documents. */
+export const MAX_SCENE_LIGHTS = 4_096;
 /** Bounded before the renderer sees it, so hostile scene data cannot carry unbounded light energy. */
 export const MAX_SCENE_LIGHT_INTENSITY = 100_000;
 /** A point light cannot claim a reach beyond the scene coordinate envelope. */
 export const MAX_SCENE_LIGHT_RANGE = 1_000_000;
+/** One deterministic light orbit may take at most an hour. */
+export const MAX_SCENE_LIGHT_ORBIT_PERIOD_MS = 3_600_000;
 /** How far a placement may sit from the origin, in world units. */
 const MAX_COORD = 1_000_000;
 
@@ -77,6 +82,24 @@ export interface ScenePointLightV1 {
   readonly range: number;
 }
 
+/**
+ * Deterministic world-space orbit sampled from the renderer's injected time.
+ * `at` remains the light's reference position; its offset from `center` is
+ * rotated about `axis` by `2*pi*time/periodMs + phaseRadians`.
+ */
+export interface ScenePointLightOrbitMotionV1 {
+  readonly kind: 'orbit';
+  readonly center: readonly [number, number, number];
+  readonly axis: 'x' | 'y' | 'z';
+  readonly periodMs: number;
+  readonly phaseRadians: number;
+}
+
+/** A V3 point light is static when motion is omitted. */
+export interface ScenePointLightV3 extends ScenePointLightV1 {
+  readonly motion?: ScenePointLightOrbitMotionV1;
+}
+
 interface SceneFieldsV1 {
   readonly id: string;
   readonly label: string;
@@ -98,14 +121,66 @@ export interface SceneSchemaV2 extends SceneFieldsV1 {
   readonly lights?: readonly ScenePointLightV1[];
 }
 
+/** Model arrangements and point lights, optionally with deterministic orbit motion. */
+export interface SceneSchemaV3 extends SceneFieldsV1 {
+  readonly schemaVersion: typeof VOXEL_SCENE_SCHEMA_V3;
+  /** Static and orbiting point lights may coexist in one V3 scene. */
+  readonly lights?: readonly ScenePointLightV3[];
+}
+
 /**
  * Stable Studio scene API input. Its document schema is discriminated so V1
- * catalogs remain valid while V2 lighting cannot be silently read as V1.
+ * and V2 catalogs remain valid while newer behavior cannot be silently read by
+ * an older document schema.
  */
-export type SceneV1 = SceneSchemaV1 | SceneSchemaV2;
+export type SceneV1 = SceneSchemaV1 | SceneSchemaV2 | SceneSchemaV3;
 
 function isFiniteNumber(value: unknown): value is number {
   return typeof value === 'number' && Number.isFinite(value);
+}
+
+/**
+ * Resolves a static or orbiting light at one injected time without mutating the
+ * scene document. Callers validate the containing scene before sampling it.
+ */
+export function resolveScenePointLightAtV3(
+  light: ScenePointLightV3,
+  nowMs: number,
+  target: [number, number, number] = [0, 0, 0],
+): readonly [number, number, number] {
+  if (!Number.isFinite(nowMs)) {
+    throw new Error(
+      `Cannot resolve point light '${light.id}' at time '${String(nowMs)}'; expected a finite time in milliseconds.`,
+    );
+  }
+  const motion = light.motion;
+  if (motion === undefined) {
+    target[0] = light.at[0];
+    target[1] = light.at[1];
+    target[2] = light.at[2];
+    return target;
+  }
+  const wrappedMs = ((nowMs % motion.periodMs) + motion.periodMs) % motion.periodMs;
+  const angle = (wrappedMs / motion.periodMs) * Math.PI * 2 + motion.phaseRadians;
+  const cosine = Math.cos(angle);
+  const sine = Math.sin(angle);
+  const x = light.at[0] - motion.center[0];
+  const y = light.at[1] - motion.center[1];
+  const z = light.at[2] - motion.center[2];
+  if (motion.axis === 'x') {
+    target[0] = motion.center[0] + x;
+    target[1] = motion.center[1] + y * cosine - z * sine;
+    target[2] = motion.center[2] + y * sine + z * cosine;
+  } else if (motion.axis === 'y') {
+    target[0] = motion.center[0] + x * cosine + z * sine;
+    target[1] = motion.center[1] + y;
+    target[2] = motion.center[2] - x * sine + z * cosine;
+  } else {
+    target[0] = motion.center[0] + x * cosine - y * sine;
+    target[1] = motion.center[1] + x * sine + y * cosine;
+    target[2] = motion.center[2] + z;
+  }
+  return target;
 }
 
 function validCoordinates(value: unknown): value is readonly [number, number, number] {
@@ -133,10 +208,11 @@ export function validateSceneV1(value: unknown): readonly GenomeIssueV1[] {
   }
   const scene = value as Record<string, unknown>;
   if (scene.schemaVersion !== VOXEL_SCENE_SCHEMA_V1
-    && scene.schemaVersion !== VOXEL_SCENE_SCHEMA_V2) {
+    && scene.schemaVersion !== VOXEL_SCENE_SCHEMA_V2
+    && scene.schemaVersion !== VOXEL_SCENE_SCHEMA_V3) {
     return [{
       path: '$.schemaVersion',
-      message: `Expected ${VOXEL_SCENE_SCHEMA_V1} or ${VOXEL_SCENE_SCHEMA_V2}; `
+      message: `Expected ${VOXEL_SCENE_SCHEMA_V1}, ${VOXEL_SCENE_SCHEMA_V2}, or ${VOXEL_SCENE_SCHEMA_V3}; `
         + 'unknown versions need migration, never a silent misrender.',
     }];
   }
@@ -204,9 +280,12 @@ export function validateSceneV1(value: unknown): readonly GenomeIssueV1[] {
   const lights: unknown = scene.lights;
   if (scene.schemaVersion === VOXEL_SCENE_SCHEMA_V1) {
     if (lights !== undefined) {
+      const containsMotion = Array.isArray(lights) && lights.some((entry: unknown) =>
+        typeof entry === 'object' && entry !== null && 'motion' in entry);
+      const requiredVersion = containsMotion ? VOXEL_SCENE_SCHEMA_V3 : VOXEL_SCENE_SCHEMA_V2;
       issues.push({
         path: '$.lights',
-        message: `Point lights require ${VOXEL_SCENE_SCHEMA_V2}; change schemaVersion so older Studios `
+        message: `Point lights require ${requiredVersion}; change schemaVersion so older Studios `
           + 'reject the scene instead of silently omitting its lighting.',
       });
     }
@@ -221,6 +300,28 @@ export function validateSceneV1(value: unknown): readonly GenomeIssueV1[] {
     issues.push({
       path: '$.lights',
       message: `Expected at most ${String(MAX_SCENE_LIGHTS)} point lights; remove the extras.`,
+    });
+  }
+  const effectiveUnboundedLights = lights.filter((entry: unknown) => {
+    if (typeof entry !== 'object' || entry === null) return false;
+    const light = entry as Record<string, unknown>;
+    const color = light.color;
+    return light.range === 0
+      && isFiniteNumber(light.intensity)
+      && light.intensity > 0
+      && typeof color === 'object'
+      && color !== null
+      && ['r', 'g', 'b'].some((channel) => {
+        const value = (color as Record<string, unknown>)[channel];
+        return isFiniteNumber(value) && value > 0;
+      });
+  }).length;
+  if (effectiveUnboundedLights > MAX_UNBOUNDED_CLUSTERED_POINT_LIGHTS_INTERNAL) {
+    issues.push({
+      path: '$.lights',
+      message: `Expected at most ${String(MAX_UNBOUNDED_CLUSTERED_POINT_LIGHTS_INTERNAL)} nonzero `
+        + `range-0 point lights; received ${String(effectiveUnboundedLights)}. Give local lights finite `
+        + 'ranges so every view keeps clustered lighting work bounded.',
     });
   }
   const seenLights = new Set<unknown>();
@@ -280,6 +381,58 @@ export function validateSceneV1(value: unknown): readonly GenomeIssueV1[] {
         path: `${path}.range`,
         message: `Expected a finite light range from 0 to ${String(MAX_SCENE_LIGHT_RANGE)}; `
           + 'zero means no explicit cutoff.',
+      });
+    }
+    const motion: unknown = light.motion;
+    if (motion === undefined) return;
+    if (scene.schemaVersion !== VOXEL_SCENE_SCHEMA_V3) {
+      issues.push({
+        path: `${path}.motion`,
+        message: `Orbiting point lights require ${VOXEL_SCENE_SCHEMA_V3}; change schemaVersion so older Studios `
+          + 'reject the scene instead of silently freezing the light.',
+      });
+      return;
+    }
+    if (typeof motion !== 'object' || motion === null || Array.isArray(motion)) {
+      issues.push({
+        path: `${path}.motion`,
+        message: 'Expected an orbit-motion object, or omit motion to keep this point light static.',
+      });
+      return;
+    }
+    const orbit = motion as Record<string, unknown>;
+    if (orbit.kind !== 'orbit') {
+      issues.push({
+        path: `${path}.motion.kind`,
+        message: "Expected 'orbit'; V3 point lights do not support another motion kind.",
+      });
+    }
+    if (!validCoordinates(orbit.center)) {
+      issues.push({
+        path: `${path}.motion.center`,
+        message: `Expected three finite orbit-center coordinates, each within +/-${String(MAX_COORD)}.`,
+      });
+    }
+    if (orbit.axis !== 'x' && orbit.axis !== 'y' && orbit.axis !== 'z') {
+      issues.push({
+        path: `${path}.motion.axis`,
+        message: "Expected orbit axis 'x', 'y', or 'z'.",
+      });
+    }
+    if (!isFiniteNumber(orbit.periodMs)
+      || orbit.periodMs <= 0
+      || orbit.periodMs > MAX_SCENE_LIGHT_ORBIT_PERIOD_MS) {
+      issues.push({
+        path: `${path}.motion.periodMs`,
+        message: `Expected a finite orbit period greater than 0 and at most `
+          + `${String(MAX_SCENE_LIGHT_ORBIT_PERIOD_MS)} milliseconds; `
+          + 'omit motion to keep this point light static.',
+      });
+    }
+    if (!isFiniteNumber(orbit.phaseRadians)) {
+      issues.push({
+        path: `${path}.motion.phaseRadians`,
+        message: 'Expected a finite starting phase in radians.',
       });
     }
   });

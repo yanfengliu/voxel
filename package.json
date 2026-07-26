@@ -59,6 +59,7 @@
     "test:supply-chain": "node scripts/verify-supply-chain.mjs",
     "test:supply-chain:self": "node scripts/verify-supply-chain.mjs --self-test",
     "benchmark:meshers": "npm run build && node scripts/benchmark-meshers.mjs",
+    "benchmark:lights": "npm run build && node scripts/benchmark-clustered-lights.mjs",
     "benchmark:scenes": "npm run build && node scripts/record-reference-scenes.mjs",
     "inspect:frames": "npm run build && node scripts/inspect-frames.mjs",
     "studio": "vite --config tools/studio/vite.config.ts",

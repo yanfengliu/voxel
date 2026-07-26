@@ -25,6 +25,7 @@ import {
   type ContextEventCanvasInternal,
 } from './runtimeRendererSetup.js';
 import { LegacyRuntimePresentationSurfaceInternal } from './runtimePresentationSurface.js';
+import { materialDecoratorFromOptionsInternal } from './materialDecoratorInternal.js';
 import {
   createRuntimeAtomicSetupInternal,
   disposeRuntimeAtomicSetupInternal,
@@ -181,7 +182,17 @@ export function initializeRuntimeInternal(
       : undefined;
     contextCanvas = contextEventCanvasInternal(renderer);
     scene = resolvedHost.scene ?? new Scene();
-    presentationSurface = new LegacyRuntimePresentationSurfaceInternal();
+    const materialDecorator = materialDecoratorFromOptionsInternal(options);
+    if (materialDecorator && options.voxelWorkers) {
+      throw new Error(
+        'The internal material decorator cannot be combined with voxelWorkers until revision-atomic '
+        + 'bundles own the same decorator. Disable voxelWorkers or omit the internal decorator.',
+      );
+    }
+    presentationSurface = new LegacyRuntimePresentationSurfaceInternal(
+      undefined,
+      materialDecorator,
+    );
     scene.add(presentationSurface.rootInternal);
     // The internal option only adds optional members, so the public shape is
     // assignable and tests' extra seams flow through by structure.

@@ -208,7 +208,61 @@ test('scene menu renames and deletes while keeping open-scene state coherent', a
   await expect(restoredDining).toBeVisible();
 });
 
-test('completed deletion with renderer cleanup failure cannot be retried', async ({ page }) => {
+test('deleting the last scene shown behind model mode retires its renderer contents', async ({ page }) => {
+  await page.goto(studioOrigin, { waitUntil: 'load' });
+  await page.waitForFunction(() => typeof window.voxelStudio === 'object');
+  const evidence = await page.evaluate(async () => {
+    const harness = window.voxelStudio!;
+    harness.openScene('studio:scene:dining');
+    const model = harness.shelf().flatMap((section) => section.models)[0];
+    if (!model) throw new Error('The hidden-scene retirement test needs one shelf model.');
+    harness.openFromShelf(model.id);
+
+    const moduleUrl = new URL('scene-session.ts', window.location.href).href;
+    const module = await import(moduleUrl) as unknown as {
+      readonly SceneSession: {
+        readonly prototype: { setScene(scene: { readonly id: string }): void };
+      };
+    };
+    const prototype = module.SceneSession.prototype;
+    const descriptor = Object.getOwnPropertyDescriptor(prototype, 'setScene');
+    if (descriptor?.value === undefined) {
+      throw new Error('SceneSession.setScene has no callable property descriptor.');
+    }
+    const original = descriptor.value as (
+      this: unknown,
+      scene: { readonly id: string },
+    ) => void;
+    const acceptedIds: string[] = [];
+    Object.defineProperty(prototype, 'setScene', {
+      ...descriptor,
+      value(this: unknown, scene: { readonly id: string }): void {
+        acceptedIds.push(scene.id);
+        Reflect.apply(original, this, [scene]);
+      },
+    });
+    try {
+      harness.deleteScene('studio:scene:dining');
+      const modelDraw = harness.drawAt(0);
+      harness.openScene('studio:scene:village');
+      return {
+        acceptedIds,
+        modelDraw,
+        listed: harness.scenes().some((scene) => scene.id === 'studio:scene:dining'),
+        reopened: harness.sceneState()?.id,
+      };
+    } finally {
+      Object.defineProperty(prototype, 'setScene', descriptor);
+    }
+  });
+
+  expect(evidence.acceptedIds).toContain('studio:scene:retired-renderer');
+  expect(evidence.modelDraw).toEqual({ sceneLighting: null, sceneRender: null });
+  expect(evidence.listed).toBe(false);
+  expect(evidence.reopened).toBe('studio:scene:village');
+});
+
+test('completed deletion with renderer retirement failure cannot be retried', async ({ page }) => {
   await page.goto(studioOrigin, { waitUntil: 'load' });
   await page.waitForFunction(() => typeof window.voxelStudio === 'object');
   await page.getByRole('button', { name: 'Scenes' }).click();
@@ -217,14 +271,14 @@ test('completed deletion with renderer cleanup failure cannot be retried', async
   await page.evaluate(async () => {
     const moduleUrl = new URL('scene-session.ts', window.location.href).href;
     const module = await import(moduleUrl) as unknown as {
-      readonly SceneSession: { readonly prototype: { dispose(): void } };
+      readonly SceneSession: { readonly prototype: { setScene(scene: unknown): void } };
     };
     const prototype = module.SceneSession.prototype;
-    const descriptor = Object.getOwnPropertyDescriptor(prototype, 'dispose');
-    if (descriptor === undefined) throw new Error('SceneSession.dispose has no property descriptor.');
-    const state = window as typeof window & { __voxelDisposeDescriptor?: PropertyDescriptor };
-    state.__voxelDisposeDescriptor = descriptor;
-    Object.defineProperty(prototype, 'dispose', {
+    const descriptor = Object.getOwnPropertyDescriptor(prototype, 'setScene');
+    if (descriptor === undefined) throw new Error('SceneSession.setScene has no property descriptor.');
+    const state = window as typeof window & { __voxelSetSceneDescriptor?: PropertyDescriptor };
+    state.__voxelSetSceneDescriptor = descriptor;
+    Object.defineProperty(prototype, 'setScene', {
       ...descriptor,
       value() { throw new Error('forced cleanup failure'); },
     });
@@ -237,7 +291,7 @@ test('completed deletion with renderer cleanup failure cannot be retried', async
     const dialog = page.getByRole('dialog');
     await dialog.getByRole('button', { name: 'Delete' }).click();
     await expect(dialog.getByRole('alert')).toHaveText(
-      "Scene 'studio:scene:dining' was deleted and the model view was restored, but releasing its renderer failed: forced cleanup failure. Reload the page to release any remaining browser resources.",
+      "Scene 'studio:scene:dining' was deleted and the model view was restored, but emptying its reusable renderer failed: forced cleanup failure. Reload the page before opening another scene.",
     );
     await expect(dialog.getByRole('button', { name: 'Deleted' })).toBeDisabled();
     await expect(dialog.getByRole('button', { name: 'Close' })).toBeFocused();
@@ -260,13 +314,13 @@ test('completed deletion with renderer cleanup failure cannot be retried', async
     await page.evaluate(async () => {
       const moduleUrl = new URL('scene-session.ts', window.location.href).href;
       const module = await import(moduleUrl) as unknown as {
-        readonly SceneSession: { readonly prototype: { dispose(): void } };
+        readonly SceneSession: { readonly prototype: { setScene(scene: unknown): void } };
       };
-      const state = window as typeof window & { __voxelDisposeDescriptor?: PropertyDescriptor };
-      const descriptor = state.__voxelDisposeDescriptor;
+      const state = window as typeof window & { __voxelSetSceneDescriptor?: PropertyDescriptor };
+      const descriptor = state.__voxelSetSceneDescriptor;
       if (descriptor !== undefined) {
-        Object.defineProperty(module.SceneSession.prototype, 'dispose', descriptor);
-        delete state.__voxelDisposeDescriptor;
+        Object.defineProperty(module.SceneSession.prototype, 'setScene', descriptor);
+        delete state.__voxelSetSceneDescriptor;
       }
     });
   }

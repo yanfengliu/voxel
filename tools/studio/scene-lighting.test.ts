@@ -1,20 +1,26 @@
 import {
+  BoxGeometry,
+  Color,
   Group,
-  Mesh,
+  InstancedMesh,
+  Matrix4,
   MeshBasicMaterial,
+  OrthographicCamera,
   PointLight,
   Scene,
   SRGBColorSpace,
+  Vector3,
 } from 'three';
 import { describe, expect, it, vi } from 'vitest';
 
-import type { ScenePointLightV1 } from './scene.js';
+import type { ScenePointLightV3 } from './scene.js';
 import {
+  STUDIO_SCENE_LIGHT_MARKERS_NAME,
   STUDIO_SCENE_LIGHT_ROOT_NAME,
   StudioSceneLighting,
 } from './scene-lighting.js';
 
-const WARM: ScenePointLightV1 = {
+const WARM: ScenePointLightV3 = {
   id: 'light:warm',
   kind: 'point',
   at: [-4, 7, 2],
@@ -23,7 +29,7 @@ const WARM: ScenePointLightV1 = {
   range: 30,
 };
 
-const COOL: ScenePointLightV1 = {
+const COOL: ScenePointLightV3 = {
   id: 'light:cool',
   kind: 'point',
   at: [5, 4, -3],
@@ -32,123 +38,210 @@ const COOL: ScenePointLightV1 = {
   range: 24,
 };
 
-function point(scene: Scene, id: string): PointLight {
-  const object = scene.getObjectByName(`studio-scene-light:${id}`);
-  expect(object).toBeInstanceOf(PointLight);
-  return object as PointLight;
+const ORBITING: ScenePointLightV3 = {
+  id: 'light:orbiting',
+  kind: 'point',
+  at: [10, 4, 0],
+  color: { r: 96, g: 255, b: 128 },
+  intensity: 36,
+  range: 26,
+  motion: {
+    kind: 'orbit',
+    center: [0, 4, 0],
+    axis: 'y',
+    periodMs: 4_000,
+    phaseRadians: 0,
+  },
+};
+
+type MarkerBatch = InstancedMesh<BoxGeometry, MeshBasicMaterial>;
+
+function markers(scene: Scene): MarkerBatch {
+  const object = scene.getObjectByName(STUDIO_SCENE_LIGHT_MARKERS_NAME);
+  expect(object).toBeInstanceOf(InstancedMesh);
+  return object as MarkerBatch;
 }
 
-function marker(scene: Scene, id: string): Mesh {
-  const object = scene.getObjectByName(`studio-scene-light:${id}:marker`);
-  expect(object).toBeInstanceOf(Mesh);
-  return object as Mesh;
+function markerMaterial(batch: MarkerBatch): MeshBasicMaterial {
+  expect(Array.isArray(batch.material)).toBe(false);
+  return batch.material;
 }
 
-function install(rig: StudioSceneLighting, definitions: readonly ScenePointLightV1[]): void {
+function instancePosition(batch: MarkerBatch, index: number): readonly number[] {
+  const matrix = new Matrix4();
+  batch.getMatrixAt(index, matrix);
+  return new Vector3().setFromMatrixPosition(matrix).toArray();
+}
+
+function instanceColorHex(batch: MarkerBatch, index: number): number {
+  const color = new Color();
+  batch.getColorAt(index, color);
+  return color.getHex(SRGBColorSpace);
+}
+
+function nativePointLightCount(scene: Scene): number {
+  let count = 0;
+  scene.traverse((object) => {
+    if (object instanceof PointLight) count += 1;
+  });
+  return count;
+}
+
+function install(rig: StudioSceneLighting, definitions: readonly ScenePointLightV3[]): void {
   rig.commit(rig.prepare(definitions));
 }
 
 describe('StudioSceneLighting', () => {
-  it('prepares additions off-scene and commits exact shadow-free point lights and markers', () => {
+  it('commits every handle into one colored InstancedMesh and creates no native PointLights', () => {
     const scene = new Scene();
     const rig = new StudioSceneLighting(scene);
     const plan = rig.prepare([WARM, COOL]);
 
     expect(scene.getObjectByName(STUDIO_SCENE_LIGHT_ROOT_NAME)).toBe(rig.root);
-    expect(scene.getObjectByName('studio-scene-light:light:warm')).toBeUndefined();
+    expect(scene.getObjectByName(STUDIO_SCENE_LIGHT_MARKERS_NAME)).toBeUndefined();
     expect(rig.ids()).toEqual([]);
 
     rig.commit(plan);
 
-    const warm = point(scene, WARM.id);
-    const warmMarker = marker(scene, WARM.id);
+    const batch = markers(scene);
+    expect(rig.root.children).toEqual([batch]);
+    expect(batch.count).toBe(2);
+    expect(batch.geometry).toBeInstanceOf(BoxGeometry);
+    expect(markerMaterial(batch)).toBeInstanceOf(MeshBasicMaterial);
+    expect(markerMaterial(batch).vertexColors).toBe(false);
+    expect(batch.frustumCulled).toBe(false);
     expect(rig.ids()).toEqual([WARM.id, COOL.id]);
-    expect(warm.position.toArray()).toEqual(WARM.at);
-    expect(warm.color.getHex(SRGBColorSpace)).toBe(0xff9448);
-    expect(warm).toMatchObject({
-      intensity: 42,
-      distance: 30,
-      decay: 2,
-      castShadow: false,
-    });
-    expect(warmMarker.position.toArray()).toEqual(WARM.at);
-    expect(warmMarker.material).toBeInstanceOf(MeshBasicMaterial);
-    expect((warmMarker.material as MeshBasicMaterial).color.getHex(SRGBColorSpace)).toBe(0xff9448);
-    expect(warmMarker).toMatchObject({ castShadow: false, receiveShadow: false });
+    expect(instancePosition(batch, 0)).toEqual(WARM.at);
+    expect(instancePosition(batch, 1)).toEqual(COOL.at);
+    expect(instanceColorHex(batch, 0)).toBe(0xff9448);
+    expect(instanceColorHex(batch, 1)).toBe(0x489aff);
+    expect(nativePointLightCount(scene)).toBe(0);
 
     rig.dispose();
   });
 
-  it('reuses stable ids while moving and recoloring, then adds and removes atomically', () => {
+  it('keeps live ids, positions, and colors unchanged until a prepared edit commits', () => {
     const scene = new Scene();
     const rig = new StudioSceneLighting(scene);
     install(rig, [WARM, COOL]);
-    const warm = point(scene, WARM.id);
-    const warmMarker = marker(scene, WARM.id);
-    const cool = point(scene, COOL.id);
-    const coolMarker = marker(scene, COOL.id);
-    const removedMaterial = warmMarker.material as MeshBasicMaterial;
-    const removedDispose = vi.spyOn(removedMaterial, 'dispose');
-    const sharedGeometry = warmMarker.geometry;
-    const movedCool: ScenePointLightV1 = {
+    const batch = markers(scene);
+    const movedCool: ScenePointLightV3 = {
       ...COOL,
       at: [8, 9, -6],
       color: { r: 40, g: 220, b: 180 },
       intensity: 55,
       range: 40,
     };
-    const green: ScenePointLightV1 = {
+    const green: ScenePointLightV3 = {
       ...WARM,
       id: 'light:green',
       at: [0, 3, 0],
       color: { r: 80, g: 255, b: 96 },
     };
 
-    const plan = rig.prepare([movedCool, green]);
-    expect(point(scene, COOL.id)).toBe(cool);
-    expect(cool.position.toArray()).toEqual(COOL.at);
-    expect(scene.getObjectByName('studio-scene-light:light:green')).toBeUndefined();
-    expect(point(scene, WARM.id)).toBe(warm);
+    const rejected = rig.prepare([movedCool, green]);
+    expect(rejected.replacementMarkers).toBeNull();
+    expect(rig.ids()).toEqual([WARM.id, COOL.id]);
+    expect(instancePosition(batch, 0)).toEqual(WARM.at);
+    expect(instancePosition(batch, 1)).toEqual(COOL.at);
+    expect(instanceColorHex(batch, 0)).toBe(0xff9448);
+    expect(instanceColorHex(batch, 1)).toBe(0x489aff);
+    rig.discard(rejected);
 
-    rig.commit(plan);
+    expect(markers(scene)).toBe(batch);
+    expect(rig.ids()).toEqual([WARM.id, COOL.id]);
+    expect(instancePosition(batch, 0)).toEqual(WARM.at);
+    expect(instancePosition(batch, 1)).toEqual(COOL.at);
+    expect(instanceColorHex(batch, 0)).toBe(0xff9448);
+    expect(instanceColorHex(batch, 1)).toBe(0x489aff);
 
-    expect(scene.getObjectByName(`studio-scene-light:${WARM.id}`)).toBeUndefined();
-    expect(scene.getObjectByName(`studio-scene-light:${WARM.id}:marker`)).toBeUndefined();
-    expect(removedDispose).toHaveBeenCalledOnce();
-    expect(point(scene, COOL.id)).toBe(cool);
-    expect(marker(scene, COOL.id)).toBe(coolMarker);
-    expect(cool.position.toArray()).toEqual(movedCool.at);
-    expect(cool.color.getHex(SRGBColorSpace)).toBe(0x28dcb4);
-    expect(cool).toMatchObject({ intensity: 55, distance: 40 });
-    expect(marker(scene, green.id).geometry).toBe(sharedGeometry);
+    rig.commit(rig.prepare([movedCool, green]));
+    expect(markers(scene)).toBe(batch);
+    expect(rig.root.children).toEqual([batch]);
     expect(rig.ids()).toEqual([COOL.id, green.id]);
+    expect(instancePosition(batch, 0)).toEqual(movedCool.at);
+    expect(instancePosition(batch, 1)).toEqual(green.at);
+    expect(instanceColorHex(batch, 0)).toBe(0x28dcb4);
+    expect(instanceColorHex(batch, 1)).toBe(0x50ff60);
+    expect(nativePointLightCount(scene)).toBe(0);
 
     rig.dispose();
   });
 
-  it('discards prepared additions without touching the live rig', () => {
+  it('disposes rejected marker growth while retaining one live marker batch for retry', () => {
     const scene = new Scene();
     const rig = new StudioSceneLighting(scene);
-    install(rig, [WARM]);
-    const warm = point(scene, WARM.id);
-    const plan = rig.prepare([WARM, COOL]);
-    const created = plan.updates.find((update) => update.created);
-    expect(created).toBeDefined();
-    const dispose = vi.spyOn(created!.entry.marker.material, 'dispose');
+    install(rig, [WARM, COOL]);
+    const live = markers(scene);
+    const plan = rig.prepare([WARM, COOL, ORBITING]);
+    const prepared = plan.replacementMarkers;
+    expect(prepared).not.toBeNull();
+    const preparedDispose = vi.spyOn(prepared!, 'dispose');
+    const preparedMaterialDispose = vi.spyOn(markerMaterial(prepared!), 'dispose');
 
     rig.discard(plan);
 
-    expect(dispose).toHaveBeenCalledOnce();
-    expect(point(scene, WARM.id)).toBe(warm);
-    expect(scene.getObjectByName(`studio-scene-light:${COOL.id}`)).toBeUndefined();
-    expect(rig.ids()).toEqual([WARM.id]);
+    expect(preparedDispose).toHaveBeenCalledOnce();
+    expect(preparedMaterialDispose).toHaveBeenCalledOnce();
+    expect(markers(scene)).toBe(live);
+    expect(rig.root.children).toEqual([live]);
+    expect(rig.ids()).toEqual([WARM.id, COOL.id]);
 
-    install(rig, [WARM, COOL]);
-    expect(point(scene, COOL.id)).toBeInstanceOf(PointLight);
+    install(rig, [WARM, COOL, ORBITING]);
+    const grown = markers(scene);
+    expect(grown).not.toBe(live);
+    expect(rig.root.children).toEqual([grown]);
+    expect(grown.count).toBe(3);
+    expect(rig.ids()).toEqual([WARM.id, COOL.id, ORBITING.id]);
+    expect(nativePointLightCount(scene)).toBe(0);
+
     rig.dispose();
   });
 
-  it('rejects duplicate ids rather than leaking an aliased light', () => {
+  it('moves an orbiting marker deterministically at injected frame times', () => {
+    const scene = new Scene();
+    const rig = new StudioSceneLighting(scene);
+    install(rig, [ORBITING]);
+    const batch = markers(scene);
+    const camera = new OrthographicCamera(-20, 20, 20, -20, 0.1, 100);
+
+    expect(instancePosition(batch, 0)).toEqual([10, 4, 0]);
+    const metrics = rig.updateAt(1_000, camera, 320, 240);
+    expect(instancePosition(batch, 0).map((value) => Math.round(value * 1e9) / 1e9))
+      .toEqual([0, 4, -10]);
+    expect(instanceColorHex(batch, 0)).toBe(0x60ff80);
+    expect(rig.ids()).toEqual([ORBITING.id]);
+    expect(metrics).toMatchObject({ movingLights: 1, markerInstances: 1 });
+    expect(nativePointLightCount(scene)).toBe(0);
+
+    rig.dispose();
+  });
+
+  it('reports the current authored scene while raster lighting is disabled', () => {
+    const scene = new Scene();
+    const rig = new StudioSceneLighting(scene);
+    const camera = new OrthographicCamera(-20, 20, 20, -20, 0.1, 100);
+    install(rig, [WARM, COOL]);
+
+    expect(rig.updateAt(0, camera, 320, 240)).toMatchObject({
+      authoredLights: 2,
+      visibleLights: 0,
+      clusterCount: 0,
+      markerInstances: 2,
+    });
+    install(rig, [ORBITING]);
+    expect(rig.metrics()).toMatchObject({
+      authoredLights: 1,
+      visibleLights: 0,
+      clusterCount: 0,
+      markerInstances: 1,
+      movingLights: 1,
+    });
+
+    rig.dispose();
+  });
+
+  it('rejects duplicate ids rather than aliasing one marker instance', () => {
     const scene = new Scene();
     const rig = new StudioSceneLighting(scene);
 
@@ -161,27 +254,28 @@ describe('StudioSceneLighting', () => {
     rig.dispose();
   });
 
-  it('removes only its owned root and disposes marker resources exactly once', () => {
+  it('removes only its owned root and disposes the one marker batch exactly once', () => {
     const scene = new Scene();
     const unrelated = new Group();
     unrelated.name = 'host-owned';
     scene.add(unrelated);
     const rig = new StudioSceneLighting(scene);
     install(rig, [WARM, COOL]);
-    const warmMarker = marker(scene, WARM.id);
-    const coolMarker = marker(scene, COOL.id);
-    const geometryDispose = vi.spyOn(warmMarker.geometry, 'dispose');
-    const warmDispose = vi.spyOn(warmMarker.material as MeshBasicMaterial, 'dispose');
-    const coolDispose = vi.spyOn(coolMarker.material as MeshBasicMaterial, 'dispose');
+    const batch = markers(scene);
+    const batchDispose = vi.spyOn(batch, 'dispose');
+    const materialDispose = vi.spyOn(markerMaterial(batch), 'dispose');
+    const geometryDispose = vi.spyOn(batch.geometry, 'dispose');
 
     rig.dispose();
     rig.dispose();
 
     expect(scene.getObjectByName(STUDIO_SCENE_LIGHT_ROOT_NAME)).toBeUndefined();
+    expect(scene.getObjectByName(STUDIO_SCENE_LIGHT_MARKERS_NAME)).toBeUndefined();
     expect(scene.getObjectByName('host-owned')).toBe(unrelated);
+    expect(batchDispose).toHaveBeenCalledOnce();
+    expect(materialDispose).toHaveBeenCalledOnce();
     expect(geometryDispose).toHaveBeenCalledOnce();
-    expect(warmDispose).toHaveBeenCalledOnce();
-    expect(coolDispose).toHaveBeenCalledOnce();
+    expect(nativePointLightCount(scene)).toBe(0);
     expect(() => rig.prepare([])).toThrow('Scene lighting is disposed.');
   });
 });

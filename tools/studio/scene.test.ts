@@ -6,13 +6,17 @@ import { createStudioRecipeBook } from './recipes.js';
 import { buildSceneSnapshot, SceneBuildError } from './scene-build.js';
 import {
   MAX_SCENE_LIGHT_INTENSITY,
+  MAX_SCENE_LIGHT_ORBIT_PERIOD_MS,
   MAX_SCENE_LIGHT_RANGE,
   MAX_SCENE_LIGHTS,
+  resolveScenePointLightAtV3,
   validateSceneV1,
   VOXEL_SCENE_SCHEMA_V1,
   VOXEL_SCENE_SCHEMA_V2,
+  VOXEL_SCENE_SCHEMA_V3,
   type ScenePlacementV1,
   type ScenePointLightV1,
+  type ScenePointLightV3,
   type SceneV1,
 } from './scene.js';
 
@@ -29,6 +33,17 @@ const pointLight = (id = 'key'): ScenePointLightV1 => ({
   color: { r: 255, g: 208, b: 144 },
   intensity: 1_200,
   range: 30,
+});
+const orbitingPointLight = (id = 'orbiting-key'): ScenePointLightV3 => ({
+  ...pointLight(id),
+  at: [12, 8, -3],
+  motion: {
+    kind: 'orbit',
+    center: [2, 8, -3],
+    axis: 'y',
+    periodMs: 4_000,
+    phaseRadians: 0,
+  },
 });
 
 describe('scene validation', () => {
@@ -55,7 +70,7 @@ describe('scene validation', () => {
   });
 
   it('rejects an unknown schema version rather than misrendering it', () => {
-    expect(validateSceneV1({ ...scene([]), schemaVersion: 'studio.scene/3' })).not.toEqual([]);
+    expect(validateSceneV1({ ...scene([]), schemaVersion: 'studio.scene/4' })).not.toEqual([]);
   });
 
   it('accepts bounded point lights as clone-safe scene data', () => {
@@ -69,15 +84,50 @@ describe('scene validation', () => {
     expect(structuredClone(lit)).toEqual(lit);
   });
 
-  it('requires the V2 discriminator before accepting behavior-bearing lights', () => {
+  it('accepts clone-safe V3 scenes with static and deterministic orbiting lights', () => {
+    const lit: SceneV1 = {
+      ...scene([]),
+      schemaVersion: VOXEL_SCENE_SCHEMA_V3,
+      lights: [pointLight('static-fill'), orbitingPointLight()],
+    };
+    expect(validateSceneV1(lit)).toEqual([]);
+    expect(JSON.parse(JSON.stringify(lit))).toEqual(lit);
+    expect(structuredClone(lit)).toEqual(lit);
+  });
+
+  it('resolves an orbit from injected time without mutating its scene data', () => {
+    const light = orbitingPointLight();
+    const before = structuredClone(light);
+    const rounded = (nowMs: number): readonly number[] =>
+      resolveScenePointLightAtV3(light, nowMs).map((value) => Math.round(value * 1e9) / 1e9);
+    expect(rounded(0)).toEqual([12, 8, -3]);
+    expect(rounded(1_000)).toEqual([2, 8, -13]);
+    expect(rounded(4_000)).toEqual([12, 8, -3]);
+    expect(rounded(-1_000)).toEqual([2, 8, 7]);
+    expect(resolveScenePointLightAtV3({
+      ...light,
+      motion: { ...light.motion!, phaseRadians: Math.PI / 2 },
+    }, 0).map((value) => Math.round(value * 1e9) / 1e9)).toEqual([2, 8, -13]);
+    expect(light).toEqual(before);
+    expect(() => resolveScenePointLightAtV3(light, Number.NaN)).toThrow(
+      "Cannot resolve point light 'orbiting-key' at time 'NaN'; expected a finite time in milliseconds.",
+    );
+  });
+
+  it('requires the matching discriminator before accepting behavior-bearing lights', () => {
     expect(validateSceneV1({ ...scene([]), lights: [pointLight()] })).toContainEqual({
       path: '$.lights',
       message: `Point lights require ${VOXEL_SCENE_SCHEMA_V2}; change schemaVersion so older Studios `
         + 'reject the scene instead of silently omitting its lighting.',
     });
+    expect(validateSceneV1({ ...scene([]), lights: [orbitingPointLight()] })).toContainEqual({
+      path: '$.lights',
+      message: `Point lights require ${VOXEL_SCENE_SCHEMA_V3}; change schemaVersion so older Studios `
+        + 'reject the scene instead of silently omitting its lighting.',
+    });
   });
 
-  it('rejects more than eight lights and duplicate stable light ids', () => {
+  it('rejects more than the bounded thousands-scale light ceiling and duplicate stable ids', () => {
     const lights = Array.from(
       { length: MAX_SCENE_LIGHTS + 1 },
       (_, index) => pointLight(index === MAX_SCENE_LIGHTS ? 'light-1' : `light-${String(index + 1)}`),
@@ -94,6 +144,91 @@ describe('scene validation', () => {
     expect(issues).toContainEqual({
       path: `$.lights[${String(MAX_SCENE_LIGHTS)}].id`,
       message: "Duplicate light id 'light-1'.",
+    });
+  });
+
+  it('requires finite ranges once more than eight effective global lights are authored', () => {
+    const globals = Array.from(
+      { length: 9 },
+      (_, index) => ({ ...pointLight(`global-${String(index)}`), range: 0 }),
+    );
+    expect(validateSceneV1({
+      ...scene([]),
+      schemaVersion: VOXEL_SCENE_SCHEMA_V2,
+      lights: globals,
+    })).toContainEqual({
+      path: '$.lights',
+      message: 'Expected at most 8 nonzero range-0 point lights; received 9. Give local lights finite '
+        + 'ranges so every view keeps clustered lighting work bounded.',
+    });
+    expect(validateSceneV1({
+      ...scene([]),
+      schemaVersion: VOXEL_SCENE_SCHEMA_V2,
+      lights: globals.map((light) => ({ ...light, color: { r: 0, g: 0, b: 0 } })),
+    })).toEqual([]);
+  });
+
+  it('requires V3 before accepting orbit behavior on a point light', () => {
+    expect(validateSceneV1({
+      ...scene([]),
+      schemaVersion: VOXEL_SCENE_SCHEMA_V2,
+      lights: [orbitingPointLight()],
+    })).toContainEqual({
+      path: '$.lights[0].motion',
+      message: `Orbiting point lights require ${VOXEL_SCENE_SCHEMA_V3}; change schemaVersion so older Studios `
+        + 'reject the scene instead of silently freezing the light.',
+    });
+  });
+
+  it('reports every malformed orbit field with a useful path and remedy', () => {
+    const issues = validateSceneV1({
+      ...scene([]),
+      schemaVersion: VOXEL_SCENE_SCHEMA_V3,
+      lights: [{
+        ...pointLight(),
+        motion: {
+          kind: 'wander',
+          center: [0, Number.NaN, 0],
+          axis: 'diagonal',
+          periodMs: MAX_SCENE_LIGHT_ORBIT_PERIOD_MS + 1,
+          phaseRadians: Number.POSITIVE_INFINITY,
+        },
+      }],
+    });
+    expect(issues).toEqual(expect.arrayContaining([
+      {
+        path: '$.lights[0].motion.kind',
+        message: "Expected 'orbit'; V3 point lights do not support another motion kind.",
+      },
+      {
+        path: '$.lights[0].motion.center',
+        message: 'Expected three finite orbit-center coordinates, each within +/-1000000.',
+      },
+      {
+        path: '$.lights[0].motion.axis',
+        message: "Expected orbit axis 'x', 'y', or 'z'.",
+      },
+      {
+        path: '$.lights[0].motion.periodMs',
+        message: `Expected a finite orbit period greater than 0 and at most `
+          + `${String(MAX_SCENE_LIGHT_ORBIT_PERIOD_MS)} milliseconds; `
+          + 'omit motion to keep this point light static.',
+      },
+      {
+        path: '$.lights[0].motion.phaseRadians',
+        message: 'Expected a finite starting phase in radians.',
+      },
+    ]));
+  });
+
+  it('rejects a non-object orbit value with an actionable static-light remedy', () => {
+    expect(validateSceneV1({
+      ...scene([]),
+      schemaVersion: VOXEL_SCENE_SCHEMA_V3,
+      lights: [{ ...pointLight(), motion: null }],
+    })).toContainEqual({
+      path: '$.lights[0].motion',
+      message: 'Expected an orbit-motion object, or omit motion to keep this point light static.',
     });
   });
 

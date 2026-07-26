@@ -28,6 +28,10 @@ export interface StudioPlayerBarV1 {
   renderDots(): void;
   /** Writes the frame/time readout and moves the scrubber, unless it has focus. */
   showTime(timeMs: number): void;
+  /** Writes scene time without describing the hidden model's pose. */
+  showSceneTime(timeMs: number): void;
+  /** Scene playback has no single model frame or model notes, so those controls stay out of the way. */
+  setSceneMode(on: boolean): void;
   /** Applies a model's period: enables the controls and sizes the scrubber. */
   applyPeriod(periodMs: number): void;
 }
@@ -95,6 +99,21 @@ export function createStudioPlayerBar(deps: StudioPlayerBarDepsV1): StudioPlayer
     if (document.activeElement !== timeline) timeline.value = String(Math.round(timeMs));
   }
 
+  function showSceneTime(timeMs: number): void {
+    const period = player.periodMs;
+    const wrapped = period > 0 ? ((timeMs % period) + period) % period : 0;
+    timeLabel.textContent = period > 0
+      ? `${String(Math.round(timeMs))} ms elapsed Â· ${String(period)} ms scrub window`
+      : 'still Â· one scene frame';
+    if (document.activeElement !== timeline) timeline.value = String(Math.round(wrapped));
+  }
+
+  function setSceneMode(on: boolean): void {
+    stepBack.hidden = on;
+    stepForward.hidden = on;
+    dots.hidden = on;
+  }
+
   function applyPeriod(periodMs: number): void {
     player.setPeriod(periodMs, performance.now());
     const period = player.periodMs;
@@ -114,5 +133,15 @@ export function createStudioPlayerBar(deps: StudioPlayerBarDepsV1): StudioPlayer
   speedSelect.addEventListener('change', () => { harness.setSpeed(Number(speedSelect.value)); });
   timeline.addEventListener('input', () => { harness.seek(Number(timeline.value)); });
 
-  return { transport, timelineWrap, timeLabel, syncPlayButton, renderDots, showTime, applyPeriod };
+  return {
+    transport,
+    timelineWrap,
+    timeLabel,
+    syncPlayButton,
+    renderDots,
+    showTime,
+    showSceneTime,
+    setSceneMode,
+    applyPeriod,
+  };
 }

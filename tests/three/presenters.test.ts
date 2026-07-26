@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, type MockInstance, vi } from 'vitest';
 import {
   BoxGeometry,
   Color,
@@ -8,6 +8,7 @@ import {
   MeshBasicMaterial,
   MeshStandardMaterial,
   Quaternion,
+  type Material,
   Vector3,
 } from 'three';
 
@@ -136,6 +137,51 @@ describe('MaterialPresenter', () => {
       transparent: true,
     });
     expect(material?.opacity).toBeCloseTo(0.5 * (128 / 255), 8);
+  });
+
+  it('decorates each new material before adoption and preserves the old one on failure', () => {
+    let failingCandidate: Material | null = null;
+    let failingDispose: MockInstance<Material['dispose']> | null = null;
+    const decorator = vi.fn((material: Material) => {
+      if (decorator.mock.calls.length !== 3) return;
+      failingCandidate = material;
+      failingDispose = vi.spyOn(material, 'dispose');
+      throw new Error('forced decorator failure');
+    });
+    const presenter = new MaterialPresenter(decorator);
+    const resource = (version: string) => ({
+      key: 'material:decorated',
+      version,
+      shading: 'lambert' as const,
+      color: { r: 128, g: 64, b: 32, a: 255 },
+      vertexColors: false,
+      transparent: false,
+      opacity: 1,
+      doubleSided: false,
+      roughness: 1,
+      metalness: 0,
+    });
+
+    presenter.reconcile([resource('1')]);
+    const first = presenter.get('material:decorated');
+    expect(decorator).toHaveBeenCalledTimes(1);
+    expect(decorator).toHaveBeenCalledWith(first);
+
+    presenter.reconcile([resource('1')]);
+    expect(decorator).toHaveBeenCalledTimes(1);
+
+    presenter.reconcile([resource('2')]);
+    const second = presenter.get('material:decorated');
+    expect(decorator).toHaveBeenCalledTimes(2);
+    expect(second).not.toBe(first);
+
+    expect(() => presenter.reconcile([resource('3')])).toThrow(
+      "Material 'material:decorated' could not install its renderer-owned presentation decorator",
+    );
+    expect(failingCandidate).not.toBeNull();
+    expect(failingDispose).toHaveBeenCalledTimes(1);
+    expect(presenter.get('material:decorated')).toBe(second);
+    presenter.dispose();
   });
 });
 

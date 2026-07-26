@@ -144,6 +144,17 @@ const VIEW_HEIGHT = 440;
 // Replaced by the stage's real size once mounted; these only seed the first frame.
 const SWEEP_SAMPLES = 24;
 const DRAG_THRESHOLD_PIXELS = 4;
+/**
+ * Keeps the scene WebGL renderer reusable after deleting the scene it showed.
+ * Three owns several context fallback textures for the renderer's lifetime, so
+ * retiring into an empty scene avoids allocating another set on every reopen.
+ */
+const RETIRED_SCENE: SceneV1 = Object.freeze({
+  schemaVersion: 'studio.scene/1',
+  id: 'studio:scene:retired-renderer',
+  label: 'Retired scene renderer',
+  placements: Object.freeze([]),
+});
 
 // The voxel-size slider maps logarithmically, so a nudge near one unit is a
 // small change and the ends still reach a fine petal and a coarse wall — with
@@ -303,6 +314,31 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
   snapToggle.hidden = true;
   const toggles = element('div', 'toggles');
   toggles.append(lookSwitch, depthToggle, lightToggle, wireframeToggle, gridToggle, physToggle, snapToggle);
+  const viewError = element('p', 'lib-error view-error');
+  viewError.setAttribute('role', 'alert');
+  viewError.setAttribute('aria-live', 'assertive');
+  viewError.hidden = true;
+  const clearViewError = (): void => {
+    viewError.hidden = true;
+    viewError.textContent = '';
+  };
+  const showViewError = (error: unknown, fallback: string): void => {
+    viewError.textContent = error instanceof Error && error.message.trim() !== ''
+      ? error.message
+      : fallback;
+    viewError.hidden = false;
+  };
+  const runViewAction = (action: () => void): void => {
+    clearViewError();
+    try {
+      action();
+    } catch (error) {
+      showViewError(
+        error,
+        'The view change failed without an explanation; the prior view remains active.',
+      );
+    }
+  };
 
   const flatCamera = new OrthographicCamera();
   const depthCamera = new PerspectiveCamera();
@@ -329,9 +365,10 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
   let panCenter: OrbitCenterV1 = [0, 0, 0];
   let viewW = VIEW_WIDTH;
   let viewH = VIEW_HEIGHT;
+  let rejectedAutoResize: { readonly width: number; readonly height: number } | null = null;
   applyOrbit(camera, orbit, viewW, viewH, panCenter);
 
-  let session = new StudioSession(firstModel, {
+  const session = new StudioSession(firstModel, {
     canvas, width: viewW, height: viewH, camera, edges: view.edges, lit: view.lit, wireframe: view.wireframe,
   });
   // The scene lane: the game's whole book to resolve placements, a session that
@@ -376,8 +413,8 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
   };
   const sceneBuildNote = sceneNote('A scene is placed, not built step by step. '
     + 'Add and arrange its models in the Edit tab.');
-  const sceneMotionNote = sceneNote('Every model with its own motion animates live here. '
-    + 'Scene-wide fields — wind that waves the trees, water that ripples — are the next step.');
+  const sceneMotionNote = sceneNote('Models and orbiting point lights animate live here. '
+    + 'Other scene-wide fields — wind that waves trees or water that ripples — are the next step.');
   const sceneNotesNote = sceneNote('Notes pin to one model. Open a model from the shelf to leave notes on it.');
   // A scene's tab content sits as an opaque overlay over each model-only tab,
   // shown while a scene is open — so the model's own content underneath keeps
@@ -397,6 +434,11 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
     layer: 0, selectedSlot: 1, pending: null, armedForPlace: false,
   };
   let lastShownMs = 0;
+  let sceneOpenedAtMs = 0;
+  // Exact-time harness draws intentionally freeze automatic scene motion so
+  // captures and benchmarks remain deterministic. Opening a scene resumes its
+  // ordinary live clock.
+  let sceneAnimationManual = false;
 
   // ---- top bar ----
   const modelName = element('h1', 'name');
@@ -482,34 +524,17 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
   const harness = createStudioHarness({
     session: () => session,
     replace(model: StudioModelV1) {
-      // The look carries onto the next model: opening one keeps the edges and
-      // light choices the last was left on rather than snapping back to the
-      // resting look, which is the whole of "remember my last choice".
-      const previousModel = session.model;
-      const carriedEdges = session.edges;
-      const carriedLit = session.lit;
-      const carriedWireframe = session.wireframe;
-      const createSession = (next: StudioModelV1): StudioSession => new StudioSession(next, {
-        canvas, width: viewW, height: viewH, camera,
-        edges: carriedEdges, lit: carriedLit, wireframe: carriedWireframe,
-      });
       try {
-        session.dispose();
-        session = createSession(model);
+        // StudioSession's accepted-state transaction handles a whole-model
+        // replacement. Reusing it keeps the canvas's one WebGL renderer (and
+        // Three's context fallback textures) bounded across shelf navigation.
+        session.setGenome(model);
       } catch (openingFailure) {
-        try {
-          session = createSession(previousModel);
-        } catch (restoreFailure) {
-          throw new AggregateError(
-            [openingFailure, restoreFailure],
-            `Opening model '${model.id}' failed, and the previous model '${previousModel.id}' could not be `
-            + 'restored. Reload this Studio before continuing.',
-            { cause: restoreFailure },
-          );
-        }
         throw new Error(
-          `Opening model '${model.id}' failed before it replaced '${previousModel.id}'; the previous model `
-          + `was restored. ${openingFailure instanceof Error ? openingFailure.message : String(openingFailure)}`,
+          `Opening model '${model.id}' was rejected before it replaced '${session.model.id}'; the previous `
+          + `model remains active. ${
+            openingFailure instanceof Error ? openingFailure.message : String(openingFailure)
+          }`,
           { cause: openingFailure },
         );
       }
@@ -539,7 +564,43 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
     player: () => player,
     noteStore: () => noteStore,
     now: () => performance.now(),
-    drawAt: (timeMs: number) => { drawFrame(timeMs); },
+    drawAt: (timeMs: number) => {
+      if (sceneOpen !== null && !sceneAnimationManual) {
+        sceneAnimationManual = true;
+        player.pause(performance.now());
+        playerBar.syncPlayButton();
+      }
+      drawFrame(timeMs);
+      // An explicit seek can move clustered lights out of a formerly overfull
+      // projection. Retry an unchanged rejected stage size on the next frame.
+      if (sceneOpen !== null) rejectedAutoResize = null;
+    },
+    resumeSceneAnimation(): boolean {
+      if (sceneOpen === null || sceneSession?.hasMotion() !== true) return false;
+      sceneOpenedAtMs = performance.now() - lastShownMs / Math.max(player.speed, 0.1);
+      sceneAnimationManual = false;
+      // Resume is an explicit retry boundary. If the next moving-light phase
+      // still cannot fit, followStage caches that same size once again.
+      rejectedAutoResize = null;
+      clearViewError();
+      playerBar.syncPlayButton();
+      return true;
+    },
+    pauseSceneAnimation(): boolean {
+      if (sceneOpen === null) return false;
+      sceneAnimationManual = true;
+      playerBar.syncPlayButton();
+      return true;
+    },
+    sceneAnimationSpeedChanged(): void {
+      if (sceneOpen !== null && !sceneAnimationManual) {
+        sceneOpenedAtMs = performance.now() - lastShownMs / Math.max(player.speed, 0.1);
+      }
+    },
+    sceneLightingMetrics: () =>
+      sceneOpen === null ? null : (sceneSession?.lightingMetrics() ?? null),
+    sceneRenderMetrics: () =>
+      sceneOpen === null ? null : (sceneSession?.renderMetrics() ?? null),
     notesChanged() {
       notesPanel.renderNotes();
       playerBar.renderDots();
@@ -558,13 +619,59 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
       // all catch up together — the same funnel whether the UI or an agent
       // asked for it.
       refresh();
+      if (sceneOpen !== null) drawFrame(lastShownMs);
       return session.edges;
     },
     setLit(on: boolean): boolean {
-      session.setLit(on);
-      sceneSession?.setLit(on);
+      const previousModelLit = session.lit;
+      const previousSceneLit = sceneSession?.lit;
+      try {
+        session.setLit(on);
+        sceneSession?.setLit(on);
+        // Cluster limits are camera-dependent and are deliberately checked by
+        // the exact frame. Do not publish or persist the toggle until that
+        // candidate frame has actually reached the scene canvas.
+        if (sceneOpen !== null && sceneSession !== null) {
+          sceneSession.showAt(lastShownMs);
+        }
+      } catch (presentationFailure) {
+        try {
+          if (session.lit !== previousModelLit) session.setLit(previousModelLit);
+          if (sceneSession !== null
+            && previousSceneLit !== undefined
+            && sceneSession.lit !== previousSceneLit) {
+            sceneSession.setLit(previousSceneLit);
+          }
+          if (sceneOpen !== null && sceneSession !== null) {
+            sceneSession.showAt(lastShownMs);
+          }
+          refresh();
+          if (sceneOpen !== null) drawSceneOverlays();
+        } catch (restoreFailure) {
+          throw new AggregateError(
+            [presentationFailure, restoreFailure],
+            'The Studio could not change scene lighting, and restoring the prior light choice also failed. '
+            + 'Reload this Studio before continuing.',
+            { cause: restoreFailure },
+          );
+        }
+        const reason = presentationFailure instanceof Error
+          ? presentationFailure.message
+          : String(presentationFailure);
+        throw new Error(
+          `The light toggle could not be changed to ${on ? 'on' : 'off'}, so the prior choice remains active `
+          + `and stored preferences were not changed. ${reason}`,
+          { cause: presentationFailure },
+        );
+      }
+      // Turning clustered lighting off (or changing its presentation mode)
+      // can make the same DOM size safe after an automatic resize rejection.
+      rejectedAutoResize = null;
       persistView();
       refresh();
+      // Scene refresh updates controls and inspector text but intentionally
+      // does not draw; the candidate raster above is already current.
+      if (sceneOpen !== null) drawSceneOverlays();
       return session.lit;
     },
     setWireframe(on: boolean): boolean {
@@ -619,10 +726,7 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
     },
     initialShelfModelId: () => initialShelfModelId,
     setOrbit(view) {
-      orbit = clampOrbit({ ...orbit, ...view });
-      applyOrbit(camera, orbit, viewW, viewH, panCenter);
-      viewChip.textContent = describeOrbit(orbit);
-      drawFrame(lastShownMs);
+      presentView({ ...orbit, ...view }, panCenter);
       return { ...orbit, described: describeOrbit(orbit) };
     },
     catalog: () => catalog,
@@ -661,37 +765,90 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
   notesPanel.wireRequestShortcut(requestShortcut);
 
   // ---- drawing and readouts ----
+  function viewSignature(): string {
+    return `${String(orbit.yawDegrees)}:${String(orbit.pitchDegrees)}:${String(orbit.viewHeight)}`
+      + `:${depthOn ? 'depth' : 'flat'}:${String(panCenter[0])},${String(panCenter[2])}`;
+  }
+
+  function drawSceneOverlays(): void {
+    const signature = viewSignature();
+    gridView.draw(camera, { x: 0, y: 0, z: 0 }, viewW, viewH, signature, 1);
+    // Draw even when no placement is selected: the hidden draw clears any
+    // pooled SVG lines left by the previous scene's selection.
+    highlightView.draw(camera, { x: 0, y: 0, z: 0 }, viewW, viewH, signature, 1);
+  }
+
   function drawFrame(timeMs: number): void {
-    lastShownMs = timeMs;
     // Reasserted every draw, not only on drag: the engine may touch the shared
     // camera, and the studio's view must win on every frame, not just the ones
     // after an interaction.
     applyOrbit(camera, orbit, viewW, viewH, panCenter);
-    const viewSignature =
-      `${String(orbit.yawDegrees)}:${String(orbit.pitchDegrees)}:${String(orbit.viewHeight)}`
-      + `:${depthOn ? 'depth' : 'flat'}:${String(panCenter[0])},${String(panCenter[2])}`;
+    const signature = viewSignature();
     // A shown scene draws to its own canvas and keeps a ground grid under its
     // whole floor; the only model layer it borrows is the highlight, reused to
     // outline the selected placement.
     if (sceneOpen && sceneSession) {
       sceneSession.showAt(timeMs);
-      gridView.draw(camera, { x: 0, y: 0, z: 0 }, viewW, viewH, viewSignature, 1);
-      // Draw even when no placement is selected: the hidden draw clears any
-      // pooled SVG lines left by the previous scene's selection.
-      highlightView.draw(camera, { x: 0, y: 0, z: 0 }, viewW, viewH, viewSignature, 1);
+      lastShownMs = timeMs;
+      playerBar.showSceneTime(timeMs);
+      drawSceneOverlays();
       return;
     }
     session.showAt(timeMs);
+    lastShownMs = timeMs;
     playerBar.showTime(timeMs);
     positionRings();
     const middle = session.frameMiddle();
     const scale = session.voxelSize;
     // The grid is already world coordinates, so it draws straight — no model
     // middle to subtract, no voxel scale to apply.
-    gridView.draw(camera, { x: 0, y: 0, z: 0 }, viewW, viewH, viewSignature, 1);
-    physicalView.draw(camera, middle, viewW, viewH, viewSignature, scale);
-    wireframeView.draw(camera, middle, viewW, viewH, viewSignature, scale);
-    highlightView.draw(camera, middle, viewW, viewH, viewSignature, scale);
+    gridView.draw(camera, { x: 0, y: 0, z: 0 }, viewW, viewH, signature, 1);
+    physicalView.draw(camera, middle, viewW, viewH, signature, scale);
+    wireframeView.draw(camera, middle, viewW, viewH, signature, scale);
+    highlightView.draw(camera, middle, viewW, viewH, signature, scale);
+  }
+
+  /**
+   * Presents a candidate orbit/pan before keeping it. Clustered membership is
+   * camera-dependent, so a view gesture has the same rollback rule as a light
+   * edit: the former camera and raster survive a rejected projection.
+   */
+  function presentView(
+    nextOrbit: OrbitStateV1,
+    nextPanCenter: OrbitCenterV1,
+  ): void {
+    const previousOrbit = orbit;
+    const previousPanCenter = panCenter;
+    orbit = clampOrbit(nextOrbit);
+    panCenter = nextPanCenter;
+    try {
+      drawFrame(lastShownMs);
+    } catch (presentationFailure) {
+      orbit = previousOrbit;
+      panCenter = previousPanCenter;
+      applyOrbit(camera, orbit, viewW, viewH, panCenter);
+      try {
+        drawFrame(lastShownMs);
+      } catch (restoreFailure) {
+        throw new AggregateError(
+          [presentationFailure, restoreFailure],
+          'The requested view could not be presented, and restoring the prior camera raster also failed. '
+          + 'Reload this Studio before continuing.',
+          { cause: restoreFailure },
+        );
+      }
+      const reason = presentationFailure instanceof Error
+        ? presentationFailure.message
+        : String(presentationFailure);
+      throw new Error(
+        `The requested camera view could not be presented, so the prior orbit and pan remain active. ${reason}`,
+        { cause: presentationFailure },
+      );
+    }
+    // A camera change can make a formerly overfull cluster safe at the same
+    // DOM size. Let the next frame deliberately retry that rejected resize.
+    rejectedAutoResize = null;
+    viewChip.textContent = describeOrbit(orbit);
   }
 
   function positionRings(): void {
@@ -722,16 +879,50 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
     return reach * 2.4;
   }
 
+  /** Longest source period, used only as a finite scene scrub window. */
+  function sceneMotionWindowMs(scene: SceneV1): number {
+    let periodMs = 0;
+    for (const placement of scene.placements) {
+      periodMs = Math.max(periodMs, sceneRecipes[placement.model]?.motion.periodMs ?? 0);
+    }
+    for (const light of scene.schemaVersion === 'studio.scene/3' ? (scene.lights ?? []) : []) {
+      if (light.motion !== undefined) {
+        periodMs = Math.max(periodMs, light.motion.periodMs);
+      }
+    }
+    return periodMs;
+  }
+
   /**
-   * Authored point lights need Lambert materials rather than the resting flat
-   * look. Opening a lighting scene, or adding its first light, therefore uses
-   * the same remembered light funnel as the top-bar toggle.
+   * Keeps the shared transport truthful as scene edits add/remove motion. A
+   * null previous state means a freshly opened scene and restarts at zero.
    */
-  function ensureSceneLighting(scene: SceneV1): void {
-    if ((scene.lights?.length ?? 0) === 0 || session.lit) return;
-    session.setLit(true);
-    sceneSession?.setLit(true);
-    persistView();
+  function syncSceneTransport(
+    scene: SceneV1,
+    previousHasMotion: boolean | null,
+  ): void {
+    const hasMotion = sceneSession?.hasMotion() === true;
+    const now = performance.now();
+    const previousPlaying = player.playing;
+    const previousManual = sceneAnimationManual;
+    const transportPeriodMs = hasMotion ? Math.max(1, sceneMotionWindowMs(scene)) : 0;
+    playerBar.applyPeriod(transportPeriodMs);
+
+    if (!hasMotion) {
+      player.pause(now);
+      sceneAnimationManual = true;
+    } else if (!previousHasMotion) {
+      const startMs = previousHasMotion === null ? 0 : lastShownMs;
+      player.seek(startMs, now);
+      player.play(now);
+      sceneOpenedAtMs = now - startMs / Math.max(player.speed, 0.1);
+      sceneAnimationManual = false;
+    } else {
+      sceneAnimationManual = previousManual;
+      if (previousPlaying) player.play(now); else player.pause(now);
+    }
+    playerBar.showSceneTime(lastShownMs);
+    playerBar.syncPlayButton();
   }
 
   /**
@@ -740,39 +931,114 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
    * the scene draws to its own canvas at the same shared camera and look.
    */
   function openSceneMode(scene: SceneV1): void {
-    ensureSceneLighting(scene);
-    if (sceneSession === null) {
-      sceneSession = new SceneSession(scene, sceneRecipes, sceneParts, {
-        canvas: sceneCanvas, width: viewW, height: viewH, camera,
-        edges: session.edges, lit: session.lit, wireframe: false,
-      });
-    } else {
-      sceneSession.setScene(scene);
-      sceneSession.setEdges(session.edges);
-      sceneSession.setLit(session.lit);
+    const previousOpen = sceneOpen;
+    const previousSession = sceneSession;
+    const previousSessionScene = previousSession?.scene;
+    const previousSessionEdges = previousSession?.edges;
+    const previousSessionLit = previousSession?.lit;
+    const previousOrbit = orbit;
+    const previousPanCenter = panCenter;
+    const previousShownMs = lastShownMs;
+    const candidateOrbit = clampOrbit({ ...orbit, viewHeight: sceneFitHeight(scene) });
+    const candidatePanCenter: OrbitCenterV1 = [0, 0, 0];
+    let candidateSession = previousSession;
+    let createdCandidate = false;
+
+    // Cluster membership depends on the camera, so stage the fitted camera
+    // before drawing the candidate. Visible/editor state is published only
+    // after that complete frame succeeds.
+    applyOrbit(camera, candidateOrbit, viewW, viewH, candidatePanCenter);
+    try {
+      if (candidateSession === null) {
+        candidateSession = new SceneSession(scene, sceneRecipes, sceneParts, {
+          canvas: sceneCanvas, width: viewW, height: viewH, camera,
+          edges: session.edges, lit: session.lit, wireframe: false,
+        });
+        createdCandidate = true;
+      } else {
+        candidateSession.setScene(scene);
+        candidateSession.setEdges(session.edges);
+        candidateSession.setLit(session.lit);
+      }
+      candidateSession.showAt(0);
+    } catch (openingFailure) {
+      try {
+        applyOrbit(camera, previousOrbit, viewW, viewH, previousPanCenter);
+        if (createdCandidate) {
+          // The renderer itself is healthy when only camera-dependent cluster
+          // preparation rejected the first scene. Retire it into an empty
+          // hidden session so repeated rejected opens cannot allocate another
+          // set of Three context fallback textures.
+          candidateSession?.setScene(RETIRED_SCENE);
+          candidateSession?.showAt(0);
+          sceneSession = candidateSession;
+        } else if (candidateSession !== null && previousSessionScene !== undefined) {
+          candidateSession.setScene(previousSessionScene);
+          if (previousSessionEdges !== undefined) candidateSession.setEdges(previousSessionEdges);
+          if (previousSessionLit !== undefined) candidateSession.setLit(previousSessionLit);
+          if (previousOpen !== null) candidateSession.showAt(previousShownMs);
+        }
+      } catch (restoreFailure) {
+        const failures: unknown[] = [openingFailure, restoreFailure];
+        if (createdCandidate) {
+          try {
+            candidateSession?.dispose();
+          } catch (cleanupFailure) {
+            failures.push(cleanupFailure);
+          }
+        }
+        throw new AggregateError(
+          failures,
+          `Scene '${scene.id}' could not be opened, and restoring the prior rendered state also failed. `
+          + (createdCandidate
+            ? 'The rejected first scene session was disposed where possible. '
+            : '')
+          + 'Reload this Studio before continuing.',
+          { cause: restoreFailure },
+        );
+      }
+      const reason = openingFailure instanceof Error ? openingFailure.message : String(openingFailure);
+      throw new Error(
+        `Scene '${scene.id}' could not be opened, so ${
+          previousOpen === null ? 'the model view' : `scene '${previousOpen.id}'`
+        } remains active with its selection and undo history unchanged. ${reason}`,
+        { cause: openingFailure },
+      );
     }
+
+    sceneSession = candidateSession;
     sceneOpen = scene;
+    clearViewError();
+    lastShownMs = 0;
     selectedPlacementId = null;
+    sceneEditor.clearLightSelection();
     // A fresh scene starts with an empty edit history — undo never reaches back
     // into a scene you are no longer looking at.
     sceneUndo.length = 0;
     sceneRedo.length = 0;
-    panCenter = [0, 0, 0];
+    panCenter = candidatePanCenter;
+    orbit = candidateOrbit;
     canvas.style.display = 'none';
     sceneCanvas.style.display = 'block';
-    orbit = clampOrbit({ ...orbit, viewHeight: sceneFitHeight(scene) });
-    applyOrbit(camera, orbit, viewW, viewH, panCenter);
     // Examine carries the scene's readout; Build and the rest belong to a
     // single model, so open on the tab that speaks about the scene.
     showTab('examine');
     refresh();
-    drawFrame(0);
+    drawSceneOverlays();
+
+    syncSceneTransport(scene, null);
+    // The newly accepted scene/camera/light set may fit a DOM size rejected by
+    // the prior scene. Give that unchanged size one fresh attempt.
+    rejectedAutoResize = null;
   }
 
   /** Leaves the scene view for the model lane and drops every scene-only edit/selection reference. */
   function closeSceneMode(): void {
     if (sceneOpen === null) return;
     sceneEditor.clearLightSelection();
+    sceneAnimationManual = true;
+    player.pause(performance.now());
+    clearViewError();
     sceneOpen = null;
     selectedPlacementId = null;
     sceneBoxes = [];
@@ -782,6 +1048,7 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
     highlightView.setVisible(false);
     canvas.style.display = 'block';
     sceneCanvas.style.display = 'none';
+    rejectedAutoResize = null;
   }
 
   /**
@@ -802,52 +1069,66 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
 
   /**
    * Removing the shown scene returns to the model session kept alive beneath
-   * it. All scene-owned render and edit state is dropped before the model is
-   * refreshed, so neither an outline nor undo history can survive deletion.
+   * it. The scene renderer is emptied but retained for reuse: rebuilding a
+   * Three renderer on every delete/open cycle would accumulate its internal
+   * context fallback textures.
    */
   function deleteStudioScene(id: string): SceneV1 {
     const removed = sceneWorkspace.delete(id);
-    if (sceneOpen?.id !== id) {
+    const wasOpen = sceneOpen?.id === id;
+    const wasRetained = sceneSession?.scene.id === id;
+    if (!wasOpen && !wasRetained) {
       shelfPanel.rebuild();
       return removed;
     }
-    sceneOpen = null;
-    selectedPlacementId = null;
-    highlightedPartIndex = null;
-    sceneBoxes = [];
-    sceneUndo.length = 0;
-    sceneRedo.length = 0;
-    const retiringSession = sceneSession;
-    sceneSession = null;
-    let disposalFailure: unknown;
+    let retirementFailure: unknown;
     try {
-      retiringSession?.dispose();
+      if (wasRetained) {
+        sceneSession?.setScene(RETIRED_SCENE);
+        // Present the empty snapshot once so replaced scene geometry is released
+        // now, while the renderer and its reusable clustered allocation survive.
+        sceneSession?.showAt(0);
+      }
     } catch (error) {
-      disposalFailure = error;
+      retirementFailure = error;
     } finally {
-      // Renderer cleanup is allowed to fail. The visible state transition is
-      // not: the deleted scene must never remain on screen after it is gone.
-      canvas.style.display = 'block';
-      sceneCanvas.style.display = 'none';
-      panCenter = [0, 0, 0];
-      orbit = clampOrbit({
-        ...orbit,
-        viewHeight: fitViewHeight(session.model.size, session.voxelSize),
-      });
-      applyOrbit(camera, orbit, viewW, viewH, panCenter);
-      refresh();
-      drawFrame(lastShownMs);
+      if (wasOpen) {
+        // Retirement cleanup is allowed to fail. The visible transition is not:
+        // the deleted scene must never remain on screen after it is gone.
+        sceneAnimationManual = true;
+        player.pause(performance.now());
+        clearViewError();
+        sceneOpen = null;
+        selectedPlacementId = null;
+        highlightedPartIndex = null;
+        sceneBoxes = [];
+        sceneUndo.length = 0;
+        sceneRedo.length = 0;
+        canvas.style.display = 'block';
+        sceneCanvas.style.display = 'none';
+        panCenter = [0, 0, 0];
+        orbit = clampOrbit({
+          ...orbit,
+          viewHeight: fitViewHeight(session.model.size, session.voxelSize),
+        });
+        applyOrbit(camera, orbit, viewW, viewH, panCenter);
+        refresh();
+      } else {
+        shelfPanel.rebuild();
+      }
     }
-    if (disposalFailure !== undefined) {
-      const reason = disposalFailure instanceof Error
-        ? disposalFailure.message
-        : typeof disposalFailure === 'string'
-          ? disposalFailure
+    if (retirementFailure !== undefined) {
+      const reason = retirementFailure instanceof Error
+        ? retirementFailure.message
+        : typeof retirementFailure === 'string'
+          ? retirementFailure
           : 'an unknown non-Error value was thrown';
       throw new Error(
-        `Scene '${id}' was deleted and the model view was restored, but releasing its renderer failed: `
-        + `${reason}. Reload the page to release any remaining browser resources.`,
-        { cause: disposalFailure },
+        `Scene '${id}' was deleted${
+          wasOpen ? ' and the model view was restored' : ''
+        }, but emptying its reusable renderer failed: ${reason}. `
+        + 'Reload the page before opening another scene.',
+        { cause: retirementFailure },
       );
     }
     return removed;
@@ -859,6 +1140,11 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
    * scene shows.
    */
   function refreshScene(scene: SceneV1): void {
+    playerBar.setSceneMode(true);
+    // Moment notes belong to the underlying model. Clear their stage marks as
+    // well as hiding their timeline dots so neither layer can seek or annotate
+    // a scene with stale model-only state.
+    marks.replaceChildren();
     const count = scene.placements.length;
     const lightCount = scene.lights?.length ?? 0;
     modelName.textContent = scene.label;
@@ -948,6 +1234,7 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
     // one from the shelf must not leave the previous model's steps sitting
     // there looking current.
     construction.refresh();
+    playerBar.setSceneMode(false);
     playerBar.applyPeriod(model.motion.periodMs);
     playerBar.syncPlayButton();
     modelName.textContent = modelLabelWorkspace.label(model.id, described.label);
@@ -1053,34 +1340,67 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
   // live frames of a drag and by undo/redo.
   function applySceneLive(next: SceneV1): void {
     const previous = sceneOpen;
-    // Adding the first authored light turns on Lambert shading once. A person
-    // may turn it off afterward; ordinary moves and edits must preserve that
-    // explicit look choice.
-    if ((previous?.lights?.length ?? 0) === 0 && (next.lights?.length ?? 0) > 0) {
-      ensureSceneLighting(next);
+    const activeSession = sceneSession;
+    if (previous === null || activeSession === null) {
+      throw new Error(
+        `Scene '${next.id}' cannot be edited because no rendered scene is open; open it before editing.`,
+      );
     }
-    sceneSession?.setScene(next);
+    const previousHadMotion = activeSession.hasMotion();
+    // Publish only after the complete candidate has clustered and rendered at
+    // the current time. In particular, the 33rd overlapping light must not
+    // leave new runtime state paired with an old undo stack.
     try {
-      if (previous !== null) sceneWorkspace.replace(previous.id, next);
+      activeSession.setScene(next);
+      drawFrame(lastShownMs);
+    } catch (presentationFailure) {
+      try {
+        activeSession.setScene(previous);
+        drawFrame(lastShownMs);
+      } catch (restoreFailure) {
+        throw new AggregateError(
+          [presentationFailure, restoreFailure],
+          `Scene '${next.id}' could not be presented, and the prior scene '${previous.id}' could not be `
+          + 'restored. Reload this Studio before continuing.',
+          { cause: restoreFailure },
+        );
+      }
+      const reason = presentationFailure instanceof Error
+        ? presentationFailure.message
+        : String(presentationFailure);
+      throw new Error(
+        `Scene '${next.id}' could not be presented at ${String(lastShownMs)} ms, so it was not saved or `
+        + `added to undo history; the prior scene remains active. ${reason}`,
+        { cause: presentationFailure },
+      );
+    }
+    try {
+      sceneWorkspace.replace(previous.id, next);
     } catch (workspaceFailure) {
-      if (previous !== null && sceneSession !== null) {
-        try {
-          sceneSession.setScene(previous);
-        } catch (restoreFailure) {
-          throw new AggregateError(
-            [workspaceFailure, restoreFailure],
-            `Scene '${next.id}' was accepted for rendering, but its workspace update failed and the prior `
-            + 'rendered scene could not be restored. Reload this Studio before continuing.',
-            { cause: restoreFailure },
-          );
-        }
+      try {
+        activeSession.setScene(previous);
+        drawFrame(lastShownMs);
+      } catch (restoreFailure) {
+        throw new AggregateError(
+          [workspaceFailure, restoreFailure],
+          `Scene '${next.id}' was accepted for rendering, but its workspace update failed and the prior `
+          + 'rendered scene could not be restored. Reload this Studio before continuing.',
+          { cause: restoreFailure },
+        );
       }
       throw workspaceFailure;
     }
     sceneOpen = next;
     recomputeSceneBoxes();
     showSelection();
-    drawFrame(lastShownMs);
+    syncSceneTransport(next, previousHadMotion);
+    // Light edits can reduce cluster pressure, so an unchanged DOM size that
+    // failed under the old light set is eligible for one fresh attempt.
+    rejectedAutoResize = null;
+    // The candidate frame above intentionally drew before publication. Project
+    // the newly published boxes now so a moved, removed, undone, or redone
+    // placement cannot leave the previous outline pooled on screen.
+    drawSceneOverlays();
   }
   function pushHistory(previous: SceneV1): void {
     sceneUndo.push(previous);
@@ -1183,12 +1503,11 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
     lastX = event.clientX;
     lastY = event.clientY;
     if (gesture === 'orbit') {
-      harness.setViewAngles(dragOrbit(orbit, dx, dy));
+      runViewAction(() => { harness.setViewAngles(dragOrbit(orbit, dx, dy)); });
     } else if (gesture === 'pan') {
-      panCenter = panOrbit(orbit, panCenter, dx, dy, viewH);
-      applyOrbit(camera, orbit, viewW, viewH, panCenter);
-      viewChip.textContent = describeOrbit(orbit);
-      drawFrame(lastShownMs);
+      runViewAction(() => {
+        presentView(orbit, panOrbit(orbit, panCenter, dx, dy, viewH));
+      });
     } else if (dragGrab) {
       const hit = groundPoint(event, dragGrab.baseY);
       if (hit) {
@@ -1236,13 +1555,21 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
   });
   canvasWrap.addEventListener('wheel', (event) => {
     event.preventDefault();
-    harness.setViewAngles(zoomOrbit(orbit, Math.sign(event.deltaY)));
+    runViewAction(() => { harness.setViewAngles(zoomOrbit(orbit, Math.sign(event.deltaY))); });
   }, { passive: false });
-  canvasWrap.addEventListener('dblclick', () => { harness.setViewAngles(DEFAULT_ORBIT); });
+  canvasWrap.addEventListener('dblclick', () => {
+    runViewAction(() => { harness.setViewAngles(DEFAULT_ORBIT); });
+  });
 
-  lookSwitch.addEventListener('click', () => { harness.setEdges(!session.edges); });
-  depthToggle.addEventListener('click', () => { setDepth(!depthOn); });
-  lightToggle.addEventListener('click', () => { harness.setLit(!session.lit); });
+  lookSwitch.addEventListener('click', () => {
+    runViewAction(() => { harness.setEdges(!session.edges); });
+  });
+  depthToggle.addEventListener('click', () => {
+    runViewAction(() => { setDepth(!depthOn); });
+  });
+  lightToggle.addEventListener('click', () => {
+    runViewAction(() => { harness.setLit(!session.lit); });
+  });
   wireframeToggle.addEventListener('click', () => { harness.setWireframe(!session.wireframe); });
   gridToggle.addEventListener('click', () => { setGridOn(!gridOn); });
   physToggle.addEventListener('click', () => { harness.setPhysicalOverlay(!physicalOn); });
@@ -1320,30 +1647,49 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
     drawFrame(lastShownMs);
   }
 
-  /**
-   * Swapping cameras means rebuilding the drawing session around the other
-   * one; the model, notes, playback position, and edges choice all stay.
-   */
+  /** Swaps the borrowed camera without rebuilding either WebGL renderer. */
   function setDepth(on: boolean): boolean {
     if (on === depthOn) return depthOn;
-    depthOn = on;
-    camera = depthOn ? depthCamera : flatCamera;
-    applyOrbit(camera, orbit, viewW, viewH, panCenter);
-    const model = session.model;
-    const edges = session.edges;
-    const lit = session.lit;
-    const wireframe = session.wireframe;
-    session.dispose();
-    session = new StudioSession(model, { canvas, width: viewW, height: viewH, camera, edges, lit, wireframe });
-    // A shown scene borrows the same camera, so it is rebuilt on the new one too.
-    if (sceneOpen && sceneSession) {
-      const scene = sceneSession.scene;
-      sceneSession.dispose();
-      sceneSession = new SceneSession(scene, sceneRecipes, sceneParts, {
-        canvas: sceneCanvas, width: viewW, height: viewH, camera, edges, lit, wireframe: false,
-      });
+    const previousCamera = camera;
+    const nextCamera = on ? depthCamera : flatCamera;
+    applyOrbit(nextCamera, orbit, viewW, viewH, panCenter);
+    try {
+      session.setCamera(nextCamera);
+      sceneSession?.setCamera(nextCamera);
+      if (sceneOpen !== null && sceneSession !== null) {
+        sceneSession.showAt(lastShownMs);
+      } else {
+        session.showAt(lastShownMs);
+      }
+    } catch (swapFailure) {
+      try {
+        session.setCamera(previousCamera);
+        sceneSession?.setCamera(previousCamera);
+        applyOrbit(previousCamera, orbit, viewW, viewH, panCenter);
+        if (sceneOpen !== null && sceneSession !== null) {
+          sceneSession.showAt(lastShownMs);
+        } else {
+          session.showAt(lastShownMs);
+        }
+      } catch (restoreFailure) {
+        throw new AggregateError(
+          [swapFailure, restoreFailure],
+          'The Studio could not switch camera modes, and restoring the prior camera also failed. '
+          + 'Reload this Studio before continuing.',
+          { cause: restoreFailure },
+        );
+      }
+      throw new Error(
+        `The Studio could not present the ${on ? 'perspective' : 'orthographic'} camera, so the prior `
+        + 'camera remains active and stored preferences were not changed.',
+        { cause: swapFailure },
+      );
     }
+    depthOn = on;
+    camera = nextCamera;
+    rejectedAutoResize = null;
     refresh();
+    if (sceneOpen !== null) drawSceneOverlays();
     persistView();
     return depthOn;
   }
@@ -1408,12 +1754,44 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
   // window's edge, never an invisible border in the middle of the screen —
   // which is exactly how the owner found it: "top and bottom clip".
   function resizeStage(width: number, height: number): { width: number; height: number } {
-    viewW = Math.max(2, Math.floor(width));
-    viewH = Math.max(2, Math.floor(height));
-    session.resize(viewW, viewH);
-    sceneSession?.resize(viewW, viewH);
-    applyOrbit(camera, orbit, viewW, viewH, panCenter);
-    drawFrame(lastShownMs);
+    const nextWidth = Math.max(2, Math.floor(width));
+    const nextHeight = Math.max(2, Math.floor(height));
+    if (nextWidth === viewW && nextHeight === viewH) {
+      return { width: canvas.width, height: canvas.height };
+    }
+    const previousWidth = viewW;
+    const previousHeight = viewH;
+    viewW = nextWidth;
+    viewH = nextHeight;
+    try {
+      session.resize(nextWidth, nextHeight);
+      sceneSession?.resize(nextWidth, nextHeight);
+      applyOrbit(camera, orbit, nextWidth, nextHeight, panCenter);
+      drawFrame(lastShownMs);
+    } catch (resizeFailure) {
+      viewW = previousWidth;
+      viewH = previousHeight;
+      try {
+        session.resize(previousWidth, previousHeight);
+        sceneSession?.resize(previousWidth, previousHeight);
+        applyOrbit(camera, orbit, previousWidth, previousHeight, panCenter);
+        drawFrame(lastShownMs);
+      } catch (restoreFailure) {
+        throw new AggregateError(
+          [resizeFailure, restoreFailure],
+          `The Studio could not present a ${String(nextWidth)}x${String(nextHeight)} stage, and restoring `
+          + `the prior ${String(previousWidth)}x${String(previousHeight)} stage also failed. Reload this Studio.`,
+          { cause: restoreFailure },
+        );
+      }
+      const reason = resizeFailure instanceof Error ? resizeFailure.message : String(resizeFailure);
+      throw new Error(
+        `The Studio could not present a ${String(nextWidth)}x${String(nextHeight)} stage, so the prior `
+        + `${String(previousWidth)}x${String(previousHeight)} size remains active. ${reason}`,
+        { cause: resizeFailure },
+      );
+    }
+    rejectedAutoResize = null;
     return { width: canvas.width, height: canvas.height };
   }
   // Followed from the frame loop rather than a ResizeObserver: observers never
@@ -1424,8 +1802,20 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
   function followStage(): void {
     const rect = studioShell.regions.stage.getBoundingClientRect();
     if (rect.width < 2 || rect.height < 2) return;
-    if (Math.floor(rect.width) === viewW && Math.floor(rect.height) === viewH) return;
-    resizeStage(rect.width, rect.height);
+    const width = Math.floor(rect.width);
+    const height = Math.floor(rect.height);
+    if (width === viewW && height === viewH) {
+      rejectedAutoResize = null;
+      return;
+    }
+    if (rejectedAutoResize?.width === width && rejectedAutoResize.height === height) return;
+    try {
+      resizeStage(width, height);
+      rejectedAutoResize = null;
+    } catch (error) {
+      rejectedAutoResize = { width, height };
+      throw error;
+    }
   }
 
   // Held so disposal can stop the loop. A mount that kept drawing after its
@@ -1435,11 +1825,45 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
   let disposed = false;
   let disposePanelResize: () => void = () => { /* set once the shell mounts */ };
 
-  function tick(): void {
+  function tick(frameNowMs: number): void {
     if (disposed) return;
-    followStage();
-    if (player.playing) drawFrame(player.timeAt(performance.now()));
-    frameHandle = requestAnimationFrame(tick);
+    try {
+      followStage();
+      if (sceneOpen !== null) {
+        if (!sceneAnimationManual && sceneSession?.hasMotion() === true) {
+          drawFrame(Math.max(0, (frameNowMs - sceneOpenedAtMs) * player.speed));
+        }
+      } else if (player.playing) {
+        drawFrame(player.timeAt(frameNowMs));
+      }
+    } catch (frameFailure) {
+      const reason = frameFailure instanceof Error ? frameFailure.message : String(frameFailure);
+      if (sceneOpen !== null) {
+        sceneAnimationManual = true;
+        player.pause(frameNowMs);
+        playerBar.syncPlayButton();
+        showViewError(
+          new Error(
+            `Scene '${sceneOpen.id}' paused at its last successfully presented time `
+            + `${String(lastShownMs)} ms because a later frame was rejected. ${reason}`,
+            { cause: frameFailure },
+          ),
+          'Scene animation paused because a frame failed; the last successful frame remains visible.',
+        );
+      } else {
+        player.pause(frameNowMs);
+        playerBar.syncPlayButton();
+        showViewError(
+          new Error(
+            `Model playback paused at ${String(lastShownMs)} ms because a frame was rejected. ${reason}`,
+            { cause: frameFailure },
+          ),
+          'Model playback paused because a frame failed; the last successful frame remains visible.',
+        );
+      }
+    } finally {
+      frameHandle = requestAnimationFrame(tick);
+    }
   }
 
   // Everything from the construction panel to the first paint runs on
@@ -1483,7 +1907,7 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
       modelName, statusChip, grow, openButton, newButton, copyButton, requestShortcut,
     );
     studioShell.regions.shelf.append(shelfPanel.heading, shelfPanel.body);
-    studioShell.regions.stage.append(canvasWrap, viewChip, toggles, stageHint);
+    studioShell.regions.stage.append(canvasWrap, viewChip, toggles, viewError, stageHint);
     studioShell.regions.player.append(playerBar.transport, playerBar.timelineWrap, playerBar.timeLabel);
     // The library and inspector columns are draggable, so a panel can be given
     // the room it needs. The grid is the shell root, the regions' shared parent.

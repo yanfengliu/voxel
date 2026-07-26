@@ -22,6 +22,7 @@ import {
 import type { DaylightRig } from './daylightRig.js';
 import type { IsometricViewCenter } from './orthographicView.js';
 import {
+  createThreeViewStrategyInternal,
   type ThreeCameraStrategyInternal,
 } from './cameraStrategy.js';
 import {
@@ -97,6 +98,10 @@ import {
   type RuntimeHostFrameRestoreOpsInternal,
 } from './runtimeHostFrameRestore.js';
 import { runRuntimeDisposalInternal } from './runtimeDisposal.js';
+import {
+  registerRuntimeBorrowedCameraSwapInternal,
+  unregisterRuntimeBorrowedCameraSwapInternal,
+} from './runtimeBorrowedCameraSwapInternal.js';
 import { captureRuntimeCanvasInternal } from './runtimeCapture.js';
 import { initializeRuntimeInternal } from './runtimeInitialization.js';
 import { resizeRuntimeInternal } from './runtimeResize.js';
@@ -234,7 +239,43 @@ export class ThreeRenderRuntime {
         setRenderWorldPresentationAvailabilityInternal(this.world, 'available');
       }
       initializeRuntimeSnapshotMetricsInternal(this, this.world);
+      registerRuntimeBorrowedCameraSwapInternal(this, (camera) => {
+        if (this.lifecycleState !== 'running') {
+          throw new Error(
+            `The runtime cannot replace its borrowed camera while ${this.lifecycleState}.`,
+          );
+        }
+        if (this.hostKind !== 'runtime-rendered'
+          || this.atomic !== null
+          || this.cameraStrategy.kind !== 'borrowed-camera'
+          || this.cameraStrategy.projectionOwnership !== 'host') {
+          throw new Error(
+            'Borrowed-camera replacement requires a standalone runtime with a host-owned '
+            + 'borrowed-camera projection and no atomic worker pipeline.',
+          );
+        }
+        const strategy = createThreeViewStrategyInternal({
+          kind: 'borrowed-camera',
+          camera,
+          projectionOwnership: 'host',
+        }, this.width, this.height);
+        // Keep the replacement seam out of the public class declaration while
+        // changing the two private handles atomically.
+        Object.defineProperty(this, 'camera', {
+          configurable: true,
+          enumerable: false,
+          value: strategy.camera,
+          writable: false,
+        });
+        Object.defineProperty(this, 'cameraStrategy', {
+          configurable: true,
+          enumerable: false,
+          value: strategy,
+          writable: false,
+        });
+      });
     } catch (error) {
+      unregisterRuntimeBorrowedCameraSwapInternal(this);
       initialized.rollbackInitializationInternal();
       try {
         this.world.dispose();
@@ -510,6 +551,7 @@ export class ThreeRenderRuntime {
       if (invalidated) this.presentations.releaseHostFrameInternal(invalidated);
       this.lifecycleState = 'disposed';
       this.disposalActions = [
+        () => { unregisterRuntimeBorrowedCameraSwapInternal(this); },
         () => this.contextCanvas?.removeEventListener('webglcontextlost', this.handleContextLost),
         () => this.contextCanvas?.removeEventListener('webglcontextrestored', this.handleContextRestored),
         () => this.world.dispose(),

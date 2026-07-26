@@ -80,6 +80,14 @@ The completed migration preserved the simulation, DOM HUD and minimap, saves, re
 
 The `lego` repository demonstrates a useful ownership principle: canonical domain data is authoritative, a Three.js scene is derived and disposable, canonical camera/capture packets are versioned, and resource disposal is explicit. Its brick semantics and trust model do not belong here.
 
+### Current Studio-only clustered-light proof
+
+The private Model Studio now carries a bounded forward+ point-light experiment without changing the frozen public 1.0 declarations or schemas. A Studio scene may author at most 4,096 point lights, and its V3 authoring schema adds deterministic orbit motion; the global **light** view preference is shared across models and scenes and persists through the injected view store, which uses guarded browser `localStorage` by default. The built-in `studio:scene:lighting-1000` showcase distributes 1,000 independently orbiting sources over ten depth bands for correctness and benchmark runs, but no FPS result is implied without a named measurement.
+
+The proof bins visible influence volumes on the CPU into 48-by-48-drawing-buffer-pixel tiles and 24 depth slices, uploads light records and cluster indices through data textures, and injects one fixed shader path that evaluates at most 32 lights per fragment. Light-count changes therefore do not expand Three.js uniform arrays or compile count-specific shader variants, while all visible source markers use one instanced draw. The system has no shadow path; a cluster above 32 influences, more than the bounded light-cluster work, too many unbounded-range lights, a viewport outside the supported bound, or more than 4,096 authored sources produces a specific deterministic rejection and preserves the previous prepared lighting instead of silently dropping influences.
+
+This Studio seam is not yet the production dynamic-light contract. Cluster preparation publishes a successful light-texture update before `runtime.frame()` presents the world, so a subsequent draw failure cannot roll that texture update back with the failed frame. A production renderer V2/next-major design must make light resources part of the same accepted/presented revision transaction as other render state, with explicit ownership and rollback, before exposing them through `voxel/core` or `voxel/three`.
+
 ## Architecture
 
 ```text

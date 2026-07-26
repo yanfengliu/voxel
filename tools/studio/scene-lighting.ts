@@ -1,89 +1,129 @@
 import {
   BoxGeometry,
-  type Color,
+  type Camera,
+  Color,
   Group,
-  Mesh,
+  InstancedMesh,
+  Matrix4,
+  type Material,
   MeshBasicMaterial,
-  PointLight,
   type Scene,
   SRGBColorSpace,
 } from 'three';
 
-import type { GenomeColorV1 } from './model.js';
-import type { ScenePointLightV1 } from './scene.js';
+import {
+  ClusteredPointLightFieldInternal,
+  type ClusteredPointLightInputInternal,
+  type ClusteredPointLightMetricsInternal,
+} from '../../src/three/clusteredPointLightFieldInternal.js';
+
+import {
+  resolveScenePointLightAtV3,
+  type ScenePointLightV3,
+} from './scene.js';
 
 export const STUDIO_SCENE_LIGHT_ROOT_NAME = 'studio-scene-lights';
-const LIGHT_NAME_PREFIX = 'studio-scene-light:';
-const MARKER_NAME_SUFFIX = ':marker';
+export const STUDIO_SCENE_LIGHT_MARKERS_NAME = 'studio-scene-light-markers';
 const MARKER_SIZE = 0.8;
 
-interface StudioSceneLightEntry {
-  readonly light: PointLight;
-  readonly marker: Mesh<BoxGeometry, MeshBasicMaterial>;
+interface ResolvedStudioSceneLight {
+  readonly definition: ScenePointLightV3;
+  readonly position: [number, number, number];
+  readonly clustered: ClusteredPointLightInputInternal;
 }
 
-interface StudioSceneLightUpdate {
-  readonly entry: StudioSceneLightEntry;
-  readonly definition: ScenePointLightV1;
-  readonly created: boolean;
+interface RetiredStudioMarkerBatch {
+  readonly markers: InstancedMesh<BoxGeometry, MeshBasicMaterial>;
+  meshDisposed: boolean;
+  materialDisposed: boolean;
 }
 
 type LightingPlanState = 'prepared' | 'committed' | 'discarded';
 
 /**
- * An off-scene lighting candidate. All Three objects needed by a newly added
- * light are allocated here, before the render runtime accepts the matching
- * scene revision. Committing the accepted revision only mutates or attaches
- * those already-prepared objects.
+ * An off-scene lighting candidate. Marker growth is allocated before the
+ * render snapshot is accepted; an ordinary edit reuses the existing capacity.
  */
 export class PreparedStudioSceneLighting {
   state: LightingPlanState = 'prepared';
 
   constructor(
     readonly owner: StudioSceneLighting,
-    readonly entries: Map<string, StudioSceneLightEntry>,
-    readonly updates: readonly StudioSceneLightUpdate[],
+    readonly definitions: readonly ScenePointLightV3[],
+    readonly resolved: readonly ResolvedStudioSceneLight[],
+    readonly clusteredInputs: readonly ClusteredPointLightInputInternal[],
+    readonly replacementMarkers: InstancedMesh<BoxGeometry, MeshBasicMaterial> | null,
   ) {}
 }
 
-function applyColor(
-  target: Color,
-  color: GenomeColorV1,
-): void {
-  target.setRGB(
-    color.r / 255,
-    color.g / 255,
-    color.b / 255,
-    SRGBColorSpace,
-  );
+export interface StudioSceneLightingMetricsV1 extends ClusteredPointLightMetricsInternal {
+  readonly movingLights: number;
+  readonly markerInstances: number;
+  readonly markerDrawCalls: 0 | 1;
+  readonly sampleTimeMs: number;
+  readonly positionChecksum: number;
+  readonly pendingRetiredMarkerBatches: number;
 }
 
-function configureEntry(entry: StudioSceneLightEntry, definition: ScenePointLightV1): void {
-  const [x, y, z] = definition.at;
-  entry.light.position.set(x, y, z);
-  applyColor(entry.light.color, definition.color);
-  entry.light.intensity = definition.intensity;
-  entry.light.distance = definition.range;
-  entry.light.decay = 2;
-  entry.light.castShadow = false;
+function clonePositionInternal(
+  position: readonly [number, number, number],
+): readonly [number, number, number] {
+  return Object.freeze([position[0], position[1], position[2]]);
+}
 
-  entry.marker.position.set(x, y, z);
-  applyColor(entry.marker.material.color, definition.color);
-  entry.marker.castShadow = false;
-  entry.marker.receiveShadow = false;
+function cloneDefinitionInternal(light: ScenePointLightV3): ScenePointLightV3 {
+  return Object.freeze({
+    ...light,
+    at: clonePositionInternal(light.at),
+    color: Object.freeze({ ...light.color }),
+    ...(light.motion === undefined
+      ? {}
+      : {
+          motion: Object.freeze({
+            ...light.motion,
+            center: clonePositionInternal(light.motion.center),
+          }),
+        }),
+  });
+}
+
+function nextMarkerCapacityInternal(count: number): number {
+  let capacity = 1;
+  while (capacity < count) capacity *= 2;
+  return capacity;
+}
+
+function writeResolvedPositionInternal(
+  light: ScenePointLightV3,
+  nowMs: number,
+  target: [number, number, number],
+): void {
+  resolveScenePointLightAtV3(light, nowMs, target);
 }
 
 /**
- * Owns only the editable local lights and their visible handles. The Voxel
- * runtime and its daylight rig are separate siblings in the supplied Scene.
+ * Owns the Studio's clustered local-light textures and one instanced marker
+ * draw. Authored sources never become native Three PointLights, so their count
+ * does not expand uniform arrays, shader variants, or draw calls.
  */
 export class StudioSceneLighting {
   readonly root = new Group();
 
   readonly #scene: Scene;
   readonly #markerGeometry = new BoxGeometry(MARKER_SIZE, MARKER_SIZE, MARKER_SIZE);
-  #entries = new Map<string, StudioSceneLightEntry>();
+  readonly #clustered = new ClusteredPointLightFieldInternal();
+  readonly #matrix = new Matrix4();
+  readonly #color = new Color();
+  #markers: InstancedMesh<BoxGeometry, MeshBasicMaterial> | null = null;
+  #markerCapacity = 0;
+  #resolved: readonly ResolvedStudioSceneLight[] = [];
+  #clusteredInputs: readonly ClusteredPointLightInputInternal[] = [];
   #pending: PreparedStudioSceneLighting | null = null;
+  #retiredMarkers: RetiredStudioMarkerBatch[] = [];
+  #enabled = false;
+  #sampleTimeMs = 0;
+  #positionChecksum = 0;
+  #disposeStarted = false;
   #disposed = false;
 
   constructor(scene: Scene) {
@@ -93,102 +133,308 @@ export class StudioSceneLighting {
   }
 
   /**
-   * Allocates additions without changing the live light rig. SceneV1 validation
-   * has already bounded and checked these definitions; duplicate protection
-   * remains here because silently aliasing two stable ids would leak resources.
+   * Validates stable ids and prepares only resources that a larger marker
+   * batch needs. Light definitions themselves remain clone-safe plain data.
    */
-  prepare(definitions: readonly ScenePointLightV1[]): PreparedStudioSceneLighting {
+  prepare(definitions: readonly ScenePointLightV3[]): PreparedStudioSceneLighting {
     this.#assertActive();
     if (this.#pending !== null) {
       throw new Error('Scene lighting already has a prepared update; commit or discard it first.');
     }
-
-    const entries = new Map<string, StudioSceneLightEntry>();
-    const updates: StudioSceneLightUpdate[] = [];
-    const created: StudioSceneLightEntry[] = [];
-    try {
-      for (const definition of definitions) {
-        if (entries.has(definition.id)) {
-          throw new Error(`Scene lighting received duplicate light id '${definition.id}'.`);
-        }
-        const existing = this.#entries.get(definition.id);
-        const entry = existing ?? this.#createEntry(definition.id);
-        if (!existing) created.push(entry);
-        entries.set(definition.id, entry);
-        updates.push({ entry, definition, created: existing === undefined });
+    const ids = new Set<string>();
+    const cloned = definitions.map((definition) => {
+      if (ids.has(definition.id)) {
+        throw new Error(`Scene lighting received duplicate light id '${definition.id}'.`);
       }
-    } catch (error) {
-      for (const entry of created) entry.marker.material.dispose();
-      throw error;
+      ids.add(definition.id);
+      return cloneDefinitionInternal(definition);
+    });
+    let replacementMarkers: InstancedMesh<BoxGeometry, MeshBasicMaterial> | null = null;
+    if (cloned.length > this.#markerCapacity) {
+      replacementMarkers = this.#createMarkers(nextMarkerCapacityInternal(cloned.length));
     }
-
-    const plan = new PreparedStudioSceneLighting(this, entries, updates);
+    const resolved = Object.freeze(cloned.map((definition) => {
+      const color = this.#color.setRGB(
+        definition.color.r / 255,
+        definition.color.g / 255,
+        definition.color.b / 255,
+        SRGBColorSpace,
+      );
+      const position: [number, number, number] = [...definition.at];
+      return {
+        definition,
+        position,
+        clustered: {
+          id: definition.id,
+          position,
+          color: [color.r, color.g, color.b] as const,
+          intensity: definition.intensity,
+          range: definition.range,
+        },
+      };
+    }));
+    const clusteredInputs = Object.freeze(resolved.map((entry) => entry.clustered));
+    const plan = new PreparedStudioSceneLighting(
+      this,
+      Object.freeze(cloned),
+      resolved,
+      clusteredInputs,
+      replacementMarkers,
+    );
     this.#pending = plan;
     return plan;
   }
 
-  /** Applies one accepted candidate without constructing any Three resources. */
+  /** Adopts one accepted candidate without allocating a Three scene object per light. */
   commit(plan: PreparedStudioSceneLighting): void {
     this.#assertPreparedPlan(plan);
-
-    for (const [id, entry] of this.#entries) {
-      if (plan.entries.has(id)) continue;
-      this.root.remove(entry.light, entry.marker);
-      entry.marker.material.dispose();
+    if (plan.replacementMarkers) {
+      const previous = this.#markers;
+      if (previous) this.root.remove(previous);
+      this.#markers = plan.replacementMarkers;
+      this.#markerCapacity = plan.replacementMarkers.instanceMatrix.count;
+      this.root.add(plan.replacementMarkers);
+      if (previous) this.#retiredMarkers.push({
+        markers: previous,
+        meshDisposed: false,
+        materialDisposed: false,
+      });
     }
-    for (const update of plan.updates) {
-      configureEntry(update.entry, update.definition);
-      if (update.created) this.root.add(update.entry.light, update.entry.marker);
+    if (!this.#markers && plan.definitions.length > 0) {
+      throw new Error(
+        `Scene lighting prepared ${String(plan.definitions.length)} light definitions without `
+        + 'a marker batch. Discard this scene update and retry it.',
+      );
     }
-
-    this.#entries = plan.entries;
+    this.#resolved = plan.resolved;
+    this.#clusteredInputs = plan.clusteredInputs;
+    if (this.#markers) {
+      this.#markers.count = this.#resolved.length;
+      for (const [index, entry] of this.#resolved.entries()) {
+        this.#markers.setColorAt(
+          index,
+          this.#color.setRGB(
+            entry.clustered.color[0],
+            entry.clustered.color[1],
+            entry.clustered.color[2],
+          ),
+        );
+      }
+      if (this.#markers.instanceColor) this.#markers.instanceColor.needsUpdate = true;
+    }
+    this.#commitMarkersAtInternal(0);
     plan.state = 'committed';
     this.#pending = null;
+    this.#drainRetiredMarkersInternal();
   }
 
-  /** Releases additions prepared for a scene revision the runtime rejected. */
+  /** Releases marker growth prepared for a scene revision the runtime rejected. */
   discard(plan: PreparedStudioSceneLighting): void {
     this.#assertPreparedPlan(plan);
-    for (const update of plan.updates) {
-      if (update.created) update.entry.marker.material.dispose();
-    }
+    if (plan.replacementMarkers) this.#retiredMarkers.push({
+      markers: plan.replacementMarkers,
+      meshDisposed: false,
+      materialDisposed: false,
+    });
     plan.state = 'discarded';
     this.#pending = null;
+    this.#drainRetiredMarkersInternal();
+  }
+
+  setEnabled(enabled: boolean): void {
+    this.#assertActive();
+    this.#enabled = enabled;
+    this.#clustered.setEnabledInternal(enabled);
+  }
+
+  /** Decorates one MaterialPresenter-owned material before it enters a mesh. */
+  decorateRuntimeMaterial(material: Material): void {
+    this.#assertActive();
+    this.#clustered.installMaterialInternal(material);
+  }
+
+  /** Resolves deterministic motion, updates one marker batch, and rebuilds clusters. */
+  updateAt(
+    nowMs: number,
+    camera: Camera,
+    width: number,
+    height: number,
+  ): StudioSceneLightingMetricsV1 {
+    this.#assertActive();
+    let movingLights = 0;
+    let positionChecksum = 0;
+    for (const [index, entry] of this.#resolved.entries()) {
+      writeResolvedPositionInternal(entry.definition, nowMs, entry.position);
+      if (entry.definition.motion !== undefined) movingLights += 1;
+      positionChecksum += (index + 1) * (
+        entry.position[0] * 0.31
+        + entry.position[1] * 0.17
+        + entry.position[2] * 0.13
+      );
+    }
+    const clustered = this.#enabled
+      ? this.#clustered.updateInternal(
+          this.#clusteredInputs,
+          camera,
+          width,
+          height,
+        )
+      : this.#disabledClusteredMetricsInternal();
+    this.#commitMarkersInternal();
+    this.#sampleTimeMs = nowMs;
+    this.#positionChecksum = positionChecksum;
+    return Object.freeze({
+      ...clustered,
+      movingLights,
+      markerInstances: this.#resolved.length,
+      markerDrawCalls: this.#resolved.length > 0 ? 1 : 0,
+      sampleTimeMs: this.#sampleTimeMs,
+      positionChecksum: this.#positionChecksum,
+      pendingRetiredMarkerBatches: this.#retiredMarkers.length,
+    });
   }
 
   ids(): readonly string[] {
     this.#assertActive();
-    return [...this.#entries.keys()];
+    return this.#resolved.map((entry) => entry.definition.id);
+  }
+
+  metrics(): StudioSceneLightingMetricsV1 {
+    this.#assertActive();
+    return Object.freeze({
+      ...(this.#enabled
+        ? this.#clustered.metricsInternal()
+        : this.#disabledClusteredMetricsInternal()),
+      movingLights: this.#resolved.filter((entry) => entry.definition.motion !== undefined).length,
+      markerInstances: this.#resolved.length,
+      markerDrawCalls: this.#resolved.length > 0 ? 1 : 0,
+      sampleTimeMs: this.#sampleTimeMs,
+      positionChecksum: this.#positionChecksum,
+      pendingRetiredMarkerBatches: this.#retiredMarkers.length,
+    });
+  }
+
+  #disabledClusteredMetricsInternal(): ClusteredPointLightMetricsInternal {
+    const allocated = this.#clustered.metricsInternal();
+    return Object.freeze({
+      ...allocated,
+      authoredLights: this.#resolved.length,
+      visibleLights: 0,
+      clusterCount: 0,
+      nonemptyClusters: 0,
+      maxLightsPerCluster: 0,
+      lightClusterAssignments: 0,
+      candidateIntersections: 0,
+      overflowedClusters: 0,
+    });
   }
 
   dispose(): void {
     if (this.#disposed) return;
-    if (this.#pending) {
-      for (const update of this.#pending.updates) {
-        if (update.created) update.entry.marker.material.dispose();
-      }
-      this.#pending.state = 'discarded';
+    if (!this.#disposeStarted) {
+      if (this.#pending?.replacementMarkers) this.#retiredMarkers.push({
+        markers: this.#pending.replacementMarkers,
+        meshDisposed: false,
+        materialDisposed: false,
+      });
+      if (this.#pending) this.#pending.state = 'discarded';
       this.#pending = null;
+      if (this.#markers) {
+        this.root.remove(this.#markers);
+        this.#retiredMarkers.push({
+          markers: this.#markers,
+          meshDisposed: false,
+          materialDisposed: false,
+        });
+        this.#markers = null;
+      }
+      this.#resolved = [];
+      this.#clusteredInputs = [];
+      this.root.clear();
+      this.#scene.remove(this.root);
+      this.#disposeStarted = true;
     }
-    for (const entry of this.#entries.values()) entry.marker.material.dispose();
-    this.#entries.clear();
-    this.root.clear();
-    this.#scene.remove(this.root);
+    const markerFailures = this.#drainRetiredMarkersInternal();
+    if (this.#retiredMarkers.length > 0) {
+      throw new AggregateError(
+        markerFailures,
+        `Studio scene-lighting disposal left ${String(this.#retiredMarkers.length)} marker `
+        + 'batch(es) unreleased; call dispose again to retry those exact resources.',
+      );
+    }
+    this.#clustered.disposeInternal();
     this.#markerGeometry.dispose();
     this.#disposed = true;
   }
 
-  #createEntry(id: string): StudioSceneLightEntry {
-    const light = new PointLight();
-    light.name = `${LIGHT_NAME_PREFIX}${id}`;
-    light.userData.studioLightId = id;
-    const marker = new Mesh(
-      this.#markerGeometry,
-      new MeshBasicMaterial(),
-    );
-    marker.name = `${LIGHT_NAME_PREFIX}${id}${MARKER_NAME_SUFFIX}`;
-    marker.userData.studioLightId = id;
-    return { light, marker };
+  #createMarkers(capacity: number): InstancedMesh<BoxGeometry, MeshBasicMaterial> {
+    // Three enables instance colors from InstancedMesh.instanceColor itself.
+    // `vertexColors: true` would additionally request a geometry `color`
+    // attribute; BoxGeometry has none, so that missing factor blacks out every
+    // otherwise valid per-instance color in WebGL.
+    const material = new MeshBasicMaterial();
+    const markers = new InstancedMesh(this.#markerGeometry, material, capacity);
+    markers.name = STUDIO_SCENE_LIGHT_MARKERS_NAME;
+    markers.count = 0;
+    markers.frustumCulled = false;
+    for (let index = 0; index < capacity; index += 1) {
+      markers.setColorAt(index, this.#color.setRGB(1, 1, 1));
+    }
+    return markers;
+  }
+
+  #commitMarkersAtInternal(nowMs: number): void {
+    let positionChecksum = 0;
+    for (const [index, entry] of this.#resolved.entries()) {
+      writeResolvedPositionInternal(entry.definition, nowMs, entry.position);
+      positionChecksum += (index + 1) * (
+        entry.position[0] * 0.31
+        + entry.position[1] * 0.17
+        + entry.position[2] * 0.13
+      );
+    }
+    this.#commitMarkersInternal();
+    this.#sampleTimeMs = nowMs;
+    this.#positionChecksum = positionChecksum;
+  }
+
+  #commitMarkersInternal(): void {
+    for (const [index, entry] of this.#resolved.entries()) {
+      if (!this.#markers) continue;
+      this.#matrix.makeTranslation(
+        entry.position[0],
+        entry.position[1],
+        entry.position[2],
+      );
+      this.#markers.setMatrixAt(index, this.#matrix);
+    }
+    if (this.#markers) this.#markers.instanceMatrix.needsUpdate = true;
+  }
+
+  #drainRetiredMarkersInternal(): readonly unknown[] {
+    const remaining: RetiredStudioMarkerBatch[] = [];
+    const failures: unknown[] = [];
+    for (const retired of this.#retiredMarkers) {
+      if (!retired.meshDisposed) {
+        try {
+          retired.markers.dispose();
+          retired.meshDisposed = true;
+        } catch (error) {
+          failures.push(error);
+        }
+      }
+      if (!retired.materialDisposed) {
+        try {
+          retired.markers.material.dispose();
+          retired.materialDisposed = true;
+        } catch (error) {
+          failures.push(error);
+        }
+      }
+      if (!retired.meshDisposed || !retired.materialDisposed) remaining.push(retired);
+    }
+    this.#retiredMarkers = remaining;
+    return failures;
   }
 
   #assertPreparedPlan(plan: PreparedStudioSceneLighting): void {
@@ -202,6 +448,6 @@ export class StudioSceneLighting {
   }
 
   #assertActive(): void {
-    if (this.#disposed) throw new Error('Scene lighting is disposed.');
+    if (this.#disposed || this.#disposeStarted) throw new Error('Scene lighting is disposed.');
   }
 }

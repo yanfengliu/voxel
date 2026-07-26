@@ -311,6 +311,79 @@ test('switching scenes clears the previous scene placement outline', async ({ pa
   expect(evidence.outlineLinesAfterSwitch).toBe(0);
 });
 
+test('scene mode clears model moment marks and disables their timeline dots until a model returns', async ({ page }) => {
+  await page.goto(studioOrigin, { waitUntil: 'load' });
+  await page.waitForFunction(() => typeof window.voxelStudio === 'object');
+
+  const evidence = await page.evaluate(() => {
+    const harness = window.voxelStudio!;
+    const state = () => ({
+      rings: document.querySelectorAll('.marks .ring').length,
+      dots: document.querySelectorAll('.dots .dot').length,
+      dotsHidden: document.querySelector<HTMLElement>('.dots')?.hidden ?? null,
+    });
+
+    harness.openFromShelf('studio:starter');
+    harness.addMomentNote(0, { u: 0.4, v: 0.6 }, 'model-only moment');
+    harness.drawAt(0);
+    const model = state();
+    harness.openScene('studio:scene:dining');
+    const scene = state();
+    harness.openFromShelf('studio:starter');
+    harness.drawAt(0);
+    return { model, scene, returnedModel: state() };
+  });
+
+  expect(evidence.model).toEqual({ rings: 1, dots: 1, dotsHidden: false });
+  expect(evidence.scene).toEqual({ rings: 0, dots: 1, dotsHidden: true });
+  expect(evidence.returnedModel).toEqual({ rings: 1, dots: 1, dotsHidden: false });
+});
+
+test('move, remove, and undo redraw the selected placement outline immediately', async ({ page }) => {
+  await page.goto(studioOrigin, { waitUntil: 'load' });
+  await page.waitForFunction(() => typeof window.voxelStudio === 'object');
+
+  const evidence = await page.evaluate(() => {
+    const harness = window.voxelStudio!;
+    const outline = (): readonly string[] =>
+      Array.from(document.querySelectorAll<SVGLineElement>('.highlight-marks line')).map((line) =>
+        ['x1', 'y1', 'x2', 'y2'].map((name) => line.getAttribute(name) ?? '').join(','));
+    harness.openScene('studio:scene:dining');
+    harness.drawAt(0);
+    harness.selectPlacement('table');
+    const original = structuredClone(harness.sceneState()!);
+    const before = outline();
+    harness.editScene({
+      ...original,
+      placements: original.placements.map((placement) =>
+        placement.id === 'table'
+          ? { ...placement, at: [placement.at[0] + 4, placement.at[1], placement.at[2]] as const }
+          : placement),
+    });
+    const moved = outline();
+    harness.undoScene();
+    const undone = outline();
+    const restored = structuredClone(harness.sceneState()!);
+    harness.editScene({
+      ...restored,
+      placements: restored.placements.filter((placement) => placement.id !== 'table'),
+    });
+    return {
+      before,
+      moved,
+      undone,
+      afterRemove: outline(),
+      selectedAfterRemove: harness.selectedPlacement(),
+    };
+  });
+
+  expect(evidence.before.length).toBeGreaterThan(0);
+  expect(evidence.moved).not.toEqual(evidence.before);
+  expect(evidence.undone).toEqual(evidence.before);
+  expect(evidence.afterRemove).toEqual([]);
+  expect(evidence.selectedAfterRemove).toBeNull();
+});
+
 test('real keyboard shortcuts undo and redo when the unfocusable scene canvas leaves focus on the page', async ({ page }) => {
   await page.goto(studioOrigin, { waitUntil: 'load' });
   await page.waitForFunction(() => typeof window.voxelStudio === 'object');
