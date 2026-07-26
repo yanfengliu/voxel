@@ -140,6 +140,8 @@ Keep the parts a game actually reuses, and no more. Build each model the fastest
 
 ### Curating for contrast
 
+The canonical end-to-end workflow is the [Create Diverse Voxel Assets skill](../skills/create-diverse-voxel-assets/SKILL.md). It turns the Studio mechanisms below into a complete engine-and-consumer process: brief the gameplay or scene need, generate structurally different hypotheses, select with evidence, compose scenes through relationships rather than catalog grids, and verify the actual downstream game.
+
 Voxel's reference catalog adds 30 manually curated recipes across six deliberately different families: arches and voids, tapered and stepped masses, frames and trusses, radial mechanics, branching organic forms, and asymmetric hybrids. They span four neutral domains: infrastructure, civic architecture, mechanical industry, and natural or organic forms. Seven shape-changing reusable parts support them: `arch-span`, `tapered-mass`, `open-frame`, `stair-run`, `radial-wheel`, `branching-form`, and `truss-span`; each was promoted only after a second real recipe use, and future parts must clear the same reuse threshold.
 
 Four domain scenes place every curated contrast recipe exactly once. The mechanical-industrial, civic-architectural, and natural-organic scenes contain four semantically chosen whole-model animations: a reciprocating flywheel, cable drum, kinetic compass, and windbreak pine, so the persisted scene-animation control has useful work outside the lighting showcase.

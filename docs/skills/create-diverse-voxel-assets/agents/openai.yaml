@@ -1,0 +1,4 @@
+interface:
+  display_name: "Create Diverse Voxel Assets"
+  short_description: "Design and prove creative reusable game assets"
+  default_prompt: "Use $create-diverse-voxel-assets to design and validate a structurally diverse asset set for this game."
