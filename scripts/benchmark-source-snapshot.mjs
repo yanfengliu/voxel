@@ -157,7 +157,16 @@ export function createBenchmarkSourceSeal({ projectRoot, sourceFiles }) {
         runGit(['read-tree', sourceIdentity.commit], 'utf8', environment);
         const prefix = `${snapshotRoot.replaceAll('\\', '/')}/`;
         runGit(
-          ['checkout-index', '--all', '--force', `--prefix=${prefix}`],
+          [
+            '-c',
+            'core.autocrlf=false',
+            '-c',
+            'core.eol=lf',
+            'checkout-index',
+            '--all',
+            '--force',
+            `--prefix=${prefix}`,
+          ],
           'utf8',
           environment,
         );
