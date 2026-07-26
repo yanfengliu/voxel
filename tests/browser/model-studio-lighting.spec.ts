@@ -777,13 +777,14 @@ test('1,000 moving lights stay cluster-bounded without compiling per-light shade
   expect(cameraEnvelope.perspectiveRequest).toMatchObject({ pitchDegrees: 75 });
   expect(cameraEnvelope.perspectiveRequest.viewHeight).toBeGreaterThanOrEqual(40);
   expect(cameraEnvelope.perspectiveRequest.viewHeight).toBeLessThan(50);
-  expect(cameraEnvelope.unlitRequest).toMatchObject({ pitchDegrees: 85, viewHeight: 3 });
+  expect(cameraEnvelope.unlitRequest).toMatchObject({ pitchDegrees: 85, viewHeight: 0.25 });
   expect(cameraEnvelope.relit).toMatchObject({ pitchDegrees: 75 });
   expect(cameraEnvelope.relit.viewHeight).toBe(cameraEnvelope.perspectiveRequest.viewHeight);
-  expect(cameraEnvelope.flatRequest).toMatchObject({ pitchDegrees: -85, viewHeight: 3 });
+  expect(cameraEnvelope.flatRequest).toMatchObject({ pitchDegrees: -85, viewHeight: 0.25 });
   expect(cameraEnvelope.restoredPerspective).toMatchObject({ pitchDegrees: -75 });
   expect(cameraEnvelope.restoredPerspective.viewHeight)
     .toBe(cameraEnvelope.perspectiveRequest.viewHeight);
+  expect(cameraEnvelope.farPerspectiveRequest.viewHeight).toBe(80);
   for (const lighting of [
     cameraEnvelope.perspectiveLighting,
     cameraEnvelope.relitLighting,
@@ -812,7 +813,7 @@ test('1,000 moving lights stay cluster-bounded without compiling per-light shade
   await page.evaluate(() => {
     const harness = window.voxelStudio!;
     harness.openScene('studio:scene:lighting-1000');
-    harness.setViewAngles({ yawDegrees: 45, pitchDegrees: 30, viewHeight: 80 });
+    harness.setViewAngles({ yawDegrees: 45, pitchDegrees: 30, viewHeight: 256 });
     harness.drawAt(0);
     harness.play();
   });

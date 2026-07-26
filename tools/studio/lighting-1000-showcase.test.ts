@@ -12,10 +12,11 @@ import { ClusteredPointLightFieldInternal } from '../../src/three/clusteredPoint
 import {
   applyOrbit,
   DEFAULT_ORBIT,
-  ORBIT_MAX_VIEW_HEIGHT,
+  ORBIT_MIN_VIEW_HEIGHT,
 } from './orbit.js';
 import {
   clampSceneViewV1,
+  DENSE_SCENE_MAX_VIEW_HEIGHT,
   DENSE_SCENE_PITCH_LIMIT_DEGREES,
   minimumDenseSceneViewHeightV1,
   sceneViewCenterIsPinnedV1,
@@ -164,10 +165,15 @@ describe('1,000-light showcase', () => {
     }
   });
 
-  it('constrains only active dense perspective lighting, including edge-on pitch', () => {
+  it('bounds dense active lighting while reserving perspective-only movement constraints', () => {
     const scene = lighting1000();
-    const requested = { yawDegrees: -45, pitchDegrees: 85, viewHeight: 3 };
-    const active = clampSceneViewV1(requested, scene, [0, 0, 0], true);
+    const requested = { yawDegrees: -45, pitchDegrees: 85, viewHeight: 0.25 };
+    const active = clampSceneViewV1(
+      requested,
+      scene,
+      [0, 0, 0],
+      { lit: true, depth: true },
+    );
 
     expect(sceneViewCenterIsPinnedV1(scene, true)).toBe(true);
     expect(sceneViewCenterIsPinnedV1(scene, false)).toBe(false);
@@ -175,9 +181,23 @@ describe('1,000-light showcase', () => {
     expect(active.orbit.yawDegrees).toBe(315);
     expect(active.orbit.pitchDegrees).toBe(DENSE_SCENE_PITCH_LIMIT_DEGREES);
     expect(active.orbit.viewHeight).toBe(minimumDenseSceneViewHeightV1(scene, [0, 0, 0]));
-    expect(clampSceneViewV1(requested, scene, [0, 0, 0], false)).toEqual({
+    expect(clampSceneViewV1(
+      requested,
+      scene,
+      [0, 0, 0],
+      { lit: false, depth: true },
+    )).toEqual({
       center: [0, 0, 0],
-      orbit: { yawDegrees: 315, pitchDegrees: 85, viewHeight: 3 },
+      orbit: { yawDegrees: 315, pitchDegrees: 85, viewHeight: 0.25 },
+    });
+    expect(clampSceneViewV1(
+      { ...requested, viewHeight: 256 },
+      scene,
+      [20, 0, -20],
+      { lit: true, depth: false },
+    )).toEqual({
+      center: [20, 0, -20],
+      orbit: { yawDegrees: 315, pitchDegrees: 85, viewHeight: 80 },
     });
     expect(clampSceneViewV1({
       ...requested,
@@ -185,19 +205,24 @@ describe('1,000-light showcase', () => {
     }, {
       ...scene,
       lights: (scene.lights ?? []).slice(0, 32),
-    }, [0, 0, 0], true)).toEqual({
+    }, [0, 0, 0], { lit: true, depth: true })).toEqual({
       center: [0, 0, 0],
-      orbit: { yawDegrees: 315, pitchDegrees: -85, viewHeight: 3 },
+      orbit: { yawDegrees: 315, pitchDegrees: -85, viewHeight: 0.25 },
     });
 
     const distantCenter: readonly [number, number, number] = [100, 0, 0];
     expect(minimumDenseSceneViewHeightV1(scene, distantCenter))
-      .toBeGreaterThan(ORBIT_MAX_VIEW_HEIGHT);
-    const panned = clampSceneViewV1(requested, scene, distantCenter, true);
+      .toBeGreaterThan(DENSE_SCENE_MAX_VIEW_HEIGHT);
+    const panned = clampSceneViewV1(
+      requested,
+      scene,
+      distantCenter,
+      { lit: true, depth: true },
+    );
     expect(panned.center).toEqual([0, distantCenter[1], 0]);
     expect(minimumDenseSceneViewHeightV1(scene, panned.center))
-      .toBeLessThanOrEqual(ORBIT_MAX_VIEW_HEIGHT + 1e-10);
-    expect(panned.orbit.viewHeight).toBeLessThanOrEqual(ORBIT_MAX_VIEW_HEIGHT);
+      .toBeLessThanOrEqual(DENSE_SCENE_MAX_VIEW_HEIGHT + 1e-10);
+    expect(panned.orbit.viewHeight).toBeLessThanOrEqual(DENSE_SCENE_MAX_VIEW_HEIGHT);
 
     const first = scene.lights?.[0];
     if (!first) throw new Error('The unbounded-light exemption test needs one showcase light.');
@@ -205,9 +230,14 @@ describe('1,000-light showcase', () => {
     expect(sceneViewCenterIsPinnedV1(unbounded, true)).toBe(false);
     expect(minimumDenseSceneViewHeightV1(unbounded, [0, 0, 0]))
       .toBe(Number.POSITIVE_INFINITY);
-    expect(clampSceneViewV1(requested, unbounded, distantCenter, true)).toEqual({
+    expect(clampSceneViewV1(
+      requested,
+      unbounded,
+      distantCenter,
+      { lit: true, depth: true },
+    )).toEqual({
       center: distantCenter,
-      orbit: { yawDegrees: 315, pitchDegrees: 85, viewHeight: 3 },
+      orbit: { yawDegrees: 315, pitchDegrees: 85, viewHeight: 0.25 },
     });
   });
 
@@ -219,12 +249,6 @@ describe('1,000-light showcase', () => {
     const minimumViewHeight = minimumDenseSceneViewHeightV1(scene, [0, 0, 0]);
     expect(minimumViewHeight).toBeGreaterThanOrEqual(40);
     expect(minimumViewHeight).toBeLessThan(50);
-    const sweptViewHeights = Array.from(
-      { length: 5 },
-      (_, index) =>
-        minimumViewHeight
-        + (ORBIT_MAX_VIEW_HEIGHT - minimumViewHeight) * index / 4,
-    );
     try {
       for (const [width, height] of [
         [240, 692],
@@ -233,6 +257,15 @@ describe('1,000-light showcase', () => {
         [1_280, 720],
       ] as const) {
         for (const camera of [new OrthographicCamera(), new PerspectiveCamera()]) {
+          const sweptViewHeights = [
+            ...(camera instanceof OrthographicCamera ? [ORBIT_MIN_VIEW_HEIGHT] : []),
+            ...Array.from(
+              { length: 5 },
+              (_, index) =>
+                minimumViewHeight
+                + (DENSE_SCENE_MAX_VIEW_HEIGHT - minimumViewHeight) * index / 4,
+            ),
+          ];
           for (const viewHeight of sweptViewHeights) {
             for (let yawDegrees = 0; yawDegrees < 360; yawDegrees += 15) {
               for (let pitchDegrees = -75; pitchDegrees <= 75; pitchDegrees += 15) {
@@ -291,14 +324,14 @@ describe('1,000-light showcase', () => {
         [-100, 0, -100],
       ] as const) {
         const view = clampSceneViewV1(
-          { ...DEFAULT_ORBIT, pitchDegrees: 75, viewHeight: 3 },
+          { ...DEFAULT_ORBIT, pitchDegrees: 75, viewHeight: 0.25 },
           scene,
           requestedCenter,
-          true,
+          { lit: true, depth: true },
         );
         expect(view.center).toEqual([0, 0, 0]);
         expect(minimumDenseSceneViewHeightV1(scene, view.center))
-          .toBeLessThanOrEqual(ORBIT_MAX_VIEW_HEIGHT + 1e-10);
+          .toBeLessThanOrEqual(DENSE_SCENE_MAX_VIEW_HEIGHT + 1e-10);
       }
     } finally {
       field.disposeInternal();

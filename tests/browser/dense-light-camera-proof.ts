@@ -11,14 +11,14 @@ export async function measureDenseLightCameraEnvelope(page: Page) {
     const perspectiveRequest = harness.setViewAngles({
       yawDegrees: 0,
       pitchDegrees: 85,
-      viewHeight: 3,
+      viewHeight: 0.25,
     });
     const perspectiveFrame = harness.drawAt(0);
     harness.setLit(false);
     const unlitRequest = harness.setViewAngles({
       yawDegrees: 0,
       pitchDegrees: 85,
-      viewHeight: 3,
+      viewHeight: 0.25,
     });
     harness.drawAt(0);
     harness.setLit(true);
@@ -28,14 +28,18 @@ export async function measureDenseLightCameraEnvelope(page: Page) {
     const flatRequest = harness.setViewAngles({
       yawDegrees: 0,
       pitchDegrees: -85,
-      viewHeight: 3,
+      viewHeight: 0.25,
     });
     const flatFrame = harness.drawAt(0);
     harness.setDepth(true);
     const restoredPerspective = harness.viewState();
     const restoredPerspectiveFrame = harness.drawAt(0);
     harness.resizeStage(1280, 720);
-    harness.setViewAngles({ yawDegrees: 45, pitchDegrees: 30, viewHeight: 80 });
+    const farPerspectiveRequest = harness.setViewAngles({
+      yawDegrees: 45,
+      pitchDegrees: 30,
+      viewHeight: 256,
+    });
     harness.drawAt(0);
     harness.play();
     return {
@@ -48,6 +52,7 @@ export async function measureDenseLightCameraEnvelope(page: Page) {
       flatLighting: flatFrame.sceneLighting,
       restoredPerspective,
       restoredPerspectiveLighting: restoredPerspectiveFrame.sceneLighting,
+      farPerspectiveRequest,
     };
   });
 }

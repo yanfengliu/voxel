@@ -15,7 +15,7 @@ export interface OrbitStateV1 {
   readonly yawDegrees: number;
   /** Height of the eye, degrees above level. Clamped short of straight up/down. */
   readonly pitchDegrees: number;
-  /** Visible world units across the shorter screen edge. Smaller is closer. */
+  /** Visible vertical world units. Smaller is closer. */
   readonly viewHeight: number;
 }
 
@@ -26,10 +26,18 @@ export const DEFAULT_ORBIT: OrbitStateV1 = {
 };
 
 const PITCH_LIMIT = 85;
-export const ORBIT_MIN_VIEW_HEIGHT = 3;
-export const ORBIT_MAX_VIEW_HEIGHT = 80;
-/** Far enough that no reasonable model pokes past the near plane. */
-const EYE_DISTANCE = 100;
+/**
+ * The ordinary Studio inspection range. A quarter-unit view makes the
+ * editor-scale 0.01-unit voxel legible, while a 256-unit-tall landscape view
+ * leaves useful margin around the capped 192-unit scene grid.
+ */
+export const ORBIT_MIN_VIEW_HEIGHT = 0.25;
+export const ORBIT_MAX_VIEW_HEIGHT = 256;
+/** Opening an asset keeps the established comfortable framing; wheel input may travel farther. */
+export const AUTO_FIT_MIN_VIEW_HEIGHT = 3;
+export const AUTO_FIT_MAX_VIEW_HEIGHT = 80;
+/** Preserve the established flat-camera depth planes through the old range. */
+const MIN_FLAT_EYE_DISTANCE = 100;
 
 export function clampOrbit(state: OrbitStateV1): OrbitStateV1 {
   return {
@@ -64,7 +72,10 @@ export function fitViewHeight(
   // World units, not cells: a model's size on screen is its grid times how big
   // each voxel is, so a fine-grained flower and a coarse wall both frame right.
   const diagonal = Math.sqrt(sx * sx + sy * sy + sz * sz) * voxelSize;
-  return clampOrbit({ ...DEFAULT_ORBIT, viewHeight: diagonal * 1.15 }).viewHeight;
+  return Math.min(
+    AUTO_FIT_MAX_VIEW_HEIGHT,
+    Math.max(AUTO_FIT_MIN_VIEW_HEIGHT, diagonal * 1.15),
+  );
 }
 
 /** Moves a drag into angle space: pixels to degrees, up-drag looks higher. */
@@ -171,11 +182,11 @@ export function applyOrbit(
   const yaw = (clamped.yawDegrees * Math.PI) / 180;
   const pitch = (clamped.pitchDegrees * Math.PI) / 180;
   const aspect = widthPixels / Math.max(1, heightPixels);
-  const half = clamped.viewHeight / 2;
+  const verticalHalf = clamped.viewHeight / 2;
   const depth = camera instanceof PerspectiveCamera;
   const distance = depth
-    ? half / Math.tan((DEPTH_FOV_DEGREES * Math.PI) / 360)
-    : EYE_DISTANCE;
+    ? verticalHalf / Math.tan((DEPTH_FOV_DEGREES * Math.PI) / 360)
+    : Math.max(MIN_FLAT_EYE_DISTANCE, clamped.viewHeight);
   const flat = Math.cos(pitch) * distance;
   // Position and aim are both offset by the pan centre, so panning slides the
   // whole view across the ground without changing the angle or the zoom.
@@ -192,12 +203,14 @@ export function applyOrbit(
     camera.near = Math.max(0.05, distance / 50);
     camera.far = distance * 4;
   } else {
-    camera.left = -half * aspect;
-    camera.right = half * aspect;
-    camera.top = half;
-    camera.bottom = -half;
+    camera.left = -verticalHalf * aspect;
+    camera.right = verticalHalf * aspect;
+    camera.top = verticalHalf;
+    camera.bottom = -verticalHalf;
     camera.near = 0.1;
-    camera.far = EYE_DISTANCE * 2.5;
+    // Pulling the flat eye back with very wide views keeps fitted assets and
+    // the capped scene grid in front of the camera without changing framing.
+    camera.far = distance * 2.5;
   }
   camera.updateProjectionMatrix();
   camera.updateMatrixWorld(true);

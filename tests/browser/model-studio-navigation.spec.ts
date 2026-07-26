@@ -545,6 +545,94 @@ test('the last interacted mount owns movement, ownership transfer stops the old 
   expect(errors).toEqual([]);
 });
 
+test('the wheel reaches the expanded ordinary zoom range while dense perspective keeps its proven ceiling', async ({ page }) => {
+  await openStudio(page);
+  const errors: string[] = [];
+  page.on('pageerror', (error) => errors.push(error.message));
+  const stage = page.locator('.canvas-wrap');
+  const stageBox = await stage.boundingBox();
+  if (stageBox === null) throw new Error('the Studio stage has no box for the wheel-range test');
+  await page.mouse.move(
+    stageBox.x + stageBox.width / 2,
+    stageBox.y + stageBox.height / 2,
+  );
+
+  await page.evaluate(() => {
+    const harness = window.voxelStudio!;
+    harness.openFromShelf(harness.model().id);
+    harness.setDepth(true);
+    harness.setLit(true);
+    harness.setViewAngles({ yawDegrees: 45, pitchDegrees: 30, viewHeight: 0.26 });
+  });
+  await page.mouse.wheel(0, -120);
+  await settleFrames(page, 2);
+  expect(await page.evaluate(() => window.voxelStudio!.viewState().viewHeight)).toBe(0.25);
+
+  await page.evaluate(() => {
+    window.voxelStudio!.setViewAngles({ yawDegrees: 45, pitchDegrees: 30, viewHeight: 250 });
+  });
+  await page.mouse.wheel(0, 120);
+  await settleFrames(page, 2);
+  expect(await page.evaluate(() => window.voxelStudio!.viewState().viewHeight)).toBe(256);
+
+  const densePerspective = await page.evaluate((sceneId) => {
+    const harness = window.voxelStudio!;
+    harness.openScene(sceneId);
+    harness.setSceneAnimation(false);
+    harness.setDepth(true);
+    harness.setLit(true);
+    const view = harness.setViewAngles({
+      yawDegrees: 45,
+      pitchDegrees: 30,
+      viewHeight: 256,
+    });
+    return {
+      view,
+      lighting: harness.drawAt(0).sceneLighting,
+    };
+  }, DENSE_LIGHT_SCENE_ID);
+  expect(densePerspective.view.viewHeight).toBe(80);
+  expect(densePerspective.lighting?.overflowedClusters).toBe(0);
+  await page.mouse.wheel(0, 120);
+  await settleFrames(page, 2);
+  expect(await page.evaluate(() => window.voxelStudio!.viewState().viewHeight)).toBe(80);
+
+  await page.evaluate(() => {
+    const harness = window.voxelStudio!;
+    harness.setDepth(false);
+    harness.setViewAngles({ yawDegrees: 45, pitchDegrees: 30, viewHeight: 250 });
+  });
+  await page.mouse.wheel(0, 120);
+  await settleFrames(page, 2);
+  const flatDense = await page.evaluate(() => ({
+    view: window.voxelStudio!.viewState(),
+    lighting: window.voxelStudio!.drawAt(0).sceneLighting,
+  }));
+  expect(flatDense.view.viewHeight).toBe(80);
+  expect(flatDense.lighting?.overflowedClusters).toBe(0);
+
+  await page.evaluate(() => {
+    const harness = window.voxelStudio!;
+    harness.setLit(false);
+    harness.setViewAngles({ yawDegrees: 45, pitchDegrees: 30, viewHeight: 250 });
+  });
+  await page.mouse.wheel(0, 120);
+  await settleFrames(page, 2);
+  expect(await page.evaluate(() => window.voxelStudio!.viewState().viewHeight)).toBe(256);
+
+  await page.evaluate(() => {
+    const harness = window.voxelStudio!;
+    harness.setDepth(true);
+    harness.setViewAngles({ yawDegrees: 45, pitchDegrees: 30, viewHeight: 0.26 });
+  });
+  await page.mouse.wheel(0, -120);
+  await settleFrames(page, 2);
+  expect(await page.evaluate(() => window.voxelStudio!.viewState().viewHeight)).toBe(0.25);
+
+  await expect(page.locator('.view-error')).toBeHidden();
+  expect(errors).toEqual([]);
+});
+
 test('dense lit perspective locks WASD translation and flat or unlit views restore it', async ({ page }) => {
   await openStudio(page);
   const errors: string[] = [];

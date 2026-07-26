@@ -7,6 +7,7 @@ import {
   DEFAULT_ORBIT,
   describeOrbit,
   dragOrbit,
+  fitViewHeight,
   moveOrbitCenter,
   zoomOrbit,
 } from './orbit.js';
@@ -53,11 +54,42 @@ describe('the stage camera', () => {
     expect(dragged.pitchDegrees).toBeGreaterThan(DEFAULT_ORBIT.pitchDegrees);
   });
 
-  it('zooms within sane bounds', () => {
-    const closest = zoomOrbit({ ...DEFAULT_ORBIT, viewHeight: 4 }, -30);
-    const farthest = zoomOrbit({ ...DEFAULT_ORBIT, viewHeight: 60 }, 30);
-    expect(closest.viewHeight).toBe(3);
-    expect(farthest.viewHeight).toBe(80);
+  it('zooms through the expanded inspection range with valid camera planes', () => {
+    const closest = zoomOrbit({ ...DEFAULT_ORBIT, viewHeight: 4 }, -60);
+    const farthest = zoomOrbit({ ...DEFAULT_ORBIT, viewHeight: 60 }, 60);
+    expect(closest.viewHeight).toBe(0.25);
+    expect(farthest.viewHeight).toBe(256);
+    expect(fitViewHeight([0, 0, 0])).toBe(3);
+    expect(fitViewHeight([1_000, 1_000, 1_000])).toBe(80);
+
+    for (const camera of [new OrthographicCamera(), new PerspectiveCamera()]) {
+      for (const state of [closest, farthest]) {
+        applyOrbit(camera, state, 1280, 720);
+        expect(camera.position.toArray().every(Number.isFinite)).toBe(true);
+        expect(camera.projectionMatrix.toArray().every(Number.isFinite)).toBe(true);
+        expect(camera.near).toBeGreaterThan(0);
+        expect(camera.far).toBeGreaterThan(camera.near);
+      }
+    }
+
+    for (const [width, height] of [[1280, 720], [240, 692]] as const) {
+      const flat = new OrthographicCamera();
+      applyOrbit(flat, { ...farthest, yawDegrees: 0 }, width, height);
+      expect(flat.top - flat.bottom).toBeCloseTo(farthest.viewHeight, 10);
+      expect(flat.right - flat.left)
+        .toBeCloseTo(farthest.viewHeight * width / height, 10);
+    }
+
+    const landscape = new OrthographicCamera();
+    applyOrbit(landscape, { ...farthest, yawDegrees: 0 }, 1280, 720);
+    for (const x of [-96, 96]) {
+      for (const z of [-96, 96]) {
+        const corner = new Vector3(x, 0, z).project(landscape);
+        expect(Math.abs(corner.x)).toBeLessThanOrEqual(1);
+        expect(Math.abs(corner.y)).toBeLessThanOrEqual(1);
+        expect(Math.abs(corner.z)).toBeLessThanOrEqual(1);
+      }
+    }
   });
 
   it('moves WASD on the ground relative to the current camera yaw', () => {
@@ -123,18 +155,20 @@ describe('the real-depth camera', () => {
     // The eye stands at whatever distance makes the same amount of model fill
     // the screen, so toggling depth must not jump the zoom: a point at the top
     // of the flat view stays at the top of the deep view.
-    const flat = new OrthographicCamera();
-    const deep = new PerspectiveCamera();
     const state = { yawDegrees: 45, pitchDegrees: 30, viewHeight: 10 };
-    applyOrbit(flat, state, 800, 600);
-    applyOrbit(deep, state, 800, 600);
-    // A point exactly viewHeight/2 above the origin, in the view's own up
-    // direction, projects to the top edge in both.
-    const up = new Vector3(0, 1, 0).applyQuaternion(deep.quaternion).multiplyScalar(5);
-    const inFlat = up.clone().project(flat);
-    const inDeep = up.clone().project(deep);
-    expect(inFlat.y).toBeCloseTo(1, 3);
-    expect(inDeep.y).toBeCloseTo(1, 3);
+    for (const [width, height] of [[800, 600], [240, 692]] as const) {
+      const flat = new OrthographicCamera();
+      const deep = new PerspectiveCamera();
+      applyOrbit(flat, state, width, height);
+      applyOrbit(deep, state, width, height);
+      // A point at half the vertical span projects to the top edge in both
+      // cameras and in both landscape and portrait stages.
+      const edge = new Vector3(0, 5, 0).applyQuaternion(deep.quaternion);
+      const inFlat = edge.clone().project(flat);
+      const inDeep = edge.clone().project(deep);
+      expect(inFlat.y).toBeCloseTo(1, 3);
+      expect(inDeep.y).toBeCloseTo(1, 3);
+    }
   });
 
   it('makes nearer genuinely bigger, which the flat view cannot', () => {

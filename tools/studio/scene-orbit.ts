@@ -3,7 +3,6 @@ import { CLUSTERED_POINT_LIGHTS_PER_TILE_INTERNAL } from '../../src/three/cluste
 import {
   clampOrbit,
   DEPTH_FOV_DEGREES,
-  ORBIT_MAX_VIEW_HEIGHT,
   ORBIT_MIN_VIEW_HEIGHT,
   type OrbitCenterV1,
   type OrbitStateV1,
@@ -12,6 +11,12 @@ import type { ScenePointLightV1, ScenePointLightV3, SceneV1 } from './scene.js';
 
 const CAMERA_OUTSIDE_LIGHT_VOLUME_MARGIN = 1.05;
 export const DENSE_SCENE_PITCH_LIMIT_DEGREES = 75;
+/**
+ * The clustered-light proof exhaustively covers dense active lighting in both
+ * camera projections through this height. Unlit and sparse views may use the
+ * wider general Studio range.
+ */
+export const DENSE_SCENE_MAX_VIEW_HEIGHT = 80;
 const VIEW_HEIGHT_PER_INFLUENCE_RADIUS =
   2 * Math.tan((DEPTH_FOV_DEGREES * Math.PI) / 360) * CAMERA_OUTSIDE_LIGHT_VOLUME_MARGIN;
 
@@ -105,20 +110,36 @@ export interface SceneViewV1 {
   readonly center: OrbitCenterV1;
 }
 
+export interface SceneViewModeV1 {
+  readonly lit: boolean;
+  readonly depth: boolean;
+}
+
 /**
- * Applies the paired pan/orbit safety envelope only while dense perspective
- * lighting is active. Orthographic, unlit, and sparse views retain the
- * ordinary unrestricted ground-plane pan and camera range.
+ * Dense active lighting keeps the far zoom inside its proven clustered-light
+ * envelope in either camera. Perspective additionally needs its data-derived
+ * near limit, bounded pitch, and pinned center; flat, unlit, and sparse views
+ * retain unrestricted ground-plane movement.
  */
 export function clampSceneViewV1(
   state: OrbitStateV1,
   scene: SceneV1,
   center: OrbitCenterV1,
-  perspectiveLightingActive: boolean,
+  mode: SceneViewModeV1,
 ): SceneViewV1 {
   const clamped = clampOrbit(state);
-  if (!sceneViewCenterIsPinnedV1(scene, perspectiveLightingActive)) {
+  const denseLightingActive = mode.lit && finiteDenseEnvelopeApplies(scene);
+  if (!denseLightingActive) {
     return { orbit: clamped, center };
+  }
+  if (!mode.depth) {
+    return {
+      center,
+      orbit: {
+        ...clamped,
+        viewHeight: Math.min(DENSE_SCENE_MAX_VIEW_HEIGHT, clamped.viewHeight),
+      },
+    };
   }
   const safeCenter = clampDenseSceneCenterV1(center);
   return {
@@ -130,7 +151,7 @@ export function clampSceneViewV1(
         Math.max(-DENSE_SCENE_PITCH_LIMIT_DEGREES, clamped.pitchDegrees),
       ),
       viewHeight: Math.min(
-        ORBIT_MAX_VIEW_HEIGHT,
+        DENSE_SCENE_MAX_VIEW_HEIGHT,
         Math.max(clamped.viewHeight, minimumDenseSceneViewHeightV1(scene, safeCenter)),
       ),
     },

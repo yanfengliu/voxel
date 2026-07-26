@@ -21,6 +21,7 @@ import { modelVoxelSizeV1, type StudioModelV1 } from './model.js';
 import { NoteStore } from './notes.js';
 import {
   applyOrbit,
+  AUTO_FIT_MAX_VIEW_HEIGHT,
   clampOrbit,
   DEFAULT_ORBIT,
   describeOrbit,
@@ -763,7 +764,7 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
             orbit,
             sceneOpen,
             panCenter,
-            depthOn && on,
+            { lit: on, depth: depthOn },
           );
           orbit = candidateView.orbit;
           panCenter = candidateView.center;
@@ -980,7 +981,7 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
         nextOrbit,
         sceneOpen,
         nextPanCenter,
-        depthOn && sceneSession?.lit === true,
+        { lit: sceneSession?.lit === true, depth: depthOn },
       );
     orbit = candidateView.orbit;
     panCenter = candidateView.center;
@@ -1040,7 +1041,7 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
     for (const placement of scene.placements) {
       reach = Math.max(reach, Math.hypot(placement.at[0], placement.at[2]) + 10);
     }
-    return reach * 2.4;
+    return Math.min(AUTO_FIT_MAX_VIEW_HEIGHT, reach * 2.4);
   }
 
   /**
@@ -1079,7 +1080,7 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
       { ...orbit, viewHeight: sceneFitHeight(scene) },
       scene,
       [0, 0, 0],
-      depthOn && session.lit,
+      { lit: session.lit, depth: depthOn },
     );
     const candidatePanCenter = candidateView.center;
     const candidateOrbit = candidateView.orbit;
@@ -1568,7 +1569,7 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
       orbit,
       next,
       panCenter,
-      depthOn && activeSession.lit,
+      { lit: activeSession.lit, depth: depthOn },
     );
     orbit = candidateView.orbit;
     panCenter = candidateView.center;
@@ -2041,7 +2042,7 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
         orbit,
         sceneOpen,
         panCenter,
-        on && sceneSession?.lit === true,
+        { lit: sceneSession?.lit === true, depth: on },
       );
     applyOrbit(nextCamera, candidateView.orbit, viewW, viewH, candidateView.center);
     try {
