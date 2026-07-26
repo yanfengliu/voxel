@@ -1,0 +1,225 @@
+{
+  "schemaVersion": "voxel.clustered-light-benchmark/3",
+  "lane": "named-hardware",
+  "recordedAtIso": "2026-07-26T05:12:53.840Z",
+  "package": {
+    "name": "voxel",
+    "version": "1.0.0",
+    "commit": "1f4377d00033185b7c3eceb89efb98b32a32bab2",
+    "worktreeClean": true,
+    "dirtyRunAuthorized": false
+  },
+  "sourceIdentity": {
+    "commitTree": "57973f90e49c74eeb25336594ff0621d1b091859",
+    "measurementSnapshot": {
+      "kind": "sealed-commit-checkout",
+      "commit": "1f4377d00033185b7c3eceb89efb98b32a32bab2"
+    },
+    "worktreeStatusSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "worktreePatchSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "untrackedFileSha256": {},
+    "selectedSourceSha256": {
+      "benchmark": "165b00ca3ece7cc270f2e9d1608247de24bd880d146b9353d16dfe55d3c3e493",
+      "benchmarkSourceSeal": "7badace134d52438ed2f2289bc5f3d485a636fc50ce8eadda819c42cb5e8b677",
+      "packageManifest": "544df78c4232a26accf5b67491d5971140fef385c45df76494455fcbcab29944",
+      "dependencyLock": "5aa915f7e4df75922c9d45278159f9167eeb0884dbeab0e7768c3883add7a0f4",
+      "studioEntry": "5cf1d21f6bb49f1f52973fb5aad059a38af531d13a037e288a19dbe3463a43d9",
+      "studioHtml": "ab19fc06189e404394c70a0620e77dac0d1f7832fb13bb2245e556b1e25e0f99",
+      "studioStyles": "65b313607c959f76423e99b5b630d89cd99f9375bf54f8550578f5bc742558c9",
+      "studioCatalog": "be1863d5f0e3227db58bd475981524e33d240dc8997355e4095ff574d7112dfd",
+      "scene": "8316c9103934e17e45ffaeceb1fba742ba639b006640608b364d0268d1c4158e",
+      "sceneSchema": "90426676eb6dd227013a2aea3d2131f2b8d803bdccc74514cfaeb6537298dda6",
+      "sceneBuild": "6c6e0e9adcdf9ea1639fd91963e839bfef5e1a37b5e47de4f9360c012cdc65d8",
+      "recipe": "5bd156654fcc30f62fd0a9c9215a1a4013c6a982b753c634996866f14b6e2d3b",
+      "recipeBuild": "8971ed96752a758730f4b475607eb21eb7ae69c669b93fcb52820738eb41c350",
+      "modelSchema": "644e8ff8e15e8c452457a063afbb83b1675e418c110cfd468c6a91f6c62f937c",
+      "wallRecipes": "5a957b1445bb82f86d0848997728a8cf9c2b7ed5455a38ad5d437c4260edfe84",
+      "orbit": "c0e91c8be73cf6f6a2b78eb736f8dbdc9550521efd6648a16932502716b52b50",
+      "player": "611e593d5a4be74db64d4babd16d315f92186670fa7649a93cc0afcbff1b345f",
+      "studioHarness": "b139c191da70892adb415b4ba18af8762a3407613ec0edc8662a5a80481409e3",
+      "studioLighting": "531f9a6ee5136330284c573f7998b2c987d8e0152ef2d763b2c9df6ddaf75fa1",
+      "studioSession": "753ce4e8583e0ebee45fb821941da6788be3b205172c25ccdadc10f7fe85cbce",
+      "studioModelSession": "925aba88790d3780766df7b15648d85a3b0723fd1c8ef404a070d4c5969377e7",
+      "studioApp": "6581c9dac2a13bcef6a6fca7db1dd37b054e4abae92a344c4a306bd69a723543",
+      "threeRuntime": "1083ef6603584c716aa2dfe736fe53393a6a3a38b846553883816837a361d81f",
+      "clusteredField": "e4125f2601aaaf544bce8764a62a96198c2e59f9da5aaba166ec7c725c9bf1a8",
+      "clusteredLimits": "17d09e05220ca95a9db6fc5508a187a9a8f0a2a6be15ac016092b76cc9e0e2c2",
+      "clusteredShader": "acd4901a1eb2b4f7313101a639e60bb33ac4ac7d1f07deda9b9af295ec9a5eba",
+      "materialDecorator": "e63f3422733c38805ad4a836519df69cd80e9754965ace4cb5157fdf262bc6fe",
+      "materialPresenter": "596fa593b903c55d62340f775b44e2f36395d39716bcdd919ffe8652d2823fa4",
+      "instanceBatchPresenter": "98b46213b6b4a8c7b02d4bf32f464558cb3a1bd1453d9cc32140907de2557007",
+      "runtimeBorrowedCameraSwap": "d6fc399a73a90e3bc481e87ffdce11c18502a16c25019ced38907ceaa5e23a5c",
+      "runtimeInitialization": "dbb829edc5ac7c34776a6fa8e3bf240a94d1b7993acae284d5e044fa1c01479e",
+      "runtimePresentationSurface": "0c070791d1fd1ad85d1b8c73ce8a03b19220371f428a19b7247f6fcefa7712f7"
+    }
+  },
+  "host": {
+    "os": "win32 10.0.26100",
+    "arch": "x64",
+    "cpu": "13th Gen Intel(R) Core(TM) i9-13900KF",
+    "cpuCount": 32,
+    "totalMemoryBytes": 68423581696,
+    "node": "v24.12.0",
+    "browser": "chromium 147.0.7727.15",
+    "browserArgs": [
+      "--use-angle=d3d11"
+    ],
+    "headless": true
+  },
+  "device": {
+    "webgl2": true,
+    "renderer": "ANGLE (NVIDIA, NVIDIA GeForce RTX 4090 (0x00002684) Direct3D11 vs_5_0 ps_5_0, D3D11)",
+    "vendor": "Google Inc. (NVIDIA)",
+    "maxTextureSize": 16384,
+    "timerQueryAvailable": true
+  },
+  "workload": {
+    "kind": "studio-forward-plus-stress-scene",
+    "scope": "CPU clustered-light rebuild, data/instance uploads, and a small Studio receiver batch; not a game-sized scene",
+    "sceneId": "studio:scene:lighting-1000",
+    "scenePlacements": 35,
+    "authoredLights": 1000,
+    "visibleLights": 1000,
+    "measuredVisibleLightsRange": {
+      "minimum": 1000,
+      "maximum": 1000
+    },
+    "movingLights": 1000,
+    "markerInstances": 1000,
+    "markerDrawCalls": 1,
+    "viewport": {
+      "width": 1280,
+      "height": 720,
+      "deviceScaleFactor": 1
+    },
+    "shadows": false,
+    "tilePixels": 48,
+    "depthSlices": 24,
+    "maxLightsEvaluatedPerFragment": 32,
+    "sceneRender": {
+      "drawCalls": 2,
+      "triangles": 41680,
+      "points": 0,
+      "lines": 0,
+      "instanceBatches": 1,
+      "instances": 35,
+      "animatedBatches": 0,
+      "animatedInstances": 0,
+      "materialResources": 1,
+      "geometryResources": 1,
+      "rendererGeometries": 2,
+      "rendererTextures": 2
+    }
+  },
+  "clusteredWork": {
+    "measuredFrameSamples": {
+      "sampleCount": 3000,
+      "nonemptyClusters": {
+        "minimum": 372,
+        "mean": 380.74833333333333,
+        "maximum": 385
+      },
+      "maxLightsPerCluster": {
+        "minimum": 13,
+        "mean": 13,
+        "maximum": 13
+      },
+      "lightClusterAssignments": {
+        "minimum": 1945,
+        "mean": 1968.9066666666668,
+        "maximum": 1991
+      },
+      "candidateIntersections": {
+        "minimum": 1945,
+        "mean": 1968.9066666666668,
+        "maximum": 1991
+      }
+    },
+    "finalFrame": {
+      "clusterCount": 9720,
+      "nonemptyClusters": 372,
+      "maxLightsPerCluster": 13,
+      "lightClusterAssignments": 1961,
+      "candidateIntersections": 1961,
+      "overflowedClusters": 0,
+      "lightDataBytes": 32768,
+      "lightIndexBytes": 2097152
+    }
+  },
+  "measurement": {
+    "method": "sealed source snapshot; headless main-thread performance.now around a fixed deterministic Studio drawAt sequence plus WebGL2RenderingContext.finish",
+    "interpretation": "GPU-synchronized uncapped Studio draw throughput; excludes requestAnimationFrame pacing, compositor presentation, display refresh, and gameplay simulation",
+    "clockStepMs": 16.666666666666668,
+    "minimumWarmupFrames": 120,
+    "minimumWarmupMs": 2000,
+    "actualWarmupFrames": 2357,
+    "warmupElapsedMs": 2000,
+    "runs": 5,
+    "fixedFramesPerRun": 600,
+    "deterministicSequence": "each measured run replays frame indices 0..N-1 at a 60 Hz simulation step",
+    "measuredFrames": 3000,
+    "totalElapsedMs": 2497.4000000059605,
+    "gpuSynchronizedUncappedDrawThroughputFps": 1201.2492992683751,
+    "runDrawThroughputFps": [
+      1200.96076862922,
+      1199.760047968953,
+      1199.2804317480993,
+      1202.8869286358959,
+      1203.3694343947875
+    ],
+    "runFrameCounts": [
+      600,
+      600,
+      600,
+      600,
+      600
+    ],
+    "frameP50Ms": 0.7999999970197678,
+    "frameP95Ms": 0.9000000059604645,
+    "frameP99Ms": 1.0999999940395355,
+    "slowestOnePercentFrameCount": 30,
+    "slowestOnePercentMeanFrameMs": 1.2100000033775966,
+    "onePercentLowFps": 826.4462786847917,
+    "framesOver16_67Ms": 0,
+    "framesOver33_33Ms": 0,
+    "programCounterScope": "page-global cumulative WebGL2 createProgram calls from page initialization",
+    "pageGlobalCreateProgramCallsAfterWarmup": 5,
+    "pageGlobalCreateProgramCallsAfterLightRemoval": 5,
+    "pageGlobalCreateProgramCallsAfterLightRestore": 5,
+    "pageGlobalCreateProgramCallsAfterMeasurement": 5
+  },
+  "sourceSha256": {
+    "benchmark": "165b00ca3ece7cc270f2e9d1608247de24bd880d146b9353d16dfe55d3c3e493",
+    "benchmarkSourceSeal": "7badace134d52438ed2f2289bc5f3d485a636fc50ce8eadda819c42cb5e8b677",
+    "packageManifest": "544df78c4232a26accf5b67491d5971140fef385c45df76494455fcbcab29944",
+    "dependencyLock": "5aa915f7e4df75922c9d45278159f9167eeb0884dbeab0e7768c3883add7a0f4",
+    "studioEntry": "5cf1d21f6bb49f1f52973fb5aad059a38af531d13a037e288a19dbe3463a43d9",
+    "studioHtml": "ab19fc06189e404394c70a0620e77dac0d1f7832fb13bb2245e556b1e25e0f99",
+    "studioStyles": "65b313607c959f76423e99b5b630d89cd99f9375bf54f8550578f5bc742558c9",
+    "studioCatalog": "be1863d5f0e3227db58bd475981524e33d240dc8997355e4095ff574d7112dfd",
+    "scene": "8316c9103934e17e45ffaeceb1fba742ba639b006640608b364d0268d1c4158e",
+    "sceneSchema": "90426676eb6dd227013a2aea3d2131f2b8d803bdccc74514cfaeb6537298dda6",
+    "sceneBuild": "6c6e0e9adcdf9ea1639fd91963e839bfef5e1a37b5e47de4f9360c012cdc65d8",
+    "recipe": "5bd156654fcc30f62fd0a9c9215a1a4013c6a982b753c634996866f14b6e2d3b",
+    "recipeBuild": "8971ed96752a758730f4b475607eb21eb7ae69c669b93fcb52820738eb41c350",
+    "modelSchema": "644e8ff8e15e8c452457a063afbb83b1675e418c110cfd468c6a91f6c62f937c",
+    "wallRecipes": "5a957b1445bb82f86d0848997728a8cf9c2b7ed5455a38ad5d437c4260edfe84",
+    "orbit": "c0e91c8be73cf6f6a2b78eb736f8dbdc9550521efd6648a16932502716b52b50",
+    "player": "611e593d5a4be74db64d4babd16d315f92186670fa7649a93cc0afcbff1b345f",
+    "studioHarness": "b139c191da70892adb415b4ba18af8762a3407613ec0edc8662a5a80481409e3",
+    "studioLighting": "531f9a6ee5136330284c573f7998b2c987d8e0152ef2d763b2c9df6ddaf75fa1",
+    "studioSession": "753ce4e8583e0ebee45fb821941da6788be3b205172c25ccdadc10f7fe85cbce",
+    "studioModelSession": "925aba88790d3780766df7b15648d85a3b0723fd1c8ef404a070d4c5969377e7",
+    "studioApp": "6581c9dac2a13bcef6a6fca7db1dd37b054e4abae92a344c4a306bd69a723543",
+    "threeRuntime": "1083ef6603584c716aa2dfe736fe53393a6a3a38b846553883816837a361d81f",
+    "clusteredField": "e4125f2601aaaf544bce8764a62a96198c2e59f9da5aaba166ec7c725c9bf1a8",
+    "clusteredLimits": "17d09e05220ca95a9db6fc5508a187a9a8f0a2a6be15ac016092b76cc9e0e2c2",
+    "clusteredShader": "acd4901a1eb2b4f7313101a639e60bb33ac4ac7d1f07deda9b9af295ec9a5eba",
+    "materialDecorator": "e63f3422733c38805ad4a836519df69cd80e9754965ace4cb5157fdf262bc6fe",
+    "materialPresenter": "596fa593b903c55d62340f775b44e2f36395d39716bcdd919ffe8652d2823fa4",
+    "instanceBatchPresenter": "98b46213b6b4a8c7b02d4bf32f464558cb3a1bd1453d9cc32140907de2557007",
+    "runtimeBorrowedCameraSwap": "d6fc399a73a90e3bc481e87ffdce11c18502a16c25019ced38907ceaa5e23a5c",
+    "runtimeInitialization": "dbb829edc5ac7c34776a6fa8e3bf240a94d1b7993acae284d5e044fa1c01479e",
+    "runtimePresentationSurface": "0c070791d1fd1ad85d1b8c73ce8a03b19220371f428a19b7247f6fcefa7712f7"
+  }
+}
