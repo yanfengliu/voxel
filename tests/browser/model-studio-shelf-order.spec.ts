@@ -1,6 +1,6 @@
 import { resolve } from 'node:path';
 
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type Locator, type Page } from '@playwright/test';
 import { createServer, type ViteDevServer } from 'vite';
 
 import type { StudioShelfItemKindV1 } from '../../tools/studio/studio-shelf-order.js';
@@ -34,6 +34,10 @@ function sortable(page: Page, kind: StudioShelfItemKindV1, id: string) {
   return page.locator(`[data-library-sortable-kind="${kind}"]`).filter({
     has: page.locator(`[data-library-kind="${kind}"][data-library-key="${id}"]`),
   });
+}
+
+async function overflowOpacity(trigger: Locator): Promise<number> {
+  return trigger.evaluate((element) => Number.parseFloat(getComputedStyle(element).opacity));
 }
 
 async function dragBefore(
@@ -83,7 +87,7 @@ async function expectFlatShelf(page: Page): Promise<void> {
   await expect(shelf.locator('.lib-detail, .lib-open, .lib-actions-row')).toHaveCount(0);
 }
 
-test('dragging rearranges every library lane without changing item identity or click actions', async ({ page }) => {
+test('dragging rearranges every library lane without changing item identity or click actions', async ({ browser, page }) => {
   await page.goto(studioOrigin, { waitUntil: 'load' });
   await page.waitForFunction(() => typeof window.voxelStudio === 'object');
 
@@ -105,6 +109,43 @@ test('dragging rearranges every library lane without changing item identity or c
   });
   const movedModel = modelFixture.ids[1]!;
   const firstModel = modelFixture.ids[0]!;
+  const firstModelWrap = sortable(page, 'model', firstModel);
+  const firstModelRow = firstModelWrap.locator('[data-library-kind="model"]');
+  const firstModelMore = firstModelWrap.locator('.library-more');
+  const movedModelMore = sortable(page, 'model', movedModel).locator('.library-more');
+  expect(await overflowOpacity(firstModelMore)).toBe(0);
+  expect(await overflowOpacity(movedModelMore)).toBe(0);
+  await firstModelWrap.hover();
+  expect(await overflowOpacity(firstModelMore)).toBe(1);
+  expect(await overflowOpacity(movedModelMore)).toBe(0);
+  await page.getByRole('button', { name: 'Parts' }).hover();
+  expect(await overflowOpacity(firstModelMore)).toBe(0);
+  await firstModelRow.focus();
+  expect(await overflowOpacity(firstModelMore)).toBe(1);
+  expect(await overflowOpacity(movedModelMore)).toBe(0);
+  await page.keyboard.press('Tab');
+  await expect(firstModelMore).toBeFocused();
+  expect(await overflowOpacity(firstModelMore)).toBe(1);
+
+  const touchContext = await browser.newContext({
+    hasTouch: true,
+    isMobile: true,
+    viewport: { width: 390, height: 844 },
+  });
+  try {
+    const touchPage = await touchContext.newPage();
+    await touchPage.goto(studioOrigin, { waitUntil: 'load' });
+    await touchPage.waitForFunction(() => typeof window.voxelStudio === 'object');
+    expect(await touchPage.evaluate(() => matchMedia('(hover: none)').matches)).toBe(true);
+    const touchMore = touchPage.locator('.library-more').first();
+    expect(await overflowOpacity(touchMore)).toBeGreaterThan(0);
+    await expect(touchMore).toHaveCSS('pointer-events', 'auto');
+    await touchMore.tap();
+    await expect(touchPage.getByRole('menu')).toBeVisible();
+  } finally {
+    await touchContext.close();
+  }
+
   await dragBefore(page, 'model', movedModel, firstModel);
   const expectedModels = [movedModel, firstModel, ...modelFixture.ids.slice(2)];
   expect(await page.evaluate(
@@ -121,15 +162,19 @@ test('dragging rearranges every library lane without changing item identity or c
   );
 
   const modelMore = sortable(page, 'model', movedModel).locator('.library-more');
+  await sortable(page, 'model', movedModel).hover();
   await modelMore.dragTo(sortable(page, 'model', firstModel));
   expect(await page.evaluate(
     ({ sectionIndex }) => window.voxelStudio!.shelfOrder('model', sectionIndex),
     { sectionIndex: modelFixture.sectionIndex },
   )).toEqual(expectedModels);
   await expect(page.getByRole('menu')).toHaveCount(0);
+  await sortable(page, 'model', movedModel).hover();
   await modelMore.click();
   await expect(page.getByRole('menuitem', { name: 'Examine model' })).toBeVisible();
   await expect(page.getByRole('menuitem', { name: 'Move down' })).toBeVisible();
+  await page.getByRole('menuitem', { name: 'Examine model' }).hover();
+  expect(await overflowOpacity(modelMore)).toBe(1);
   expect(await page.evaluate(() => window.voxelStudio!.activeShelfModel())).toBe(modelFixture.active);
   await page.keyboard.press('Escape');
 
@@ -149,6 +194,7 @@ test('dragging rearranges every library lane without changing item identity or c
   expect(await page.evaluate(() => window.voxelStudio!.shelfOrder('part'))).toEqual(expectedParts);
   expect(await domOrder(page, 'part')).toEqual(expectedParts);
   expect(await page.evaluate(() => window.voxelStudio!.activePart())).toBeNull();
+  await sortable(page, 'part', movedPart).hover();
   await sortable(page, 'part', movedPart).locator('.library-more').click();
   await expect(page.getByRole('menuitem', { name: 'Render defaults' })).toBeVisible();
   await expect(page.getByRole('menuitem', { name: 'Move down' })).toBeVisible();
@@ -177,12 +223,14 @@ test('dragging rearranges every library lane without changing item identity or c
   expect(await domOrder(page, 'recipe')).toEqual(expectedRecipes);
   expect(await page.evaluate(() => window.voxelStudio!.activeRecipe())).toBeNull();
   const recipeMore = sortable(page, 'recipe', movedRecipe).locator('.library-more');
+  await sortable(page, 'recipe', movedRecipe).hover();
   await recipeMore.dragTo(sortable(page, 'recipe', recipes[0]!));
   expect(await page.evaluate(() => ({
     active: window.voxelStudio!.activeRecipe(),
     order: window.voxelStudio!.shelfOrder('recipe'),
   }))).toEqual({ active: null, order: expectedRecipes });
   await expect(page.getByRole('menu')).toHaveCount(0);
+  await sortable(page, 'recipe', movedRecipe).hover();
   await recipeMore.click();
   await expect(page.getByRole('menuitem', { name: 'Render current recipe' })).toHaveCount(0);
   await expect(page.getByRole('menuitem', { name: 'Open shelf model' })).toHaveCount(0);
@@ -209,6 +257,7 @@ test('dragging rearranges every library lane without changing item identity or c
     open: window.voxelStudio!.sceneMode(),
   }))).toEqual({ order: expectedScenes, open: false });
   expect(await domOrder(page, 'scene')).toEqual(expectedScenes);
+  await sortable(page, 'scene', movedScene).hover();
   await sortable(page, 'scene', movedScene).locator('.library-more').click();
   await expect(page.getByRole('menuitem', { name: 'Rename scene' })).toBeVisible();
   await expect(page.getByRole('menuitem', { name: 'Move down' })).toBeVisible();

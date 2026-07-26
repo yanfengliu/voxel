@@ -140,11 +140,24 @@ button:disabled { opacity: 0.45; cursor: default; }
   color: var(--faint);
   font-size: 16px;
   line-height: 1;
-  opacity: 0.65;
+  opacity: 0;
+  pointer-events: none;
 }
 .library-row-wrap:hover > .library-more,
+.library-row-wrap > .model-row:focus-visible + .library-more,
+.library-row-wrap > .model-row[aria-expanded="true"] + .library-more,
 .library-more:focus-visible,
-.library-more[aria-expanded="true"] { color: var(--text); opacity: 1; }
+.library-more[aria-expanded="true"] {
+  color: var(--text);
+  opacity: 1;
+  pointer-events: auto;
+}
+@media (hover: none) {
+  .library-more {
+    opacity: 0.65;
+    pointer-events: auto;
+  }
+}
 .railnote { font-size: 11px; color: var(--faint); margin: 12px 8px 0; line-height: 1.45; }
 .studio-context-menu {
   position: fixed;
