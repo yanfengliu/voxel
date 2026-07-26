@@ -74,6 +74,8 @@ export function createBenchmarkSourceSeal({ projectRoot, sourceFiles }) {
   async function capture() {
     const status = gitBytes(['status', '--porcelain=v1', '-z', '--untracked-files=all']);
     const patch = gitBytes(['diff', '--binary', 'HEAD', '--']);
+    const commit = gitText(['rev-parse', 'HEAD']);
+    const worktreeClean = status.length === 0;
     const untrackedList = nullSeparatedGitList([
       'ls-files',
       '--others',
@@ -84,7 +86,9 @@ export function createBenchmarkSourceSeal({ projectRoot, sourceFiles }) {
       Promise.all(
         Object.entries(sourceFiles).map(async ([name, relativePath]) => [
           name,
-          await sha256(relativePath),
+          worktreeClean
+            ? sha256Bytes(gitBytes(['show', `${commit}:${relativePath}`]))
+            : await sha256(relativePath),
         ]),
       ),
       Promise.all(
@@ -92,9 +96,9 @@ export function createBenchmarkSourceSeal({ projectRoot, sourceFiles }) {
       ),
     ]);
     return Object.freeze({
-      commit: gitText(['rev-parse', 'HEAD']),
+      commit,
       commitTree: gitText(['rev-parse', 'HEAD^{tree}']),
-      worktreeClean: status.length === 0,
+      worktreeClean,
       worktreeStatusSha256: sha256Bytes(status),
       worktreePatchSha256: sha256Bytes(patch),
       untrackedFileSha256: Object.freeze(Object.fromEntries(untrackedEntries)),
