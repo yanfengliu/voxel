@@ -101,5 +101,26 @@ export function createStudioScenes(): readonly SceneV1[] {
         { id: 'garden', model: 'studio:three-flower-pot', at: [-9, 0, -29] },
       ],
     },
+    {
+      schemaVersion: VOXEL_SCENE_SCHEMA_V1,
+      id: 'studio:scene:garden',
+      label: 'Flower-pot garden',
+      summary: 'Nine planters form a garden display: pink flowers in terracotta, '
+        + 'violet flowers in teal, and coral tulips in tall blue pots make the '
+        + 'palette and silhouette variations easy to compare.',
+      placements: [
+        // Three compact rows keep every colorway legible from the default
+        // front-left camera while repeating each model as an instance.
+        { id: 'classic-front-left', model: 'studio:three-flower-pot', at: [-11, 0, 10] },
+        { id: 'tulip-front-center', model: 'studio:tulip-pot', at: [0, 0, 10], turns: 1 },
+        { id: 'violet-front-right', model: 'studio:violet-flower-pot', at: [11, 0, 10], turns: 2 },
+        { id: 'violet-middle-left', model: 'studio:violet-flower-pot', at: [-11, 0, 0], turns: 3 },
+        { id: 'classic-middle-center', model: 'studio:three-flower-pot', at: [0, 0, 0] },
+        { id: 'tulip-middle-right', model: 'studio:tulip-pot', at: [11, 0, 0], turns: 1 },
+        { id: 'tulip-back-left', model: 'studio:tulip-pot', at: [-11, 0, -10], turns: 2 },
+        { id: 'violet-back-center', model: 'studio:violet-flower-pot', at: [0, 0, -10], turns: 3 },
+        { id: 'classic-back-right', model: 'studio:three-flower-pot', at: [11, 0, -10] },
+      ],
+    },
   ];
 }

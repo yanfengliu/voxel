@@ -28,6 +28,77 @@ test.afterAll(async () => {
   await ownedServer?.close();
 });
 
+test('garden scene presents each flower-pot color and form variation', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  const errors: string[] = [];
+  page.on('pageerror', (error) => errors.push(error.message));
+  page.on('console', (message) => {
+    if (message.type() === 'error') errors.push(message.text());
+  });
+  const response = await page.goto(studioOrigin, { waitUntil: 'load' });
+  expect(response?.ok()).toBe(true);
+  await page.waitForFunction(() => typeof window.voxelStudio === 'object');
+  await page.getByRole('button', { name: 'Scenes' }).click();
+  await page.getByRole('button', { name: /Flower-pot garden 9 models/ }).click();
+
+  await expect(page.getByRole('heading', { name: 'Flower-pot garden' })).toBeVisible();
+  await expect(page.locator('.scene-canvas')).toBeVisible();
+  await expect(page.getByText(/pink flowers in terracotta, violet flowers in teal/)).toBeVisible();
+
+  const presented = await page.evaluate(async () => {
+    const harness = window.voxelStudio!;
+    harness.setDepth(true);
+    harness.setEdges(true);
+    harness.setLit(false);
+    harness.setViewAngles({ yawDegrees: 45, pitchDegrees: 30 });
+    await new Promise<void>((resolveFrame) => {
+      requestAnimationFrame(() => requestAnimationFrame(() => { resolveFrame(); }));
+    });
+    const scene = harness.sceneState();
+    const counts = new Map<string, number>();
+    for (const placement of scene?.placements ?? []) {
+      counts.set(placement.model, (counts.get(placement.model) ?? 0) + 1);
+    }
+    return {
+      id: scene?.id,
+      placements: scene?.placements.length,
+      counts: Object.fromEntries(counts),
+      view: harness.viewState(),
+      sceneMode: harness.sceneMode(),
+      depth: harness.depth(),
+      edges: harness.edges(),
+      lit: harness.lit(),
+    };
+  });
+  expect(presented).toMatchObject({
+    id: 'studio:scene:garden',
+    placements: 9,
+    counts: {
+      'studio:three-flower-pot': 3,
+      'studio:tulip-pot': 3,
+      'studio:violet-flower-pot': 3,
+    },
+    sceneMode: true,
+    view: { yawDegrees: 45, pitchDegrees: 30, described: 'front-left · 30° up' },
+    depth: true,
+    edges: true,
+    lit: false,
+  });
+  expect(presented.view.viewHeight).toBeGreaterThan(50);
+  expect(presented.view.viewHeight).toBeLessThan(70);
+  // Keep the shared Windows/Linux raster about the garden itself. These DOM
+  // overlays use system fonts and their state is pinned structurally above.
+  await page.addStyleTag({
+    content: '.viewchip, .toggles, .stagehint { visibility: hidden !important; }',
+  });
+  await expect(page.locator('.scene-canvas')).toHaveScreenshot('model-studio-garden.png', {
+    animations: 'disabled',
+    maxDiffPixelRatio: 0.002,
+  });
+  expect(errors).toEqual([]);
+});
+
 test('scene menu renames and deletes while keeping open-scene state coherent', async ({ page }) => {
   await page.goto(studioOrigin, { waitUntil: 'load' });
   await page.waitForFunction(() => typeof window.voxelStudio === 'object');

@@ -30,7 +30,7 @@ describe('the studio shelf', () => {
     expect(catalog.sections.map(({ name, models }) => ({ name, count: models.length }))).toEqual([
       { name: 'Shapes', count: 1 },
       { name: 'Walls', count: 2 },
-      { name: 'Garden', count: 3 },
+      { name: 'Garden', count: 7 },
       { name: 'Furniture', count: 3 },
       { name: 'Bedroom furniture', count: 8 },
       { name: 'Roof studies', count: 3 },

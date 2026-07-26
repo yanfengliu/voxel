@@ -46,7 +46,11 @@ import {
   createStudioRecipeBook,
   createTableLampRecipe,
   createTableRecipe,
+  createTallPotRecipe,
   createThreeFlowerPotRecipe,
+  createTulipPotRecipe,
+  createTulipRecipe,
+  createVioletFlowerPotRecipe,
 } from './recipes.js';
 
 /**
@@ -239,13 +243,17 @@ export function createStudioCatalog(): StudioCatalogV1 {
         ],
       },
       {
-        // The combined arrangement owns only placement. Its pot and all three
-        // flowers remain shared recipes that can also be opened on their own.
+        // Every combined planter owns only palette and placement. Its pots and
+        // flower forms remain shared recipes that can also open on their own.
         name: 'Garden',
         models: [
           recipeEntry(createFlowerRecipe),
+          recipeEntry(createTulipRecipe),
           recipeEntry(createPotRecipe),
+          recipeEntry(createTallPotRecipe),
           recipeEntry(createThreeFlowerPotRecipe),
+          recipeEntry(createVioletFlowerPotRecipe),
+          recipeEntry(createTulipPotRecipe),
         ],
       },
       {
