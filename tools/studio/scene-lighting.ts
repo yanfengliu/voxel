@@ -24,7 +24,7 @@ import {
 
 export const STUDIO_SCENE_LIGHT_ROOT_NAME = 'studio-scene-lights';
 export const STUDIO_SCENE_LIGHT_MARKERS_NAME = 'studio-scene-light-markers';
-const MARKER_SIZE = 0.8;
+const MARKER_SIZE = 0.28;
 
 interface ResolvedStudioSceneLight {
   readonly definition: ScenePointLightV3;

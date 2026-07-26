@@ -10,28 +10,56 @@ import {
 
 const LIGHTING_1000_COLUMNS = 40;
 const LIGHTING_1000_ROWS = 25;
-const LIGHTING_1000_DEPTH_BANDS = 10;
-const LIGHTING_1000_SCREEN_X_SPACING = 1.3;
-const LIGHTING_1000_SCREEN_Y_SPACING = 2;
-const LIGHTING_1000_DEPTH_SPACING = 7;
+const LIGHTING_1000_DEPTH_BANDS = 25;
+const LIGHTING_1000_SCREEN_X_SPACING = 2.55;
+const LIGHTING_1000_SCREEN_Y_SPACING = 2.45;
+const LIGHTING_1000_DEPTH_SPACING = 3;
 const LIGHTING_1000_WORLD_CENTER_Y = 0;
-const LIGHTING_1000_ORBIT_RADIUS = 0.25;
-const LIGHTING_1000_COLORS = [
-  { r: 255, g: 116, b: 72 },
-  { r: 255, g: 204, b: 104 },
-  { r: 104, g: 182, b: 255 },
-  { r: 180, g: 116, b: 255 },
-  { r: 104, g: 232, b: 176 },
-] as const;
+const LIGHTING_1000_RECEIVER_GRAIN = 0.25;
+const LIGHTING_1000_RECEIVER_CENTER_Y = 0.5;
+const LIGHTING_1000_LIGHT_CENTER_Z = 1.05;
+const LIGHTING_1000_LIGHT_RANGE = 1.92;
+const GOLDEN_ANGLE_DEGREES = 137.50776405003785;
+const GOLDEN_ANGLE_RADIANS = 2.399963229728653;
 
 function lighting1000Coordinate(index: number, count: number, spacing: number): number {
   return (index - (count - 1) / 2) * spacing;
 }
 
+function lighting1000Layer(column: number, row: number): number {
+  return (column * 17 + row * 7) % LIGHTING_1000_DEPTH_BANDS;
+}
+
+function lighting1000Color(index: number): { readonly r: number; readonly g: number; readonly b: number } {
+  const hue = ((index * GOLDEN_ANGLE_DEGREES) % 360) / 60;
+  const saturation = 0.78 + (index % 5) * 0.04;
+  const lightness = 0.55 + (index % 3) * 0.05;
+  const chroma = (1 - Math.abs(2 * lightness - 1)) * saturation;
+  const intermediate = chroma * (1 - Math.abs((hue % 2) - 1));
+  const sector = Math.floor(hue);
+  const [red, green, blue] = sector === 0
+    ? [chroma, intermediate, 0]
+    : sector === 1
+      ? [intermediate, chroma, 0]
+      : sector === 2
+        ? [0, chroma, intermediate]
+        : sector === 3
+          ? [0, intermediate, chroma]
+          : sector === 4
+            ? [intermediate, 0, chroma]
+            : [chroma, 0, intermediate];
+  const minimum = lightness - chroma / 2;
+  return {
+    r: Math.round((red + minimum) * 255),
+    g: Math.round((green + minimum) * 255),
+    b: Math.round((blue + minimum) * 255),
+  };
+}
+
 /**
  * A 40 x 25 field expressed in the default camera's right, up, and depth
- * basis. Its interleaved depth bands keep all 1,000 sources distinguishable
- * without collapsing the field into one cluster.
+ * basis. Its row-and-column-scrambled depth bands keep all 1,000 sources
+ * distinguishable without forming a view-aligned stack of whole columns.
  */
 function lighting1000Position(
   column: number,
@@ -67,45 +95,50 @@ function lighting1000Position(
 }
 
 function createLighting1000Placements(): readonly ScenePlacementV1[] {
-  const placements: ScenePlacementV1[] = [];
-  for (let row = 0; row < LIGHTING_1000_ROWS; row += 4) {
-    for (let column = 0; column < LIGHTING_1000_COLUMNS; column += 8) {
-      const layer = ((row * LIGHTING_1000_COLUMNS + column) * 7)
-        % LIGHTING_1000_DEPTH_BANDS;
-      placements.push({
-        id: `fixture-${String(row).padStart(2, '0')}-${String(column).padStart(2, '0')}`,
-        model: 'studio:sandstone-wall',
+  return Array.from({ length: LIGHTING_1000_COLUMNS * LIGHTING_1000_ROWS }, (_, index) => {
+    const column = index % LIGHTING_1000_COLUMNS;
+    const row = Math.floor(index / LIGHTING_1000_COLUMNS);
+    const layer = lighting1000Layer(column, row);
+    return {
+        id: `receiver-${String(index).padStart(4, '0')}`,
+        model: 'studio:lighting-receiver',
         at: lighting1000Position(column, row, layer),
-        // Large pale Lambert receivers make the stress lane exercise clustered
-        // fragment shading, not only motion, texture upload, and marker draw.
-        grain: 0.5,
-      });
-    }
-  }
-  return placements;
+        // One pale Lambert receiver per light makes raster changes prove actual
+        // illumination rather than only texture upload and marker movement.
+        grain: LIGHTING_1000_RECEIVER_GRAIN,
+      };
+  });
 }
 
 function createLighting1000Lights(): readonly ScenePointLightV3[] {
   return Array.from({ length: LIGHTING_1000_COLUMNS * LIGHTING_1000_ROWS }, (_, index) => {
     const column = index % LIGHTING_1000_COLUMNS;
     const row = Math.floor(index / LIGHTING_1000_COLUMNS);
-    const layer = (index * 7) % LIGHTING_1000_DEPTH_BANDS;
+    const layer = lighting1000Layer(column, row);
     const [x, fixtureY, z] = lighting1000Position(column, row, layer);
-    const y = fixtureY + 0.65;
-    const color = LIGHTING_1000_COLORS[index % LIGHTING_1000_COLORS.length]!;
+    const axis = (['x', 'y', 'z'] as const)[index % 3]!;
+    const radius = 0.65 + (index % 6) * 0.05;
+    const center: readonly [number, number, number] = [
+      x,
+      fixtureY + LIGHTING_1000_RECEIVER_CENTER_Y,
+      z + LIGHTING_1000_LIGHT_CENTER_Z,
+    ];
+    const at: readonly [number, number, number] = axis === 'x'
+      ? [center[0], center[1] + radius, center[2]]
+      : [center[0] + radius, center[1], center[2]];
     return {
       id: `orbit-${String(index).padStart(4, '0')}`,
       kind: 'point',
-      at: [x + LIGHTING_1000_ORBIT_RADIUS, y, z],
-      color,
-      intensity: 90 + (index % 5) * 10,
-      range: 0.9,
+      at,
+      color: lighting1000Color(index),
+      intensity: 80 + (index % 7) * 10,
+      range: LIGHTING_1000_LIGHT_RANGE,
       motion: {
         kind: 'orbit',
-        center: [x, y, z],
-        axis: 'y',
-        periodMs: 3_600 + (index % 17) * 113,
-        phaseRadians: (index * 2.399963229728653) % (Math.PI * 2),
+        center,
+        axis,
+        periodMs: 1_800 + (index % 29) * 97,
+        phaseRadians: (index * GOLDEN_ANGLE_RADIANS) % (Math.PI * 2),
       },
     };
   });
@@ -116,9 +149,9 @@ function createLighting1000Scene(): SceneSchemaV3 {
     schemaVersion: VOXEL_SCENE_SCHEMA_V3,
     id: 'studio:scene:lighting-1000',
     label: '1,000 orbiting lights',
-    summary: 'One thousand independently orbiting point lights fill a compact field across '
-      + 'ten interleaved depth bands across broad sandstone receivers, showcasing dense '
-      + 'dynamic lighting without crowding any one local region.',
+    summary: 'One thousand full-spectrum point lights sweep around one thousand pale receivers '
+      + 'on varied axes and speeds across twenty-five depth bands, proving dynamic illumination '
+      + 'as well as clustered-light throughput.',
     placements: createLighting1000Placements(),
     lights: createLighting1000Lights(),
   };

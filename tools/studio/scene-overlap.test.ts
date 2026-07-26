@@ -21,4 +21,21 @@ describe('the studio scenes', () => {
       expect(overlaps, JSON.stringify(overlaps)).toEqual([]);
     });
   }
+
+  it('reports overlapping pairs in scene order while skipping touching and distant receivers', () => {
+    const overlaps = sceneOverlapsV1({
+      schemaVersion: 'studio.scene/1',
+      id: 'studio:scene:overlap-order',
+      label: 'Overlap order',
+      placements: [
+        { id: 'first', model: 'studio:lighting-receiver', at: [0, 0, 0], grain: 0.25 },
+        { id: 'distant', model: 'studio:lighting-receiver', at: [20, 0, 0], grain: 0.25 },
+        { id: 'second', model: 'studio:lighting-receiver', at: [0, 0, 0], grain: 0.25 },
+        // The receiver is 1.5 units wide, so this one only touches first/second.
+        { id: 'touching', model: 'studio:lighting-receiver', at: [1.5, 0, 0], grain: 0.25 },
+      ],
+    }, recipes, parts);
+
+    expect(overlaps).toEqual([{ a: 'first', b: 'second', cells: 24 }]);
+  });
 });

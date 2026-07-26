@@ -35,6 +35,7 @@ import { createPhysicalOverlayView } from './physical-overlay-view.js';
 import { StudioPlayer } from './player.js';
 import { referenceGridSegmentsV1, sceneReferenceGridSegmentsV1 } from './reference-grid.js';
 import type { SceneV1 } from './scene.js';
+import { clampSceneViewV1 } from './scene-orbit.js';
 import { createSceneWorkspace } from './scene-workspace.js';
 import {
   createModelLabelWorkspace,
@@ -625,6 +626,8 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
     setLit(on: boolean): boolean {
       const previousModelLit = session.lit;
       const previousSceneLit = sceneSession?.lit;
+      const previousOrbit = orbit;
+      const previousPanCenter = panCenter;
       try {
         session.setLit(on);
         sceneSession?.setLit(on);
@@ -632,10 +635,21 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
         // the exact frame. Do not publish or persist the toggle until that
         // candidate frame has actually reached the scene canvas.
         if (sceneOpen !== null && sceneSession !== null) {
+          const candidateView = clampSceneViewV1(
+            orbit,
+            sceneOpen,
+            panCenter,
+            depthOn && on,
+          );
+          orbit = candidateView.orbit;
+          panCenter = candidateView.center;
+          applyOrbit(camera, orbit, viewW, viewH, panCenter);
           sceneSession.showAt(lastShownMs);
         }
       } catch (presentationFailure) {
         try {
+          orbit = previousOrbit;
+          panCenter = previousPanCenter;
           if (session.lit !== previousModelLit) session.setLit(previousModelLit);
           if (sceneSession !== null
             && previousSceneLit !== undefined
@@ -643,6 +657,7 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
             sceneSession.setLit(previousSceneLit);
           }
           if (sceneOpen !== null && sceneSession !== null) {
+            applyOrbit(camera, orbit, viewW, viewH, panCenter);
             sceneSession.showAt(lastShownMs);
           }
           refresh();
@@ -819,8 +834,16 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
   ): void {
     const previousOrbit = orbit;
     const previousPanCenter = panCenter;
-    orbit = clampOrbit(nextOrbit);
-    panCenter = nextPanCenter;
+    const candidateView = sceneOpen === null
+      ? { orbit: clampOrbit(nextOrbit), center: nextPanCenter }
+      : clampSceneViewV1(
+        nextOrbit,
+        sceneOpen,
+        nextPanCenter,
+        depthOn && sceneSession?.lit === true,
+      );
+    orbit = candidateView.orbit;
+    panCenter = candidateView.center;
     try {
       drawFrame(lastShownMs);
     } catch (presentationFailure) {
@@ -939,8 +962,14 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
     const previousOrbit = orbit;
     const previousPanCenter = panCenter;
     const previousShownMs = lastShownMs;
-    const candidateOrbit = clampOrbit({ ...orbit, viewHeight: sceneFitHeight(scene) });
-    const candidatePanCenter: OrbitCenterV1 = [0, 0, 0];
+    const candidateView = clampSceneViewV1(
+      { ...orbit, viewHeight: sceneFitHeight(scene) },
+      scene,
+      [0, 0, 0],
+      depthOn && session.lit,
+    );
+    const candidatePanCenter = candidateView.center;
+    const candidateOrbit = candidateView.orbit;
     let candidateSession = previousSession;
     let createdCandidate = false;
 
@@ -1347,6 +1376,16 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
       );
     }
     const previousHadMotion = activeSession.hasMotion();
+    const previousOrbit = orbit;
+    const previousPanCenter = panCenter;
+    const candidateView = clampSceneViewV1(
+      orbit,
+      next,
+      panCenter,
+      depthOn && activeSession.lit,
+    );
+    orbit = candidateView.orbit;
+    panCenter = candidateView.center;
     // Publish only after the complete candidate has clustered and rendered at
     // the current time. In particular, the 33rd overlapping light must not
     // leave new runtime state paired with an old undo stack.
@@ -1354,6 +1393,8 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
       activeSession.setScene(next);
       drawFrame(lastShownMs);
     } catch (presentationFailure) {
+      orbit = previousOrbit;
+      panCenter = previousPanCenter;
       try {
         activeSession.setScene(previous);
         drawFrame(lastShownMs);
@@ -1377,6 +1418,8 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
     try {
       sceneWorkspace.replace(previous.id, next);
     } catch (workspaceFailure) {
+      orbit = previousOrbit;
+      panCenter = previousPanCenter;
       try {
         activeSession.setScene(previous);
         drawFrame(lastShownMs);
@@ -1652,7 +1695,15 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
     if (on === depthOn) return depthOn;
     const previousCamera = camera;
     const nextCamera = on ? depthCamera : flatCamera;
-    applyOrbit(nextCamera, orbit, viewW, viewH, panCenter);
+    const candidateView = sceneOpen === null
+      ? { orbit: clampOrbit(orbit), center: panCenter }
+      : clampSceneViewV1(
+        orbit,
+        sceneOpen,
+        panCenter,
+        on && sceneSession?.lit === true,
+      );
+    applyOrbit(nextCamera, candidateView.orbit, viewW, viewH, candidateView.center);
     try {
       session.setCamera(nextCamera);
       sceneSession?.setCamera(nextCamera);
@@ -1687,6 +1738,8 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
     }
     depthOn = on;
     camera = nextCamera;
+    orbit = candidateView.orbit;
+    panCenter = candidateView.center;
     rejectedAutoResize = null;
     refresh();
     if (sceneOpen !== null) drawSceneOverlays();

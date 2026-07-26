@@ -35,6 +35,7 @@ import {
   createHomeShellRecipe,
   createHouseRoofRecipe,
   createHouseShellRecipe,
+  createLightingReceiverRecipe,
   createMadeBedRecipe,
   createMattressRecipe,
   createNightstandRecipe,
@@ -228,7 +229,13 @@ export function createStudioCatalog(): StudioCatalogV1 {
     sections: [
       {
         name: 'Shapes',
-        models: [recipeEntry(createStarterRecipe, { load: createStarterModel })],
+        models: [
+          recipeEntry(createStarterRecipe, { load: createStarterModel }),
+        ],
+      },
+      {
+        name: 'Lighting studies',
+        models: [recipeEntry(createLightingReceiverRecipe)],
       },
       {
         name: 'Walls',

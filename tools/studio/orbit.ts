@@ -26,8 +26,8 @@ export const DEFAULT_ORBIT: OrbitStateV1 = {
 };
 
 const PITCH_LIMIT = 85;
-const MIN_VIEW_HEIGHT = 3;
-const MAX_VIEW_HEIGHT = 80;
+export const ORBIT_MIN_VIEW_HEIGHT = 3;
+export const ORBIT_MAX_VIEW_HEIGHT = 80;
 /** Far enough that no reasonable model pokes past the near plane. */
 const EYE_DISTANCE = 100;
 
@@ -35,7 +35,10 @@ export function clampOrbit(state: OrbitStateV1): OrbitStateV1 {
   return {
     yawDegrees: ((state.yawDegrees % 360) + 360) % 360,
     pitchDegrees: Math.min(PITCH_LIMIT, Math.max(-PITCH_LIMIT, state.pitchDegrees)),
-    viewHeight: Math.min(MAX_VIEW_HEIGHT, Math.max(MIN_VIEW_HEIGHT, state.viewHeight)),
+    viewHeight: Math.min(
+      ORBIT_MAX_VIEW_HEIGHT,
+      Math.max(ORBIT_MIN_VIEW_HEIGHT, state.viewHeight),
+    ),
   };
 }
 
@@ -112,7 +115,7 @@ export function panOrbit(
 }
 
 /** With real depth, how wide the eye opens. Modest, so cubes stay readable. */
-const DEPTH_FOV_DEGREES = 35;
+export const DEPTH_FOV_DEGREES = 35;
 
 /**
  * Places the studio-owned camera for the given angles and screen shape.

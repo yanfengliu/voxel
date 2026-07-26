@@ -29,6 +29,7 @@ describe('the studio shelf', () => {
     const catalog = createStudioCatalog();
     expect(catalog.sections.map(({ name, models }) => ({ name, count: models.length }))).toEqual([
       { name: 'Shapes', count: 1 },
+      { name: 'Lighting studies', count: 1 },
       { name: 'Walls', count: 2 },
       { name: 'Garden', count: 7 },
       { name: 'Furniture', count: 3 },

@@ -35,6 +35,22 @@ interface VoxelBox {
   readonly size: number;
 }
 
+interface VoxelBounds {
+  readonly minX: number;
+  readonly maxX: number;
+  readonly minY: number;
+  readonly maxY: number;
+  readonly minZ: number;
+  readonly maxZ: number;
+}
+
+interface FilledPlacement {
+  readonly id: string;
+  readonly order: number;
+  readonly voxels: readonly VoxelBox[];
+  readonly bounds: VoxelBounds;
+}
+
 /** A placement's filled voxels as world cubes, matching how buildSceneSnapshot places it. */
 function placementVoxels(placement: ScenePlacementV1, model: StudioModelV1, grain: number): VoxelBox[] {
   const [sx, sy, sz] = model.size;
@@ -80,6 +96,31 @@ function cubesOverlap(a: VoxelBox, b: VoxelBox): boolean {
     && a.z < b.z + b.size && b.z < a.z + a.size;
 }
 
+function voxelBounds(voxels: readonly VoxelBox[]): VoxelBounds | null {
+  if (voxels.length === 0) return null;
+  let minX = Number.POSITIVE_INFINITY;
+  let minY = Number.POSITIVE_INFINITY;
+  let minZ = Number.POSITIVE_INFINITY;
+  let maxX = Number.NEGATIVE_INFINITY;
+  let maxY = Number.NEGATIVE_INFINITY;
+  let maxZ = Number.NEGATIVE_INFINITY;
+  for (const voxel of voxels) {
+    minX = Math.min(minX, voxel.x);
+    minY = Math.min(minY, voxel.y);
+    minZ = Math.min(minZ, voxel.z);
+    maxX = Math.max(maxX, voxel.x + voxel.size);
+    maxY = Math.max(maxY, voxel.y + voxel.size);
+    maxZ = Math.max(maxZ, voxel.z + voxel.size);
+  }
+  return { minX, maxX, minY, maxY, minZ, maxZ };
+}
+
+function boundsOverlap(a: VoxelBounds, b: VoxelBounds): boolean {
+  return a.minX < b.maxX && b.minX < a.maxX
+    && a.minY < b.maxY && b.minY < a.maxY
+    && a.minZ < b.maxZ && b.minZ < a.maxZ;
+}
+
 /** How many of A's voxels overlap any of B's, via a unit-cell hash of B's low corners. */
 function sharedVoxels(a: readonly VoxelBox[], b: readonly VoxelBox[]): number {
   const byCell = new Map<string, VoxelBox[]>();
@@ -121,8 +162,8 @@ export function sceneOverlapsV1(
 ): readonly SceneOverlapV1[] {
   if (validateSceneV1(scene).length > 0) return [];
   const byModel = new Map<string, { model: StudioModelV1; grain: number }>();
-  const filled: { id: string; voxels: VoxelBox[] }[] = [];
-  for (const placement of scene.placements) {
+  const filled: FilledPlacement[] = [];
+  for (const [order, placement] of scene.placements.entries()) {
     const recipe = recipes[placement.model];
     if (!recipe) continue;
     const grain = placement.grain ?? modelVoxelSizeV1(recipe);
@@ -138,17 +179,42 @@ export function sceneOverlapsV1(
       entry = { model, grain };
       byModel.set(key, entry);
     }
-    filled.push({ id: placement.id, voxels: placementVoxels(placement, entry.model, entry.grain) });
+    const voxels = placementVoxels(placement, entry.model, entry.grain);
+    const bounds = voxelBounds(voxels);
+    if (bounds) filled.push({ id: placement.id, order, voxels, bounds });
   }
-  const overlaps: SceneOverlapV1[] = [];
-  for (let i = 0; i < filled.length; i += 1) {
-    for (let j = i + 1; j < filled.length; j += 1) {
-      const a = filled[i]!;
-      const b = filled[j]!;
-      const [small, big] = a.voxels.length <= b.voxels.length ? [a.voxels, b.voxels] : [b.voxels, a.voxels];
-      const shared = sharedVoxels(small, big);
-      if (shared > 0) overlaps.push({ a: a.id, b: b.id, cells: shared });
+  // Sweep the x interval so separated placements never pay the voxel hash
+  // cost. The former all-pairs loop made a clean 1,000-instance scene perform
+  // 499,500 maps even though almost every pair was many cells apart.
+  const byMinX = [...filled].sort((a, b) =>
+    a.bounds.minX - b.bounds.minX || a.order - b.order);
+  const active: FilledPlacement[] = [];
+  const overlaps: (SceneOverlapV1 & { readonly aOrder: number; readonly bOrder: number })[] = [];
+  for (const current of byMinX) {
+    for (let index = active.length - 1; index >= 0; index -= 1) {
+      if (active[index]!.bounds.maxX <= current.bounds.minX) active.splice(index, 1);
     }
+    for (const candidate of active) {
+      if (!boundsOverlap(candidate.bounds, current.bounds)) continue;
+      const [a, b] = candidate.order < current.order
+        ? [candidate, current]
+        : [current, candidate];
+      const [small, big] = a.voxels.length <= b.voxels.length
+        ? [a.voxels, b.voxels]
+        : [b.voxels, a.voxels];
+      const shared = sharedVoxels(small, big);
+      if (shared > 0) {
+        overlaps.push({
+          a: a.id,
+          b: b.id,
+          cells: shared,
+          aOrder: a.order,
+          bOrder: b.order,
+        });
+      }
+    }
+    active.push(current);
   }
-  return overlaps;
+  overlaps.sort((a, b) => a.aOrder - b.aOrder || a.bOrder - b.bOrder);
+  return overlaps.map(({ a, b, cells }) => ({ a, b, cells }));
 }

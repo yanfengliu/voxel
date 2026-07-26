@@ -39,8 +39,10 @@ const SOURCE_FILES = Object.freeze({
   recipe: 'tools/studio/recipe.ts',
   recipeBuild: 'tools/studio/build.ts',
   modelSchema: 'tools/studio/model.ts',
+  shapesRecipes: 'tools/studio/shapes-recipes.ts',
   wallRecipes: 'tools/studio/wall-recipes.ts',
   orbit: 'tools/studio/orbit.ts',
+  sceneOrbit: 'tools/studio/scene-orbit.ts',
   player: 'tools/studio/player.ts',
   studioHarness: 'tools/studio/harness.ts',
   studioLighting: 'tools/studio/scene-lighting.ts',
@@ -64,8 +66,8 @@ const SOURCE_SEAL = createBenchmarkSourceSeal({
 });
 const HELP = `Usage: npm run benchmark:lights -- [options]
 
-Runs the headless Studio 1,000-light microbenchmark. A publishable record requires
-a clean, unchanged worktree and an identified hardware renderer.
+Runs the headless Studio 1,000-light / 1,000-receiver microbenchmark. A publishable
+record requires a clean, unchanged worktree and an identified hardware renderer.
 
 Options:
   --allow-dirty      Permit a dirty correctness trial; requires --no-write
@@ -327,6 +329,15 @@ function assertCorrectness(result) {
     throw new Error(
       `Benchmark scene '${SCENE_ID}' authored ${String(result.scenePlacementCount)} receiver `
       + `placements but the runtime reported ${String(sceneRender.instances)} presented instances.`,
+    );
+  }
+  if (result.scenePlacementCount !== 1_000 || sceneRender.triangles < 100_000) {
+    throw new Error(
+      `Benchmark scene '${SCENE_ID}' no longer carries its full receiver workload: expected `
+      + `1,000 placements and at least 100,000 triangles, but measured `
+      + `${String(result.scenePlacementCount)} placements and `
+      + `${String(sceneRender.triangles)} triangles. Restore the geometry proof before `
+      + 'publishing light throughput.',
     );
   }
 }
@@ -669,7 +680,7 @@ async function main() {
       device: result.device,
       workload: {
         kind: 'studio-forward-plus-stress-scene',
-        scope: 'CPU clustered-light rebuild, data/instance uploads, and a small Studio receiver batch; not a game-sized scene',
+        scope: 'CPU clustered-light rebuild, data/instance uploads, and 1,000 instanced receiver cards; not a full game simulation or representative game world',
         sceneId: SCENE_ID,
         scenePlacements: result.scenePlacementCount,
         authoredLights: result.finalLighting.authoredLights,

@@ -3,6 +3,9 @@ import { resolve } from 'node:path';
 import { expect, test, type Page } from '@playwright/test';
 import { createServer, type ViteDevServer } from 'vite';
 
+import { measureDenseLightCameraEnvelope } from './dense-light-camera-proof.js';
+import { measureReceiverLightingProof } from './receiver-lighting-proof.js';
+
 const STUDIO_ROOT = resolve('tools/studio');
 
 let server: ViteDevServer | undefined;
@@ -923,6 +926,49 @@ test('1,000 moving lights stay cluster-bounded without compiling per-light shade
     harness.setLit(true);
   });
   await settleFrames(page);
+  const cameraEnvelope = await measureDenseLightCameraEnvelope(page);
+  expect(cameraEnvelope.perspectiveRequest).toMatchObject({ pitchDegrees: 75 });
+  expect(cameraEnvelope.perspectiveRequest.viewHeight).toBeGreaterThanOrEqual(40);
+  expect(cameraEnvelope.perspectiveRequest.viewHeight).toBeLessThan(50);
+  expect(cameraEnvelope.unlitRequest).toMatchObject({ pitchDegrees: 85, viewHeight: 3 });
+  expect(cameraEnvelope.relit).toMatchObject({ pitchDegrees: 75 });
+  expect(cameraEnvelope.relit.viewHeight).toBe(cameraEnvelope.perspectiveRequest.viewHeight);
+  expect(cameraEnvelope.flatRequest).toMatchObject({ pitchDegrees: -85, viewHeight: 3 });
+  expect(cameraEnvelope.restoredPerspective).toMatchObject({ pitchDegrees: -75 });
+  expect(cameraEnvelope.restoredPerspective.viewHeight)
+    .toBe(cameraEnvelope.perspectiveRequest.viewHeight);
+  for (const lighting of [
+    cameraEnvelope.perspectiveLighting,
+    cameraEnvelope.relitLighting,
+    cameraEnvelope.flatLighting,
+    cameraEnvelope.restoredPerspectiveLighting,
+  ]) {
+    expect(lighting?.overflowedClusters).toBe(0);
+    expect(lighting?.maxLightsPerCluster).toBeLessThanOrEqual(32);
+  }
+  await page.evaluate(() => { window.voxelStudio!.pause(); });
+  const stageBox = await page.locator('.canvas-wrap').boundingBox();
+  if (!stageBox) throw new Error('The dense-light pan proof could not locate the scene stage.');
+  await page.mouse.move(stageBox.x + stageBox.width - 10, stageBox.y + stageBox.height / 2);
+  await page.mouse.down({ button: 'right' });
+  await page.mouse.move(
+    stageBox.x + 10,
+    stageBox.y + stageBox.height / 2,
+    { steps: 4 },
+  );
+  await page.mouse.up({ button: 'right' });
+  const pannedLighting = await page.evaluate(() =>
+    window.voxelStudio!.drawAt(0).sceneLighting);
+  expect(pannedLighting?.overflowedClusters).toBe(0);
+  expect(pannedLighting?.maxLightsPerCluster).toBeLessThanOrEqual(32);
+  await expect(page.locator('.view-error')).toBeHidden();
+  await page.evaluate(() => {
+    const harness = window.voxelStudio!;
+    harness.openScene('studio:scene:lighting-1000');
+    harness.setViewAngles({ yawDegrees: 45, pitchDegrees: 30, viewHeight: 80 });
+    harness.drawAt(0);
+    harness.play();
+  });
   const canvas = page.locator('.scene-canvas');
   const liveStart = await canvas.screenshot({ animations: 'disabled' });
   await page.waitForTimeout(250);
@@ -973,6 +1019,7 @@ test('1,000 moving lights stay cluster-bounded without compiling per-light shade
       programsAfterMotion,
     };
   });
+  const receiverLighting = await measureReceiverLightingProof(page);
   expect(evidence.scene).toMatchObject({
     schemaVersion: 'studio.scene/3',
     id: 'studio:scene:lighting-1000',
@@ -995,16 +1042,24 @@ test('1,000 moving lights stay cluster-bounded without compiling per-light shade
   expect(evidence.atStart?.positionChecksum).not.toBe(evidence.atOneSecond?.positionChecksum);
   expect(evidence.render).toMatchObject({
     instanceBatches: 1,
-    instances: 35,
+    instances: 1_000,
   });
   expect(evidence.render?.drawCalls).toBeGreaterThanOrEqual(2);
-  expect(evidence.render?.triangles).toBeGreaterThan(12_000);
+  expect(evidence.render?.triangles).toBeGreaterThan(100_000);
   expect(evidence.render?.rendererTextures).toBeGreaterThanOrEqual(2);
+  expect(receiverLighting.changedRatio).toBeGreaterThan(0.005);
+  expect(receiverLighting.chromaticRatio).toBeGreaterThan(0.25);
+  expect(receiverLighting.warmPixels).toBeGreaterThan(250);
+  expect(receiverLighting.coolPixels).toBeGreaterThan(250);
+  expect(receiverLighting.greenPixels).toBeGreaterThan(250);
+  expect(receiverLighting.movingContributionRatio).toBeGreaterThan(0.005);
   expect(evidence.resized).toEqual({ width: 1280, height: 720 });
   expect(evidence.drawingBuffer).toEqual({ width: 1280, height: 720 });
   expect(evidence.programsAfterRemove).toBe(evidence.programsAfterWarmup);
   expect(evidence.programsAfterRestore).toBe(evidence.programsAfterWarmup);
   expect(evidence.programsAfterMotion).toBe(evidence.programsAfterWarmup);
+  expect(receiverLighting.programsBefore).toBe(evidence.programsAfterWarmup);
+  expect(receiverLighting.programsAfter).toBe(evidence.programsAfterWarmup);
   expect(errors).toEqual([]);
 
   await expect(canvas).toHaveScreenshot(
