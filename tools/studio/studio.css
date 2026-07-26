@@ -94,14 +94,15 @@ button:disabled { opacity: 0.45; cursor: default; }
 .section-head {
   display: block;
   width: 100%;
+  margin: 0;
   text-align: left;
   border: 0;
   background: transparent;
   font-size: 11.5px;
+  font-weight: 600;
   color: var(--muted);
   padding: 6px 6px 4px;
 }
-.section-head:hover { color: var(--text); border: 0; }
 .model-row {
   display: flex;
   width: 100%;
@@ -109,12 +110,12 @@ button:disabled { opacity: 0.45; cursor: default; }
   align-items: center;
   gap: 8px;
   padding: 6px 10px;
-  padding-inline-start: 28px;
   border-radius: 6px;
   border: 1px solid transparent;
   background: transparent;
   color: var(--muted);
 }
+.model-row.section-model-row { padding-inline-start: 28px; }
 .model-row:hover { background: var(--panel); color: var(--text); }
 .model-row.active { background: var(--panel); border-color: var(--line); color: var(--text); }
 .library-row-wrap {
@@ -142,10 +143,8 @@ button:disabled { opacity: 0.45; cursor: default; }
   opacity: 0.65;
 }
 .library-row-wrap:hover > .library-more,
-.lib-item-wrap:hover > .library-more,
 .library-more:focus-visible,
 .library-more[aria-expanded="true"] { color: var(--text); opacity: 1; }
-.scene-count { margin-left: auto; opacity: 0.55; font-size: 12px; white-space: nowrap; }
 .railnote { font-size: 11px; color: var(--faint); margin: 12px 8px 0; line-height: 1.45; }
 .studio-context-menu {
   position: fixed;
@@ -200,6 +199,10 @@ button:disabled { opacity: 0.45; cursor: default; }
 /* ---- library rail: models / parts / recipes ---- */
 .rail-head { padding: 10px 8px 8px; display: grid; gap: 8px; }
 .lib-switch { display: flex; gap: 4px; }
+.lib-switch.lib-switch-four {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
 .lib-switch button {
   flex: 1;
   font-size: 11px;
@@ -227,8 +230,7 @@ button:disabled { opacity: 0.45; cursor: default; }
   line-height: 1.35;
 }
 .library-status.success { color: var(--accent); }
-.library-row-wrap[data-library-sortable="true"] > .model-row,
-.lib-item-wrap[data-library-sortable="true"] > .lib-item > .lib-summary { cursor: grab; }
+.library-row-wrap[data-library-sortable="true"] > .model-row { cursor: grab; }
 [data-library-sortable="true"].dragging {
   opacity: 0.45;
 }
@@ -246,68 +248,7 @@ button:disabled { opacity: 0.45; cursor: default; }
 }
 [data-library-sortable="true"].drop-before::before { top: -1px; }
 [data-library-sortable="true"].drop-after::after { bottom: -1px; }
-.lib-item-wrap { position: relative; margin: 0 6px 5px; }
-.lib-item-wrap > .lib-item { width: 100%; margin: 0; }
-.lib-item-wrap > .library-more {
-  position: absolute;
-  top: 5px;
-  right: 5px;
-  z-index: 1;
-}
-.lib-item { border: 1px solid var(--line); border-radius: 6px; background: var(--sunk); margin: 0 6px 5px; }
-.lib-item.active { border-color: var(--accent); background: var(--panel); }
-.lib-summary {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  flex-wrap: wrap;
-  cursor: pointer;
-  padding: 7px 9px;
-  padding-right: 38px;
-  font-size: 12.5px;
-}
-.lib-summary:hover { color: var(--text); }
-.lib-summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-.lib-item.active > .lib-summary,
-.lib-item.active > .lib-summary .lib-title { color: var(--accent); }
-.lib-title { font-weight: 600; color: var(--text); }
-.lib-badge {
-  font-size: 8.5px;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: var(--muted);
-  border: 1px solid var(--line);
-  border-radius: 4px;
-  padding: 2px 4px;
-}
-.lib-badge.lib-bare { color: var(--bad); border-color: color-mix(in srgb, var(--bad) 45%, var(--line)); }
-.lib-badge.lib-active-variant { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 55%, var(--line)); }
-.lib-detail { padding: 0 9px 9px; display: grid; gap: 6px; }
-.lib-text { margin: 0; font-size: 11.5px; color: var(--muted); line-height: 1.4; }
-.lib-subhead {
-  margin: 2px 0 0;
-  font-size: 10px;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--faint);
-}
-.lib-list { margin: 0; padding-left: 16px; display: grid; gap: 2px; font-size: 11px; color: var(--muted); }
-.lib-facts { margin: 0; font-family: ui-monospace, "Cascadia Code", monospace; font-size: 10.5px; color: var(--faint); }
-.lib-code {
-  margin: 0;
-  font-family: ui-monospace, "Cascadia Code", monospace;
-  font-size: 10px;
-  color: var(--faint);
-  background: var(--bg);
-  border: 1px solid var(--line-soft);
-  border-radius: 4px;
-  padding: 4px 6px;
-  overflow-x: auto;
-  white-space: nowrap;
-}
 .lib-error { margin: 0; color: var(--bad); font-size: 11px; line-height: 1.4; }
-.lib-open { justify-self: start; padding: 4px 8px; font-size: 11px; color: var(--accent); }
-.lib-actions-row { display: flex; flex-wrap: wrap; gap: 5px; }
 /* ---- stage ---- */
 .stage {
   grid-area: stage;
@@ -619,6 +560,57 @@ canvas { position: absolute; inset: 0; display: block; width: 100%; height: 100%
   color: var(--faint);
   font-weight: 600;
   margin: 4px 0 0;
+}
+.library-detail {
+  display: grid;
+  gap: 9px;
+  padding: 11px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--sunk);
+}
+.library-detail[hidden] { display: none; }
+.library-detail > .grouphead { margin: 0; }
+.library-detail-title { margin: 0; font-size: 15px; line-height: 1.3; }
+.library-detail-summary { margin: 0; color: var(--muted); font-size: 12px; line-height: 1.5; }
+.library-detail-facts {
+  display: grid;
+  grid-template-columns: minmax(72px, auto) minmax(0, 1fr);
+  gap: 4px 9px;
+  margin: 0;
+  font-size: 11.5px;
+}
+.library-detail-facts dt { color: var(--faint); }
+.library-detail-facts dd { min-width: 0; margin: 0; color: var(--text); overflow-wrap: anywhere; }
+.library-detail-list {
+  display: grid;
+  gap: 7px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 11.5px;
+}
+.library-detail-list li { display: grid; gap: 2px; }
+.library-detail-list li.active > strong { color: var(--accent); }
+.library-detail-meta {
+  color: var(--faint);
+  font-family: ui-monospace, "Cascadia Code", "SF Mono", Menlo, monospace;
+  font-size: 10.5px;
+  overflow-wrap: anywhere;
+}
+.library-detail-description { color: var(--muted); line-height: 1.4; }
+.library-detail-code {
+  display: block;
+  padding: 6px 7px;
+  overflow-wrap: anywhere;
+  border: 1px solid var(--line-soft);
+  border-radius: 4px;
+  background: var(--bg);
+  color: var(--faint);
+  font-family: ui-monospace, "Cascadia Code", "SF Mono", Menlo, monospace;
+  font-size: 10px;
+  line-height: 1.45;
+  white-space: normal;
 }
 .hint { margin: 0; font-size: 12px; color: var(--faint); line-height: 1.5; }
 .layer-label {

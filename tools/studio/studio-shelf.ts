@@ -13,13 +13,11 @@ import {
 
 /**
  * The library on the left: the game's whole palette to browse before building.
- * Three views share one search box — Models (the shelf, in the sections the
- * game named), Parts (every part with its settings and presets), and Recipes
- * (every reusable recipe with what it places). Opening a model or a shelf-backed
- * recipe goes through the harness; a part renders its declared defaults with a
- * neutral preview skin and also expands to show how to call it. Everything here
- * reads the harness's own manifest, so a game gets the same browser by declaring
- * its parts and recipes.
+ * Four flat views share one search box — Models (in the sections the game
+ * named), Parts, Recipes, and Scenes when supplied. Every row opens its stable
+ * identity directly; descriptive metadata belongs to the right inspector.
+ * Everything here reads the harness's own manifest, so a game gets the same
+ * browser by declaring its parts and recipes.
  */
 
 type LibraryView = 'models' | 'parts' | 'recipes' | 'scenes';
@@ -47,8 +45,6 @@ export function createStudioShelf(deps: StudioShelfDepsV1): StudioShelfV1 {
 
   let view: LibraryView = 'models';
   let query = '';
-  const folded = new Set<string>();
-  const expanded = new Set<string>();
 
   // ---- heading: the view switcher and the search box ----
   const heading = element('div', 'rail-head');
@@ -59,6 +55,7 @@ export function createStudioShelf(deps: StudioShelfDepsV1): StudioShelfV1 {
   const views: readonly LibraryView[] = harness.scenes().length > 0
     ? ['models', 'parts', 'recipes', 'scenes']
     : ['models', 'parts', 'recipes'];
+  tabs.classList.toggle('lib-switch-four', views.length === 4);
   for (const name of views) {
     const button = element('button');
     button.textContent = VIEW_LABELS[name];
@@ -195,24 +192,17 @@ export function createStudioShelf(deps: StudioShelfDepsV1): StudioShelfV1 {
     for (const [sectionIndex, section] of harness.shelf().entries()) {
       const models = section.models.filter((entry) => matchesModel(entry.label, entry.id));
       if (models.length === 0) continue;
-      const isFolded = folded.has(section.name) && query.trim() === '';
-      const head = element('button', 'section-head');
-      head.textContent = `${isFolded ? '▸' : '▾'} ${section.name}`;
-      head.setAttribute('aria-expanded', String(!isFolded));
-      head.addEventListener('click', () => {
-        if (folded.has(section.name)) folded.delete(section.name);
-        else folded.add(section.name);
-        rebuild();
-      });
+      const head = element('h3', 'section-head');
+      head.textContent = section.name;
       body.appendChild(head);
-      if (isFolded) { shown += models.length; continue; }
       for (const entry of models) {
         const wrap = element('div', 'library-row-wrap');
-        const row = element('button', 'model-row');
+        const row = element('button', 'model-row section-model-row');
         row.dataset.libraryKind = 'model';
         row.dataset.libraryKey = entry.id;
         row.dataset.librarySectionIndex = String(sectionIndex);
         row.classList.toggle('active', entry.id === currentId);
+        if (entry.id === currentId) row.setAttribute('aria-current', 'true');
         const label = element('span');
         label.textContent = entry.label;
         row.appendChild(label);
@@ -252,10 +242,10 @@ export function createStudioShelf(deps: StudioShelfDepsV1): StudioShelfV1 {
       };
       const entry = renderStudioShelfPart(part, {
         harness,
-        expanded,
         contextMenu,
         showExamine: () => { showTab('examine'); },
         clearActionStatus,
+        reportActionError,
         focusPart,
         orderActions: sorter.actions(sortable),
       });
@@ -270,108 +260,56 @@ export function createStudioShelf(deps: StudioShelfDepsV1): StudioShelfV1 {
   function renderRecipes(): void {
     const recipes = harness.findRecipes(query);
     if (recipes.length === 0) { emptyNote('No recipes match.'); return; }
-    const shelfIds = new Set(harness.shelf().flatMap((section) => section.models.map((model) => model.id)));
-    for (const recipe of recipes) body.appendChild(renderRecipeEntry(recipe, shelfIds));
+    for (const recipe of recipes) body.appendChild(renderRecipeEntry(recipe));
     emptyNote(query.trim() === ''
-      ? 'Drag to rearrange recipes. Render the current recipe or open its shelf model from the actions menu.'
-      : 'Clear search to rearrange recipes. Render the current recipe or open its shelf model.');
+      ? 'Click to render a recipe; drag to rearrange. Shift+F10 opens move commands.'
+      : 'Clear search to rearrange recipes. Click a recipe to render it.');
   }
 
-  function renderRecipeEntry(recipe: RecipeInfoV1, shelfIds: ReadonlySet<string>): HTMLElement {
-    const key = `recipe:${recipe.id}`;
-    const fresh = harness.activeRecipe() === recipe.id;
-    const shelf = harness.activeShelfModel() === recipe.recipeId;
-    const active = fresh || shelf;
+  function renderRecipeEntry(recipe: RecipeInfoV1): HTMLElement {
+    const active = harness.activeRecipe() === recipe.id;
     const sortable: StudioShelfSortableIdentityV1 = {
       kind: 'recipe', id: recipe.id, label: recipe.label,
     };
-    const wrap = element('div', 'lib-item-wrap');
-    const details = element('details', 'lib-item');
-    details.classList.toggle('active', active);
-    details.open = expanded.has(key);
-    details.addEventListener('toggle', () => {
-      if (details.open) expanded.add(key);
-      else expanded.delete(key);
-    });
-    const summary = element('summary', 'lib-summary');
-    summary.dataset.libraryKind = 'recipe';
-    summary.dataset.libraryKey = recipe.id;
-    if (active) summary.setAttribute('aria-current', 'true');
-    const title = element('span', 'lib-title');
+    const wrap = element('div', 'library-row-wrap');
+    const row = element('button', 'model-row');
+    row.type = 'button';
+    row.dataset.libraryKind = 'recipe';
+    row.dataset.libraryKey = recipe.id;
+    row.classList.toggle('active', active);
+    if (active) row.setAttribute('aria-current', 'true');
+    const title = element('span');
     title.textContent = recipe.label;
-    summary.append(title);
-    for (const tag of recipe.tags) {
-      const badge = element('span', 'lib-badge'); badge.textContent = tag; summary.append(badge);
-    }
-    if (active) {
-      const badge = element('span', 'lib-badge lib-active-variant');
-      badge.textContent = fresh ? 'fresh build' : 'shelf model';
-      summary.append(badge);
-    }
-    details.append(summary);
-    const detail = element('div', 'lib-detail');
-    if (recipe.summary) { const p = element('p', 'lib-text'); p.textContent = recipe.summary; detail.append(p); }
-    const facts = element('p', 'lib-facts');
-    facts.textContent = `${recipe.size.join('×')} grid · ${String(recipe.voxelSize)} units/voxel`;
-    detail.append(facts);
-    if (recipe.parts.length > 0) {
-      const p = element('p', 'lib-text'); p.textContent = `Places parts: ${recipe.parts.join(', ')}`; detail.append(p);
-    }
-    if (recipe.recipes.length > 0) {
-      const p = element('p', 'lib-text'); p.textContent = `Places recipes: ${recipe.recipes.join(', ')}`; detail.append(p);
-    }
-    const actionError = element('p', 'lib-error');
-    actionError.hidden = true;
-    actionError.setAttribute('role', 'alert');
-    const runRecipeAction = (source: 'fresh' | 'shelf'): void => {
-      actionError.hidden = true;
-      actionError.textContent = '';
+    row.append(title);
+    row.title = `Render ${recipe.label} from the current recipe book`;
+    const renderRecipe = (): void => {
       clearActionStatus();
       try {
-        if (source === 'fresh') harness.openRecipe(recipe.id);
-        else harness.openFromShelf(recipe.recipeId);
-        showTab(harness.buildSteps().length > 0 ? 'build' : 'examine');
+        harness.openRecipe(recipe.id);
+        showTab('examine');
         focusRecipe(recipe.id);
       } catch (error) {
-        expanded.add(key);
-        details.open = true;
-        actionError.textContent = `${source === 'fresh' ? 'Rendering the current recipe' : 'Opening the shelf model'} `
-          + `for ${recipe.label} failed: ${error instanceof Error ? error.message : String(error)}`;
-        actionError.hidden = false;
+        reportActionError(
+          `Rendering recipe “${recipe.label}” with key '${recipe.id}' failed: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        );
         focusRecipe(recipe.id);
       }
     };
-    const actions = element('div', 'lib-actions-row');
-    const render = element('button', 'lib-open');
-    render.textContent = 'Render current recipe';
-    render.addEventListener('click', () => { runRecipeAction('fresh'); });
-    actions.append(render);
-    if (shelfIds.has(recipe.recipeId)) {
-      const open = element('button', 'lib-open');
-      open.textContent = 'Open shelf model';
-      open.addEventListener('click', () => { runRecipeAction('shelf'); });
-      actions.append(open);
+    row.addEventListener('click', renderRecipe);
+    const orderActions = sorter.actions(sortable);
+    wrap.append(row);
+    if (orderActions.length > 0) {
+      const more = overflowButton('Recipe', recipe.label);
+      contextMenu.connect(row, {
+        ariaLabel: `Recipe actions for ${recipe.label}`,
+        restoreFocus: () => { focusRecipe(recipe.id); },
+        actions: orderActions,
+      }, more);
+      wrap.append(more);
     }
-    detail.append(actions, actionError);
-    const usage = element('p', 'lib-code');
-    usage.textContent = `use: { kind: 'recipe', recipe: '${recipe.id}', at: [x,y,z] }`;
-    detail.append(usage);
-    details.append(detail);
-    const more = overflowButton('Recipe', recipe.label);
-    contextMenu.connect(summary, {
-      ariaLabel: `Recipe actions for ${recipe.label}`,
-      restoreFocus: () => { focusRecipe(recipe.id); },
-      actions: [
-        { label: 'Render current recipe', run: () => { runRecipeAction('fresh'); } },
-        ...(shelfIds.has(recipe.recipeId) ? [{
-          label: 'Open shelf model',
-          run: () => { runRecipeAction('shelf'); },
-        }] : []),
-        ...sorter.actions(sortable),
-      ],
-    }, more);
-    wrap.append(details, more);
-    sorter.connect({ ...sortable, container: wrap, trigger: summary });
+    sorter.connect({ ...sortable, container: wrap, trigger: row });
     return wrap;
   }
 
@@ -387,15 +325,10 @@ export function createStudioShelf(deps: StudioShelfDepsV1): StudioShelfV1 {
       row.dataset.libraryKind = 'scene';
       row.dataset.libraryKey = scene.id;
       row.classList.toggle('active', harness.sceneState()?.id === scene.id);
+      if (harness.sceneState()?.id === scene.id) row.setAttribute('aria-current', 'true');
       const label = element('span');
       label.textContent = scene.label;
-      const count = element('span', 'scene-count');
-      const modelCount = `${String(scene.models)} model${scene.models === 1 ? '' : 's'}`;
-      count.textContent = scene.lights === undefined
-        ? modelCount
-        : `${modelCount} · ${String(scene.lights)} light${scene.lights === 1 ? '' : 's'}`;
-      row.append(label, count);
-      if (scene.summary) row.title = scene.summary;
+      row.append(label);
       row.addEventListener('click', () => {
         clearActionStatus();
         try {

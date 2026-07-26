@@ -51,7 +51,8 @@ test('editable point lights change the raster while scene models stay fixed', as
   await page.waitForFunction(() => typeof window.voxelStudio === 'object');
   await page.getByRole('button', { name: 'Scenes' }).click();
   await expect(page.getByRole('button', {
-    name: /Editable lighting lab 4 models · 2 lights/,
+    name: 'Editable lighting lab',
+    exact: true,
   })).toBeVisible();
   const initialState = await page.evaluate(async () => {
     const harness = window.voxelStudio!;

@@ -60,6 +60,7 @@ import {
 import type { StudioEditStateV1 } from './studio-app-context.js';
 import { element, openingModel } from './studio-app-helpers.js';
 import { createStudioEditorPanel, type StudioEditorPanelV1 } from './studio-editor.js';
+import { createStudioLibraryDetails } from './studio-library-details.js';
 import { createStudioMotionPanel, type StudioMotionPanelV1 } from './studio-motion.js';
 import { createStudioNotesPanel, type StudioNotesPanelV1 } from './studio-notes.js';
 import { setupPanelResize } from './studio-panel-resize.js';
@@ -757,6 +758,7 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
   // game's catalog data and so the first that can fail.
   const playerBar: StudioPlayerBarV1 = createStudioPlayerBar({ harness, player, noteStore });
   const motionPanel: StudioMotionPanelV1 = createStudioMotionPanel({ harness });
+  const libraryDetails = createStudioLibraryDetails(harness);
   const shelfPanel: StudioShelfV1 = createStudioShelf({ harness, showTab });
   rebuildShelf = () => { shelfPanel.rebuild(); };
   const editor: StudioEditorPanelV1 = createStudioEditorPanel({
@@ -1243,6 +1245,7 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
 
   // ---- refresh ----
   function refresh(): void {
+    libraryDetails.refresh();
     if (sceneOpen) { refreshScene(sceneOpen); return; }
     // Returning from a scene un-hides the model-only toggles, checks, size
     // control, tab content, and top-bar commands a scene hid, and re-hides the
@@ -1783,7 +1786,16 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
   const examinePane = element('div', 'pane');
   const checkRow = element('div', 'row');
   checkRow.append(sweepButton, sheetButton);
-  examinePane.append(motionText, modelLine, sizeField, engineWarning, checkRow, verdict, sheetImage);
+  examinePane.append(
+    libraryDetails.element,
+    motionText,
+    modelLine,
+    sizeField,
+    engineWarning,
+    checkRow,
+    verdict,
+    sheetImage,
+  );
 
   const shellOptions: ModelStudioShellOptionsV2 = {
     beforeSelect: (name) => {

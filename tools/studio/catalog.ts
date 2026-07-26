@@ -55,8 +55,8 @@ import {
 } from './recipes.js';
 
 /**
- * The shelf: which models this studio offers, organized into collapsible
- * sections. The section names belong to whoever provides the catalog — a game
+ * The shelf: which models this studio offers, organized under fixed section
+ * headings. The section names belong to whoever provides the catalog — a game
  * mounts the studio with its own shelf (characters, buildings, items…); this
  * studio belongs to the engine, so its shelf holds the engine's test models.
  * The studio itself only knows that sections contain models.

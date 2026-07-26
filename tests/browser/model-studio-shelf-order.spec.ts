@@ -77,6 +77,12 @@ async function domOrder(
     entries.map((entry) => (entry as HTMLElement).dataset.libraryKey ?? ''));
 }
 
+async function expectFlatShelf(page: Page): Promise<void> {
+  const shelf = page.locator('[data-studio-region="shelf"]');
+  await expect(shelf.locator('details, summary')).toHaveCount(0);
+  await expect(shelf.locator('.lib-detail, .lib-open, .lib-actions-row')).toHaveCount(0);
+}
+
 test('dragging rearranges every library lane without changing item identity or click actions', async ({ page }) => {
   await page.goto(studioOrigin, { waitUntil: 'load' });
   await page.waitForFunction(() => typeof window.voxelStudio === 'object');
@@ -130,6 +136,10 @@ test('dragging rearranges every library lane without changing item identity or c
   // The drag did not become a click; a later deliberate click still opens the same stable ID.
   await sortable(page, 'model', movedModel).locator('[data-library-kind="model"]').click();
   expect(await page.evaluate(() => window.voxelStudio!.model().id)).toBe(movedModel);
+  expect(await page.evaluate(() => window.voxelStudio!.activeShelfModel())).toBe(movedModel);
+  await expect(
+    sortable(page, 'model', movedModel).locator('[data-library-kind="model"]'),
+  ).toHaveAttribute('aria-current', 'true');
 
   await page.getByRole('button', { name: 'Parts' }).click();
   const parts = await page.evaluate(() => window.voxelStudio!.shelfOrder('part'));
@@ -149,28 +159,45 @@ test('dragging rearranges every library lane without changing item identity or c
     active: window.voxelStudio!.activePart(),
     order: window.voxelStudio!.shelfOrder('part'),
   }))).toEqual({ active: movedPart, order: expectedParts });
+  await expect(
+    sortable(page, 'part', movedPart).locator('[data-library-kind="part"]'),
+  ).toHaveAttribute('aria-current', 'true');
 
   await page.getByRole('button', { name: 'Recipes' }).click();
   const recipes = await page.evaluate(() => window.voxelStudio!.shelfOrder('recipe'));
   const movedRecipe = recipes[1]!;
+  const movedRecipeModelId = await page.evaluate(
+    (id) => window.voxelStudio!.availableRecipes().find((recipe) => recipe.id === id)?.recipeId,
+    movedRecipe,
+  );
+  expect(movedRecipeModelId).toBeTruthy();
   await dragBefore(page, 'recipe', movedRecipe, recipes[0]!);
   const expectedRecipes = [movedRecipe, recipes[0]!, ...recipes.slice(2)];
   expect(await page.evaluate(() => window.voxelStudio!.shelfOrder('recipe'))).toEqual(expectedRecipes);
   expect(await domOrder(page, 'recipe')).toEqual(expectedRecipes);
-  await sortable(page, 'recipe', movedRecipe).locator('[data-library-kind="recipe"]').click();
-  await sortable(page, 'recipe', movedRecipe).locator('.lib-open').first()
-    .dragTo(sortable(page, 'recipe', recipes[0]!));
+  expect(await page.evaluate(() => window.voxelStudio!.activeRecipe())).toBeNull();
+  const recipeMore = sortable(page, 'recipe', movedRecipe).locator('.library-more');
+  await recipeMore.dragTo(sortable(page, 'recipe', recipes[0]!));
   expect(await page.evaluate(() => ({
     active: window.voxelStudio!.activeRecipe(),
     order: window.voxelStudio!.shelfOrder('recipe'),
   }))).toEqual({ active: null, order: expectedRecipes });
-  await sortable(page, 'recipe', movedRecipe).locator('.lib-open').first().click();
-  expect(await page.evaluate(() => window.voxelStudio!.activeRecipe())).toBe(movedRecipe);
-  await sortable(page, 'recipe', movedRecipe).locator('.library-more').click();
-  await expect(page.getByRole('menuitem', { name: 'Render current recipe' })).toBeVisible();
+  await expect(page.getByRole('menu')).toHaveCount(0);
+  await recipeMore.click();
+  await expect(page.getByRole('menuitem', { name: 'Render current recipe' })).toHaveCount(0);
+  await expect(page.getByRole('menuitem', { name: 'Open shelf model' })).toHaveCount(0);
   await expect(page.getByRole('menuitem', { name: 'Move down' })).toBeVisible();
-  expect(await page.evaluate(() => window.voxelStudio!.activeRecipe())).toBe(movedRecipe);
+  expect(await page.evaluate(() => window.voxelStudio!.activeRecipe())).toBeNull();
   await page.keyboard.press('Escape');
+  await sortable(page, 'recipe', movedRecipe).locator('[data-library-kind="recipe"]').click();
+  expect(await page.evaluate(() => ({
+    active: window.voxelStudio!.activeRecipe(),
+    modelId: window.voxelStudio!.model().id,
+    order: window.voxelStudio!.shelfOrder('recipe'),
+  }))).toEqual({ active: movedRecipe, modelId: movedRecipeModelId, order: expectedRecipes });
+  await expect(
+    sortable(page, 'recipe', movedRecipe).locator('[data-library-kind="recipe"]'),
+  ).toHaveAttribute('aria-current', 'true');
 
   await page.getByRole('button', { name: 'Scenes' }).click();
   const scenes = await page.evaluate(() => window.voxelStudio!.shelfOrder('scene'));
@@ -187,6 +214,11 @@ test('dragging rearranges every library lane without changing item identity or c
   await expect(page.getByRole('menuitem', { name: 'Move down' })).toBeVisible();
   expect(await page.evaluate(() => window.voxelStudio!.sceneMode())).toBe(false);
   await page.keyboard.press('Escape');
+  await sortable(page, 'scene', movedScene).locator('[data-library-kind="scene"]').click();
+  expect(await page.evaluate(() => window.voxelStudio!.sceneState()?.id)).toBe(movedScene);
+  await expect(
+    sortable(page, 'scene', movedScene).locator('[data-library-kind="scene"]'),
+  ).toHaveAttribute('aria-current', 'true');
 
   // Dropping in the lower half exercises the matching after-position and marker path.
   await dragAfter(page, 'scene', movedScene, scenes[0]!);
@@ -234,4 +266,113 @@ test('dragging rearranges every library lane without changing item identity or c
   expect(modelSortability.every((item) =>
     item.draggable === 'false'
     && item.description?.includes('unique stable IDs') === true)).toBe(true);
+});
+
+test('every left lane stays flat while rendered source details appear on the right', async ({ page }) => {
+  await page.goto(studioOrigin, { waitUntil: 'load' });
+  await page.waitForFunction(() => typeof window.voxelStudio === 'object');
+
+  const shelf = page.locator('[data-studio-region="shelf"]');
+  const inspector = page.locator('[data-studio-region="inspector"]');
+  await expectFlatShelf(page);
+  await expect(shelf.locator('.section-head')).not.toHaveCount(0);
+  await expect(shelf.locator('button.section-head')).toHaveCount(0);
+  await expect(shelf.locator('.section-head[aria-expanded]')).toHaveCount(0);
+  await expect(shelf.locator('.lib-switch')).toHaveClass(/lib-switch-four/);
+  const shelfBounds = await shelf.boundingBox();
+  const scenesTabBounds = await page.getByRole('button', { name: 'Scenes' }).boundingBox();
+  if (shelfBounds === null || scenesTabBounds === null) {
+    throw new Error('the flat shelf and its Scenes tab must both be laid out');
+  }
+  expect(scenesTabBounds.x + scenesTabBounds.width)
+    .toBeLessThanOrEqual(shelfBounds.x + shelfBounds.width);
+
+  await page.getByRole('button', { name: 'Parts' }).click();
+  await expectFlatShelf(page);
+  const part = await page.evaluate(() => {
+    const entries = window.voxelStudio!.availableParts();
+    const entry = entries.find((candidate) =>
+      candidate.settings.length > 0 && candidate.presets.length > 0) ?? entries[0];
+    if (!entry) throw new Error('the Studio fixture needs at least one part');
+    return {
+      name: entry.name,
+      title: entry.title,
+      summary: entry.summary,
+      setting: entry.settings[0]?.label ?? null,
+      preset: entry.presets[0]?.name ?? null,
+    };
+  });
+  const partRow = sortable(page, 'part', part.name).locator('[data-library-kind="part"]');
+  await expect(partRow).toHaveText(part.title);
+  await partRow.click();
+  const partDetails = inspector.locator('[data-library-detail-kind="part"]');
+  await expect(partDetails).toBeVisible();
+  await expect(partDetails).toHaveAttribute('data-library-detail-key', part.name);
+  await expect(partDetails).toContainText(part.title);
+  if (part.summary) await expect(partDetails).toContainText(part.summary);
+  if (part.setting) await expect(partDetails).toContainText(part.setting);
+  if (part.preset) await expect(partDetails).toContainText(part.preset);
+  if (part.summary) await expect(shelf.getByText(part.summary, { exact: true })).toHaveCount(0);
+
+  await page.getByRole('button', { name: 'Recipes' }).click();
+  await expectFlatShelf(page);
+  const recipe = await page.evaluate(() => {
+    const entries = window.voxelStudio!.availableRecipes();
+    const entry = entries.find((candidate) =>
+      candidate.summary !== undefined
+      && (candidate.parts.length > 0 || candidate.recipes.length > 0)) ?? entries[0];
+    if (!entry) throw new Error('the Studio fixture needs at least one recipe');
+    return {
+      id: entry.id,
+      recipeId: entry.recipeId,
+      label: entry.label,
+      summary: entry.summary ?? '',
+      size: entry.size.join('×'),
+      voxelSize: String(entry.voxelSize),
+      directPart: entry.parts[0] ?? null,
+      directRecipe: entry.recipes[0] ?? null,
+    };
+  });
+  const recipeRow = sortable(page, 'recipe', recipe.id).locator('[data-library-kind="recipe"]');
+  await expect(recipeRow).toHaveText(recipe.label);
+  await recipeRow.click();
+  expect(await page.evaluate(() => ({
+    active: window.voxelStudio!.activeRecipe(),
+    modelId: window.voxelStudio!.model().id,
+  }))).toEqual({ active: recipe.id, modelId: recipe.recipeId });
+  await expect(page.locator('[data-studio-tab="examine"]')).toHaveAttribute('aria-selected', 'true');
+  const recipeDetails = inspector.locator('[data-library-detail-kind="recipe"]');
+  await expect(recipeDetails).toBeVisible();
+  await expect(recipeDetails).toHaveAttribute('data-library-detail-key', recipe.id);
+  await expect(recipeDetails).toContainText(recipe.label);
+  if (recipe.summary) await expect(recipeDetails).toContainText(recipe.summary);
+  await expect(recipeDetails).toContainText(recipe.size);
+  await expect(recipeDetails).toContainText(recipe.voxelSize);
+  if (recipe.directPart) await expect(recipeDetails).toContainText(recipe.directPart);
+  if (recipe.directRecipe) await expect(recipeDetails).toContainText(recipe.directRecipe);
+  await expect(page.getByRole('button', { name: 'Render current recipe' })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Open shelf model' })).toHaveCount(0);
+
+  await page.getByRole('button', { name: 'Scenes' }).click();
+  await expectFlatShelf(page);
+  const scene = await page.evaluate(() => {
+    const entry = window.voxelStudio!.scenes()[0];
+    if (!entry) throw new Error('the Studio fixture needs at least one scene');
+    return entry;
+  });
+  const sceneRow = sortable(page, 'scene', scene.id).locator('[data-library-kind="scene"]');
+  await expect(sceneRow).toHaveText(scene.label);
+  await sceneRow.click();
+  expect(await page.evaluate(() => window.voxelStudio!.sceneState()?.id)).toBe(scene.id);
+  const sceneDetails = inspector.locator('[data-library-detail-kind="scene"]');
+  await expect(sceneDetails).toBeVisible();
+  await expect(sceneDetails).toHaveAttribute('data-library-detail-key', scene.id);
+  await expect(sceneDetails).toContainText(scene.label);
+  if (scene.summary) await expect(inspector).toContainText(scene.summary);
+  const sceneDetailText = await sceneDetails.textContent();
+  expect(sceneDetailText).toContain('Models');
+  expect(sceneDetailText).toContain(String(scene.models));
+  expect(sceneDetailText).toContain('Lights');
+  expect(sceneDetailText).toContain(String(scene.lights ?? 0));
+  await expectFlatShelf(page);
 });

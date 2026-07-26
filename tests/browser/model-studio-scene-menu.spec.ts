@@ -40,7 +40,7 @@ test('garden scene presents each flower-pot color and form variation', async ({ 
   expect(response?.ok()).toBe(true);
   await page.waitForFunction(() => typeof window.voxelStudio === 'object');
   await page.getByRole('button', { name: 'Scenes' }).click();
-  await page.getByRole('button', { name: /Flower-pot garden 9 models/ }).click();
+  await page.getByRole('button', { name: 'Flower-pot garden', exact: true }).click();
 
   await expect(page.getByRole('heading', { name: 'Flower-pot garden' })).toBeVisible();
   await expect(page.locator('.scene-canvas')).toBeVisible();
@@ -104,7 +104,7 @@ test('scene menu renames and deletes while keeping open-scene state coherent', a
   await page.waitForFunction(() => typeof window.voxelStudio === 'object');
   await page.getByRole('button', { name: 'Scenes' }).click();
 
-  const dining = page.getByRole('button', { name: /Dining, set for four 5 models/ });
+  const dining = page.getByRole('button', { name: 'Dining, set for four', exact: true });
   await dining.click({ button: 'right' });
   const menu = page.getByRole('menu', { name: 'Scene actions for Dining, set for four' });
   await expect(menu).toBeVisible();
@@ -136,10 +136,10 @@ test('scene menu renames and deletes while keeping open-scene state coherent', a
   );
   await name.fill('Dinner party');
   await name.press('Enter');
-  await expect(page.getByRole('button', { name: /Dinner party 5 models/ })).toBeFocused();
+  await expect(page.getByRole('button', { name: 'Dinner party', exact: true })).toBeFocused();
   expect(await page.evaluate(() => window.voxelStudio!.scenes()[0]?.label)).toBe('Dinner party');
 
-  await page.getByRole('button', { name: /Dinner party 5 models/ }).click();
+  await page.getByRole('button', { name: 'Dinner party', exact: true }).click();
   await page.evaluate(() => {
     const harness = window.voxelStudio!;
     const scene = harness.sceneState();
@@ -153,24 +153,24 @@ test('scene menu renames and deletes while keeping open-scene state coherent', a
   });
 
   // An open rename participates in history while preserving placement edits.
-  const renamedRow = page.getByRole('button', { name: /Dinner party 5 models/ });
+  const renamedRow = page.getByRole('button', { name: 'Dinner party', exact: true });
   await renamedRow.click({ button: 'right' });
   await page.getByRole('menuitem', { name: 'Rename scene' }).click();
   await page.getByRole('textbox', { name: 'Scene name' }).fill('Banquet');
   await page.getByRole('textbox', { name: 'Scene name' }).press('Enter');
   await expect(page.getByRole('heading', { name: 'Banquet' })).toBeVisible();
-  await expect(page.getByRole('button', { name: /Banquet 5 models/ })).toBeFocused();
+  await expect(page.getByRole('button', { name: 'Banquet', exact: true })).toBeFocused();
   await page.keyboard.press('Control+z');
   await expect(page.getByRole('heading', { name: 'Dinner party' })).toBeVisible();
-  await page.getByRole('button', { name: /Cottage row 4 models/ }).click();
-  await page.getByRole('button', { name: /Dinner party 5 models/ }).click();
+  await page.getByRole('button', { name: 'Cottage row', exact: true }).click();
+  await page.getByRole('button', { name: 'Dinner party', exact: true }).click();
   expect(await page.evaluate(() =>
     window.voxelStudio!.sceneState()?.placements.find((placement) => placement.id === 'table')?.at[0],
   )).toBe(7);
 
   await page.evaluate(() => { window.voxelStudio!.selectPlacement('table'); });
   expect(await page.locator('.highlight-marks line').count()).toBeGreaterThan(0);
-  const openRow = page.getByRole('button', { name: /Dinner party 5 models/ });
+  const openRow = page.getByRole('button', { name: 'Dinner party', exact: true });
   await openRow.click({ button: 'right' });
   await page.getByRole('menuitem', { name: 'Delete scene' }).click();
   await expect(page.getByRole('dialog')).toContainText(
@@ -204,7 +204,7 @@ test('scene menu renames and deletes while keeping open-scene state coherent', a
   await page.reload({ waitUntil: 'load' });
   await page.waitForFunction(() => typeof window.voxelStudio === 'object');
   await page.getByRole('button', { name: 'Scenes' }).click();
-  const restoredDining = page.getByRole('button', { name: /Dining, set for four 5 models/ });
+  const restoredDining = page.getByRole('button', { name: 'Dining, set for four', exact: true });
   await expect(restoredDining).toBeVisible();
 });
 
@@ -266,7 +266,7 @@ test('completed deletion with renderer retirement failure cannot be retried', as
   await page.goto(studioOrigin, { waitUntil: 'load' });
   await page.waitForFunction(() => typeof window.voxelStudio === 'object');
   await page.getByRole('button', { name: 'Scenes' }).click();
-  const dining = page.getByRole('button', { name: /Dining, set for four 5 models/ });
+  const dining = page.getByRole('button', { name: 'Dining, set for four', exact: true });
   await dining.click();
   await page.evaluate(async () => {
     const moduleUrl = new URL('scene-session.ts', window.location.href).href;

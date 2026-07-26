@@ -38,10 +38,7 @@ game owns its catalog (which models exist, what they are named, where they
 save) and mounts the studio with that catalog. Game meaning never enters the
 engine; the studio core never hardcodes a game.
 
-Owner requirement (2026-07-17): a game's shelf is organized into collapsible
-sections the game names and orders -- characters, buildings, items, and so on.
-The section list is part of the catalog a game provides, never a vocabulary
-the studio invents; the studio only knows "sections contain models".
+Owner requirement (2026-07-17, refined 2026-07-25): a game's shelf is organized into sections the game names and orders -- characters, buildings, items, and so on -- but those section headings are fixed rather than collapsible, every model, part, recipe, and scene is a flat direct-open row, and item details belong in the right inspector. The section list remains part of the catalog a game provides, never a vocabulary the studio invents; the studio only knows "sections contain models".
 
 ## Models keep the way they were made
 

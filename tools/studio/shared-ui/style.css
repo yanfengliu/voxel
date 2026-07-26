@@ -176,17 +176,14 @@
   display: block;
   width: 100%;
   min-height: 0;
+  margin: 0;
   padding: 6px 6px 4px;
   border: 0;
   background: transparent;
   color: var(--muted);
   font-size: 11.5px;
+  font-weight: 600;
   text-align: left;
-}
-
-[data-model-studio-shell] .section-head:hover {
-  border: 0;
-  color: var(--text);
 }
 
 [data-model-studio-shell] .model-row {
@@ -196,13 +193,14 @@
   align-items: center;
   gap: 8px;
   padding: 6px 10px;
-  padding-inline-start: 28px;
   border: 1px solid transparent;
   border-radius: 6px;
   background: transparent;
   color: var(--muted);
   text-align: left;
 }
+
+[data-model-studio-shell] .model-row.section-model-row { padding-inline-start: 28px; }
 
 [data-model-studio-shell] .model-row:hover {
   border-color: transparent;
