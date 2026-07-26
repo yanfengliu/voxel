@@ -31,14 +31,17 @@ const MIXED_SCENE: SceneV1 = {
 };
 
 describe('sceneMotionWindowMsV1', () => {
-  it('excludes disabled light motion without hiding animated model motion', () => {
+  it('includes model and light motion independently of presentation toggles', () => {
     const recipes = createStudioRecipeBook();
 
-    expect(sceneMotionWindowMsV1(MIXED_SCENE, recipes, false)).toBe(1_000);
-    expect(sceneMotionWindowMsV1(MIXED_SCENE, recipes, true)).toBe(1_800);
+    expect(sceneMotionWindowMsV1(MIXED_SCENE, recipes)).toBe(1_800);
     expect(sceneMotionWindowMsV1({
       ...MIXED_SCENE,
       placements: [],
-    }, recipes, false)).toBe(0);
+    }, recipes)).toBe(1_800);
+    expect(sceneMotionWindowMsV1({
+      ...MIXED_SCENE,
+      lights: [],
+    }, recipes)).toBe(1_000);
   });
 });

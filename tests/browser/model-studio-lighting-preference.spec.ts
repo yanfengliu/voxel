@@ -1,11 +1,11 @@
 import { resolve } from 'node:path';
 
-import { expect, test } from '@playwright/test';
+import { expect, test, type Page } from '@playwright/test';
 import { createServer, type ViteDevServer } from 'vite';
 
-import { measureReceiverLightingProof } from './receiver-lighting-proof.js';
-
 const STUDIO_ROOT = resolve('tools/studio');
+const VIEW_PREFS_KEY = 'voxel-studio-view/1';
+const DENSE_LIGHTING_SCENE = 'studio:scene:lighting-1000';
 
 let server: ViteDevServer | undefined;
 let studioOrigin = '';
@@ -20,7 +20,7 @@ test.beforeAll(async () => {
   });
   await server.listen();
   studioOrigin = server.resolvedUrls?.local[0] ?? '';
-  if (!studioOrigin) throw new Error('the Studio lighting preference server reported no local address');
+  if (!studioOrigin) throw new Error('the Studio preference server reported no local address');
 });
 
 test.afterAll(async () => {
@@ -30,287 +30,298 @@ test.afterAll(async () => {
   await ownedServer?.close();
 });
 
-test('the global light choice redraws immediately and persists both states', async ({ page }) => {
-  const lightingLab = 'studio:scene:lighting-lab';
-  const denseLightingScene = 'studio:scene:lighting-1000';
-  await page.setViewportSize({ width: 1280, height: 800 });
+async function mount(page: Page): Promise<void> {
   const response = await page.goto(studioOrigin, { waitUntil: 'load' });
   expect(response?.ok()).toBe(true);
   await page.waitForFunction(() => typeof window.voxelStudio === 'object');
+}
 
-  await page.evaluate((id) => { window.voxelStudio!.openScene(id); }, lightingLab);
-  expect(await page.evaluate(() => window.voxelStudio!.lit())).toBe(false);
-  expect(await page.evaluate(() => window.voxelStudio!.drawAt(0).sceneLighting))
-    .toMatchObject({ authoredLights: 2, visibleLights: 0, clusterCount: 0 });
+async function storedPrefs(page: Page): Promise<Record<string, unknown>> {
+  return page.evaluate((key) =>
+    JSON.parse(localStorage.getItem(key) ?? '{}') as Record<string, unknown>,
+  VIEW_PREFS_KEY);
+}
+
+test('lighting changes illumination without changing light-source movement', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await mount(page);
+  await page.evaluate((id) => { window.voxelStudio!.openScene(id); }, DENSE_LIGHTING_SCENE);
 
   const lightToggle = page.getByRole('button', { name: 'Lighting', exact: true });
-  await expect(lightToggle).toHaveAttribute('aria-pressed', 'false');
+  const animationToggle = page.getByRole('button', { name: 'Scene animation', exact: true });
   await expect(lightToggle).toHaveText('lighting off');
-  const canvas = page.locator('.scene-canvas');
-  const unlitRaster = await canvas.screenshot({ animations: 'disabled' });
-  await lightToggle.click();
-  expect(await page.evaluate(() => window.voxelStudio!.lit())).toBe(true);
-  await expect(lightToggle).toHaveClass(/on/);
-  await expect(lightToggle).toHaveAttribute('aria-pressed', 'true');
-  await expect(lightToggle).toHaveText('lighting on');
-  expect(await page.evaluate(() => window.voxelStudio!.drawAt(0).sceneLighting))
-    .toMatchObject({ authoredLights: 2, visibleLights: 2 });
-  expect((await canvas.screenshot({ animations: 'disabled' })).equals(unlitRaster)).toBe(false);
-  expect(await page.evaluate(() =>
-    JSON.parse(localStorage.getItem('voxel-studio-view/1') ?? '{}') as { lit?: unknown },
-  )).toMatchObject({ lit: true });
-
-  const otherScene = await page.evaluate((excludedId) =>
-    window.voxelStudio!.scenes().find((scene) => scene.id !== excludedId)?.id,
-  lightingLab);
-  if (!otherScene) throw new Error('The lighting preference test needs a second scene to switch to.');
-  await page.evaluate((id) => { window.voxelStudio!.openScene(id); }, otherScene);
-  expect(await page.evaluate(() => window.voxelStudio!.lit())).toBe(true);
-
-  await page.evaluate((id) => { window.voxelStudio!.openScene(id); }, lightingLab);
-  expect(await page.evaluate(() => window.voxelStudio!.lit())).toBe(true);
-  expect(await page.evaluate(() => window.voxelStudio!.drawAt(0).sceneLighting))
-    .toMatchObject({ authoredLights: 2, visibleLights: 2 });
-
-  await page.reload({ waitUntil: 'load' });
-  await page.waitForFunction(() => typeof window.voxelStudio === 'object');
-  expect(await page.evaluate(() => window.voxelStudio!.lit())).toBe(true);
-  const modelToSceneLighting = await page.evaluate((id) => {
-    const harness = window.voxelStudio!;
-    const model = harness.shelf().flatMap((section) => section.models)[0];
-    if (!model) throw new Error('The lighting preference test needs one shelf model.');
-    harness.openFromShelf(model.id);
-    harness.openScene(id);
-    return harness.drawAt(0).sceneLighting;
-  }, lightingLab);
-  expect(modelToSceneLighting).toMatchObject({ authoredLights: 2, visibleLights: 2 });
-  await expect(page.getByRole('button', { name: 'Lighting', exact: true }))
-    .toHaveAttribute('aria-pressed', 'true');
-
-  await page.getByRole('button', { name: 'Lighting', exact: true }).click();
-  expect(await page.evaluate(() => window.voxelStudio!.lit())).toBe(false);
-  expect(await page.evaluate(() =>
-    JSON.parse(localStorage.getItem('voxel-studio-view/1') ?? '{}') as { lit?: unknown },
-  )).toMatchObject({ lit: false });
-
-  await page.reload({ waitUntil: 'load' });
-  await page.waitForFunction(() => typeof window.voxelStudio === 'object');
-  expect(await page.evaluate(() => window.voxelStudio!.lit())).toBe(false);
-  await page.evaluate((id) => { window.voxelStudio!.openScene(id); }, denseLightingScene);
-  expect(await page.evaluate(() => window.voxelStudio!.lit())).toBe(false);
-  const persistedOffToggle = page.getByRole('button', { name: 'Lighting', exact: true });
-  await expect(persistedOffToggle).toHaveAttribute('aria-pressed', 'false');
-  await expect(persistedOffToggle).toHaveText('lighting off');
+  await expect(lightToggle).toHaveAttribute('aria-pressed', 'false');
+  await expect(animationToggle).toHaveText('animation enabled');
+  await expect(animationToggle).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.getByRole('button', { name: /Pause/ })).toBeVisible();
   await expect(page.locator('.stagehint')).toContainText(
-    'lighting off · dim source handles do not orbit or illuminate models',
+    'lighting off · dim source handles do not illuminate models · animation enabled',
   );
   await expect(page.locator('[data-library-detail-kind="scene"]')).toContainText(
-    'LightingOff · source handles only',
+    '1000 · 1000 moving sources',
   );
   await expect(page.locator('[data-library-detail-kind="scene"]')).toContainText(
-    '1000 · 1000 animated when on',
+    'AnimationEnabled · Play controls scene motion',
   );
+
+  const beforeLighting = await page.evaluate(() => window.voxelStudio!.playerState());
+  await lightToggle.click();
+  const afterLighting = await page.evaluate(() => window.voxelStudio!.playerState());
+  expect(afterLighting.playing).toBe(beforeLighting.playing);
+  expect(afterLighting.periodMs).toBe(beforeLighting.periodMs);
+  expect(await storedPrefs(page)).toMatchObject({ lit: true, sceneAnimation: true });
+  await lightToggle.click();
+  const afterLightingOff = await page.evaluate(() => window.voxelStudio!.playerState());
+  expect(afterLightingOff.playing).toBe(afterLighting.playing);
+  expect(afterLightingOff.periodMs).toBe(afterLighting.periodMs);
+  await page.waitForTimeout(100);
+  expect(await page.evaluate(() => window.voxelStudio!.playerState().timeMs))
+    .not.toBe(afterLightingOff.timeMs);
+
+  const exactFrames = await page.evaluate(() => {
+    const harness = window.voxelStudio!;
+    const atStart = harness.drawAt(0).sceneLighting;
+    const atOneSecond = harness.drawAt(1_000).sceneLighting;
+    return {
+      atStart,
+      atOneSecond,
+      player: harness.playerState(),
+      animation: harness.sceneAnimation(),
+    };
+  });
+  expect(exactFrames.atStart).toMatchObject({
+    authoredLights: 1_000,
+    visibleLights: 0,
+    clusterCount: 0,
+    movingLights: 1_000,
+  });
+  expect(exactFrames.atOneSecond).toMatchObject({
+    authoredLights: 1_000,
+    visibleLights: 0,
+    clusterCount: 0,
+    movingLights: 1_000,
+  });
+  expect(exactFrames.atOneSecond?.positionChecksum)
+    .not.toBe(exactFrames.atStart?.positionChecksum);
+  expect(exactFrames.player).toMatchObject({
+    playing: false,
+    periodMs: beforeLighting.periodMs,
+    timeMs: 1_000,
+  });
+  expect(exactFrames.animation).toBe(true);
+
+  await lightToggle.click();
+  const litHeldFrame = await page.evaluate(() => ({
+    lighting: window.voxelStudio!.drawAt(1_000).sceneLighting,
+    player: window.voxelStudio!.playerState(),
+  }));
+  expect(litHeldFrame.lighting?.visibleLights).toBeGreaterThan(800);
+  expect(litHeldFrame.lighting?.positionChecksum)
+    .toBe(exactFrames.atOneSecond?.positionChecksum);
+  expect(litHeldFrame.player).toMatchObject({
+    playing: false,
+    periodMs: beforeLighting.periodMs,
+    timeMs: 1_000,
+  });
+  await expect(animationToggle).toHaveAttribute('aria-pressed', 'true');
+
+  await page.reload({ waitUntil: 'load' });
+  await page.waitForFunction(() => typeof window.voxelStudio === 'object');
+  await page.evaluate((id) => { window.voxelStudio!.openScene(id); }, DENSE_LIGHTING_SCENE);
+  expect(await page.evaluate(() => ({
+    lit: window.voxelStudio!.lit(),
+    animation: window.voxelStudio!.sceneAnimation(),
+    playing: window.voxelStudio!.playerState().playing,
+  }))).toEqual({ lit: true, animation: true, playing: true });
+  await expect(page.getByRole('button', { name: 'Lighting', exact: true }))
+    .toHaveText('lighting on');
+});
+
+test('the scene-animation button persists across scenes and reloads', async ({ page }) => {
+  await mount(page);
+  await page.evaluate((id) => { window.voxelStudio!.openScene(id); }, DENSE_LIGHTING_SCENE);
+
+  const animationToggle = page.getByRole('button', { name: 'Scene animation', exact: true });
+  await animationToggle.click();
+  await expect(animationToggle).toHaveText('animation disabled');
+  await expect(animationToggle).toHaveAttribute('aria-pressed', 'false');
   await expect(page.getByRole('button', { name: /Play/ })).toBeVisible();
-  expect(await page.evaluate(() => window.voxelStudio!.drawAt(0).sceneLighting))
-    .toMatchObject({
-      authoredLights: 1_000,
-      visibleLights: 0,
-      clusterCount: 0,
-      markerInstances: 1_000,
-      movingLights: 1_000,
-    });
+  expect(await page.evaluate(() => window.voxelStudio!.playerState().playing)).toBe(false);
+  expect(await storedPrefs(page)).toMatchObject({ sceneAnimation: false });
 
-  await persistedOffToggle.click();
-  await expect(persistedOffToggle).toHaveAttribute('aria-pressed', 'true');
-  await expect(page.getByRole('button', { name: /Pause/ })).toBeVisible();
-  const enabledDenseLighting = await page.evaluate(() =>
-    window.voxelStudio!.drawAt(0).sceneLighting);
-  expect(enabledDenseLighting).toMatchObject({ authoredLights: 1_000, overflowedClusters: 0 });
-  expect(enabledDenseLighting?.visibleLights).toBeGreaterThan(800);
-  const receiverLighting = await measureReceiverLightingProof(page);
-  expect(receiverLighting.strongChangedRatio).toBeGreaterThan(0.05);
-  expect(receiverLighting.strongChromaticRatio).toBeGreaterThan(0.75);
-  expect(receiverLighting.strongMovingContributionRatio).toBeGreaterThan(0.03);
-  expect(receiverLighting.warmPixels).toBeGreaterThan(10_000);
-  expect(receiverLighting.coolPixels).toBeGreaterThan(2_000);
-  expect(receiverLighting.greenPixels).toBeGreaterThan(5_000);
-});
-
-test('animated models keep rendering without moving disabled light handles', async ({ page }) => {
-  const response = await page.goto(studioOrigin, { waitUntil: 'load' });
-  expect(response?.ok()).toBe(true);
-  await page.waitForFunction(() => typeof window.voxelStudio === 'object');
-
-  const evidence = await page.evaluate(() => {
-    const harness = window.voxelStudio!;
-    harness.openScene('studio:scene:dining');
-    const dining = structuredClone(harness.sceneState()!);
-    harness.editScene({
-      ...dining,
-      placements: [{ id: 'animated-starter', model: 'studio:starter', at: [0, 0, 0] }],
-    });
-    const playerAfterEdit = harness.playerState();
-    return { playerAfterEdit, render: harness.drawAt(0).sceneRender };
-  });
-  expect(evidence.playerAfterEdit).toMatchObject({ playing: true, periodMs: 1_000 });
-  expect(evidence.render).toMatchObject({ animatedBatches: 1, animatedInstances: 1 });
-
-  // Exact-time evidence above freezes the scene. Play must resume the same
-  // scene clock even though there are no moving light definitions.
-  await page.getByRole('button', { name: /Play/ }).click();
   const canvas = page.locator('.scene-canvas');
-  const before = await canvas.screenshot({ animations: 'disabled' });
-  await page.waitForTimeout(250);
-  expect((await canvas.screenshot({ animations: 'disabled' })).equals(before)).toBe(false);
-  await expect(page.getByRole('button', { name: /Pause/ })).toBeVisible();
-  await page.evaluate(() => { (document.activeElement as HTMLElement | null)?.blur(); });
-  await page.keyboard.press('ArrowRight');
-  expect(await page.evaluate(() => window.voxelStudio!.playerState().playing)).toBe(true);
-  const stopped = await page.evaluate(() => {
+  const heldTime = await page.evaluate(() => window.voxelStudio!.playerState().timeMs);
+  await page.waitForTimeout(200);
+  expect(await page.evaluate(() => window.voxelStudio!.playerState().timeMs)).toBe(heldTime);
+
+  const staticScene = await page.evaluate(() => {
     const harness = window.voxelStudio!;
-    const scene = harness.sceneState()!;
-    harness.editScene({
-      ...scene,
-      placements: [{ id: 'static-table', model: 'studio:table', at: [0, 0, 0] }],
-    });
-    return harness.playerState();
+    harness.openScene('studio:scene:dining');
+    const before = {
+      animation: harness.sceneAnimation(),
+      hasMotion: harness.sceneHasMotion(),
+      player: harness.playerState(),
+    };
+    harness.play();
+    harness.pause();
+    const after = {
+      animation: harness.sceneAnimation(),
+      player: harness.playerState(),
+      stored: JSON.parse(localStorage.getItem('voxel-studio-view/1') ?? '{}') as Record<string, unknown>,
+    };
+    harness.openScene('studio:scene:lighting-1000');
+    return { before, after };
   });
-  expect(stopped).toMatchObject({ playing: false, periodMs: 0 });
-  await expect(page.getByRole('button', { name: /Play/ })).toBeDisabled();
+  expect(staticScene).toMatchObject({
+    before: {
+      animation: false,
+      hasMotion: false,
+      player: { periodMs: 0, playing: false },
+    },
+    after: {
+      animation: false,
+      player: { periodMs: 0, playing: false },
+      stored: { sceneAnimation: false },
+    },
+  });
+  expect(await page.evaluate(() => window.voxelStudio!.playerState())).toMatchObject({
+    playing: false,
+  });
+  await expect(animationToggle).toHaveAttribute('aria-pressed', 'false');
+
+  await page.reload({ waitUntil: 'load' });
+  await page.waitForFunction(() => typeof window.voxelStudio === 'object');
+  await page.evaluate((id) => { window.voxelStudio!.openScene(id); }, DENSE_LIGHTING_SCENE);
+  expect(await page.evaluate(() => ({
+    animation: window.voxelStudio!.sceneAnimation(),
+    player: window.voxelStudio!.playerState(),
+  }))).toMatchObject({
+    animation: false,
+    player: { playing: false },
+  });
+  const persistedToggle = page.getByRole('button', { name: 'Scene animation', exact: true });
+  await expect(persistedToggle).toHaveText('animation disabled');
+  await expect(page.locator('.stagehint')).toContainText(
+    'animation disabled · scene held at the current time',
+  );
+  await expect(page.locator('[data-library-detail-kind="scene"]')).toContainText(
+    'AnimationDisabled · scene held at its current time',
+  );
+
+  await persistedToggle.click();
+  await expect(persistedToggle).toHaveText('animation enabled');
+  await expect(page.getByRole('button', { name: /Pause/ })).toBeVisible();
+  expect(await storedPrefs(page)).toMatchObject({ sceneAnimation: true });
+  const moving = await canvas.screenshot({ animations: 'disabled' });
+  await page.waitForTimeout(200);
+  expect((await canvas.screenshot({ animations: 'disabled' })).equals(moving)).toBe(false);
 });
 
-test('disabled orbit handles stay fixed while animated models drive the scene clock', async ({ page }) => {
-  const response = await page.goto(studioOrigin, { waitUntil: 'load' });
-  expect(response?.ok()).toBe(true);
-  await page.waitForFunction(() => typeof window.voxelStudio === 'object');
-
-  const initial = await page.evaluate(() => {
+test('the persisted animation choice also controls animated model scenes', async ({ page }) => {
+  await mount(page);
+  const prepared = await page.evaluate(() => {
     const harness = window.voxelStudio!;
-    harness.openScene('studio:scene:lighting-1000');
-    const denseScene = harness.sceneState();
-    if (denseScene?.schemaVersion !== 'studio.scene/3') {
-      throw new Error('The mixed-motion test needs the V3 dense-light scene.');
-    }
-    const movingLight = structuredClone(denseScene.lights?.[0]);
-    if (!movingLight?.motion) {
-      throw new Error('The mixed-motion test needs one moving dense-scene light.');
-    }
+    harness.setSceneAnimation(false);
     harness.openScene('studio:scene:dining');
     const dining = structuredClone(harness.sceneState()!);
     harness.editScene({
       ...dining,
-      schemaVersion: 'studio.scene/3',
       placements: [{ id: 'animated-starter', model: 'studio:starter', at: [0, 0, 0] }],
-      lights: [movingLight],
     });
     return {
       player: harness.playerState(),
-      lighting: harness.drawAt(0).sceneLighting,
-      lightPeriodMs: movingLight.motion.periodMs,
+      render: harness.drawAt(0).sceneRender,
+      hasMotion: harness.sceneHasMotion(),
     };
   });
-  expect(initial.player).toMatchObject({ playing: true, periodMs: 1_000 });
-  expect(initial.lighting).toMatchObject({ visibleLights: 0, movingLights: 1 });
-  const initialChecksum = initial.lighting?.positionChecksum;
+  expect(prepared).toMatchObject({
+    player: { playing: false, periodMs: 1_000 },
+    render: { animatedBatches: 1, animatedInstances: 1 },
+    hasMotion: true,
+  });
 
-  await page.getByRole('button', { name: /Play/ }).click();
+  const animationToggle = page.getByRole('button', { name: 'Scene animation', exact: true });
+  await expect(animationToggle).toHaveText('animation disabled');
   const canvas = page.locator('.scene-canvas');
-  const before = await canvas.screenshot({ animations: 'disabled' });
-  await page.waitForTimeout(250);
-  expect((await canvas.screenshot({ animations: 'disabled' })).equals(before)).toBe(false);
-  const disabledLater = await page.evaluate(() => {
-    const harness = window.voxelStudio!;
-    const player = harness.playerState();
-    return { player, lighting: harness.drawAt(1_000).sceneLighting };
-  });
-  expect(disabledLater.player).toMatchObject({ playing: true, periodMs: 1_000 });
-  expect(disabledLater.lighting).toMatchObject({
-    visibleLights: 0,
-    positionChecksum: initialChecksum,
-  });
+  const heldTime = await page.evaluate(() => window.voxelStudio!.playerState().timeMs);
+  await page.waitForTimeout(200);
+  expect(await page.evaluate(() => window.voxelStudio!.playerState().timeMs)).toBe(heldTime);
 
-  await page.getByRole('button', { name: 'Lighting', exact: true }).click();
-  expect(await page.evaluate(() => window.voxelStudio!.playerState().periodMs))
-    .toBe(initial.lightPeriodMs);
+  await animationToggle.click();
+  await expect(page.getByRole('button', { name: /Pause/ })).toBeVisible();
+  const moving = await canvas.screenshot({ animations: 'disabled' });
+  await page.waitForTimeout(250);
+  expect((await canvas.screenshot({ animations: 'disabled' })).equals(moving)).toBe(false);
+
+  await page.getByRole('button', { name: /Pause/ }).click();
+  await expect(animationToggle).toHaveText('animation disabled');
+  expect(await storedPrefs(page)).toMatchObject({ sceneAnimation: false });
+  await page.getByRole('button', { name: /Play/ }).click();
+  await expect(animationToggle).toHaveText('animation enabled');
+  expect(await storedPrefs(page)).toMatchObject({ sceneAnimation: true });
 });
 
-test('a light toggle changes the scrub window without moving a paused model pose', async ({ page }) => {
-  const response = await page.goto(studioOrigin, { waitUntil: 'load' });
-  expect(response?.ok()).toBe(true);
-  await page.waitForFunction(() => typeof window.voxelStudio === 'object');
-
+test('animation toggles preserve the presented phase while lighting stays independent', async ({ page }) => {
+  await mount(page);
   const prepared = await page.evaluate(() => {
     const harness = window.voxelStudio!;
     harness.openScene('studio:scene:lighting-1000');
-    const denseScene = harness.sceneState();
-    if (denseScene?.schemaVersion !== 'studio.scene/3') {
-      throw new Error('The transport-continuity test needs the V3 dense-light scene.');
-    }
-    const clonedSource = structuredClone(denseScene.lights?.[0]);
-    if (!clonedSource?.motion) {
-      throw new Error('The transport-continuity test needs one moving dense-scene light.');
-    }
-    const lightPeriodMs = clonedSource.motion.periodMs;
-    // Keep the source in the transport calculation without letting its raster
-    // obscure whether the animated model itself held the same pose.
-    const source = {
-      ...clonedSource,
-      color: { r: 0, g: 0, b: 0 },
-      intensity: 0,
-    };
-
-    harness.openScene('studio:scene:dining');
-    const dining = structuredClone(harness.sceneState()!);
-    harness.editScene({
-      ...dining,
-      schemaVersion: 'studio.scene/3',
-      placements: [{ id: 'animated-starter', model: 'studio:starter', at: [0, 0, 0] }],
-      lights: [source],
-    });
-    harness.pause();
-    harness.seek(500);
+    const atFiveSeconds = harness.drawAt(5_000).sceneLighting;
+    harness.setSceneAnimation(false);
     return {
-      before: harness.playerState(),
-      lightPeriodMs,
+      atFiveSeconds,
+      stopped: harness.playerState(),
     };
   });
-  expect(prepared.before).toMatchObject({
+  const expectedWrappedMs = 5_000 % prepared.stopped.periodMs;
+  expect(prepared.stopped).toMatchObject({
     playing: false,
-    timeMs: 500,
-    periodMs: 1_000,
+    timeMs: expectedWrappedMs,
   });
 
-  await page.getByRole('button', { name: 'Lighting', exact: true }).click();
-  const afterToggle = await page.evaluate(() => window.voxelStudio!.playerState());
-  expect(afterToggle).toMatchObject({
-    playing: false,
-    timeMs: 500,
-    periodMs: prepared.lightPeriodMs,
-  });
-
-  await page.getByRole('button', { name: /Play/ }).click();
-  await page.evaluate(() => new Promise<void>((resolve) => {
-    requestAnimationFrame(() => { requestAnimationFrame(() => { resolve(); }); });
-  }));
-  const resumed = await page.evaluate(() => window.voxelStudio!.pause());
-  expect(resumed.playing).toBe(false);
-  expect(resumed.timeMs).toBeGreaterThanOrEqual(500);
-  expect(resumed.timeMs).toBeLessThan(650);
-
-  const wrapped = await page.evaluate(() => {
+  const lightingChange = await page.evaluate(() => {
     const harness = window.voxelStudio!;
-    harness.openScene('studio:scene:lighting-1000');
-    harness.drawAt(5_000);
-    harness.setLit(false);
-    const off = harness.playerState();
+    const before = harness.playerState();
     harness.setLit(true);
-    const resumedState = harness.pause();
-    return { off, resumedState };
+    const lit = harness.drawAt(5_000).sceneLighting;
+    harness.setLit(false);
+    const after = harness.playerState();
+    return { before, lit, after };
   });
-  expect(wrapped.off).toMatchObject({ playing: false, timeMs: 0, periodMs: 0 });
-  expect(wrapped.resumedState.playing).toBe(false);
-  expect(wrapped.resumedState.periodMs).toBeGreaterThan(0);
-  const expectedWrappedMs = 5_000 % wrapped.resumedState.periodMs;
-  expect(wrapped.resumedState.timeMs).toBeGreaterThanOrEqual(expectedWrappedMs);
-  expect(wrapped.resumedState.timeMs).toBeLessThan(expectedWrappedMs + 50);
+  expect(lightingChange.after).toEqual(lightingChange.before);
+  expect(lightingChange.lit?.visibleLights).toBeGreaterThan(0);
+  expect(lightingChange.lit?.positionChecksum)
+    .toBe(prepared.atFiveSeconds?.positionChecksum);
+  expect(await storedPrefs(page)).toMatchObject({
+    lit: false,
+    sceneAnimation: false,
+  });
+
+  const resumed = await page.evaluate(() => {
+    const harness = window.voxelStudio!;
+    const beforeNowMs = performance.now();
+    harness.setSceneAnimation(true);
+    const player = harness.playerState();
+    return {
+      player,
+      synchronousElapsedMs: performance.now() - beforeNowMs,
+    };
+  });
+  expect(resumed.player.playing).toBe(true);
+  const resumedAdvanceMs = (
+    resumed.player.timeMs - expectedWrappedMs + resumed.player.periodMs
+  ) % resumed.player.periodMs;
+  expect(resumedAdvanceMs).toBeLessThanOrEqual(resumed.synchronousElapsedMs + 1);
+  await expect(page.getByRole('button', { name: 'Scene animation', exact: true }))
+    .toHaveText('animation enabled');
+  await page.waitForTimeout(100);
+  await page.getByRole('button', { name: /Pause/ }).click();
+  const advanced = await page.evaluate(() => ({
+    player: window.voxelStudio!.playerState(),
+    lighting: window.voxelStudio!.drawAt(5_100).sceneLighting,
+  }));
+  expect(advanced.player.playing).toBe(false);
+  expect(advanced.player.timeMs).toBeGreaterThan(expectedWrappedMs);
+  expect(advanced.lighting?.positionChecksum)
+    .not.toBe(prepared.atFiveSeconds?.positionChecksum);
 });

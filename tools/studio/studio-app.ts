@@ -68,6 +68,8 @@ import { createStudioMotionPanel, type StudioMotionPanelV1 } from './studio-moti
 import { createStudioNotesPanel, type StudioNotesPanelV1 } from './studio-notes.js';
 import { setupPanelResize } from './studio-panel-resize.js';
 import { createStudioPlayerBar, type StudioPlayerBarV1 } from './studio-player.js';
+import { createStudioSceneAnimationControl, sceneAnimationStageHint, sceneAnimationStatusSuffix } from './studio-scene-animation-control.js';
+import { StudioSceneAnimationTransport } from './studio-scene-animation-transport.js';
 import { createStudioShelf, type StudioShelfV1 } from './studio-shelf.js';
 import { createStudioShelfOrderWorkspace } from './studio-shelf-order.js';
 
@@ -130,7 +132,7 @@ export interface StudioMountOptionsV1 {
    */
   readonly shellProfileV2?: ModelStudioShellProfileV2;
   /**
-   * Where the stage's remembered look is kept. Defaults to the browser's
+   * Where the stage's remembered presentation preferences are kept. Defaults to the browser's
    * `localStorage`, guarded so a page that forbids it still mounts; a test or a
    * game embedding two studios can pass its own store to keep them separate.
    */
@@ -211,7 +213,7 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
   const view = readViewPrefs(viewStore);
   const persistView = (): void => {
     writeViewPrefs(viewStore, {
-      depth: depthOn, edges: session.edges, lit: session.lit, wireframe: session.wireframe, grid: gridOn,
+      depth: depthOn, edges: session.edges, lit: session.lit, sceneAnimation: sceneTransport.enabled, wireframe: session.wireframe, grid: gridOn,
     });
   };
   const configuredCoreTabs = options.shellProfileV2?.coreTabs;
@@ -294,6 +296,9 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
     + 'equal sizes at every distance look like they grow away from you.';
   const lightingControl = createStudioLightingControl();
   const lightToggle = lightingControl.element;
+  const sceneAnimationControl = createStudioSceneAnimationControl();
+  const sceneAnimationToggle = sceneAnimationControl.element;
+  sceneAnimationToggle.hidden = true;
   const wireframeToggle = element('button', 'toggle');
   wireframeToggle.textContent = 'wireframe';
   wireframeToggle.title = 'Hides the solid faces and draws the model as lines, so you '
@@ -315,7 +320,8 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
     + 'whole world units, so models line up cleanly edge to edge. Off drags it freely.';
   snapToggle.hidden = true;
   const toggles = element('div', 'toggles');
-  toggles.append(lookSwitch, depthToggle, lightToggle, wireframeToggle, gridToggle, physToggle, snapToggle);
+  toggles.append(lookSwitch, depthToggle, lightToggle, sceneAnimationToggle,
+    wireframeToggle, gridToggle, physToggle, snapToggle);
   const viewError = element('p', 'lib-error view-error');
   viewError.setAttribute('role', 'alert');
   viewError.setAttribute('aria-live', 'assertive');
@@ -415,8 +421,8 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
   };
   const sceneBuildNote = sceneNote('A scene is placed, not built step by step. '
     + 'Add and arrange its models in the Edit tab.');
-  const sceneMotionNote = sceneNote('Models animate live here. Orbiting point-light handles animate while lighting is on. '
-    + 'Other scene-wide fields — wind that waves trees or water that ripples — are the next step.');
+  const sceneMotionNote = sceneNote('Animated models and moving point-light sources share the scene animation control. '
+    + 'Lighting changes illumination, not movement. Other scene-wide fields — wind that waves trees or water that ripples — are the next step.');
   const sceneNotesNote = sceneNote('Notes pin to one model. Open a model from the shelf to leave notes on it.');
   // A scene's tab content sits as an opaque overlay over each model-only tab,
   // shown while a scene is open — so the model's own content underneath keeps
@@ -430,17 +436,13 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
     for (const tab of sceneHiddenTabs) tab.hidden = on;
   }
   const player = new StudioPlayer(session.model.motion.periodMs);
+  const sceneTransport = new StudioSceneAnimationTransport(player, view.sceneAnimation, () => performance.now());
   const noteStore = new NoteStore();
   // The floor, colour, and note anchor the editor, notes, and stage share.
   const state: StudioEditStateV1 = {
     layer: 0, selectedSlot: 1, pending: null, armedForPlace: false,
   };
   let lastShownMs = 0;
-  let sceneOpenedAtMs = 0;
-  // Exact-time harness draws intentionally freeze automatic scene motion so
-  // captures and benchmarks remain deterministic. Opening a scene resumes its
-  // ordinary live clock.
-  let sceneAnimationManual = false;
 
   // ---- top bar ----
   const modelName = element('h1', 'name');
@@ -567,37 +569,43 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
     noteStore: () => noteStore,
     now: () => performance.now(),
     drawAt: (timeMs: number) => {
-      if (sceneOpen !== null && !sceneAnimationManual) {
-        sceneAnimationManual = true;
-        player.pause(performance.now());
+      const hasSceneMotion = sceneOpen !== null && sceneSession?.hasMotion() === true;
+      if (hasSceneMotion) {
+        // Hold the last successful phase until drawFrame publishes a candidate.
+        sceneTransport.freezeExact(lastShownMs);
         playerBar.syncPlayButton();
       }
-      drawFrame(timeMs);
+      try {
+        drawFrame(timeMs);
+      } finally {
+        if (hasSceneMotion) sceneTransport.freezeExact(lastShownMs);
+      }
       // An explicit seek can move clustered lights out of a formerly overfull
       // projection. Retry an unchanged rejected stage size on the next frame.
       if (sceneOpen !== null) rejectedAutoResize = null;
     },
     resumeSceneAnimation(): boolean {
       if (sceneOpen === null || sceneSession?.hasMotion() !== true) return false;
-      sceneOpenedAtMs = performance.now() - lastShownMs / Math.max(player.speed, 0.1);
-      sceneAnimationManual = false;
+      sceneTransport.setEnabled(true, lastShownMs, true);
+      persistView();
       // Resume is an explicit retry boundary. If the next moving-light phase
       // still cannot fit, followStage caches that same size once again.
       rejectedAutoResize = null;
       clearViewError();
+      refresh();
       playerBar.syncPlayButton();
       return true;
     },
     pauseSceneAnimation(): boolean {
-      if (sceneOpen === null) return false;
-      sceneAnimationManual = true;
+      if (sceneOpen === null || sceneSession?.hasMotion() !== true) return false;
+      sceneTransport.setEnabled(false, lastShownMs, true);
+      persistView();
+      refresh();
       playerBar.syncPlayButton();
       return true;
     },
     sceneAnimationSpeedChanged(): void {
-      if (sceneOpen !== null && !sceneAnimationManual) {
-        sceneOpenedAtMs = performance.now() - lastShownMs / Math.max(player.speed, 0.1);
-      }
+      if (sceneOpen !== null) sceneTransport.speedChanged(lastShownMs);
     },
     sceneLightingMetrics: () =>
       sceneOpen === null ? null : (sceneSession?.lightingMetrics() ?? null),
@@ -627,7 +635,6 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
     setLit(on: boolean): boolean {
       const previousModelLit = session.lit;
       const previousSceneLit = sceneSession?.lit;
-      const previousSceneHadMotion = sceneSession?.hasMotion() ?? false;
       const previousOrbit = orbit;
       const previousPanCenter = panCenter;
       try {
@@ -688,13 +695,20 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
       refresh();
       // Scene refresh updates controls and inspector text but intentionally
       // does not draw; the candidate raster above is already current.
-      if (sceneOpen !== null) {
-        drawSceneOverlays();
-        // Disabled sources stop their transport; enabling starts it again.
-        syncSceneTransport(sceneOpen, previousSceneHadMotion);
-      }
+      if (sceneOpen !== null) drawSceneOverlays();
       return session.lit;
     },
+    setSceneAnimation(on: boolean): boolean {
+      const hasMotion = sceneOpen !== null && sceneSession?.hasMotion() === true;
+      sceneTransport.setEnabled(on, lastShownMs, hasMotion);
+      persistView();
+      if (on && hasMotion) { rejectedAutoResize = null; clearViewError(); }
+      refresh();
+      playerBar.syncPlayButton();
+      return sceneTransport.enabled;
+    },
+    sceneAnimation: () => sceneTransport.enabled,
+    sceneHasMotion: () => sceneOpen !== null && sceneSession?.hasMotion() === true,
     setWireframe(on: boolean): boolean {
       session.setWireframe(on);
       persistView();
@@ -918,35 +932,11 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
     previousHasMotion: boolean | null,
   ): void {
     const hasMotion = sceneSession?.hasMotion() === true;
-    const now = performance.now();
-    const previousPlaying = player.playing;
-    const previousManual = sceneAnimationManual;
-    const transportPeriodMs = hasMotion ? Math.max(
-      1, sceneMotionWindowMsV1(scene, sceneRecipes, sceneSession?.lit === true),
-    ) : 0;
-    const presentedPhaseMs = transportPeriodMs > 0
-      ? ((lastShownMs % transportPeriodMs) + transportPeriodMs) % transportPeriodMs : 0;
-    playerBar.applyPeriod(transportPeriodMs);
-
-    if (!hasMotion) {
-      player.pause(now);
-      sceneAnimationManual = true;
-    } else if (!previousHasMotion) {
-      const startMs = previousHasMotion === null ? 0 : lastShownMs;
-      // Re-enabled motion wraps its bounded phase while the scene clock stays absolute.
-      player.seek(previousHasMotion === null ? 0 : presentedPhaseMs, now);
-      player.play(now);
-      sceneOpenedAtMs = now - startMs / Math.max(player.speed, 0.1);
-      sceneAnimationManual = false;
-    } else {
-      // A light toggle changes the scrub window, never the shown time or pose.
-      player.seek(presentedPhaseMs, now);
-      sceneAnimationManual = previousManual;
-      if (!previousManual) {
-        sceneOpenedAtMs = now - lastShownMs / Math.max(player.speed, 0.1);
-      }
-      if (previousPlaying) player.play(now); else player.pause(now);
-    }
+    const transportPeriodMs = hasMotion ? Math.max(1, sceneMotionWindowMsV1(scene, sceneRecipes)) : 0;
+    sceneTransport.sync({
+      hasMotion, previousHasMotion, periodMs: transportPeriodMs, lastShownMs,
+      applyPeriod: (periodMs) => { playerBar.applyPeriod(periodMs); },
+    });
     playerBar.showSceneTime(lastShownMs);
     playerBar.syncPlayButton();
   }
@@ -1068,8 +1058,7 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
   function closeSceneMode(): void {
     if (sceneOpen === null) return;
     sceneEditor.clearLightSelection();
-    sceneAnimationManual = true;
-    player.pause(performance.now());
+    sceneTransport.freezeExact(lastShownMs);
     clearViewError();
     sceneOpen = null;
     selectedPlacementId = null;
@@ -1127,8 +1116,7 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
       if (wasOpen) {
         // Retirement cleanup is allowed to fail. The visible transition is not:
         // the deleted scene must never remain on screen after it is gone.
-        sceneAnimationManual = true;
-        player.pause(performance.now());
+        sceneTransport.freezeExact(lastShownMs);
         clearViewError();
         sceneOpen = null;
         selectedPlacementId = null;
@@ -1179,15 +1167,19 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
     marks.replaceChildren();
     const count = scene.placements.length;
     const lightCount = scene.lights?.length ?? 0;
+    const hasMotion = sceneSession?.hasMotion() === true;
     modelName.textContent = scene.label;
     statusChip.textContent = `scene · ${String(count)} model${count === 1 ? '' : 's'}`
-      + sceneLightingStatusSuffix(lightCount, session.lit);
+      + sceneLightingStatusSuffix(lightCount, session.lit)
+      + sceneAnimationStatusSuffix(hasMotion, sceneTransport.enabled);
     lookSwitch.dataset.side = session.edges ? 'left' : 'right';
     lookSwitch.setAttribute('aria-checked', String(session.edges));
     edgesSide.classList.toggle('on', session.edges);
     gameSide.classList.toggle('on', !session.edges);
     depthToggle.classList.toggle('on', depthOn);
     lightingControl.sync(session.lit, lightCount);
+    sceneAnimationControl.sync(sceneTransport.enabled);
+    sceneAnimationToggle.hidden = !hasMotion;
     // A scene has no one model, so the model-only tools step aside, and the
     // scene-only snap toggle steps in.
     wireframeToggle.hidden = true;
@@ -1195,7 +1187,9 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
     physToggle.hidden = true;
     snapToggle.hidden = false;
     snapToggle.classList.toggle('on', snapOn);
-    stageHint.textContent = sceneLightingStageHint(sceneStageHint, lightCount, session.lit);
+    stageHint.textContent = sceneAnimationStageHint(
+      sceneLightingStageHint(sceneStageHint, lightCount, session.lit), hasMotion, sceneTransport.enabled,
+    );
     wireframeView.setVisible(false);
     physicalView.setVisible(false);
     // The scene stands on its own ground grid, sized to how far it spreads.
@@ -1252,6 +1246,7 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
     // scene-only snap toggle.
     wireframeToggle.hidden = false;
     gridToggle.hidden = false;
+    sceneAnimationToggle.hidden = true;
     snapToggle.hidden = true;
     stageHint.textContent = modelStageHint;
     checkRow.hidden = false;
@@ -1616,6 +1611,9 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
   lightToggle.addEventListener('click', () => {
     runViewAction(() => { harness.setLit(!session.lit); });
   });
+  sceneAnimationToggle.addEventListener('click', () => {
+    runViewAction(() => { harness.setSceneAnimation(!sceneTransport.enabled); });
+  });
   wireframeToggle.addEventListener('click', () => { harness.setWireframe(!session.wireframe); });
   gridToggle.addEventListener('click', () => { setGridOn(!gridOn); });
   physToggle.addEventListener('click', () => { harness.setPhysicalOverlay(!physicalOn); });
@@ -1895,8 +1893,9 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
     try {
       followStage();
       if (sceneOpen !== null) {
-        if (!sceneAnimationManual && sceneSession?.hasMotion() === true) {
-          drawFrame(Math.max(0, (frameNowMs - sceneOpenedAtMs) * player.speed));
+        const hasMotion = sceneSession?.hasMotion() === true;
+        if (sceneTransport.shouldAdvance(hasMotion)) {
+          drawFrame(sceneTransport.timeAt(frameNowMs));
         }
       } else if (player.playing) {
         drawFrame(player.timeAt(frameNowMs));
@@ -1904,8 +1903,7 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
     } catch (frameFailure) {
       const reason = frameFailure instanceof Error ? frameFailure.message : String(frameFailure);
       if (sceneOpen !== null) {
-        sceneAnimationManual = true;
-        player.pause(frameNowMs);
+        sceneTransport.pauseAfterFailure(lastShownMs);
         playerBar.syncPlayButton();
         showViewError(
           new Error(

@@ -1,15 +1,17 @@
 /**
- * The look choices the stage remembers between models and between visits: real
- * depth, study edges, the light, and wireframe. These are how a person set the
- * picture up, not anything about a model, so they belong to the studio rather
- * than to any one model — open the next model and it wears the same look.
+ * The presentation choices the stage remembers between items and visits: real
+ * depth, study edges, lighting, scene animation, wireframe, and the grid. These
+ * belong to the Studio rather than any one model or scene, so the next item
+ * keeps the same view and movement preference.
  *
  * The store is injected so this stays a pure, testable mapping from stored text
  * to a valid preference. The browser backing is `localStorage`; a test hands in
  * a plain map, and a page where storage is blocked gets a no-op that always
  * reads the defaults. A malformed or partial stored value never throws and
- * never half-applies: every missing or wrong field falls back to its default,
- * so a stored value written by an older studio still opens.
+ * never half-applies: every missing or wrong field falls back deliberately,
+ * so a stored value written by an older studio still opens. A legacy value
+ * without the independent animation field migrates its former light-motion
+ * choice from `lit`; a fresh Studio still defaults animation on.
  */
 
 export interface ViewPrefsV1 {
@@ -19,6 +21,8 @@ export interface ViewPrefsV1 {
   readonly edges: boolean;
   /** A light source on, so faces shade by how they face it. */
   readonly lit: boolean;
+  /** Scene animation may advance automatically; disabled holds every animated scene at its presented time. */
+  readonly sceneAnimation: boolean;
   /** Wireframe on: the solid faces give way to a see-through line drawing. */
   readonly wireframe: boolean;
   /** A one-unit ground grid under the model, so a voxel size reads as a scale. */
@@ -26,21 +30,22 @@ export interface ViewPrefsV1 {
 }
 
 /**
- * The resting look, matching what the stage opened on before it remembered
- * anything: real depth (the honest eye), study edges (the examining look), no
- * light, and solid rather than wireframe.
+ * The resting presentation, matching what the stage opened on before it
+ * remembered anything: real depth, study edges, no light, live scene
+ * animation, solid faces, and the reference grid.
  */
 export const DEFAULT_VIEW_PREFS: ViewPrefsV1 = {
   depth: true,
   edges: true,
   lit: false,
+  sceneAnimation: true,
   wireframe: false,
   // On by default: the grid is what makes a voxel size read as a real scale,
   // and it is the reference the size control leans on.
   grid: true,
 };
 
-/** The one place a studio's view choices are kept; versioned so a future shape can migrate rather than misread. */
+/** The one place a Studio's presentation choices are kept; versioned so a future shape can migrate rather than misread. */
 export const VIEW_PREFS_KEY = 'voxel-studio-view/1';
 
 /** Just the two calls this needs, so `localStorage` fits and a test's map fits. */
@@ -54,11 +59,21 @@ function readBoolean(source: Record<string, unknown>, field: keyof ViewPrefsV1):
   return typeof value === 'boolean' ? value : DEFAULT_VIEW_PREFS[field];
 }
 
+function readSceneAnimation(source: Record<string, unknown>): boolean {
+  if (Object.hasOwn(source, 'sceneAnimation')) {
+    return readBoolean(source, 'sceneAnimation');
+  }
+  // Before this field existed, moving light handles followed `lit`. Preserve
+  // that remembered behavior for legacy stored views while making subsequent
+  // writes independent.
+  return readBoolean(source, 'lit');
+}
+
 /**
- * The remembered look, or the defaults when nothing was stored or the stored
+ * The remembered presentation, or the defaults when nothing was stored or the stored
  * text cannot be trusted. Each field is validated on its own, so a value
- * missing `wireframe` because it was written before wireframe existed still
- * opens with everything else it did carry.
+ * missing `sceneAnimation` because it was written before that control existed
+ * migrates the former light-motion choice from its valid `lit` field.
  */
 export function readViewPrefs(store: ViewPrefsStoreV1): ViewPrefsV1 {
   let raw: string | null;
@@ -76,12 +91,15 @@ export function readViewPrefs(store: ViewPrefsStoreV1): ViewPrefsV1 {
   } catch {
     return DEFAULT_VIEW_PREFS;
   }
-  if (typeof parsed !== 'object' || parsed === null) return DEFAULT_VIEW_PREFS;
+  if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+    return DEFAULT_VIEW_PREFS;
+  }
   const source = parsed as Record<string, unknown>;
   return {
     depth: readBoolean(source, 'depth'),
     edges: readBoolean(source, 'edges'),
     lit: readBoolean(source, 'lit'),
+    sceneAnimation: readSceneAnimation(source),
     wireframe: readBoolean(source, 'wireframe'),
     grid: readBoolean(source, 'grid'),
   };

@@ -39,6 +39,8 @@ const runtimeControl = vi.hoisted(() => ({
   snapshots: [] as RenderSnapshotV1[],
   options: [] as unknown[],
   frames: [] as unknown[],
+  frameFailure: null as Error | null,
+  frameUnavailableState: null as 'lost' | 'restoring' | null,
   rejectNext: null as RuntimeRejection | null,
   disposals: 0,
   disposeFailures: 0,
@@ -62,8 +64,20 @@ vi.mock('../../src/three/index.js', () => ({
 
     frame(context: unknown) {
       runtimeControl.frames.push(context);
+      const failure = runtimeControl.frameFailure;
+      runtimeControl.frameFailure = null;
+      if (failure) throw failure;
+      if (runtimeControl.frameUnavailableState !== null) return undefined;
       return {
         presentedRevision: runtimeControl.snapshots.at(-1)?.revision ?? null,
+      };
+    }
+
+    runtimeStatus() {
+      return {
+        state: runtimeControl.frameUnavailableState ?? 'running',
+        deviceGeneration: 1,
+        failure: null,
       };
     }
 
@@ -224,6 +238,8 @@ describe('SceneSession acceptance', () => {
     runtimeControl.snapshots.length = 0;
     runtimeControl.options.length = 0;
     runtimeControl.frames.length = 0;
+    runtimeControl.frameFailure = null;
+    runtimeControl.frameUnavailableState = null;
     runtimeControl.rejectNext = null;
     runtimeControl.disposals = 0;
     runtimeControl.disposeFailures = 0;
@@ -399,26 +415,69 @@ describe('SceneSession acceptance', () => {
     expect(runtimeControl.disposals).toBe(1);
   });
 
-  it('moves the one orbiting marker at injected frame time without native PointLights', () => {
+  it('moves the one orbiting marker at injected frame time independently of lighting', () => {
     const session = createSession(movingScene('scene:moving'));
     const threeScene = runtimeScene();
     const batch = markers(threeScene);
 
     expect(instancePosition(batch, 0)).toEqual([10, 4, 0]);
-    session.setLit(true);
     session.showAt(1_000);
     expect(instancePosition(batch, 0).map((value) => Math.round(value * 1e9) / 1e9))
       .toEqual([0, 4, -10]);
+    expect(session.lightingMetrics()).toMatchObject({
+      visibleLights: 0,
+      movingLights: 1,
+      markerInstances: 1,
+    });
+
+    session.setLit(true);
+    session.showAt(2_000);
+    expect(instancePosition(batch, 0)
+      .map((value) => Math.abs(value) < 1e-9 ? 0 : Math.round(value * 1e9) / 1e9))
+      .toEqual([-10, 4, 0]);
     expect(instanceColorHex(batch, 0)).toBe(0x60ff80);
     expect(session.lightingMetrics()).toMatchObject({
+      visibleLights: 1,
       movingLights: 1,
       markerInstances: 1,
     });
     expect(runtimeControl.frames).toEqual([
       { nowMs: 1_000, deltaMs: 16, frameIndex: 0 },
+      { nowMs: 2_000, deltaMs: 16, frameIndex: 1 },
     ]);
     expect(nativePointLightCount(threeScene)).toBe(0);
 
+    session.dispose();
+  });
+
+  it('restores moving-light state when the runtime rejects a later frame', () => {
+    const session = createSession(movingScene('scene:frame-failure'), { lit: true });
+    const batch = markers(runtimeScene());
+
+    session.showAt(1_000);
+    const acceptedMetrics = session.lightingMetrics();
+    const acceptedPosition = instancePosition(batch, 0);
+
+    runtimeControl.frameFailure = new Error('forced runtime frame failure');
+    expect(() => { session.showAt(2_000); }).toThrow('forced runtime frame failure');
+    expect(session.lightingMetrics()).toEqual(acceptedMetrics);
+    expect(instancePosition(batch, 0)).toEqual(acceptedPosition);
+
+    runtimeControl.frameUnavailableState = 'lost';
+    expect(() => { session.showAt(2_500); }).toThrow(
+      "render runtime reported it unavailable while its lifecycle state was 'lost'",
+    );
+    expect(session.lightingMetrics()).toEqual(acceptedMetrics);
+    expect(instancePosition(batch, 0)).toEqual(acceptedPosition);
+    runtimeControl.frameUnavailableState = null;
+
+    session.showAt(3_000);
+    expect(runtimeControl.frames).toEqual([
+      { nowMs: 1_000, deltaMs: 16, frameIndex: 0 },
+      { nowMs: 2_000, deltaMs: 16, frameIndex: 1 },
+      { nowMs: 2_500, deltaMs: 16, frameIndex: 1 },
+      { nowMs: 3_000, deltaMs: 16, frameIndex: 1 },
+    ]);
     session.dispose();
   });
 
@@ -438,11 +497,11 @@ describe('SceneSession acceptance', () => {
     runtimeControl.animatedBatches = 0;
     runtimeControl.animatedInstances = 0;
     const movingLightSession = createSession(movingScene('scene:moving-light'));
-    expect(movingLightSession.hasMotion()).toBe(false);
+    expect(movingLightSession.hasMotion()).toBe(true);
     movingLightSession.setLit(true);
     expect(movingLightSession.hasMotion()).toBe(true);
     movingLightSession.setLit(false);
-    expect(movingLightSession.hasMotion()).toBe(false);
+    expect(movingLightSession.hasMotion()).toBe(true);
     movingLightSession.dispose();
   });
 });

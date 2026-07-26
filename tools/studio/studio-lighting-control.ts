@@ -17,7 +17,7 @@ export function createStudioLightingControl(): StudioLightingControlV1 {
     control.title = sceneLightCount > 0
       ? on
         ? 'Scene lighting is on. Point lights illuminate models, and bright source cubes show where they are.'
-        : 'Scene lighting is off. Dim source cubes remain as edit handles, but they do not orbit or illuminate models.'
+        : 'Scene lighting is off. Dim source cubes remain as edit handles; scene animation controls their movement.'
       : on
         ? 'Lighting is on. Model faces shade under the Studio daylight rig.'
         : 'Lighting is off. Turn it on to shade model faces under the Studio daylight rig.';
@@ -41,5 +41,5 @@ export function sceneLightingStageHint(
   if (lightCount === 0) return base;
   return base + (on
     ? ' · lighting on · edit sources in the Edit tab'
-    : ' · lighting off · dim source handles do not orbit or illuminate models');
+    : ' · lighting off · dim source handles do not illuminate models');
 }

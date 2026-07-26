@@ -121,7 +121,7 @@ export class StudioSceneLighting {
   #clusteredInputs: readonly ClusteredPointLightInputInternal[] = [];
   #pending: PreparedStudioSceneLighting | null = null;
   #retiredMarkers: RetiredStudioMarkerBatch[] = [];
-  #enabled = false;
+  #illuminationEnabled = false;
   #sampleTimeMs = 0;
   #positionChecksum = 0;
   #disposeStarted = false;
@@ -227,10 +227,8 @@ export class StudioSceneLighting {
     // change. Reapply the live state when it becomes the presented batch.
     this.#syncMarkerPresentationInternal();
     // Keep the last presented phase when an accepted look change rebuilds the
-    // scene snapshot. In particular, disabling lighting must dim and freeze
-    // moving handles where they were, not snap them back to authored phase 0.
-    // A fresh rig starts with sampleTimeMs=0, so initial presentation is
-    // unchanged.
+    // scene snapshot. A fresh rig starts with sampleTimeMs=0, so initial
+    // presentation is unchanged.
     this.#commitMarkersAtInternal(this.#sampleTimeMs);
     plan.state = 'committed';
     this.#pending = null;
@@ -250,9 +248,9 @@ export class StudioSceneLighting {
     this.#drainRetiredMarkersInternal();
   }
 
-  setEnabled(enabled: boolean): void {
+  setIlluminationEnabled(enabled: boolean): void {
     this.#assertActive();
-    this.#enabled = enabled;
+    this.#illuminationEnabled = enabled;
     this.#clustered.setEnabledInternal(enabled);
     this.#syncMarkerPresentationInternal();
   }
@@ -275,16 +273,14 @@ export class StudioSceneLighting {
     let positionChecksum = 0;
     for (const [index, entry] of this.#resolved.entries()) {
       if (entry.definition.motion !== undefined) movingLights += 1;
-      if (this.#enabled) {
-        writeResolvedPositionInternal(entry.definition, nowMs, entry.position);
-        positionChecksum += (index + 1) * (
-          entry.position[0] * 0.31
-          + entry.position[1] * 0.17
-          + entry.position[2] * 0.13
-        );
-      }
+      writeResolvedPositionInternal(entry.definition, nowMs, entry.position);
+      positionChecksum += (index + 1) * (
+        entry.position[0] * 0.31
+        + entry.position[1] * 0.17
+        + entry.position[2] * 0.13
+      );
     }
-    const clustered = this.#enabled
+    const clustered = this.#illuminationEnabled
       ? this.#clustered.updateInternal(
           this.#clusteredInputs,
           camera,
@@ -292,14 +288,13 @@ export class StudioSceneLighting {
           height,
         )
       : this.#disabledClusteredMetricsInternal();
-    if (this.#enabled) {
-      // Publish handle matrices and timing only after the matching clustered
-      // candidate succeeds; a rejected phase must leave the last presented
-      // marker batch and metrics intact.
-      this.#commitMarkersInternal();
-      this.#sampleTimeMs = nowMs;
-      this.#positionChecksum = positionChecksum;
-    }
+    // Publish handle matrices and timing only after the matching clustered
+    // candidate succeeds; a rejected lit phase must leave the last presented
+    // marker batch and metrics intact. Unlit frames have no cluster candidate
+    // to reject, but their dim edit handles still follow authored animation.
+    this.#commitMarkersInternal();
+    this.#sampleTimeMs = nowMs;
+    this.#positionChecksum = positionChecksum;
     return Object.freeze({
       ...clustered,
       movingLights,
@@ -319,7 +314,7 @@ export class StudioSceneLighting {
   metrics(): StudioSceneLightingMetricsV1 {
     this.#assertActive();
     return Object.freeze({
-      ...(this.#enabled
+      ...(this.#illuminationEnabled
         ? this.#clustered.metricsInternal()
         : this.#disabledClusteredMetricsInternal()),
       movingLights: this.#resolved.filter((entry) => entry.definition.motion !== undefined).length,
@@ -408,7 +403,9 @@ export class StudioSceneLighting {
     markers: InstancedMesh<BoxGeometry, MeshBasicMaterial> | null = this.#markers,
   ): void {
     if (!markers) return;
-    markers.material.color.setScalar(this.#enabled ? 1 : DISABLED_MARKER_BRIGHTNESS);
+    markers.material.color.setScalar(
+      this.#illuminationEnabled ? 1 : DISABLED_MARKER_BRIGHTNESS,
+    );
   }
 
   #commitMarkersAtInternal(nowMs: number): void {

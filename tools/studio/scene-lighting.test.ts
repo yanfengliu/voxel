@@ -119,9 +119,9 @@ describe('StudioSceneLighting', () => {
     expect(instanceColorHex(batch, 1)).toBe(0x489aff);
     expect(nativePointLightCount(scene)).toBe(0);
 
-    rig.setEnabled(true);
+    rig.setIlluminationEnabled(true);
     expect(markerMaterial(batch).color.r).toBe(1);
-    rig.setEnabled(false);
+    rig.setIlluminationEnabled(false);
     expect(markerMaterial(batch).color.r).toBeCloseTo(0.09);
 
     rig.dispose();
@@ -182,7 +182,7 @@ describe('StudioSceneLighting', () => {
 
     const plan = rig.prepare([WARM, COOL, ORBITING]);
     expect(markerMaterial(plan.replacementMarkers!).color.r).toBeCloseTo(0.09);
-    rig.setEnabled(true);
+    rig.setIlluminationEnabled(true);
     rig.commit(plan);
 
     expect(markerMaterial(markers(scene)).color.r).toBe(1);
@@ -227,7 +227,7 @@ describe('StudioSceneLighting', () => {
     const camera = new OrthographicCamera(-20, 20, 20, -20, 0.1, 100);
 
     expect(instancePosition(batch, 0)).toEqual([10, 4, 0]);
-    rig.setEnabled(true);
+    rig.setIlluminationEnabled(true);
     const metrics = rig.updateAt(1_000, camera, 320, 240);
     expect(instancePosition(batch, 0).map((value) => Math.round(value * 1e9) / 1e9))
       .toEqual([0, 4, -10]);
@@ -239,34 +239,35 @@ describe('StudioSceneLighting', () => {
     rig.dispose();
   });
 
-  it('keeps disabled orbit handles fixed until raster lighting is enabled again', () => {
+  it('moves dim orbit handles independently of raster lighting', () => {
     const scene = new Scene();
     const rig = new StudioSceneLighting(scene);
     const camera = new OrthographicCamera(-20, 20, 20, -20, 0.1, 100);
     install(rig, [ORBITING]);
     const batch = markers(scene);
-    const initialChecksum = rig.metrics().positionChecksum;
-
     const disabled = rig.updateAt(1_000, camera, 320, 240);
-    expect(instancePosition(batch, 0)).toEqual([10, 4, 0]);
-    expect(disabled.positionChecksum).toBe(initialChecksum);
-    expect(disabled.sampleTimeMs).toBe(0);
+    const disabledPosition = instancePosition(batch, 0)
+      .map((value) => Math.round(value * 1e9) / 1e9);
+    expect(disabledPosition).toEqual([0, 4, -10]);
+    expect(disabled.positionChecksum).not.toBe(0);
+    expect(disabled.sampleTimeMs).toBe(1_000);
 
-    rig.setEnabled(true);
+    rig.setIlluminationEnabled(true);
     rig.updateAt(1_000, camera, 320, 240);
     const enabledPosition = instancePosition(batch, 0)
       .map((value) => Math.round(value * 1e9) / 1e9);
-    expect(enabledPosition).toEqual([0, 4, -10]);
+    expect(enabledPosition).toEqual(disabledPosition);
 
     // SceneSession accepts a new material snapshot before changing the rig's
     // enabled state. Re-preparing the same definitions must preserve the
     // presented phase through that transaction.
     install(rig, [ORBITING]);
-    rig.setEnabled(false);
-    const refrozen = rig.updateAt(2_000, camera, 320, 240);
+    rig.setIlluminationEnabled(false);
+    const disabledAgain = rig.updateAt(2_000, camera, 320, 240);
     expect(instancePosition(batch, 0)
-      .map((value) => Math.round(value * 1e9) / 1e9)).toEqual(enabledPosition);
-    expect(refrozen.sampleTimeMs).toBe(1_000);
+      .map((value) => Math.abs(value) < 1e-9 ? 0 : Math.round(value * 1e9) / 1e9))
+      .toEqual([-10, 4, 0]);
+    expect(disabledAgain.sampleTimeMs).toBe(2_000);
 
     rig.dispose();
   });
@@ -285,7 +286,7 @@ describe('StudioSceneLighting', () => {
       range: 2,
     }));
     install(rig, overlapping);
-    rig.setEnabled(true);
+    rig.setIlluminationEnabled(true);
     const batch = markers(scene);
     const beforePosition = instancePosition(batch, 0);
     const beforeMetrics = rig.metrics();

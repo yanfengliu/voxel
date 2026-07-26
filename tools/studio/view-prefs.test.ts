@@ -18,27 +18,63 @@ function mapStore(seed: Record<string, string> = {}): ViewPrefsStoreV1 & { reado
   };
 }
 
-describe('remembering the stage look', () => {
+describe('remembering stage presentation preferences', () => {
   it('opens on the default look when nothing was stored', () => {
     expect(readViewPrefs(mapStore())).toEqual(DEFAULT_VIEW_PREFS);
   });
 
   it('reads back exactly what was written, so the next visit matches the last', () => {
     const store = mapStore();
-    const chosen = { depth: false, edges: false, lit: true, wireframe: true, grid: false };
+    const chosen = {
+      depth: false,
+      edges: false,
+      lit: true,
+      sceneAnimation: false,
+      wireframe: true,
+      grid: false,
+    };
     writeViewPrefs(store, chosen);
     expect(readViewPrefs(store)).toEqual(chosen);
   });
 
   it('keeps the fields a stored value did carry when it is missing newer ones', () => {
     // A value written before wireframe and the grid existed. Everything it
-    // named is honoured; the fields it never knew about fall back to default.
+    // named is honoured; the former lighting choice migrates light animation.
     const store = mapStore({ [VIEW_PREFS_KEY]: JSON.stringify({ depth: false, edges: false, lit: true }) });
-    expect(readViewPrefs(store)).toEqual({ depth: false, edges: false, lit: true, wireframe: false, grid: true });
+    expect(readViewPrefs(store)).toEqual({
+      depth: false,
+      edges: false,
+      lit: true,
+      sceneAnimation: true,
+      wireframe: false,
+      grid: true,
+    });
+  });
+
+  it('migrates a legacy lighting-off view to held scene animation', () => {
+    const store = mapStore({
+      [VIEW_PREFS_KEY]: JSON.stringify({ depth: false, edges: true, lit: false }),
+    });
+    expect(readViewPrefs(store)).toEqual({
+      depth: false,
+      edges: true,
+      lit: false,
+      sceneAnimation: false,
+      wireframe: false,
+      grid: true,
+    });
   });
 
   it('falls back to the defaults for a wrong-typed field rather than trusting it', () => {
-    const store = mapStore({ [VIEW_PREFS_KEY]: JSON.stringify({ depth: 'yes', edges: 0, lit: null, wireframe: true }) });
+    const store = mapStore({
+      [VIEW_PREFS_KEY]: JSON.stringify({
+        depth: 'yes',
+        edges: 0,
+        lit: null,
+        sceneAnimation: 'sometimes',
+        wireframe: true,
+      }),
+    });
     expect(readViewPrefs(store)).toEqual({ ...DEFAULT_VIEW_PREFS, wireframe: true });
   });
 

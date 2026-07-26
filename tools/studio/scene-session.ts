@@ -2,6 +2,7 @@ import { Scene, type Camera } from 'three';
 
 import {
   ThreeRenderRuntime,
+  type ThreePresentedManifestV1,
   type ThreeRenderRuntimeOptions,
 } from '../../src/three/index.js';
 import { createIsometricOrthographicCamera } from '../../src/three/orthographicView.js';
@@ -221,26 +222,69 @@ export class SceneSession {
   /** Draws one exact time on the canvas and nothing more. */
   showAt(nowMs: number): void {
     this.#assertLive();
-    this.#lighting.updateAt(nowMs, this.#camera, this.#width, this.#height);
-    this.#runtime.frame({ nowMs, deltaMs: 16, frameIndex: this.#frameIndex });
+    this.#frameAtInternal(nowMs);
     this.#frameIndex += 1;
   }
 
   /** Draws one exact time and reports what was drawn, capturing the frame. */
   sampleAt(nowMs: number): SceneFrameV1 {
     this.#assertLive();
-    this.#lighting.updateAt(nowMs, this.#camera, this.#width, this.#height);
-    const manifest = this.#runtime.frame({ nowMs, deltaMs: 16, frameIndex: this.#frameIndex });
+    const manifest = this.#frameAtInternal(nowMs);
     this.#frameIndex += 1;
     const capture = this.#runtime.captureWithManifest();
     const metrics = this.#runtime.metrics();
     return {
       nowMs,
-      presentedRevision: manifest?.presentedRevision ?? null,
+      presentedRevision: manifest.presentedRevision,
       image: capture.status === 'captured' ? capture.readback.dataUrl : '',
       drawCalls: metrics.drawCalls,
       triangles: metrics.triangles,
     };
+  }
+
+  /**
+   * Keeps the Studio-owned light resources on the same successfully presented
+   * phase as the runtime. The public renderer transaction cannot include this
+   * private proof yet, so compensate a later runtime-frame failure or
+   * lifecycle-unavailable result explicitly.
+   */
+  #frameAtInternal(nowMs: number): ThreePresentedManifestV1 {
+    const previousLightingTimeMs = this.#lighting.metrics().sampleTimeMs;
+    this.#lighting.updateAt(nowMs, this.#camera, this.#width, this.#height);
+    try {
+      const manifest = this.#runtime.frame({
+        nowMs,
+        deltaMs: 16,
+        frameIndex: this.#frameIndex,
+      });
+      if (manifest === undefined) {
+        const lifecycle = this.#runtime.runtimeStatus();
+        throw new Error(
+          `Scene frame ${String(this.#frameIndex)} at ${String(nowMs)} ms was not presented because the `
+          + `render runtime reported it unavailable while its lifecycle state was '${lifecycle.state}'. `
+          + 'Wait for any device transition to settle, then retry this frame; the last presented frame remains active.',
+        );
+      }
+      return manifest;
+    } catch (frameFailure) {
+      try {
+        this.#lighting.updateAt(
+          previousLightingTimeMs,
+          this.#camera,
+          this.#width,
+          this.#height,
+        );
+      } catch (restoreFailure) {
+        throw new AggregateError(
+          [frameFailure, restoreFailure],
+          `Scene frame ${String(this.#frameIndex)} at ${String(nowMs)} ms failed, and restoring `
+          + `Studio lighting to its last presented phase at ${String(previousLightingTimeMs)} ms also failed. `
+          + 'Reload this Studio before continuing.',
+          { cause: restoreFailure },
+        );
+      }
+      throw frameFailure;
+    }
   }
 
   resize(width: number, height: number): void {
@@ -267,10 +311,7 @@ export class SceneSession {
   /** Whether injected time can change either scene geometry or scene lighting. */
   hasMotion(): boolean {
     this.#assertLive();
-    // Disabled light definitions remain editable and their handles remain
-    // visible, but they do not drive playback: a source that contributes no
-    // light must not keep visibly orbiting as if it were active.
-    return (this.#lit && this.#lighting.metrics().movingLights > 0)
+    return this.#lighting.metrics().movingLights > 0
       || this.#runtime.metrics().animatedInstances > 0;
   }
 
@@ -366,7 +407,7 @@ export class SceneSession {
     // This commit performs no Three allocation: additions were prepared before
     // acceptance, and reused ids update their existing light and marker.
     this.#lighting.commit(lighting);
-    this.#lighting.setEnabled(next.lit ?? this.#lit);
+    this.#lighting.setIlluminationEnabled(next.lit ?? this.#lit);
     this.#revision = nextRevision;
   }
 
@@ -385,7 +426,7 @@ export class SceneSession {
     }
     const lighting = this.#lighting.prepare(scene.lights ?? []);
     this.#lighting.commit(lighting);
-    this.#lighting.setEnabled(this.#lit);
+    this.#lighting.setIlluminationEnabled(this.#lit);
   }
 
   #assertLive(): void {

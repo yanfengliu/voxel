@@ -531,6 +531,19 @@ test('camera, viewport, and later animation-frame failures roll back without kil
       "Scene 'studio:scene:lighting-1000' paused at its last successfully presented time",
     );
     await expect(page.getByRole('button', { name: /Play/ })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Scene animation', exact: true }))
+      .toHaveAttribute('aria-pressed', 'true');
+    expect(await page.evaluate(() => ({
+      animation: window.voxelStudio!.sceneAnimation(),
+      player: window.voxelStudio!.playerState(),
+      stored: JSON.parse(localStorage.getItem('voxel-studio-view/1') ?? '{}') as {
+        sceneAnimation?: unknown;
+      },
+    }))).toMatchObject({
+      animation: true,
+      player: { playing: false, timeMs: 0 },
+      stored: { sceneAnimation: true },
+    });
     const callsWhenPaused = await page.evaluate(() =>
       (window as typeof window & { __voxelSceneShowCalls?: number }).__voxelSceneShowCalls ?? 0);
     await page.waitForTimeout(150);

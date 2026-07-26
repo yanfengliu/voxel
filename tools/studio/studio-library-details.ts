@@ -137,7 +137,13 @@ function appendRecipeDetails(root: HTMLElement, recipe: RecipeInfoV1): void {
   appendUsage(root, `use: { kind: 'recipe', recipe: '${recipe.id}', at: [x,y,z] }`);
 }
 
-function appendSceneDetails(root: HTMLElement, scene: SceneV1, lightingOn: boolean): void {
+function appendSceneDetails(
+  root: HTMLElement,
+  scene: SceneV1,
+  lightingOn: boolean,
+  animationOn: boolean,
+  hasMotion: boolean,
+): void {
   const kind = element('p', 'grouphead');
   kind.textContent = 'Library source';
   const title = element('h3', 'library-detail-title');
@@ -151,12 +157,21 @@ function appendSceneDetails(root: HTMLElement, scene: SceneV1, lightingOn: boole
   addFact(facts, 'Models', String(scene.placements.length));
   addFact(facts, 'Lights', movingLights === 0
     ? String(lights)
-    : `${String(lights)} · ${String(movingLights)} ${lightingOn ? 'moving' : 'animated when on'}`);
+    : `${String(lights)} · ${String(movingLights)} moving source${movingLights === 1 ? '' : 's'}`);
   if (lights > 0) {
     addFact(
       facts,
       'Lighting',
       lightingOn ? 'On · sources illuminate models' : 'Off · source handles only',
+    );
+  }
+  if (hasMotion) {
+    addFact(
+      facts,
+      'Animation',
+      animationOn
+        ? 'Enabled · Play controls scene motion'
+        : 'Disabled · scene held at its current time',
     );
   }
   addFact(facts, 'Schema', scene.schemaVersion);
@@ -183,7 +198,13 @@ export function createStudioLibraryDetails(
       root.hidden = false;
       root.dataset.libraryDetailKind = 'scene';
       root.dataset.libraryDetailKey = scene.id;
-      appendSceneDetails(root, scene, harness.lit());
+      appendSceneDetails(
+        root,
+        scene,
+        harness.lit(),
+        harness.sceneAnimation(),
+        harness.sceneHasMotion(),
+      );
       return;
     }
 

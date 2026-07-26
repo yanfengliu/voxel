@@ -130,8 +130,15 @@ export interface VoxelStudioHarnessV1 {
   spriteSheet(options?: { readonly samplesPerPeriod?: number; readonly columns?: number }):
     Promise<{ readonly dataUrl: string; readonly plan: SpriteSheetPlanV1 }>;
 
-  /** Starts replay. Same clock the page uses, so both see the same frames. */
+  /**
+   * Starts replay. On a motion-bearing open scene this also enables the
+   * persisted scene-animation choice; a static scene leaves that choice alone.
+   */
   play(): PlayerReportV1;
+  /**
+   * Pauses replay. On a motion-bearing open scene this also disables the
+   * persisted scene-animation choice; a static scene leaves that choice alone.
+   */
   pause(): PlayerReportV1;
   setSpeed(speed: number): PlayerReportV1;
   /** Jumps to an exact moment within the period. */
@@ -186,6 +193,14 @@ export interface VoxelStudioHarnessV1 {
    */
   setLit(on: boolean): boolean;
   lit(): boolean;
+  /**
+   * Enables or pauses automatic animation for every scene. This persisted
+   * Studio preference is independent of lighting and does not alter model playback.
+   */
+  setSceneAnimation(on: boolean): boolean;
+  sceneAnimation(): boolean;
+  /** Whether the open scene contains animated models or moving light sources. */
+  sceneHasMotion(): boolean;
   /**
    * Wireframe on: the solid faces give way to a see-through line drawing of
    * the model, so its make-up reads from every side at once. Off is the solid
@@ -382,13 +397,15 @@ export interface HarnessHostV1 {
   /** Draws the frame at a moment and lets the UI's readouts catch up. */
   drawAt(timeMs: number): void;
   /**
-   * Resumes the open scene's own unwrapped animation clock. Returns true when
-   * scene mode handled the request; model-only hosts omit this hook.
+   * Resumes a motion-bearing open scene's own unwrapped animation clock.
+   * Returns true only when scene motion handled the request; model-only hosts
+   * omit this hook and static scenes return false.
    */
   resumeSceneAnimation?(): boolean;
   /**
-   * Freezes the open scene at its last presented time. Returns true when scene
-   * mode handled the request, so pause need not issue a second exact-time draw.
+   * Freezes a motion-bearing open scene at its last presented time. Returns
+   * true only when scene motion handled the request, so pause need not issue a
+   * second exact-time draw; static scenes leave the persisted choice alone.
    */
   pauseSceneAnimation?(): boolean;
   /** Re-anchors an active scene clock after the shared speed changes. */
@@ -413,6 +430,10 @@ export interface HarnessHostV1 {
   setEdges(on: boolean): boolean;
   /** Lights the model on/off; funneled through the app like edges, so the choice is remembered and the button refreshes. */
   setLit(on: boolean): boolean;
+  /** Enables or pauses the persisted scene-animation preference independently of lighting. */
+  setSceneAnimation(on: boolean): boolean;
+  sceneAnimation(): boolean;
+  sceneHasMotion(): boolean;
   /** Wireframe on/off; funneled through the app so it also toggles the line overlay, remembers the choice, and refreshes the button. */
   setWireframe(on: boolean): boolean;
   /** Shows or hides the stage's physical-outline layer; returns what shows. */
@@ -825,6 +846,9 @@ export function createStudioHarness(host: HarnessHostV1): VoxelStudioHarnessV1 {
     edges: () => host.session().edges,
     setLit: (on) => host.setLit(on),
     lit: () => host.session().lit,
+    setSceneAnimation: (on) => host.setSceneAnimation(on),
+    sceneAnimation: () => host.sceneAnimation(),
+    sceneHasMotion: () => host.sceneHasMotion(),
     setWireframe: (on) => host.setWireframe(on),
     wireframe: () => host.session().wireframe,
     physicalShapes: () => shapesForOpenModel(),
