@@ -384,7 +384,7 @@ test('move, remove, and undo redraw the selected placement outline immediately',
   expect(evidence.selectedAfterRemove).toBeNull();
 });
 
-test('real keyboard shortcuts undo and redo when the unfocusable scene canvas leaves focus on the page', async ({ page }) => {
+test('real keyboard shortcuts preserve editors and route page focus to the last used Studio', async ({ page }) => {
   await page.goto(studioOrigin, { waitUntil: 'load' });
   await page.waitForFunction(() => typeof window.voxelStudio === 'object');
 
@@ -401,8 +401,12 @@ test('real keyboard shortcuts undo and redo when the unfocusable scene canvas le
         : placement),
     });
     const editor = document.createElement('div');
+    editor.id = 'keyboard-history-contenteditable';
     editor.contentEditable = 'true';
-    document.getElementById('studio')?.append(editor);
+    const numberInput = document.createElement('input');
+    numberInput.id = 'keyboard-history-number';
+    numberInput.type = 'number';
+    document.getElementById('studio')?.append(editor, numberInput);
     editor.focus();
   });
 
@@ -411,6 +415,9 @@ test('real keyboard shortcuts undo and redo when the unfocusable scene canvas le
       ?? Number.NaN);
 
   expect(await chairX()).toBe(11);
+  await page.keyboard.press('Control+z');
+  expect(await chairX()).toBe(11);
+  await page.locator('#keyboard-history-number').focus();
   await page.keyboard.press('Control+z');
   expect(await chairX()).toBe(11);
   await page.evaluate(() => { (document.activeElement as HTMLElement | null)?.blur(); });

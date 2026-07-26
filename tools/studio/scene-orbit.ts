@@ -26,9 +26,22 @@ function effectiveLights(scene: SceneV1): readonly ScenePointLight[] {
   return (scene.lights ?? []).filter(effectiveLight);
 }
 
-function finiteDenseEnvelopeApplies(lights: readonly ScenePointLight[]): boolean {
-  return lights.length > CLUSTERED_POINT_LIGHTS_PER_TILE_INTERNAL
-    && lights.every((light) => light.range > 0);
+function finiteDenseEnvelopeApplies(scene: SceneV1): boolean {
+  let count = 0;
+  for (const light of scene.lights ?? []) {
+    if (!effectiveLight(light)) continue;
+    if (light.range === 0) return false;
+    count += 1;
+  }
+  return count > CLUSTERED_POINT_LIGHTS_PER_TILE_INTERNAL;
+}
+
+/** Whether safe dense perspective lighting deliberately pins ground-plane camera movement. */
+export function sceneViewCenterIsPinnedV1(
+  scene: SceneV1,
+  perspectiveLightingActive: boolean,
+): boolean {
+  return perspectiveLightingActive && finiteDenseEnvelopeApplies(scene);
 }
 
 function motionOf(light: ScenePointLight): ScenePointLightV3['motion'] {
@@ -104,8 +117,7 @@ export function clampSceneViewV1(
   perspectiveLightingActive: boolean,
 ): SceneViewV1 {
   const clamped = clampOrbit(state);
-  const lights = effectiveLights(scene);
-  if (!perspectiveLightingActive || !finiteDenseEnvelopeApplies(lights)) {
+  if (!sceneViewCenterIsPinnedV1(scene, perspectiveLightingActive)) {
     return { orbit: clamped, center };
   }
   const safeCenter = clampDenseSceneCenterV1(center);

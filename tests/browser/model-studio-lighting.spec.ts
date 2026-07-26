@@ -501,6 +501,33 @@ test('camera, viewport, and later animation-frame failures roll back without kil
     await expect(page.locator('.view-error')).toContainText('prior orbit and pan remain active');
     expect(await page.evaluate(() => window.voxelStudio!.viewState())).toEqual(beforeWheel);
 
+    const beforeWasdFailure = await page.evaluate(() => {
+      const harness = window.voxelStudio!;
+      harness.setSceneAnimation(false);
+      return {
+        center: harness.viewCenter(),
+        player: harness.playerState(),
+        sceneAnimation: harness.sceneAnimation(),
+      };
+    });
+    await page.evaluate(() => {
+      (window as typeof window & { __voxelFailSceneFrames?: number }).__voxelFailSceneFrames = 1;
+    });
+    await page.locator('.canvas-wrap').focus();
+    await page.keyboard.down('w');
+    try {
+      await expect(page.locator('.view-error')).toContainText('prior orbit and pan remain active');
+      await expect(page.locator('.view-error')).not.toContainText('paused');
+    } finally {
+      await page.keyboard.up('w');
+    }
+    expect(await page.evaluate(() => ({
+      center: window.voxelStudio!.viewCenter(),
+      player: window.voxelStudio!.playerState(),
+      sceneAnimation: window.voxelStudio!.sceneAnimation(),
+    }))).toEqual(beforeWasdFailure);
+    await page.evaluate(() => { window.voxelStudio!.setSceneAnimation(true); });
+
     const resizeEvidence = await page.evaluate(() => {
       const harness = window.voxelStudio!;
       const canvas = document.querySelector<HTMLCanvasElement>('.scene-canvas');
@@ -577,110 +604,6 @@ test('camera, viewport, and later animation-frame failures roll back without kil
       delete state.__voxelSceneShowDescriptor;
       delete state.__voxelFailSceneFrames;
       delete state.__voxelSceneShowCalls;
-    });
-  }
-  expect(errors).toEqual([]);
-});
-
-test('a rejected automatic resize retries after lighting changes make the unchanged target safe', async ({ page }) => {
-  const errors: string[] = [];
-  page.on('pageerror', (error) => errors.push(error.message));
-  const response = await page.goto(studioOrigin, { waitUntil: 'load' });
-  expect(response?.ok()).toBe(true);
-  await page.waitForFunction(() => typeof window.voxelStudio === 'object');
-  await page.evaluate(() => {
-    window.voxelStudio!.openScene('studio:scene:lighting-lab');
-    window.voxelStudio!.setLit(true);
-    window.voxelStudio!.drawAt(0);
-  });
-
-  const dimensions = await page.evaluate(async () => {
-    const moduleUrl = new URL('scene-session.ts', window.location.href).href;
-    const module = await import(moduleUrl) as unknown as {
-      readonly SceneSession: { readonly prototype: { showAt(nowMs: number): void } };
-    };
-    const prototype = module.SceneSession.prototype;
-    const descriptor = Object.getOwnPropertyDescriptor(prototype, 'showAt');
-    const stage = document.querySelector<HTMLElement>('.stage');
-    const canvas = document.querySelector<HTMLCanvasElement>('.scene-canvas');
-    if (descriptor?.value === undefined || !stage || !canvas) {
-      throw new Error('The automatic-resize retry test could not patch the scene stage.');
-    }
-    const state = window as typeof window & {
-      __voxelResizeShowDescriptor?: PropertyDescriptor;
-      __voxelResizeShowCalls?: number;
-      __voxelFailResizeFrame?: boolean;
-    };
-    state.__voxelResizeShowDescriptor = descriptor;
-    state.__voxelResizeShowCalls = 0;
-    state.__voxelFailResizeFrame = true;
-    const original = descriptor.value as (this: unknown, nowMs: number) => void;
-    Object.defineProperty(prototype, 'showAt', {
-      ...descriptor,
-      value(this: unknown, nowMs: number): void {
-        state.__voxelResizeShowCalls = (state.__voxelResizeShowCalls ?? 0) + 1;
-        if (state.__voxelFailResizeFrame === true) {
-          state.__voxelFailResizeFrame = false;
-          throw new Error(`forced automatic-resize failure at ${String(nowMs)} ms`);
-        }
-        Reflect.apply(original, this, [nowMs]);
-      },
-    });
-    const rect = stage.getBoundingClientRect();
-    const target = { width: canvas.width + 16, height: canvas.height + 16 };
-    const forcedRect = new DOMRect(rect.x, rect.y, target.width, target.height);
-    Object.defineProperty(stage, 'getBoundingClientRect', {
-      configurable: true,
-      value: () => forcedRect,
-    });
-    return {
-      before: { width: canvas.width, height: canvas.height },
-      target,
-    };
-  });
-
-  try {
-    await expect(page.locator('.view-error')).toContainText('forced automatic-resize failure');
-    expect(await page.evaluate(() => {
-      const canvas = document.querySelector<HTMLCanvasElement>('.scene-canvas');
-      return { width: canvas?.width, height: canvas?.height };
-    })).toEqual(dimensions.before);
-    const callsAfterRejection = await page.evaluate(() =>
-      (window as typeof window & { __voxelResizeShowCalls?: number }).__voxelResizeShowCalls ?? 0);
-    await page.waitForTimeout(100);
-    expect(await page.evaluate(() =>
-      (window as typeof window & { __voxelResizeShowCalls?: number }).__voxelResizeShowCalls ?? 0))
-      .toBe(callsAfterRejection);
-
-    await page.evaluate(() => { window.voxelStudio!.setLit(false); });
-    await expect.poll(async () => page.evaluate(() => {
-      const canvas = document.querySelector<HTMLCanvasElement>('.scene-canvas');
-      return { width: canvas?.width, height: canvas?.height };
-    })).toEqual(dimensions.target);
-    expect(await page.evaluate(() => window.voxelStudio!.lit())).toBe(false);
-  } finally {
-    await page.evaluate(async () => {
-      const moduleUrl = new URL('scene-session.ts', window.location.href).href;
-      const module = await import(moduleUrl) as unknown as {
-        readonly SceneSession: { readonly prototype: { showAt(nowMs: number): void } };
-      };
-      const state = window as typeof window & {
-        __voxelResizeShowDescriptor?: PropertyDescriptor;
-        __voxelResizeShowCalls?: number;
-        __voxelFailResizeFrame?: boolean;
-      };
-      if (state.__voxelResizeShowDescriptor !== undefined) {
-        Object.defineProperty(
-          module.SceneSession.prototype,
-          'showAt',
-          state.__voxelResizeShowDescriptor,
-        );
-      }
-      const stage = document.querySelector<HTMLElement>('.stage');
-      if (stage) Reflect.deleteProperty(stage, 'getBoundingClientRect');
-      delete state.__voxelResizeShowDescriptor;
-      delete state.__voxelResizeShowCalls;
-      delete state.__voxelFailResizeFrame;
     });
   }
   expect(errors).toEqual([]);

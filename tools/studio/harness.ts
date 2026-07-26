@@ -43,7 +43,7 @@ import {
 } from './library-source.js';
 import type { ModelLabelInfoV1, ModelLabelSectionV1 } from './model-label-workspace.js';
 import { validateSceneV1, type SceneV1 } from './scene.js';
-import type { OrbitStateV1 } from './orbit.js';
+import type { OrbitCenterV1, OrbitStateV1 } from './orbit.js';
 import { composeSpriteSheet, type SpriteSheetPlanV1 } from './sheet.js';
 import { nearestFrame, stepFrame, type FrameStepV1 } from './sweep.js';
 import type { StudioSession } from './session.js';
@@ -176,6 +176,10 @@ export interface VoxelStudioHarnessV1 {
 
   /** Where you stand: turn and height in degrees, and how much fits on screen. */
   viewState(): OrbitStateV1 & { readonly described: string };
+  /** The world point at the center of the stage, translated by panning or WASD. */
+  viewCenter(): OrbitCenterV1;
+  /** Moves x/z through the same validated ground-plane view path as WASD and drag-pan. */
+  setViewCenter(center: OrbitCenterV1): OrbitCenterV1;
   /** Resizes the picture to match the stage. Returns the surface's real size. */
   resizeStage(width: number, height: number): { readonly width: number; readonly height: number };
   /**
@@ -424,6 +428,10 @@ export interface HarnessHostV1 {
   notesChanged(): void;
   /** The stage viewpoint, owned by the page; setting it redraws. */
   orbit(): OrbitStateV1 & { readonly described: string };
+  /** Optional for non-visual hosts that always center their model at the origin. */
+  viewCenter?(): OrbitCenterV1;
+  /** Optional for non-visual hosts that do not expose camera translation. */
+  setViewCenter?(center: OrbitCenterV1): OrbitCenterV1;
   resizeStage(width: number, height: number): { readonly width: number; readonly height: number };
   setOrbit(view: Partial<OrbitStateV1>): OrbitStateV1 & { readonly described: string };
   setDepth(on: boolean): boolean;
@@ -845,6 +853,16 @@ export function createStudioHarness(host: HarnessHostV1): VoxelStudioHarnessV1 {
       sendRequest(buildRequest(words, host.noteStore().list(), host.session().model)),
 
     viewState: () => host.orbit(),
+    viewCenter: () => host.viewCenter?.() ?? [0, 0, 0],
+    setViewCenter(center) {
+      if (host.setViewCenter === undefined) {
+        throw new Error(
+          'This Studio harness host cannot move the camera center because it did not provide '
+          + 'a setViewCenter hook.',
+        );
+      }
+      return host.setViewCenter(center);
+    },
     resizeStage: (width, height) => host.resizeStage(width, height),
     setDepth: (on) => host.setDepth(on),
     depth: () => host.depth(),

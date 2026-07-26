@@ -7,6 +7,7 @@ import {
   DEFAULT_ORBIT,
   describeOrbit,
   dragOrbit,
+  moveOrbitCenter,
   zoomOrbit,
 } from './orbit.js';
 
@@ -57,6 +58,44 @@ describe('the stage camera', () => {
     const farthest = zoomOrbit({ ...DEFAULT_ORBIT, viewHeight: 60 }, 30);
     expect(closest.viewHeight).toBe(3);
     expect(farthest.viewHeight).toBe(80);
+  });
+
+  it('moves WASD on the ground relative to the current camera yaw', () => {
+    const center = [3, 7, 5] as const;
+    expect(moveOrbitCenter({ ...DEFAULT_ORBIT, yawDegrees: 0 }, center, 1, 0, 10))
+      .toEqual([3, 7, -5]);
+    expect(moveOrbitCenter({ ...DEFAULT_ORBIT, yawDegrees: 0 }, center, 0, 1, 10))
+      .toEqual([13, 7, 5]);
+    const yaw90Forward = moveOrbitCenter(
+      { ...DEFAULT_ORBIT, yawDegrees: 90 },
+      center,
+      1,
+      0,
+      10,
+    );
+    const yaw90Right = moveOrbitCenter(
+      { ...DEFAULT_ORBIT, yawDegrees: 90 },
+      center,
+      0,
+      1,
+      10,
+    );
+    expect(yaw90Forward[0]).toBeCloseTo(-7, 10);
+    expect(yaw90Forward[1]).toBe(7);
+    expect(yaw90Forward[2]).toBeCloseTo(5, 10);
+    expect(yaw90Right[0]).toBeCloseTo(3, 10);
+    expect(yaw90Right[1]).toBe(7);
+    expect(yaw90Right[2]).toBeCloseTo(-5, 10);
+  });
+
+  it('normalizes diagonal WASD movement and preserves the vertical center', () => {
+    const center = [4, 9, -2] as const;
+    const forward = moveOrbitCenter(DEFAULT_ORBIT, center, 1, 0, 6);
+    const diagonal = moveOrbitCenter(DEFAULT_ORBIT, center, 1, 1, 6);
+    expect(Math.hypot(forward[0] - center[0], forward[2] - center[2])).toBeCloseTo(6, 10);
+    expect(Math.hypot(diagonal[0] - center[0], diagonal[2] - center[2])).toBeCloseTo(6, 10);
+    expect(diagonal[1]).toBe(center[1]);
+    expect(moveOrbitCenter(DEFAULT_ORBIT, center, 0, 0, 6)).toBe(center);
   });
 
   it('names the view in words for the corner chip', () => {

@@ -87,6 +87,39 @@ export function zoomOrbit(state: OrbitStateV1, wheelSteps: number): OrbitStateV1
 /** The point the camera looks at; panning slides it across the ground. */
 export type OrbitCenterV1 = readonly [number, number, number];
 
+/** Ground distance travelled per second, expressed as a fraction of the current view height. */
+export const KEYBOARD_PAN_VIEW_HEIGHTS_PER_SECOND = 0.75;
+
+/**
+ * Moves the look-at point with camera-relative ground controls.
+ *
+ * Forward is the horizontal direction the camera faces; right is screen-right.
+ * Diagonal input is normalized so W+D is no faster than W, and the vertical
+ * center stays unchanged because WASD has no matching vertical control.
+ */
+export function moveOrbitCenter(
+  state: OrbitStateV1,
+  center: OrbitCenterV1,
+  forward: number,
+  right: number,
+  distance: number,
+): OrbitCenterV1 {
+  const magnitude = Math.hypot(forward, right);
+  if (magnitude === 0 || distance === 0) return center;
+  const normalizedForward = forward / magnitude;
+  const normalizedRight = right / magnitude;
+  const yaw = (clampOrbit(state).yawDegrees * Math.PI) / 180;
+  const forwardX = -Math.sin(yaw);
+  const forwardZ = -Math.cos(yaw);
+  const rightX = Math.cos(yaw);
+  const rightZ = -Math.sin(yaw);
+  return [
+    center[0] + (forwardX * normalizedForward + rightX * normalizedRight) * distance,
+    center[1],
+    center[2] + (forwardZ * normalizedForward + rightZ * normalizedRight) * distance,
+  ];
+}
+
 /**
  * Slides the look-at point across the ground for a right-drag pan. The world
  * follows the cursor: drag right and the scene moves right, so the point the

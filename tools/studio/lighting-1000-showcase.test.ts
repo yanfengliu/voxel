@@ -18,6 +18,7 @@ import {
   clampSceneViewV1,
   DENSE_SCENE_PITCH_LIMIT_DEGREES,
   minimumDenseSceneViewHeightV1,
+  sceneViewCenterIsPinnedV1,
 } from './scene-orbit.js';
 import { createStudioParts } from './parts.js';
 import { createStudioRecipeBook } from './recipes.js';
@@ -168,6 +169,8 @@ describe('1,000-light showcase', () => {
     const requested = { yawDegrees: -45, pitchDegrees: 85, viewHeight: 3 };
     const active = clampSceneViewV1(requested, scene, [0, 0, 0], true);
 
+    expect(sceneViewCenterIsPinnedV1(scene, true)).toBe(true);
+    expect(sceneViewCenterIsPinnedV1(scene, false)).toBe(false);
     expect(active.center).toEqual([0, 0, 0]);
     expect(active.orbit.yawDegrees).toBe(315);
     expect(active.orbit.pitchDegrees).toBe(DENSE_SCENE_PITCH_LIMIT_DEGREES);
@@ -199,6 +202,7 @@ describe('1,000-light showcase', () => {
     const first = scene.lights?.[0];
     if (!first) throw new Error('The unbounded-light exemption test needs one showcase light.');
     const unbounded = { ...scene, lights: [{ ...first, range: 0 }, ...(scene.lights ?? []).slice(1)] };
+    expect(sceneViewCenterIsPinnedV1(unbounded, true)).toBe(false);
     expect(minimumDenseSceneViewHeightV1(unbounded, [0, 0, 0]))
       .toBe(Number.POSITIVE_INFINITY);
     expect(clampSceneViewV1(requested, unbounded, distantCenter, true)).toEqual({

@@ -26,6 +26,8 @@ import {
   describeOrbit,
   dragOrbit,
   fitViewHeight,
+  KEYBOARD_PAN_VIEW_HEIGHTS_PER_SECOND,
+  moveOrbitCenter,
   panOrbit,
   zoomOrbit,
   type OrbitCenterV1,
@@ -37,7 +39,7 @@ import { referenceGridSegmentsV1, sceneReferenceGridSegmentsV1 } from './referen
 import type { ScenePoseReplayEventV1 } from './scene-pose-replay.js';
 import { VOXEL_SCENE_SCHEMA_V4, type SceneV1 } from './scene.js';
 import { sceneMotionWindowMsV1 } from './scene-motion.js';
-import { clampSceneViewV1 } from './scene-orbit.js';
+import { clampSceneViewV1, sceneViewCenterIsPinnedV1 } from './scene-orbit.js';
 import { createSceneWorkspace } from './scene-workspace.js';
 import {
   createModelLabelWorkspace,
@@ -149,9 +151,35 @@ export interface StudioHandleV1 {
 
 const VIEW_WIDTH = 640;
 const VIEW_HEIGHT = 440;
+let stageHintSequence = 0;
+
+function validatedOrbitCenterV1(value: OrbitCenterV1): OrbitCenterV1 {
+  const candidate: unknown = value;
+  if (Array.isArray(candidate) && candidate.length === 3) {
+    const x: unknown = candidate[0];
+    const y: unknown = candidate[1];
+    const z: unknown = candidate[2];
+    if (typeof x === 'number' && Number.isFinite(x)
+      && typeof y === 'number' && Number.isFinite(y)
+      && typeof z === 'number' && Number.isFinite(z)) {
+      return [x, y, z];
+    }
+  }
+  const received = Array.isArray(candidate)
+    ? `[${candidate.map((entry) => String(entry)).join(', ')}]`
+    : String(candidate);
+  throw new Error(
+    'The Studio view center must be exactly three finite world coordinates [x, y, z]; '
+    + `received ${received}.`,
+  );
+}
 // Replaced by the stage's real size once mounted; these only seed the first frame.
 const SWEEP_SAMPLES = 24;
 const DRAG_THRESHOLD_PIXELS = 4;
+// This avoids flashing the editor during ordinary double-clicks. Correctness
+// does not depend on the host's configurable double-click interval: dblclick
+// also unwinds a matching moment editor that already opened.
+const MODEL_NOTE_CLICK_DELAY_MS = 550;
 /**
  * Keeps the scene WebGL renderer reusable after deleting the scene it showed.
  * Three owns several context fallback textures for the renderer's lifetime, so
@@ -321,15 +349,28 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
   // The hint teaches only what this profile offers: without Notes the click
   // is correctly ignored, so the hint must not promise it.
   const modelStageHint = supportsNotes
-    ? 'drag to turn · scroll to zoom · double-click to re-centre · click to pin a note'
-    : 'drag to turn · scroll to zoom · double-click to re-centre';
+    ? 'drag to turn · right-drag or WASD to move view · scroll to zoom · double-click to re-centre · click to pin a note'
+    : 'drag to turn · right-drag or WASD to move view · scroll to zoom · double-click to re-centre';
   // A scene is arranged, not noted: a click selects the model under the cursor
   // and a drag moves it, so the hint speaks to that instead of pinning.
   const sceneStageHint = 'click a model to select · drag it to move · '
-    + 'middle-drag to turn · right-drag to pan · scroll to zoom';
-  const replaySceneStageHint = 'drag to turn · right-drag to pan · scroll to zoom · '
+    + 'middle-drag to turn · right-drag or WASD to move view · scroll to zoom';
+  const replaySceneStageHint = 'drag to turn · right-drag or WASD to move view · scroll to zoom · '
     + 'play or scrub the consumer replay';
   stageHint.textContent = modelStageHint;
+  stageHint.id = `voxel-studio-stage-hint-${String(++stageHintSequence)}`;
+  canvasWrap.tabIndex = 0;
+  canvasWrap.setAttribute('role', 'region');
+  canvasWrap.setAttribute('aria-keyshortcuts', 'W A S D');
+  canvasWrap.setAttribute('aria-describedby', stageHint.id);
+  canvasWrap.setAttribute(
+    'aria-label',
+    '3D Studio stage',
+  );
+  const setStageKeyboardAvailable = (available: boolean): void => {
+    if (available) canvasWrap.setAttribute('aria-keyshortcuts', 'W A S D');
+    else canvasWrap.removeAttribute('aria-keyshortcuts');
+  };
   // Exactly one of the two looks is ever true, so the control is one switch
   // with two sides rather than two buttons that could both look pressed: the
   // knob sits on the side that is on, and clicking slides it to the other.
@@ -439,6 +480,7 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
   const sceneParts = catalog.parts ?? catalogPartsV1(catalog);
   let sceneSession: SceneSession | null = null;
   let sceneOpen: SceneV1 | null = null;
+  let sceneViewTranslationLocked = false;
   // A left click picks the model under the cursor; these hold each placement's
   // world box (recomputed when the scene changes) and which one is selected, so
   // it can be outlined and dragged.
@@ -677,6 +719,18 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
       playerBar.renderDots();
     },
     orbit: () => ({ ...orbit, described: describeOrbit(orbit) }),
+    viewCenter: () => [...panCenter],
+    setViewCenter(center) {
+      const candidate = validatedOrbitCenterV1(center);
+      if (candidate[1] !== panCenter[1]) {
+        throw new Error(
+          `The Studio view moves on the ground plane, so its center y must remain ${String(panCenter[1])}; `
+          + `received ${String(candidate[1])}. Change only x and z.`,
+        );
+      }
+      presentView(orbit, candidate);
+      return [...panCenter];
+    },
     resizeStage,
     depth: () => depthOn,
     setDepth,
@@ -864,7 +918,8 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
   // ---- drawing and readouts ----
   function viewSignature(): string {
     return `${String(orbit.yawDegrees)}:${String(orbit.pitchDegrees)}:${String(orbit.viewHeight)}`
-      + `:${depthOn ? 'depth' : 'flat'}:${String(panCenter[0])},${String(panCenter[2])}`;
+      + `:${depthOn ? 'depth' : 'flat'}:`
+      + `${String(panCenter[0])},${String(panCenter[1])},${String(panCenter[2])}`;
   }
 
   function drawSceneOverlays(): void {
@@ -914,9 +969,11 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
   function presentView(
     nextOrbit: OrbitStateV1,
     nextPanCenter: OrbitCenterV1,
+    timeMs = lastShownMs,
   ): void {
     const previousOrbit = orbit;
     const previousPanCenter = panCenter;
+    const previousShownMs = lastShownMs;
     const candidateView = sceneOpen === null
       ? { orbit: clampOrbit(nextOrbit), center: nextPanCenter }
       : clampSceneViewV1(
@@ -928,13 +985,14 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
     orbit = candidateView.orbit;
     panCenter = candidateView.center;
     try {
-      drawFrame(lastShownMs);
+      drawFrame(timeMs);
     } catch (presentationFailure) {
       orbit = previousOrbit;
       panCenter = previousPanCenter;
+      lastShownMs = previousShownMs;
       applyOrbit(camera, orbit, viewW, viewH, panCenter);
       try {
-        drawFrame(lastShownMs);
+        drawFrame(previousShownMs);
       } catch (restoreFailure) {
         throw new AggregateError(
           [presentationFailure, restoreFailure],
@@ -1279,12 +1337,20 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
     physToggle.hidden = true;
     snapToggle.hidden = replayReadOnly;
     snapToggle.classList.toggle('on', snapOn);
+    const lightingHint = sceneLightingStageHint(
+      replayReadOnly ? replaySceneStageHint : sceneStageHint,
+      lightCount,
+      session.lit,
+    );
+    sceneViewTranslationLocked = sceneViewCenterIsPinnedV1(scene, depthOn && session.lit);
+    setStageKeyboardAvailable(!sceneViewTranslationLocked);
+    const cameraHint = sceneViewTranslationLocked
+      ? lightingHint
+        + ' · right-drag and WASD translation locked for dense perspective lighting; '
+        + 'use flat view or turn lighting off'
+      : lightingHint;
     stageHint.textContent = sceneAnimationStageHint(
-      sceneLightingStageHint(
-        replayReadOnly ? replaySceneStageHint : sceneStageHint,
-        lightCount,
-        session.lit,
-      ),
+      cameraHint,
       hasMotion,
       sceneTransport.enabled,
     );
@@ -1349,6 +1415,8 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
     sceneAnimationToggle.hidden = true;
     snapToggle.hidden = true;
     stageHint.textContent = modelStageHint;
+    sceneViewTranslationLocked = false;
+    setStageKeyboardAvailable(true);
     checkRow.hidden = false;
     sizeField.hidden = false;
     setInspectorSceneMode(false);
@@ -1626,9 +1694,30 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
     readonly cornerZ: number;
   } | null = null;
   let dragPushed = false;
+  interface ModelNoteClickIntent {
+    readonly modelId: string;
+    readonly timeMs: number;
+    readonly u: number;
+    readonly v: number;
+    readonly clientX: number;
+    readonly clientY: number;
+    readonly clickedAtNowMs: number;
+    pausedPlayback: boolean;
+  }
+  let cleanModelClick: ModelNoteClickIntent | null = null;
+  let pendingModelNoteClick: ModelNoteClickIntent | null = null;
+  let openedModelNoteClick: ModelNoteClickIntent | null = null;
+  let modelNoteClickTimer: number | null = null;
+  const cancelPendingModelNoteClick = (): void => {
+    if (modelNoteClickTimer !== null) window.clearTimeout(modelNoteClickTimer);
+    modelNoteClickTimer = null;
+    pendingModelNoteClick = null;
+  };
   // The browser's own context menu would swallow a right-drag pan.
   canvasWrap.addEventListener('contextmenu', (event) => { event.preventDefault(); });
   canvasWrap.addEventListener('pointerdown', (event) => {
+    cancelPendingModelNoteClick();
+    cleanModelClick = null;
     moved = false;
     lastX = event.clientX;
     lastY = event.clientY;
@@ -1707,24 +1796,143 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
     // A scene has no single model to pin a note against, so a clean click on
     // one only ever selected — never pins.
     if (wasDrag || !supportsNotes || sceneOpen) return;
-    // A clean click is pointing at something seen; freeze that moment.
-    if (player.playing) {
-      harness.pause();
-      playerBar.syncPlayButton();
-    }
+    const heldMovement = keyboard.movement();
+    if (heldMovement.forward !== 0 || heldMovement.right !== 0) return;
     const rect = canvasWrap.getBoundingClientRect();
     const u = (event.clientX - rect.left) / rect.width;
     const v = (event.clientY - rect.top) / rect.height;
-    state.pending = { kind: 'moment', timeMs: player.timeAt(performance.now()), u, v };
-    positionRings();
-    notesPanel.openNoteEditor(`Pinned at ${String(Math.round(player.timeAt(performance.now())))} ms — say what you see…`);
+    const clickedAtNowMs = performance.now();
+    cleanModelClick = {
+      modelId: session.model.id,
+      timeMs: player.timeAt(clickedAtNowMs),
+      u,
+      v,
+      clientX: event.clientX,
+      clientY: event.clientY,
+      clickedAtNowMs,
+      pausedPlayback: false,
+    };
+  });
+  canvasWrap.addEventListener('click', (event) => {
+    const intent = cleanModelClick;
+    cleanModelClick = null;
+    // Click, unlike pointerup, carries the browser's actual sequence count.
+    // Detail 1 begins a new gesture and invalidates any old unwind marker;
+    // detail 2 may be the one continuation of the click that opened a note.
+    if (event.detail !== 1) return;
+    openedModelNoteClick = null;
+    if (intent === null) return;
+    // Delay the usual single-click action to avoid editor flash during an
+    // ordinary double-click. The dblclick handler below also unwinds an editor
+    // that already opened when the host uses a longer click interval.
+    pendingModelNoteClick = intent;
+    modelNoteClickTimer = window.setTimeout(() => {
+      modelNoteClickTimer = null;
+      if (pendingModelNoteClick !== intent) return;
+      pendingModelNoteClick = null;
+      if (disposed || sceneOpen !== null || session.model.id !== intent.modelId) return;
+      if (player.playing) {
+        intent.pausedPlayback = true;
+        harness.pause();
+        harness.seek(intent.timeMs);
+        playerBar.syncPlayButton();
+      }
+      openedModelNoteClick = intent;
+      state.pending = { kind: 'moment', timeMs: intent.timeMs, u: intent.u, v: intent.v };
+      positionRings();
+      notesPanel.openNoteEditor(
+        `Pinned at ${String(Math.round(intent.timeMs))} ms — say what you see…`,
+      );
+    }, MODEL_NOTE_CLICK_DELAY_MS);
   });
   canvasWrap.addEventListener('wheel', (event) => {
     event.preventDefault();
     runViewAction(() => { harness.setViewAngles(zoomOrbit(orbit, Math.sign(event.deltaY))); });
   }, { passive: false });
-  canvasWrap.addEventListener('dblclick', () => {
-    runViewAction(() => { harness.setViewAngles(DEFAULT_ORBIT); });
+  canvasWrap.addEventListener('dblclick', (event) => {
+    cancelPendingModelNoteClick();
+    const openedIntent = openedModelNoteClick;
+    openedModelNoteClick = null;
+    const pendingMoment = state.pending?.kind === 'moment' ? state.pending : null;
+    const sameClickPosition = openedIntent !== null
+      && Math.hypot(
+        event.clientX - openedIntent.clientX,
+        event.clientY - openedIntent.clientY,
+      ) <= 8;
+    const matchingOpenIntent = openedIntent !== null
+      && event.detail === 2
+      && sameClickPosition
+      && sceneOpen === null
+      && session.model.id === openedIntent.modelId
+      && pendingMoment?.timeMs === openedIntent.timeMs
+      && pendingMoment.u === openedIntent.u
+      && pendingMoment.v === openedIntent.v;
+    clearViewError();
+    let playbackRestoreFailure: unknown = null;
+    if (matchingOpenIntent) {
+      if (openedIntent.pausedPlayback && player.periodMs > 0) {
+        const restoreNowMs = performance.now();
+        const elapsedMs = Math.max(0, restoreNowMs - openedIntent.clickedAtNowMs);
+        const uninterruptedTimeMs = Math.min(
+          Math.max(
+            0,
+            Math.round(
+              (openedIntent.timeMs + elapsedMs * player.speed) % player.periodMs,
+            ),
+          ),
+          player.periodMs - 1,
+        );
+        try {
+          // Prove the candidate frame before mutating the paused clock or
+          // discarding the note. Anchoring both clock operations to the same
+          // captured time also includes synchronous render time exactly once.
+          drawFrame(uninterruptedTimeMs);
+          player.seek(uninterruptedTimeMs, restoreNowMs);
+          player.play(restoreNowMs);
+        } catch (error) {
+          playbackRestoreFailure = error;
+        }
+      }
+      if (playbackRestoreFailure === null) {
+        notesPanel.closeNoteEditor();
+        playerBar.syncPlayButton();
+      }
+    }
+    let recenterFailure: unknown = null;
+    try {
+      presentView(DEFAULT_ORBIT, [0, 0, 0]);
+    } catch (error) {
+      recenterFailure = error;
+    }
+    if (playbackRestoreFailure !== null && recenterFailure !== null) {
+      showViewError(
+        new AggregateError(
+          [playbackRestoreFailure, recenterFailure],
+          'The double-click could neither resume uninterrupted model playback nor re-centre the '
+          + 'camera. The note and pinned playback time remain active; reload this Studio if the '
+          + 'view does not recover.',
+          { cause: recenterFailure },
+        ),
+        'The double-click failed; the note and prior view remain active.',
+      );
+    } else if (playbackRestoreFailure !== null) {
+      const reason = playbackRestoreFailure instanceof Error
+        ? playbackRestoreFailure.message
+        : 'an unknown non-Error value was thrown while drawing the resumed frame';
+      showViewError(
+        new Error(
+          'The camera re-centred, but uninterrupted playback could not be restored, so the note '
+          + `and its pinned playback time remain active. ${reason}`,
+          { cause: playbackRestoreFailure },
+        ),
+        'Playback could not resume; the note and pinned time remain active.',
+      );
+    } else if (recenterFailure !== null) {
+      showViewError(
+        recenterFailure,
+        'The camera could not re-centre; its prior view remains active.',
+      );
+    }
   });
 
   lookSwitch.addEventListener('click', () => {
@@ -1902,6 +2110,7 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
     sceneOpen: () => sceneOpen !== null,
     noteEditorOpen: () => Boolean(state.pending ?? state.armedForPlace),
     closeNoteEditor: () => { notesPanel.closeNoteEditor(); },
+    onMovementStart: cancelPendingModelNoteClick,
     undoScene,
     redoScene,
     step: (direction) => { harness.step(direction); playerBar.syncPlayButton(); },
@@ -2017,42 +2226,180 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
   // next frame, which is exactly the leak the engine refuses to ship.
   let frameHandle = 0;
   let disposed = false;
+  let previousFrameNowMs: number | null = null;
   let disposePanelResize: () => void = () => { /* set once the shell mounts */ };
+
+  function pauseAfterFrameFailure(frameFailure: unknown, frameNowMs: number): void {
+    const reason = frameFailure instanceof Error ? frameFailure.message : String(frameFailure);
+    if (sceneOpen !== null) {
+      sceneTransport.pauseAfterFailure(lastShownMs);
+      playerBar.syncPlayButton();
+      showViewError(
+        new Error(
+          `Scene '${sceneOpen.id}' paused at its last successfully presented time `
+          + `${String(lastShownMs)} ms because a later frame was rejected. ${reason}`,
+          { cause: frameFailure },
+        ),
+        'Scene animation paused because a frame failed; the last successful frame remains visible.',
+      );
+      return;
+    }
+    player.pause(frameNowMs);
+    playerBar.syncPlayButton();
+    showViewError(
+      new Error(
+        `Model playback paused at ${String(lastShownMs)} ms because a frame was rejected. ${reason}`,
+        { cause: frameFailure },
+      ),
+      'Model playback paused because a frame failed; the last successful frame remains visible.',
+    );
+  }
+
+  function pauseAfterResizeRestoreFailure(
+    resizeFailure: AggregateError,
+    frameNowMs: number,
+  ): void {
+    const reason = resizeFailure.message.trim() === ''
+      ? 'The resize and rollback failed without an explanation.'
+      : resizeFailure.message;
+    if (sceneOpen !== null) {
+      sceneTransport.pauseAfterFailure(lastShownMs);
+      playerBar.syncPlayButton();
+      showViewError(
+        new Error(
+          `Scene '${sceneOpen.id}' paused at its last successfully presented time `
+          + `${String(lastShownMs)} ms because an automatic stage resize failed and restoring the `
+          + `prior viewport also failed. Reload this Studio before continuing. ${reason}`,
+          { cause: resizeFailure },
+        ),
+        'Stage resize rollback failed; scene playback paused. Reload this Studio.',
+      );
+      return;
+    }
+    player.pause(frameNowMs);
+    const lastPresentedPhaseMs = player.periodMs > 0
+      ? Math.min(
+        Math.round(((lastShownMs % player.periodMs) + player.periodMs) % player.periodMs),
+        player.periodMs - 1,
+      )
+      : 0;
+    player.seek(lastPresentedPhaseMs, frameNowMs);
+    playerBar.syncPlayButton();
+    showViewError(
+      new Error(
+        `Model playback paused at its last successfully presented phase `
+        + `${String(lastPresentedPhaseMs)} ms `
+        + 'because an automatic stage resize failed and restoring the prior viewport also failed. '
+        + `Reload this Studio before continuing. ${reason}`,
+        { cause: resizeFailure },
+      ),
+      'Stage resize rollback failed; model playback paused. Reload this Studio.',
+    );
+  }
 
   function tick(frameNowMs: number): void {
     if (disposed) return;
+    let advancingFrame = false;
+    let followingStageSize = true;
     try {
       followStage();
+      followingStageSize = false;
+      const elapsedMs = previousFrameNowMs === null
+        ? 0
+        : Math.min(50, Math.max(0, frameNowMs - previousFrameNowMs));
+      previousFrameNowMs = frameNowMs;
+      let nextShownMs: number | null = null;
       if (sceneOpen !== null) {
         const hasMotion = sceneSession?.hasMotion() === true;
         if (sceneTransport.shouldAdvance(hasMotion)) {
-          drawFrame(sceneTransport.timeAt(frameNowMs));
+          nextShownMs = sceneTransport.timeAt(frameNowMs);
         }
       } else if (player.playing) {
-        drawFrame(player.timeAt(frameNowMs));
+        nextShownMs = player.timeAt(frameNowMs);
+      }
+      advancingFrame = nextShownMs !== null;
+      const movement = keyboard.movement();
+      const moving = movement.forward !== 0 || movement.right !== 0;
+      const movementLocked = moving && sceneViewTranslationLocked;
+      if (!movementLocked && moving && elapsedMs > 0) {
+        const distance = orbit.viewHeight
+          * KEYBOARD_PAN_VIEW_HEIGHTS_PER_SECOND
+          * (elapsedMs / 1_000);
+        const nextCenter = moveOrbitCenter(
+          orbit,
+          panCenter,
+          movement.forward,
+          movement.right,
+          distance,
+        );
+        clearViewError();
+        if (nextShownMs === null) {
+          try {
+            presentView(orbit, nextCenter);
+          } catch (viewFailure) {
+            keyboard.clearMovement();
+            showViewError(
+              viewFailure,
+              'WASD camera movement was rejected; the prior view and playback state remain active.',
+            );
+          }
+        } else {
+          try {
+            presentView(orbit, nextCenter, nextShownMs);
+          } catch (combinedFailure) {
+            keyboard.clearMovement();
+            try {
+              // Classify the failure without a second render on the success
+              // path: if the advancing time draws at the restored camera, only
+              // the requested navigation was unsafe and playback can continue.
+              presentView(orbit, panCenter, nextShownMs);
+            } catch (frameFailure) {
+              const frameReason = frameFailure instanceof Error
+                ? frameFailure.message
+                : String(frameFailure);
+              throw new AggregateError(
+                [combinedFailure, frameFailure],
+                'The requested WASD camera movement was rolled back, and the advancing frame was '
+                + `also rejected at the prior camera. ${frameReason}`,
+                { cause: frameFailure },
+              );
+            }
+            showViewError(
+              combinedFailure,
+              'WASD camera movement was rejected; animation continued at the prior view.',
+            );
+          }
+        }
+      } else if (nextShownMs !== null) {
+        drawFrame(nextShownMs);
       }
     } catch (frameFailure) {
-      const reason = frameFailure instanceof Error ? frameFailure.message : String(frameFailure);
-      if (sceneOpen !== null) {
-        sceneTransport.pauseAfterFailure(lastShownMs);
-        playerBar.syncPlayButton();
-        showViewError(
-          new Error(
-            `Scene '${sceneOpen.id}' paused at its last successfully presented time `
-            + `${String(lastShownMs)} ms because a later frame was rejected. ${reason}`,
-            { cause: frameFailure },
-          ),
-          'Scene animation paused because a frame failed; the last successful frame remains visible.',
-        );
+      keyboard.clearMovement();
+      if (followingStageSize) {
+        if (frameFailure instanceof AggregateError) {
+          pauseAfterResizeRestoreFailure(frameFailure, frameNowMs);
+        } else {
+          const reason = frameFailure instanceof Error ? frameFailure.message : String(frameFailure);
+          showViewError(
+            new Error(
+              'The Studio rejected an automatic stage resize; the prior viewport and playback '
+              + `state remain active. ${reason}`,
+              { cause: frameFailure },
+            ),
+            'Stage resize was rejected; the prior viewport and playback state remain active.',
+          );
+        }
+      } else if (advancingFrame) {
+        pauseAfterFrameFailure(frameFailure, frameNowMs);
       } else {
-        player.pause(frameNowMs);
-        playerBar.syncPlayButton();
+        const reason = frameFailure instanceof Error ? frameFailure.message : String(frameFailure);
         showViewError(
           new Error(
-            `Model playback paused at ${String(lastShownMs)} ms because a frame was rejected. ${reason}`,
+            'The Studio could not update its paused stage view; playback state is unchanged. '
+            + reason,
             { cause: frameFailure },
           ),
-          'Model playback paused because a frame failed; the last successful frame remains visible.',
+          'The paused stage view could not update; playback state is unchanged.',
         );
       }
     } finally {
@@ -2189,6 +2536,8 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
       shelfPanel.dispose();
       studioShell.dispose();
       keyboard.dispose();
+      cancelPendingModelNoteClick();
+      openedModelNoteClick = null;
       window.removeEventListener('resize', followStage);
       disposePanelResize();
       physicalView.dispose();
