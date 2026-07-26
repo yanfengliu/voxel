@@ -16,6 +16,8 @@ export interface SceneInfoV1 {
   readonly summary?: string;
   /** How many model placements the scene holds. */
   readonly models: number;
+  /** How many editable point lights it holds; omitted keeps ordinary scene readouts unchanged. */
+  readonly lights?: number;
 }
 
 export interface StudioHarnessLibraryHostV1 {
@@ -97,12 +99,16 @@ export function createStudioHarnessLibrary(
     })),
     parts: () => ordered('part', host.parts(), (part) => part.name),
     recipes: () => ordered('recipe', host.recipes(), (recipe) => recipe.id),
-    scenes: () => ordered('scene', host.scenes(), (scene) => scene.id).map((scene) => ({
-      id: scene.id,
-      label: scene.label,
-      ...(scene.summary === undefined ? {} : { summary: scene.summary }),
-      models: scene.placements.length,
-    })),
+    scenes: () => ordered('scene', host.scenes(), (scene) => scene.id).map((scene) => {
+      const lights = scene.lights?.length ?? 0;
+      return {
+        id: scene.id,
+        label: scene.label,
+        ...(scene.summary === undefined ? {} : { summary: scene.summary }),
+        models: scene.placements.length,
+        ...(lights === 0 ? {} : { lights }),
+      };
+    }),
     order: (kind, sectionIndex) => host.order(kind, ids(kind, sectionIndex), sectionIndex),
     move: (unsafeRequest: unknown) => {
       const request = prepareStudioShelfMoveV1(unsafeRequest);

@@ -161,7 +161,11 @@ export function createStudioSceneMenu(
     dialog.setAttribute('aria-labelledby', title.id);
     const message = element('p', 'scene-dialog-copy');
     message.textContent = `Delete “${scene.label}” and its ${String(scene.models)} `
-      + `model placement${scene.models === 1 ? '' : 's'} from this Studio session?`;
+      + `model placement${scene.models === 1 ? '' : 's'}`
+      + (scene.lights === undefined
+        ? ''
+        : ` and ${String(scene.lights)} point light${scene.lights === 1 ? '' : 's'}`)
+      + ' from this Studio session?';
     const error = element('p', 'scene-dialog-error');
     error.setAttribute('role', 'alert');
     error.hidden = true;

@@ -723,11 +723,24 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
   }
 
   /**
+   * Authored point lights need Lambert materials rather than the resting flat
+   * look. Opening a lighting scene, or adding its first light, therefore uses
+   * the same remembered light funnel as the top-bar toggle.
+   */
+  function ensureSceneLighting(scene: SceneV1): void {
+    if ((scene.lights?.length ?? 0) === 0 || session.lit) return;
+    session.setLit(true);
+    sceneSession?.setLit(true);
+    persistView();
+  }
+
+  /**
    * Opens a scene on the stage. The model session stays alive underneath its
    * own hidden canvas, so everything that reads a single model keeps working;
    * the scene draws to its own canvas at the same shared camera and look.
    */
   function openSceneMode(scene: SceneV1): void {
+    ensureSceneLighting(scene);
     if (sceneSession === null) {
       sceneSession = new SceneSession(scene, sceneRecipes, sceneParts, {
         canvas: sceneCanvas, width: viewW, height: viewH, camera,
@@ -759,6 +772,7 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
   /** Leaves the scene view for the model lane and drops every scene-only edit/selection reference. */
   function closeSceneMode(): void {
     if (sceneOpen === null) return;
+    sceneEditor.clearLightSelection();
     sceneOpen = null;
     selectedPlacementId = null;
     sceneBoxes = [];
@@ -846,8 +860,10 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
    */
   function refreshScene(scene: SceneV1): void {
     const count = scene.placements.length;
+    const lightCount = scene.lights?.length ?? 0;
     modelName.textContent = scene.label;
-    statusChip.textContent = `scene · ${String(count)} model${count === 1 ? '' : 's'}`;
+    statusChip.textContent = `scene · ${String(count)} model${count === 1 ? '' : 's'}`
+      + (lightCount === 0 ? '' : ` · ${String(lightCount)} light${lightCount === 1 ? '' : 's'}`);
     lookSwitch.dataset.side = session.edges ? 'left' : 'right';
     lookSwitch.setAttribute('aria-checked', String(session.edges));
     edgesSide.classList.toggle('on', session.edges);
@@ -861,7 +877,8 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
     physToggle.hidden = true;
     snapToggle.hidden = false;
     snapToggle.classList.toggle('on', snapOn);
-    stageHint.textContent = sceneStageHint;
+    stageHint.textContent = sceneStageHint
+      + (lightCount === 0 ? '' : ' · edit light sources in the Edit tab');
     wireframeView.setVisible(false);
     physicalView.setVisible(false);
     // The scene stands on its own ground grid, sized to how far it spreads.
@@ -1009,6 +1026,7 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
    * frame), not the whole inspector.
    */
   function selectPlacement(id: string | null): void {
+    sceneEditor.clearLightSelection();
     if (id === selectedPlacementId) return;
     selectedPlacementId = id;
     showSelection();
@@ -1035,6 +1053,12 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
   // live frames of a drag and by undo/redo.
   function applySceneLive(next: SceneV1): void {
     const previous = sceneOpen;
+    // Adding the first authored light turns on Lambert shading once. A person
+    // may turn it off afterward; ordinary moves and edits must preserve that
+    // explicit look choice.
+    if ((previous?.lights?.length ?? 0) === 0 && (next.lights?.length ?? 0) > 0) {
+      ensureSceneLighting(next);
+    }
     sceneSession?.setScene(next);
     try {
       if (previous !== null) sceneWorkspace.replace(previous.id, next);

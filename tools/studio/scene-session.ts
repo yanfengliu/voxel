@@ -1,9 +1,10 @@
-import type { Camera } from 'three';
+import { Scene, type Camera } from 'three';
 
 import { ThreeRenderRuntime } from '../../src/three/index.js';
 
 import { buildSceneSnapshot } from './scene-build.js';
 import type { PartShelfV1, RecipeBookV1 } from './recipe.js';
+import { StudioSceneLighting } from './scene-lighting.js';
 import type { SceneV1 } from './scene.js';
 
 /**
@@ -44,12 +45,15 @@ const DEFAULT_HEIGHT = 240;
 
 export class SceneSession {
   readonly #runtime: ThreeRenderRuntime;
+  readonly #lighting: StudioSceneLighting;
   #scene: SceneV1;
   readonly #recipes: RecipeBookV1;
   readonly #parts: PartShelfV1;
   #revision = 0;
   #frameIndex = 0;
   #disposed = false;
+  #lightingDisposed = false;
+  #runtimeDisposed = false;
   #edges: boolean;
   #lit: boolean;
   #wireframe: boolean;
@@ -66,18 +70,31 @@ export class SceneSession {
     this.#edges = options.edges ?? true;
     this.#lit = options.lit ?? false;
     this.#wireframe = options.wireframe ?? false;
-    this.#runtime = new ThreeRenderRuntime({
-      canvas: options.canvas,
-      width: options.width ?? DEFAULT_WIDTH,
-      height: options.height ?? DEFAULT_HEIGHT,
-      pixelRatio: 1,
-      // Same borrowed-camera door the model session uses, for the same reason:
-      // the studio positions the camera so a person can orbit, and 'host'
-      // projection ownership stops the engine writing its own view over it.
-      ...(options.camera
-        ? { view: { kind: 'borrowed-camera' as const, camera: options.camera, projectionOwnership: 'host' as const } }
-        : { center: { x: 0, y: 0, z: 0 }, zoom: options.zoom ?? 1 }),
-    });
+    const ownedScene = new Scene();
+    this.#lighting = new StudioSceneLighting(ownedScene);
+    let runtime: ThreeRenderRuntime;
+    try {
+      runtime = new ThreeRenderRuntime({
+        canvas: options.canvas,
+        scene: ownedScene,
+        // The runtime still owns its familiar daylight. Editable point lights
+        // are a Studio-owned sibling root, so each side can dispose only itself.
+        daylight: {},
+        width: options.width ?? DEFAULT_WIDTH,
+        height: options.height ?? DEFAULT_HEIGHT,
+        pixelRatio: 1,
+        // Same borrowed-camera door the model session uses, for the same reason:
+        // the studio positions the camera so a person can orbit, and 'host'
+        // projection ownership stops the engine writing its own view over it.
+        ...(options.camera
+          ? { view: { kind: 'borrowed-camera' as const, camera: options.camera, projectionOwnership: 'host' as const } }
+          : { center: { x: 0, y: 0, z: 0 }, zoom: options.zoom ?? 1 }),
+      });
+    } catch (error) {
+      try { this.#lighting.dispose(); } catch { /* Preserve the renderer initialization failure. */ }
+      throw error;
+    }
+    this.#runtime = runtime;
     try {
       this.#accept();
     } catch (error) {
@@ -85,6 +102,7 @@ export class SceneSession {
       // runtime it just made must be released here or it outlives its only
       // reference.
       try { this.#runtime.dispose(); } catch { /* Preserve the opening failure. */ }
+      try { this.#lighting.dispose(); } catch { /* Preserve the opening failure. */ }
       throw error;
     }
   }
@@ -154,9 +172,34 @@ export class SceneSession {
   }
 
   dispose(): void {
-    if (this.#disposed) return;
+    if (this.#lightingDisposed && this.#runtimeDisposed) return;
+    // Once disposal begins the rendering API stays closed, even if one owner
+    // needs a later retry to finish releasing its resources.
     this.#disposed = true;
-    this.#runtime.dispose();
+    const failures: unknown[] = [];
+    if (!this.#lightingDisposed) {
+      try {
+        this.#lighting.dispose();
+        this.#lightingDisposed = true;
+      } catch (error) {
+        failures.push(error);
+      }
+    }
+    if (!this.#runtimeDisposed) {
+      try {
+        this.#runtime.dispose();
+        this.#runtimeDisposed = true;
+      } catch (error) {
+        failures.push(error);
+      }
+    }
+    if (failures.length === 1) throw failures[0];
+    if (failures.length > 1) {
+      throw new AggregateError(
+        failures,
+        'Scene session disposal failed for both Studio lighting and the render runtime.',
+      );
+    }
   }
 
   #accept(next: {
@@ -166,8 +209,11 @@ export class SceneSession {
     readonly wireframe?: boolean;
   } = {}): void {
     const nextRevision = this.#revision + 1;
-    const result = this.#runtime.acceptSnapshot(buildSceneSnapshot(
-      next.scene ?? this.#scene,
+    const candidateScene = next.scene ?? this.#scene;
+    // Building validates the complete plain-data scene before the lighting rig
+    // allocates anything for it.
+    const snapshot = buildSceneSnapshot(
+      candidateScene,
       this.#recipes,
       this.#parts,
       {
@@ -176,12 +222,24 @@ export class SceneSession {
         wireframe: next.wireframe ?? this.#wireframe,
       },
       nextRevision,
-    ));
+    );
+    const lighting = this.#lighting.prepare(candidateScene.lights ?? []);
+    let result: ReturnType<ThreeRenderRuntime['acceptSnapshot']>;
+    try {
+      result = this.#runtime.acceptSnapshot(snapshot);
+    } catch (error) {
+      this.#lighting.discard(lighting);
+      throw error;
+    }
     if (result.status !== 'accepted') {
+      this.#lighting.discard(lighting);
       throw new Error(
         `The runtime rejected scene revision ${String(nextRevision)}: ${result.code} at ${result.path}`,
       );
     }
+    // This commit performs no Three allocation: additions were prepared before
+    // acceptance, and reused ids update their existing light and marker.
+    this.#lighting.commit(lighting);
     this.#revision = nextRevision;
   }
 

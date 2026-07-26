@@ -1,24 +1,31 @@
 import type { RecipeBookV1 } from './recipe.js';
-import type { ScenePlacementV1, SceneV1 } from './scene.js';
+import {
+  MAX_SCENE_LIGHT_INTENSITY,
+  MAX_SCENE_LIGHT_RANGE,
+  MAX_SCENE_LIGHTS,
+  VOXEL_SCENE_SCHEMA_V2,
+  type ScenePlacementV1,
+  type ScenePointLightV1,
+  type SceneV1,
+} from './scene.js';
 import { element } from './studio-app-helpers.js';
 
 /**
- * The Edit tab, for a scene. A scene is an arrangement of models, so editing it
- * is placing them: add a model, then select it — in this list or by clicking it
- * on the stage — to move, turn, or remove it. Every change hands a new scene
- * back through `onChange`, which redraws and re-renders this list.
+ * The Edit tab, for a scene. Models and point lights are both immutable scene
+ * edits: every control hands a new SceneV1 to the app, whose existing history
+ * records it as one undo step.
  *
- * Selection is owned by the app, not this panel: the app holds which placement
- * is selected (shared with the stage's outline and drag), tells this panel via
- * `render`, and hears clicks back through `onSelect`. That one source of truth
- * is why clicking a second model on the stage moves the controls here to it,
- * rather than leaving them on the first.
+ * Model selection is owned by the app because the stage outline and drag share
+ * it. Light selection stays inside this panel: lights have no stage drag in this
+ * first slice, while their visible renderer handles and controls still update
+ * from the same scene data.
  */
-
 export interface SceneEditorV1 {
   readonly element: HTMLElement;
-  /** Draws the list, opening the controls under the selected placement's row. */
+  /** Draws the lists, opening controls for the selected model or point light. */
   render(scene: SceneV1, selectedId: string | null): void;
+  /** Clears the panel-local light selection when the app clears scene selection. */
+  clearLightSelection(): void;
 }
 
 /** A stable id for a newly added placement, never colliding with an existing one. */
@@ -29,9 +36,103 @@ function freshId(model: string, taken: ReadonlySet<string>): string {
   return `${base}-${String(n)}`;
 }
 
+function freshLightId(taken: ReadonlySet<string>): string {
+  let n = 1;
+  while (taken.has(`light-${String(n)}`)) n += 1;
+  return `light-${String(n)}`;
+}
+
+function clonePointLight(light: ScenePointLightV1): ScenePointLightV1 {
+  return {
+    ...light,
+    at: [...light.at],
+    color: { ...light.color },
+  };
+}
+
+/** Adds one deterministic point light without changing any placement or model reference. */
+export function addScenePointLightV1(
+  scene: SceneV1,
+): { readonly scene: SceneV1; readonly light: ScenePointLightV1 } {
+  const current = scene.lights ?? [];
+  if (current.length >= MAX_SCENE_LIGHTS) {
+    throw new Error(
+      `Scene '${scene.id}' already has the maximum of ${String(MAX_SCENE_LIGHTS)} point lights; `
+      + 'remove one before adding another.',
+    );
+  }
+  const light: ScenePointLightV1 = {
+    id: freshLightId(new Set(current.map((entry) => entry.id))),
+    kind: 'point',
+    at: [0, 8, 0],
+    color: { r: 255, g: 214, b: 160 },
+    intensity: 1_200,
+    range: 30,
+  };
+  return {
+    scene: {
+      ...scene,
+      schemaVersion: VOXEL_SCENE_SCHEMA_V2,
+      lights: [...current, light],
+    },
+    light,
+  };
+}
+
+/** Replaces one light by stable id while preserving the scene's placement array. */
+export function replaceScenePointLightV1(
+  scene: SceneV1,
+  id: string,
+  next: ScenePointLightV1,
+): SceneV1 {
+  const current = scene.lights ?? [];
+  if (!current.some((light) => light.id === id)) {
+    throw new Error(`No point light in scene '${scene.id}' has the id '${id}', so it cannot be changed.`);
+  }
+  if (next.id !== id) {
+    throw new Error(
+      `Point light '${id}' cannot be replaced with '${next.id}': light ids are stable; `
+      + 'change its editable values instead.',
+    );
+  }
+  return {
+    ...scene,
+    schemaVersion: VOXEL_SCENE_SCHEMA_V2,
+    lights: current.map((light) => (light.id === id ? clonePointLight(next) : light)),
+  };
+}
+
+/** Removes one light by stable id without touching any model placement. */
+export function removeScenePointLightV1(scene: SceneV1, id: string): SceneV1 {
+  const current = scene.lights ?? [];
+  if (!current.some((light) => light.id === id)) {
+    throw new Error(`No point light in scene '${scene.id}' has the id '${id}', so it cannot be removed.`);
+  }
+  return {
+    ...scene,
+    schemaVersion: VOXEL_SCENE_SCHEMA_V2,
+    lights: current.filter((light) => light.id !== id),
+  };
+}
+
 /** Resolves a scene's authoritative recipe-book key to the model id that owns its display alias. */
 export function sceneModelAliasIdV1(recipes: RecipeBookV1, bookKey: string): string {
   return Object.hasOwn(recipes, bookKey) ? recipes[bookKey]!.id : bookKey;
+}
+
+function colorHex(light: ScenePointLightV1): string {
+  const channel = (value: number): string => value.toString(16).padStart(2, '0');
+  return `#${channel(light.color.r)}${channel(light.color.g)}${channel(light.color.b)}`;
+}
+
+function colorFromHex(value: string): ScenePointLightV1['color'] | null {
+  const match = /^#([\da-f]{2})([\da-f]{2})([\da-f]{2})$/i.exec(value);
+  if (!match) return null;
+  return {
+    r: Number.parseInt(match[1]!, 16),
+    g: Number.parseInt(match[2]!, 16),
+    b: Number.parseInt(match[3]!, 16),
+  };
 }
 
 export function createSceneEditor(options: {
@@ -40,16 +141,18 @@ export function createSceneEditor(options: {
   readonly modelDisplayLabel: (id: string, fallback: string) => string;
   /** Given the edited scene; the app adopts it, redraws, and renders back. */
   readonly onChange: (scene: SceneV1) => void;
-  /** A row was clicked; the app records the selection and renders back. */
+  /** A model row was clicked; the app records stage-shared placement selection. */
   readonly onSelect: (id: string | null) => void;
 }): SceneEditorV1 {
   const { recipes, modelDisplayLabel, onChange, onSelect } = options;
   let scene: SceneV1 | null = null;
+  let selectedPlacementId: string | null = null;
+  let selectedLightId: string | null = null;
 
   const pane = element('div', 'pane scene-editor');
   const intro = element('p', 'hint');
-  intro.textContent = 'Arrange the scene: add a model, then select it here or on '
-    + 'the stage to move it, turn it, or take it out. Every change redraws.';
+  intro.textContent = 'Arrange the scene: add a model or point light, then select it '
+    + 'to move, turn, recolor, or remove it. Every committed change redraws.';
 
   const addRow = element('div', 'row');
   const modelSelect = element('select', 'scene-add-model');
@@ -67,30 +170,82 @@ export function createSceneEditor(options: {
   const list = element('ul', 'placements');
   const emptyHint = element('p', 'hint');
   emptyHint.textContent = 'This scene has no models yet.';
-  pane.append(intro, addRow, list, emptyHint);
 
-  function commit(placements: readonly ScenePlacementV1[]): void {
+  const lightHeader = element('div', 'scene-light-header');
+  const lightHeading = element('p', 'grouphead scene-light-heading');
+  lightHeading.textContent = 'Light sources';
+  const lightCount = element('span', 'scene-light-count');
+  lightHeader.append(lightHeading, lightCount);
+  const addLightButton = element('button');
+  addLightButton.textContent = 'Add point light';
+  const lightList = element('ul', 'lights');
+  const emptyLights = element('p', 'hint');
+  emptyLights.textContent = 'This scene has no editable light sources.';
+
+  pane.append(
+    intro,
+    addRow,
+    list,
+    emptyHint,
+    lightHeader,
+    addLightButton,
+    lightList,
+    emptyLights,
+  );
+
+  function button(text: string, title: string, onClick: () => void): HTMLButtonElement {
+    const control = element('button');
+    control.textContent = text;
+    control.title = title;
+    control.addEventListener('click', () => {
+      const restoreFocus = document.activeElement === control;
+      onClick();
+      if (restoreFocus && !control.isConnected) {
+        const replacement = Array.from(pane.querySelectorAll<HTMLButtonElement>('button'))
+          .find((candidate) => candidate.title === title && candidate.textContent === text);
+        replacement?.focus();
+      }
+    });
+    return control;
+  }
+
+  function commitPlacements(placements: readonly ScenePlacementV1[]): void {
     if (scene === null) return;
     onChange({ ...scene, placements: placements.map((placement) => ({ ...placement })) });
   }
-  function edit(id: string, change: (placement: ScenePlacementV1) => ScenePlacementV1): void {
+
+  function editPlacement(
+    id: string,
+    change: (placement: ScenePlacementV1) => ScenePlacementV1,
+  ): void {
     if (scene === null) return;
-    commit(scene.placements.map((placement) => (placement.id === id ? change(placement) : placement)));
+    commitPlacements(
+      scene.placements.map((placement) => (placement.id === id ? change(placement) : placement)),
+    );
   }
-  const move = (id: string, dx: number, dy: number, dz: number): void => {
-    edit(id, (placement) => ({
+
+  const movePlacement = (id: string, dx: number, dy: number, dz: number): void => {
+    editPlacement(id, (placement) => ({
       ...placement,
       at: [placement.at[0] + dx, placement.at[1] + dy, placement.at[2] + dz],
     }));
   };
-  const turn = (id: string): void => {
-    edit(id, (placement) => ({ ...placement, turns: (((placement.turns ?? 0) + 1) % 4) }));
-  };
-  const remove = (id: string): void => {
+
+  function editLight(
+    id: string,
+    change: (light: ScenePointLightV1) => ScenePointLightV1,
+  ): void {
     if (scene === null) return;
-    // The app clears a selection whose placement no longer exists, so removing
-    // the selected one leaves nothing selected.
-    commit(scene.placements.filter((placement) => placement.id !== id));
+    const light = scene.lights?.find((entry) => entry.id === id);
+    if (!light) return;
+    onChange(replaceScenePointLightV1(scene, id, change(light)));
+  }
+
+  const moveLight = (id: string, dx: number, dy: number, dz: number): void => {
+    editLight(id, (light) => ({
+      ...light,
+      at: [light.at[0] + dx, light.at[1] + dy, light.at[2] + dz],
+    }));
   };
 
   addButton.addEventListener('click', () => {
@@ -98,20 +253,146 @@ export function createSceneEditor(options: {
     const model = modelSelect.value;
     if (model === '') return;
     const id = freshId(model, new Set(scene.placements.map((placement) => placement.id)));
+    selectedLightId = null;
     onChange({ ...scene, placements: [...scene.placements, { id, model, at: [0, 0, 0] }] });
     onSelect(id);
   });
 
-  function button(text: string, title: string, onClick: () => void): HTMLButtonElement {
-    const control = element('button');
-    control.textContent = text;
-    control.title = title;
-    control.addEventListener('click', onClick);
-    return control;
+  addLightButton.addEventListener('click', () => {
+    if (scene === null) return;
+    const added = addScenePointLightV1(scene);
+    onSelect(null);
+    selectedLightId = added.light.id;
+    onChange(added.scene);
+  });
+
+  function numberField(
+    labelText: string,
+    value: number,
+    step: string,
+    maximum: number,
+    onCommit: (value: number) => void,
+  ): HTMLLabelElement {
+    const label = element('label', 'scene-light-field');
+    const name = element('span');
+    name.textContent = labelText;
+    const input = element('input');
+    input.type = 'number';
+    input.min = '0';
+    input.max = String(maximum);
+    input.step = step;
+    input.value = String(value);
+    input.setAttribute('aria-label', labelText);
+    const error = element('span', 'scene-light-field-error');
+    error.setAttribute('role', 'alert');
+    error.hidden = true;
+    const clearError = (): void => {
+      input.setCustomValidity('');
+      input.removeAttribute('aria-invalid');
+      error.textContent = '';
+      error.hidden = true;
+    };
+    input.addEventListener('input', clearError);
+    input.addEventListener('change', () => {
+      const next = input.valueAsNumber;
+      if (!Number.isFinite(next) || next < 0 || next > maximum) {
+        const message = `${labelText} input '${input.value}' is invalid; enter a finite number `
+          + `from 0 to ${String(maximum)}.`;
+        input.setCustomValidity(message);
+        input.setAttribute('aria-invalid', 'true');
+        error.textContent = message;
+        error.hidden = false;
+        input.reportValidity();
+        return;
+      }
+      clearError();
+      onCommit(next);
+    });
+    label.append(name, input, error);
+    return label;
+  }
+
+  function renderLights(next: SceneV1): void {
+    const lights = next.lights ?? [];
+    if (selectedLightId !== null && !lights.some((light) => light.id === selectedLightId)) {
+      selectedLightId = null;
+    }
+    lightCount.textContent = `${String(lights.length)}/${String(MAX_SCENE_LIGHTS)}`;
+    addLightButton.disabled = lights.length >= MAX_SCENE_LIGHTS;
+    addLightButton.title = addLightButton.disabled
+      ? `This scene already has the maximum of ${String(MAX_SCENE_LIGHTS)} point lights.`
+      : 'Add a movable colored point light';
+    emptyLights.hidden = lights.length > 0;
+    lightList.replaceChildren();
+
+    for (const light of lights) {
+      const selected = light.id === selectedLightId;
+      const row = element('li', selected ? 'scene-light selected' : 'scene-light');
+      const name = element('button', 'scene-light-name');
+      name.textContent = `${light.id} · (${light.at.join(', ')})`;
+      name.title = 'Select this point light';
+      name.setAttribute('aria-expanded', String(selected));
+      name.addEventListener('click', () => {
+        onSelect(null);
+        selectedLightId = light.id;
+        if (scene) render(scene, null);
+        lightList.querySelector<HTMLButtonElement>('.scene-light.selected .scene-light-name')?.focus();
+      });
+      row.append(name);
+
+      if (selected) {
+        const controls = element('div', 'scene-light-controls');
+        const moves = element('div', 'placement-controls');
+        moves.append(
+          button('X−', 'Move light left', () => { moveLight(light.id, -1, 0, 0); }),
+          button('X+', 'Move light right', () => { moveLight(light.id, 1, 0, 0); }),
+          button('Z−', 'Move light back', () => { moveLight(light.id, 0, 0, -1); }),
+          button('Z+', 'Move light front', () => { moveLight(light.id, 0, 0, 1); }),
+          button('Y−', 'Lower light', () => { moveLight(light.id, 0, -1, 0); }),
+          button('Y+', 'Raise light', () => { moveLight(light.id, 0, 1, 0); }),
+        );
+
+        const values = element('div', 'scene-light-values');
+        const colorLabel = element('label', 'scene-light-field');
+        const colorName = element('span');
+        colorName.textContent = 'Color';
+        const color = element('input');
+        color.type = 'color';
+        color.value = colorHex(light);
+        color.setAttribute('aria-label', 'Light color');
+        color.addEventListener('change', () => {
+          const nextColor = colorFromHex(color.value);
+          if (nextColor) editLight(light.id, (entry) => ({ ...entry, color: nextColor }));
+        });
+        colorLabel.append(colorName, color);
+        values.append(
+          colorLabel,
+          numberField('Intensity', light.intensity, '50', MAX_SCENE_LIGHT_INTENSITY, (intensity) => {
+            editLight(light.id, (entry) => ({ ...entry, intensity }));
+          }),
+          numberField('Range', light.range, '1', MAX_SCENE_LIGHT_RANGE, (range) => {
+            editLight(light.id, (entry) => ({ ...entry, range }));
+          }),
+        );
+
+        const remove = button('Remove', 'Remove this point light from the scene', () => {
+          if (scene === null) return;
+          selectedLightId = null;
+          onChange(removeScenePointLightV1(scene, light.id));
+        });
+        remove.classList.add('danger');
+        controls.append(moves, values, remove);
+        row.append(controls);
+      }
+      lightList.append(row);
+    }
   }
 
   function render(next: SceneV1, selectedId: string | null): void {
+    const changedScene = scene?.id !== next.id;
     scene = next;
+    selectedPlacementId = selectedId;
+    if (changedScene || selectedPlacementId !== null) selectedLightId = null;
     for (const option of Array.from(modelSelect.options)) {
       const recipe = recipes[option.value];
       option.textContent = modelDisplayLabel(
@@ -131,25 +412,42 @@ export function createSceneEditor(options: {
       const turned = placement.turns ? ` · turn ${String(placement.turns)}` : '';
       name.textContent = `${label} · (${placement.at.join(', ')})${turned}`;
       name.title = `Model id: ${placement.model}`;
-      name.addEventListener('click', () => { onSelect(placement.id); });
+      name.addEventListener('click', () => {
+        selectedLightId = null;
+        onSelect(placement.id);
+      });
       row.append(name);
       if (placement.id === selectedId) {
         const controls = element('div', 'placement-controls');
         controls.append(
-          button('X−', 'Move left', () => { move(placement.id, -1, 0, 0); }),
-          button('X+', 'Move right', () => { move(placement.id, 1, 0, 0); }),
-          button('Z−', 'Move back', () => { move(placement.id, 0, 0, -1); }),
-          button('Z+', 'Move front', () => { move(placement.id, 0, 0, 1); }),
-          button('Y−', 'Lower', () => { move(placement.id, 0, -1, 0); }),
-          button('Y+', 'Raise', () => { move(placement.id, 0, 1, 0); }),
-          button('↻', 'Turn a quarter', () => { turn(placement.id); }),
-          button('Remove', 'Take out of the scene', () => { remove(placement.id); }),
+          button('X−', 'Move left', () => { movePlacement(placement.id, -1, 0, 0); }),
+          button('X+', 'Move right', () => { movePlacement(placement.id, 1, 0, 0); }),
+          button('Z−', 'Move back', () => { movePlacement(placement.id, 0, 0, -1); }),
+          button('Z+', 'Move front', () => { movePlacement(placement.id, 0, 0, 1); }),
+          button('Y−', 'Lower', () => { movePlacement(placement.id, 0, -1, 0); }),
+          button('Y+', 'Raise', () => { movePlacement(placement.id, 0, 1, 0); }),
+          button('↻', 'Turn a quarter', () => {
+            editPlacement(placement.id, (entry) => ({
+              ...entry,
+              turns: (((entry.turns ?? 0) + 1) % 4),
+            }));
+          }),
+          button('Remove', 'Take out of the scene', () => {
+            commitPlacements(next.placements.filter((entry) => entry.id !== placement.id));
+          }),
         );
         row.append(controls);
       }
       list.append(row);
     }
+    renderLights(next);
   }
 
-  return { element: pane, render };
+  function clearLightSelection(): void {
+    if (selectedLightId === null) return;
+    selectedLightId = null;
+    if (scene !== null) render(scene, selectedPlacementId);
+  }
+
+  return { element: pane, render, clearLightSelection };
 }

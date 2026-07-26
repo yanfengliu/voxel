@@ -1,4 +1,8 @@
-import { VOXEL_SCENE_SCHEMA_V1, type SceneV1 } from './scene.js';
+import {
+  VOXEL_SCENE_SCHEMA_V1,
+  VOXEL_SCENE_SCHEMA_V2,
+  type SceneV1,
+} from './scene.js';
 
 /**
  * The engine studio's own example scenes: arrangements of shelf models standing
@@ -120,6 +124,37 @@ export function createStudioScenes(): readonly SceneV1[] {
         { id: 'tulip-back-left', model: 'studio:tulip-pot', at: [-11, 0, -10], turns: 2 },
         { id: 'violet-back-center', model: 'studio:violet-flower-pot', at: [0, 0, -10], turns: 3 },
         { id: 'classic-back-right', model: 'studio:three-flower-pot', at: [11, 0, -10] },
+      ],
+    },
+    {
+      schemaVersion: VOXEL_SCENE_SCHEMA_V2,
+      id: 'studio:scene:lighting-lab',
+      label: 'Editable lighting lab',
+      summary: 'Warm and cool point lights wash across pale fixtures and a sandstone wall. '
+        + 'Use Edit to add, move, recolor, brighten, dim, or remove each light live.',
+      placements: [
+        { id: 'backdrop', model: 'studio:sandstone-wall', at: [-8, 0, -11] },
+        { id: 'bathtub', model: 'studio:bathtub', at: [-9, 0, 0] },
+        { id: 'sink', model: 'studio:bath-sink', at: [7, 0, -1] },
+        { id: 'toilet', model: 'studio:toilet', at: [4, 0, 8], turns: 3 },
+      ],
+      lights: [
+        {
+          id: 'warm-key',
+          kind: 'point',
+          at: [-7, 10, 7],
+          color: { r: 255, g: 112, b: 64 },
+          intensity: 700,
+          range: 36,
+        },
+        {
+          id: 'cool-fill',
+          kind: 'point',
+          at: [9, 8, -4],
+          color: { r: 72, g: 140, b: 255 },
+          intensity: 650,
+          range: 34,
+        },
       ],
     },
   ];

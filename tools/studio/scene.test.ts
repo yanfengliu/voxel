@@ -4,7 +4,17 @@ import { RenderWorld } from '../../src/core/index.js';
 import { createStudioParts } from './parts.js';
 import { createStudioRecipeBook } from './recipes.js';
 import { buildSceneSnapshot, SceneBuildError } from './scene-build.js';
-import { validateSceneV1, VOXEL_SCENE_SCHEMA_V1, type ScenePlacementV1, type SceneV1 } from './scene.js';
+import {
+  MAX_SCENE_LIGHT_INTENSITY,
+  MAX_SCENE_LIGHT_RANGE,
+  MAX_SCENE_LIGHTS,
+  validateSceneV1,
+  VOXEL_SCENE_SCHEMA_V1,
+  VOXEL_SCENE_SCHEMA_V2,
+  type ScenePlacementV1,
+  type ScenePointLightV1,
+  type SceneV1,
+} from './scene.js';
 
 function scene(placements: readonly ScenePlacementV1[]): SceneV1 {
   return { schemaVersion: VOXEL_SCENE_SCHEMA_V1, id: 'test:scene', label: 'Test scene', placements };
@@ -12,6 +22,14 @@ function scene(placements: readonly ScenePlacementV1[]): SceneV1 {
 
 const recipes = createStudioRecipeBook();
 const parts = createStudioParts();
+const pointLight = (id = 'key'): ScenePointLightV1 => ({
+  id,
+  kind: 'point',
+  at: [2, 8, -3],
+  color: { r: 255, g: 208, b: 144 },
+  intensity: 1_200,
+  range: 30,
+});
 
 describe('scene validation', () => {
   it('accepts a well-formed scene', () => {
@@ -37,7 +55,91 @@ describe('scene validation', () => {
   });
 
   it('rejects an unknown schema version rather than misrendering it', () => {
-    expect(validateSceneV1({ ...scene([]), schemaVersion: 'studio.scene/2' })).not.toEqual([]);
+    expect(validateSceneV1({ ...scene([]), schemaVersion: 'studio.scene/3' })).not.toEqual([]);
+  });
+
+  it('accepts bounded point lights as clone-safe scene data', () => {
+    const lit: SceneV1 = {
+      ...scene([]),
+      schemaVersion: VOXEL_SCENE_SCHEMA_V2,
+      lights: [pointLight()],
+    };
+    expect(validateSceneV1(lit)).toEqual([]);
+    expect(JSON.parse(JSON.stringify(lit))).toEqual(lit);
+    expect(structuredClone(lit)).toEqual(lit);
+  });
+
+  it('requires the V2 discriminator before accepting behavior-bearing lights', () => {
+    expect(validateSceneV1({ ...scene([]), lights: [pointLight()] })).toContainEqual({
+      path: '$.lights',
+      message: `Point lights require ${VOXEL_SCENE_SCHEMA_V2}; change schemaVersion so older Studios `
+        + 'reject the scene instead of silently omitting its lighting.',
+    });
+  });
+
+  it('rejects more than eight lights and duplicate stable light ids', () => {
+    const lights = Array.from(
+      { length: MAX_SCENE_LIGHTS + 1 },
+      (_, index) => pointLight(index === MAX_SCENE_LIGHTS ? 'light-1' : `light-${String(index + 1)}`),
+    );
+    const issues = validateSceneV1({
+      ...scene([]),
+      schemaVersion: VOXEL_SCENE_SCHEMA_V2,
+      lights,
+    });
+    expect(issues).toContainEqual({
+      path: '$.lights',
+      message: `Expected at most ${String(MAX_SCENE_LIGHTS)} point lights; remove the extras.`,
+    });
+    expect(issues).toContainEqual({
+      path: `$.lights[${String(MAX_SCENE_LIGHTS)}].id`,
+      message: "Duplicate light id 'light-1'.",
+    });
+  });
+
+  it('reports every malformed point-light field with a useful path and remedy', () => {
+    const issues = validateSceneV1({
+      ...scene([]),
+      schemaVersion: VOXEL_SCENE_SCHEMA_V2,
+      lights: [{
+        id: '',
+        kind: 'spot',
+        at: [0, Number.NaN, 0],
+        color: { r: -1, g: 1.5, b: 256 },
+        intensity: MAX_SCENE_LIGHT_INTENSITY + 1,
+        range: MAX_SCENE_LIGHT_RANGE + 1,
+      }],
+    });
+    expect(issues).toEqual(expect.arrayContaining([
+      { path: '$.lights[0].id', message: 'Expected a non-empty stable light id.' },
+      {
+        path: '$.lights[0].kind',
+        message: "Expected 'point'; this scene schema does not support other light kinds.",
+      },
+      expect.objectContaining({ path: '$.lights[0].at' }),
+      { path: '$.lights[0].color.r', message: 'Expected an integer r channel from 0 to 255.' },
+      { path: '$.lights[0].color.g', message: 'Expected an integer g channel from 0 to 255.' },
+      { path: '$.lights[0].color.b', message: 'Expected an integer b channel from 0 to 255.' },
+      {
+        path: '$.lights[0].intensity',
+        message: `Expected a finite light intensity from 0 to ${String(MAX_SCENE_LIGHT_INTENSITY)}.`,
+      },
+      {
+        path: '$.lights[0].range',
+        message: `Expected a finite light range from 0 to ${String(MAX_SCENE_LIGHT_RANGE)}; zero means no explicit cutoff.`,
+      },
+    ]));
+  });
+
+  it('requires lights to be a list when the optional field is present', () => {
+    expect(validateSceneV1({
+      ...scene([]),
+      schemaVersion: VOXEL_SCENE_SCHEMA_V2,
+      lights: 'bright',
+    })).toContainEqual({
+      path: '$.lights',
+      message: 'Expected a list of point lights, or omit it.',
+    });
   });
 });
 

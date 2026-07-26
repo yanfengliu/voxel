@@ -390,7 +390,10 @@ export function createStudioShelf(deps: StudioShelfDepsV1): StudioShelfV1 {
       const label = element('span');
       label.textContent = scene.label;
       const count = element('span', 'scene-count');
-      count.textContent = `${String(scene.models)} model${scene.models === 1 ? '' : 's'}`;
+      const modelCount = `${String(scene.models)} model${scene.models === 1 ? '' : 's'}`;
+      count.textContent = scene.lights === undefined
+        ? modelCount
+        : `${modelCount} · ${String(scene.lights)} light${scene.lights === 1 ? '' : 's'}`;
       row.append(label, count);
       if (scene.summary) row.title = scene.summary;
       row.addEventListener('click', () => {
