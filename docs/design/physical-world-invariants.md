@@ -16,6 +16,21 @@ another, or feed a visual animation back into physical state.
 
 ## Two related guarantees
 
+### Which occupancy check runs when
+
+There is no single always-on occupancy check because authored voxel ownership, static scene composition, dynamic rigid contact, fluid boundaries, and renderer picking answer different questions.
+
+| Lane | When it runs | Authority | Policy |
+| --- | --- | --- | --- |
+| Recipe composition | Every recipe build | Studio recipe builder | Reject cross-occurrence voxel overlap atomically; touching is allowed. |
+| Static scene composition | Incrementally after placement edits and exactly on save or catalog promotion | Scene repository validator | Show an edit-time warning; reject promotion for positive-volume overlap unless the scene stores an explicit, reasoned pair waiver. |
+| Rigid placement and motion | On placement transactions and every fixed simulation step | Consumer-owned rigid-body engine | Use collider overlap and contact constraints each step, swept queries for candidate motion, and continuous collision detection for declared fast bodies; never infer collision from rendered voxels. |
+| Fluid motion | Every solver substep | Consumer-owned fluid solver | Apply the model's explicit boundary conditions or collider coupling and publish model-specific residual diagnostics. |
+| Replay presentation | Never re-simulated while rendering | Trace validator, then renderer | Validate schema, scene identity, and provenance field shapes before passing accepted plain-data poses to the renderer; hash authenticity remains the producer's evidence responsibility. |
+| Voxel picking | Only when a query is requested | Presented renderer state | Return displayed cell occupancy; never reuse it as general collision or simulation state. |
+
+Only recipe occupancy currently applies as a global invariant. Built-in static scenes are checked by tests through `sceneOverlapsV1`, not by the editor or scene builder, and replay-driven placements are excluded; Machine Works and Riverfall implement narrow fixture-specific portions of the rigid and fluid rows. The scene-store migration must move static overlap checking into the save and promotion transaction so catalog integrity does not depend on remembering a test.
+
 ### Authoring-time object occupancy
 
 A recipe occurrence is one placement of one saved recipe. Every nonempty voxel
@@ -156,12 +171,11 @@ order-dependent intersections.
 
 ## Solver direction
 
-Do not build a rigid-body solver from scratch. Rapier's browser JS/WASM surface
-is the leading candidate for a consumer spike because its documented APIs
-cover [rigid bodies and continuous collision detection][rapier-bodies],
-[colliders][rapier-colliders], [fixed, revolute, and prismatic joints][rapier-joints],
-[overlap and shape-cast queries][rapier-queries], and [deterministic WASM
-execution under controlled inputs and ordering][rapier-determinism].
+Physics is a separate authoritative subsystem, not a Voxel renderer feature. “Separate” means a consumer-owned module or worker behind a versioned snapshot or trace adapter; it does not require a separate repository, process, or generalized engine abstraction before two consumers prove the same contract.
+
+Do not build a general rigid-body engine in-house. Use a mature engine behind a narrow adapter for broad phase, narrow phase, contact constraints, friction, joints, sleeping, queries, and continuous collision detection; keep game rules, body creation order, units, fixed-step scheduling, and publication policy in the consumer.
+
+Do not build a rigid-body solver from scratch. Rapier's browser JS/WASM surface is selected for the delivered fixture proof and remains the leading candidate for production consumer adoption because its documented APIs cover [rigid bodies and continuous collision detection][rapier-bodies], [colliders][rapier-colliders], [fixed, revolute, and prismatic joints][rapier-joints], [overlap and shape-cast queries][rapier-queries], and [deterministic WASM execution under controlled inputs and ordering][rapier-determinism].
 
 `@dimforge/rapier3d-compat` `0.19.3` is now pinned as a development-only dependency for the headless `fixtures/machine-works-consumer` proof. It maps nine of ten exact recipe sidecars into dynamic and kinematic rigid bodies, compound colliders, fixed joints, materials, CCD, sensors, and named ports; 58 kinematic slats, each 26 voxels deep, form one closely pitched articulated conveyor loop around two synchronized internal drive drums. Each slat underside follows the nominal 2.75-unit drum pitch datum and straight and turn gaps are explicitly bounded. The exact sidecar OBB/SAT regression samples all 58 slat compounds against both pitch-drum compounds at 32 drive phases; it requires slat edges and drum end cheeks to share boundary only with zero positive-volume overlap, records at least about 0.275 world units of radial clearance from the central barrel, and moves a boundary witness into intentional overlap as its negative control. The tenth exact sidecar remains cataloged for the exposed axle-cog recipe, but the four cogs never enter Rapier or allocate bodies or colliders: their non-interacting replay poses derive from the two solved drive-drum poses, so one hashed drive phase aligns all 64 presented slat, drive-drum, and exposed-cog elements while the cogs establish only visible axle-phase agreement. Rapier contact and friction transport an axis-constrained dynamic carrier whose locked axes align with the visible foundation guards without claiming guard contact or cog-driven contact. Paired same-geometry 240-tick ablations recreate the complete causal world of foundation, slats, drive drums, carrier, and jointed load in stable order: zero drive must keep maximum displacement within 0.05 world units, and driven zero friction must keep maximum displacement within 20 percent of the driven trace over the same interval; both configurations and both maximum-displacement observations enter the hashes. After validated insertion and compound assembly, the carrier must pass hashed X, Y, Z, orientation, and speed tolerances before an explicit position-based servo captures the exact accepted dynamic pose and starts its tip there without a positional or rotational snap. The resulting 30-second, 1,800-frame trace records 71 poses per frame, presented with two static supports as 73 instances, plus exact assembly, release, positive contact-manifold, and bucket-collection evidence at about 11.67, 18.33, 20.95, and 24.15 seconds; the committed replay carries input/output hashes and the declared 0.05-unit collection tolerance, holds the final frame, and resets discretely at exactly 30 seconds. Rapier is not imported by `src/`, emitted into `dist`, or made authoritative by Studio, and the fixture does not model exposed-cog contact, cog torque, belt tension or compliance, tooth engagement, or arbitrary-load no-slip behavior.
 
@@ -172,6 +186,28 @@ The private `studio.scene/4` lane resolves that committed trace from the catalog
 [rapier-joints]: https://rapier.rs/docs/user_guides/javascript/joints/
 [rapier-queries]: https://rapier.rs/docs/user_guides/javascript/scene_queries/
 [rapier-determinism]: https://rapier.rs/docs/user_guides/javascript/determinism/
+
+## Fluid direction
+
+Riverfall currently uses a fixture-local deterministic two-dimensional position-based-fluid thin-sheet solver. It advances a fixed particle set with projected gravity, fixed-order density corrections, XSPH smoothing, explicit boundary projection, heuristic lip and impact transitions, a speed cap, and an external recirculation pump, then records a replay for Studio. It does not collide with rendered voxel geometry and it is not a volumetric or free-surface Navier-Stokes engine.
+
+Keep that implementation as a bounded fixture while the requirement remains a stylized deterministic waterfall proof. Do not grow it by accretion into a general fluid engine. A production fluid project starts by choosing the model from gameplay needs: a heightfield or shallow-water grid for terrain flow, a two-dimensional surface or particle solver for stylized sheets, or a true three-dimensional free-surface solver only when volume, splashing, and arbitrary obstacles justify its cost.
+
+If a second consumer needs the same fluid semantics, define a consumer-owned fluid provider with explicit domain, units, fixed timestep and substeps, material and boundary parameters, initial state, deterministic input ordering, output snapshots, diagnostics, provenance, and disposal. Time-box mature library candidates against browser and worker support, CPU fallback, licensing, serialization, deterministic replay requirements, collider coupling, and measured scene budgets. Import a candidate only if it meets those constraints; otherwise extract the smallest proven solver module, not a universal physics engine.
+
+[NVIDIA PhysX 5](https://nvidia-omniverse.github.io/PhysX/physx/5.2.1/docs/ParticleSystem.html) documents a mature position-based particle-fluid path, but its particle-system implementation requires CUDA and a CUDA context, so it is not a portable WebGL2 browser dependency for this repository. It remains a useful reference and an option for a native GPU consumer, not a reason to put fluid solving in Voxel.
+
+## How physical-law claims are enforced
+
+The following is the required production acceptance policy. Current fixtures implement named subsets of it and are evidence for the boundary, not proof that a general enforcement layer already exists.
+
+A real-time solver numerically approximates selected equations and constraints; no library switch enforces “all physics laws.” Each simulation must declare its supported law set, external forces and controllers, open or closed system boundary, numerical method and version, units, fixed timestep, substeps, tolerances, and known nonphysical clamps or transitions.
+
+Each simulation must reject invalid schemas, non-finite values, unresolved references, unsupported shapes, and exceeded budgets before stepping. Units are declared at the boundary, and adapters must validate every conversion they can check rather than pretending untagged values prove dimensional consistency. Generation must record the diagnostics required by that model, which may include finite-state checks, penetration or boundary residuals, density or constraint error, speed and correction limits, contact impulses, and iteration counts. Publication fails closed when a declared hard bound is exceeded.
+
+Evidence combines deterministic replay or toleranced reproducibility, small reference oracles, metamorphic tests, adversarial initial states, conservation or drift budgets that match the declared system, and causal ablations that remove one force or constraint while holding the rest of the world fixed. An open waterfall with gravity, dissipation, and an external pump must not claim global energy conservation; it should instead prove particle accounting, bounded density and boundary residuals, the expected response to gravity and pumping, and the measurable effect of viscosity. A rigid-body proof should likewise distinguish engine contact from kinematic actuators, servos, sensors, and game-authored state changes.
+
+Current fixture trace generation refuses failed causal thresholds that it explicitly declares. Production trace generation and future catalog promotion must also refuse outputs when that model's required step diagnostics fail. The trace validator validates schema, scene identity, and provenance field shapes, then the renderer presents accepted plain-data poses; neither component establishes hash authenticity or upgrades a passing visual result into a physics claim.
 
 ## Delivery sequence
 
