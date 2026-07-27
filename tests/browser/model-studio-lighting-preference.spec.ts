@@ -217,6 +217,83 @@ test('the scene-animation button persists across scenes and reloads', async ({ p
   expect((await canvas.screenshot({ animations: 'disabled' })).equals(moving)).toBe(false);
 });
 
+test('bare Space pauses and resumes an owned animated scene without stealing controls', async ({ page }) => {
+  await mount(page);
+  await page.evaluate((id) => { window.voxelStudio!.openScene(id); }, DENSE_LIGHTING_SCENE);
+
+  const playButton = page.getByRole('button', { name: /Pause/ });
+  await expect(playButton).toHaveAttribute('aria-keyshortcuts', 'Space');
+  await expect(page.locator('.canvas-wrap')).toHaveAttribute(
+    'aria-keyshortcuts',
+    'W A S D Space',
+  );
+  await page.getByRole('tab', { name: 'Notes' }).click();
+  const brief = page.locator('[aria-label="Scene notes"]').getByLabel(/Scene brief/);
+  await brief.fill('Inspect');
+  await brief.focus();
+  await page.keyboard.press('Space');
+  await expect(brief).toHaveValue('Inspect ');
+  expect(await page.evaluate(() => ({
+    animation: window.voxelStudio!.sceneAnimation(),
+    playing: window.voxelStudio!.playerState().playing,
+  }))).toEqual({ animation: true, playing: true });
+
+  const lightToggle = page.getByRole('button', { name: 'Lighting', exact: true });
+  const litBefore = await page.evaluate(() => window.voxelStudio!.lit());
+  await lightToggle.focus();
+  await page.keyboard.press('Space');
+  expect(await page.evaluate(() => ({
+    animation: window.voxelStudio!.sceneAnimation(),
+    lit: window.voxelStudio!.lit(),
+    playing: window.voxelStudio!.playerState().playing,
+  }))).toEqual({ animation: true, lit: !litBefore, playing: true });
+
+  await page.locator('.canvas-wrap').click({ position: { x: 8, y: 8 } });
+  await page.waitForTimeout(80);
+  const beforePause = await page.evaluate(() => window.voxelStudio!.playerState());
+  await page.keyboard.down('Space');
+  await page.keyboard.down('Space');
+  await page.keyboard.up('Space');
+  const paused = await page.evaluate(() => window.voxelStudio!.playerState());
+  expect(paused).toMatchObject({ playing: false, periodMs: beforePause.periodMs });
+  expect(paused.timeMs).toBeGreaterThan(0);
+  expect(await storedPrefs(page)).toMatchObject({ sceneAnimation: false });
+  await expect(page.getByRole('button', { name: /Play/ }))
+    .toHaveAttribute('aria-keyshortcuts', 'Space');
+  await page.waitForTimeout(120);
+  expect(await page.evaluate(() => window.voxelStudio!.playerState().timeMs))
+    .toBe(paused.timeMs);
+
+  await page.keyboard.press('Space');
+  const resumed = await page.evaluate(() => window.voxelStudio!.playerState());
+  const resumeAdvanceMs = (
+    resumed.timeMs - paused.timeMs + resumed.periodMs
+  ) % resumed.periodMs;
+  expect(resumed.playing).toBe(true);
+  expect(resumeAdvanceMs).toBeLessThan(200);
+  expect(await storedPrefs(page)).toMatchObject({ sceneAnimation: true });
+  await expect(page.getByRole('button', { name: /Pause/ }))
+    .toHaveAttribute('aria-keyshortcuts', 'Space');
+  await page.waitForTimeout(120);
+  expect(await page.evaluate(() => window.voxelStudio!.playerState().timeMs))
+    .not.toBe(resumed.timeMs);
+
+  await page.keyboard.press('Shift+Space');
+  expect(await page.evaluate(() => window.voxelStudio!.playerState().playing)).toBe(true);
+  await page.evaluate(() => { window.voxelStudio!.openScene('studio:scene:dining'); });
+  await page.locator('.canvas-wrap').click({ position: { x: 8, y: 8 } });
+  await page.keyboard.press('Space');
+  expect(await page.evaluate(() => ({
+    animation: window.voxelStudio!.sceneAnimation(),
+    player: window.voxelStudio!.playerState(),
+  }))).toMatchObject({
+    animation: true,
+    player: { periodMs: 0, playing: false },
+  });
+  await expect(page.getByRole('button', { name: /Play|Pause/ }))
+    .not.toHaveAttribute('aria-keyshortcuts', 'Space');
+});
+
 test('the persisted animation choice also controls animated model scenes', async ({ page }) => {
   await mount(page);
   const prepared = await page.evaluate(() => {

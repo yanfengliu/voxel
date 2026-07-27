@@ -7,6 +7,8 @@ export interface StudioKeyboardOptionsV1 {
   readonly onMovementStart?: () => void;
   readonly undoScene: () => void;
   readonly redoScene: () => void;
+  readonly sceneHasMotion: () => boolean;
+  readonly toggleScenePlayback: () => void;
   readonly step: (direction: -1 | 1) => void;
 }
 
@@ -92,6 +94,16 @@ export function createStudioKeyboard(options: StudioKeyboardOptionsV1): StudioKe
       return;
     }
     if (interactiveControl(event.target) !== null) return;
+    const scenePlaybackKey = event.code === 'Space'
+      || event.key === ' '
+      || event.key === 'Spacebar';
+    if (scenePlaybackKey && !event.isComposing
+      && !event.ctrlKey && !event.metaKey && !event.altKey && !event.shiftKey
+      && options.sceneOpen() && options.sceneHasMotion()) {
+      event.preventDefault();
+      if (!event.repeat) options.toggleScenePlayback();
+      return;
+    }
     const code = movementCode(event);
     if (code !== null && !event.isComposing
       && !event.ctrlKey && !event.metaKey && !event.altKey) {

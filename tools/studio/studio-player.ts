@@ -31,7 +31,7 @@ export interface StudioPlayerBarV1 {
   /** Writes scene time without describing the hidden model's pose. */
   showSceneTime(timeMs: number): void;
   /** Scene playback has no single model frame or model notes, so those controls stay out of the way. */
-  setSceneMode(on: boolean): void;
+  setSceneMode(on: boolean, hasMotion?: boolean): void;
   /** Applies a model's period: enables the controls and sizes the scrubber. */
   applyPeriod(periodMs: number): void;
 }
@@ -108,10 +108,17 @@ export function createStudioPlayerBar(deps: StudioPlayerBarDepsV1): StudioPlayer
     if (document.activeElement !== timeline) timeline.value = String(Math.round(wrapped));
   }
 
-  function setSceneMode(on: boolean): void {
+  function setSceneMode(on: boolean, hasMotion = false): void {
     stepBack.hidden = on;
     stepForward.hidden = on;
     dots.hidden = on;
+    if (on && hasMotion) {
+      playButton.setAttribute('aria-keyshortcuts', 'Space');
+      playButton.title = 'Play or pause scene animation (Space)';
+    } else {
+      playButton.removeAttribute('aria-keyshortcuts');
+      playButton.title = '';
+    }
   }
 
   function applyPeriod(periodMs: number): void {

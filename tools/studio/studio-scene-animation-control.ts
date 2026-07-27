@@ -15,7 +15,7 @@ export function createStudioSceneAnimationControl(): StudioSceneAnimationControl
     control.setAttribute('aria-pressed', String(on));
     control.classList.toggle('on', on);
     control.title = on
-      ? 'Automatic scene animation is enabled independently of lighting. Play/Pause reports whether it is currently advancing; exact inspection may pause it transiently.'
+      ? 'Automatic scene animation is enabled independently of lighting. Play/Pause or bare Space reports whether it is currently advancing; exact inspection may pause it transiently.'
       : 'Automatic scene animation is disabled. Animated models and moving light sources stay at the currently presented time.';
   }
 
@@ -34,6 +34,6 @@ export function sceneAnimationStageHint(
 ): string {
   if (!hasMotion) return base;
   return base + (on
-    ? ' · animation enabled'
-    : ' · animation disabled · scene held at the current time');
+    ? ' · animation enabled · Space toggles Play/Pause'
+    : ' · animation disabled · scene held at the current time · Space toggles Play/Pause');
 }

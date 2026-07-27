@@ -401,8 +401,15 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
     'aria-label',
     '3D Studio stage',
   );
-  const setStageKeyboardAvailable = (available: boolean): void => {
-    if (available) canvasWrap.setAttribute('aria-keyshortcuts', 'W A S D');
+  const syncStageKeyboardShortcuts = (
+    movementAvailable: boolean,
+    scenePlaybackAvailable = false,
+  ): void => {
+    const shortcuts = [
+      ...(movementAvailable ? ['W', 'A', 'S', 'D'] : []),
+      ...(scenePlaybackAvailable ? ['Space'] : []),
+    ];
+    if (shortcuts.length > 0) canvasWrap.setAttribute('aria-keyshortcuts', shortcuts.join(' '));
     else canvasWrap.removeAttribute('aria-keyshortcuts');
   };
   // Exactly one of the two looks is ever true, so the control is one switch
@@ -1643,7 +1650,7 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
       session.lit,
     );
     sceneViewTranslationLocked = sceneViewCenterIsPinnedV1(scene, depthOn && session.lit);
-    setStageKeyboardAvailable(!sceneViewTranslationLocked);
+    syncStageKeyboardShortcuts(!sceneViewTranslationLocked, hasMotion);
     const cameraHint = sceneViewTranslationLocked
       ? lightingHint
         + ' · right-drag and WASD translation locked for dense perspective lighting; '
@@ -1657,7 +1664,6 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
   }
 
   function refreshScene(scene: SceneV1): void {
-    playerBar.setSceneMode(true);
     // Moment notes belong to the underlying model. Clear their stage marks as
     // well as hiding their timeline dots so neither layer can seek or annotate
     // a scene with stale model-only state.
@@ -1665,6 +1671,7 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
     const count = scene.placements.length;
     const lightCount = scene.lights?.length ?? 0;
     const hasMotion = sceneSession?.hasMotion() === true;
+    playerBar.setSceneMode(true, hasMotion);
     const replayReadOnly = isConsumerReplayScene(scene);
     if (replayReadOnly) {
       selectedPlacementId = null;
@@ -1752,7 +1759,7 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
     snapToggle.hidden = true;
     stageHint.textContent = modelStageHint;
     sceneViewTranslationLocked = false;
-    setStageKeyboardAvailable(true);
+    syncStageKeyboardShortcuts(true);
     checkRow.hidden = false;
     sizeField.hidden = false;
     setInspectorSceneMode(false);
@@ -2531,6 +2538,11 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
     onMovementStart: cancelPendingModelNoteClick,
     undoScene,
     redoScene,
+    sceneHasMotion: () => sceneOpen !== null && sceneSession?.hasMotion() === true,
+    toggleScenePlayback: () => {
+      if (player.playing) harness.pause(); else harness.play();
+      playerBar.syncPlayButton();
+    },
     step: (direction) => { harness.step(direction); playerBar.syncPlayButton(); },
   });
   // Registered with the other globals at the end of the mount, after nothing

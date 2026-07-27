@@ -667,7 +667,7 @@ test('dense lit perspective locks WASD translation and flat or unlit views resto
   await expect(page.locator(`#${describedBy!}`)).toContainText(
     'use flat view or turn lighting off',
   );
-  await expect(stage).not.toHaveAttribute('aria-keyshortcuts', /.+/);
+  await expect(stage).toHaveAttribute('aria-keyshortcuts', 'Space');
   const denseMetrics = await page.evaluate(() =>
     window.voxelStudio!.drawAt(0).sceneLighting);
   expect(denseMetrics?.overflowedClusters).toBe(0);
@@ -675,7 +675,7 @@ test('dense lit perspective locks WASD translation and flat or unlit views resto
   await page.evaluate(() => {
     window.voxelStudio!.setDepth(false);
   });
-  await expect(stage).toHaveAttribute('aria-keyshortcuts', 'W A S D');
+  await expect(stage).toHaveAttribute('aria-keyshortcuts', 'W A S D Space');
   await expect(page.locator(`#${describedBy!}`)).not.toContainText('translation locked');
   const flatStart = await viewCenter(page);
   await stage.focus();
