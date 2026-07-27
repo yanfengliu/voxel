@@ -40,6 +40,38 @@ async function overflowOpacity(trigger: Locator): Promise<number> {
   return trigger.evaluate((element) => Number.parseFloat(getComputedStyle(element).opacity));
 }
 
+async function expectCenteredOverflowIcon(trigger: Locator): Promise<void> {
+  const geometry = await trigger.evaluate((element) => {
+    const icon = element.querySelector<HTMLElement>('.library-more-icon');
+    if (icon === null) {
+      throw new Error('the Studio shelf overflow button is missing its three-dot icon');
+    }
+    const dots = Array.from(icon.children);
+    if (dots.length !== 3) {
+      throw new Error(
+        `the Studio shelf overflow icon has ${String(dots.length)} dots instead of 3`,
+      );
+    }
+    const buttonBounds = element.getBoundingClientRect();
+    const iconBounds = icon.getBoundingClientRect();
+    return {
+      centerDeltaX: iconBounds.x + iconBounds.width / 2
+        - (buttonBounds.x + buttonBounds.width / 2),
+      centerDeltaY: iconBounds.y + iconBounds.height / 2
+        - (buttonBounds.y + buttonBounds.height / 2),
+      iconSize: [iconBounds.width, iconBounds.height],
+      dotSizes: dots.map((dot) => {
+        const bounds = dot.getBoundingClientRect();
+        return [bounds.width, bounds.height];
+      }),
+    };
+  });
+  expect(geometry.centerDeltaX).toBeCloseTo(0, 5);
+  expect(geometry.centerDeltaY).toBeCloseTo(0, 5);
+  expect(geometry.iconSize).toEqual([12, 2]);
+  expect(geometry.dotSizes).toEqual([[2, 2], [2, 2], [2, 2]]);
+}
+
 async function dragBefore(
   page: Page,
   kind: StudioShelfItemKindV1,
@@ -118,6 +150,7 @@ test('dragging rearranges every library lane without changing item identity or c
   await firstModelWrap.hover();
   expect(await overflowOpacity(firstModelMore)).toBe(1);
   expect(await overflowOpacity(movedModelMore)).toBe(0);
+  await expectCenteredOverflowIcon(firstModelMore);
   await page.getByRole('button', { name: 'Parts' }).hover();
   expect(await overflowOpacity(firstModelMore)).toBe(0);
   await firstModelRow.focus();
@@ -144,6 +177,38 @@ test('dragging rearranges every library lane without changing item identity or c
     await expect(touchPage.getByRole('menu')).toBeVisible();
   } finally {
     await touchContext.close();
+  }
+
+  const forcedColorsContext = await browser.newContext({
+    forcedColors: 'active',
+    viewport: { width: 900, height: 700 },
+  });
+  try {
+    const forcedColorsPage = await forcedColorsContext.newPage();
+    await forcedColorsPage.goto(studioOrigin, { waitUntil: 'load' });
+    await forcedColorsPage.waitForFunction(() => typeof window.voxelStudio === 'object');
+    expect(await forcedColorsPage.evaluate(
+      () => matchMedia('(forced-colors: active)').matches,
+    )).toBe(true);
+    const forcedColorsWrap = sortable(forcedColorsPage, 'model', firstModel);
+    const forcedColorsMore = forcedColorsWrap.locator('.library-more');
+    await forcedColorsWrap.hover();
+    await expectCenteredOverflowIcon(forcedColorsMore);
+    const forcedColors = await forcedColorsMore.evaluate((button) => {
+      const dot = button.querySelector<HTMLElement>('.library-more-icon > span');
+      if (dot === null) {
+        throw new Error('the forced-colors overflow button is missing its first dot');
+      }
+      return {
+        buttonBackground: getComputedStyle(button).backgroundColor,
+        dotBackground: getComputedStyle(dot).backgroundColor,
+        dotAdjustment: getComputedStyle(dot).forcedColorAdjust,
+      };
+    });
+    expect(forcedColors.dotAdjustment).toBe('none');
+    expect(forcedColors.dotBackground).not.toBe(forcedColors.buttonBackground);
+  } finally {
+    await forcedColorsContext.close();
   }
 
   await dragBefore(page, 'model', movedModel, firstModel);

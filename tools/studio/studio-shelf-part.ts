@@ -5,6 +5,7 @@ import type {
   StudioContextMenuActionV1,
   StudioContextMenuV1,
 } from './studio-context-menu.js';
+import { createStudioShelfOverflowButton } from './studio-shelf-overflow.js';
 
 export interface StudioShelfPartDepsV1 {
   readonly harness: VoxelStudioHarnessV1;
@@ -59,11 +60,7 @@ export function renderStudioShelfPart(
   };
   row.addEventListener('click', () => { renderVariant(null); });
 
-  const more = element('button', 'library-more');
-  more.type = 'button';
-  more.textContent = '⋯';
-  more.title = 'Part actions';
-  more.setAttribute('aria-label', `Part actions for ${part.title}`);
+  const more = createStudioShelfOverflowButton('Part', part.title);
   deps.contextMenu.connect(row, {
     ariaLabel: `Part actions for ${part.title}`,
     restoreFocus: () => { deps.focusPart(part.name); },

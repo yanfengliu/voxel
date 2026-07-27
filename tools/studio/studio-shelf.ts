@@ -5,6 +5,7 @@ import { element } from './studio-app-helpers.js';
 import { createStudioContextMenu } from './studio-context-menu.js';
 import { createStudioModelMenu } from './studio-model-menu.js';
 import { createStudioSceneMenu } from './studio-scene-menu.js';
+import { createStudioShelfOverflowButton } from './studio-shelf-overflow.js';
 import { renderStudioShelfPart } from './studio-shelf-part.js';
 import {
   createStudioShelfSorter,
@@ -118,14 +119,7 @@ export function createStudioShelf(deps: StudioShelfDepsV1): StudioShelfV1 {
   const focusPart = (name: string): void => { focusLibraryItem('part', name); };
   const focusModel = (id: string): void => { focusLibraryItem('model', id); };
   const focusRecipe = (id: string): void => { focusLibraryItem('recipe', id); };
-  const overflowButton = (kind: string, label: string): HTMLButtonElement => {
-    const button = element('button', 'library-more');
-    button.type = 'button';
-    button.textContent = '⋯';
-    button.title = `${kind} actions`;
-    button.setAttribute('aria-label', `${kind} actions for ${label}`);
-    return button;
-  };
+  const overflowButton = createStudioShelfOverflowButton;
   const contextMenu = createStudioContextMenu();
   const sorter = createStudioShelfSorter({
     order: (kind, sectionIndex) => harness.shelfOrder(kind, sectionIndex),
