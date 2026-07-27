@@ -51,11 +51,12 @@ describe('Riverfall system scene', () => {
     }
   });
 
-  it('is a valid honest V4 composition with no fluid-simulation claim', () => {
+  it('is a valid honest V4 composition with a bounded surface-fluid claim', () => {
     expect(validateSceneV1(scene)).toEqual([]);
     expect(scene.label).toBe('Riverfall canyon');
-    expect(scene.summary ?? '').toContain('one-way flow');
-    expect(scene.summary ?? '').toContain('does not simulate fluid dynamics');
+    expect(scene.summary ?? '').toContain('consumer-owned 2D PBF surface-fluid trace');
+    expect(scene.summary ?? '').toContain('opaque water remains static');
+    expect(scene.summary ?? '').toContain('rather than claiming a deforming volumetric simulation');
     expect(scene.schemaVersion).toBe('studio.scene/4');
   });
 

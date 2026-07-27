@@ -4,10 +4,38 @@ import { resolve } from 'node:path';
 import { expect, test, type Page } from '@playwright/test';
 import { createServer, type ViteDevServer } from 'vite';
 
+import {
+  RIVERFALL_FLUID_CAPABILITY_LABELS,
+  RIVERFALL_FLUID_FRAME_COUNT,
+  RIVERFALL_FLUID_LAW_LABELS,
+  RIVERFALL_FLUID_RECORD_STEP_MS,
+  RIVERFALL_FLUID_SOLVER_NAME,
+  RIVERFALL_FLUID_SOLVER_VERSION,
+  RIVERFALL_FLUID_WITNESS_COUNT,
+} from '../../fixtures/riverfall-consumer/riverfall-fluid-config.js';
+
 const STUDIO_ROOT = resolve('tools/studio');
 const RIVERFALL_SCENE_ID = 'studio:scene:riverfall';
 const REPLAY_ID = 'studio:pose-replay:riverfall-flow';
 const MAX_DIFF_PIXEL_RATIO = 0.002;
+const EXPECTED_INSTANCE_COUNT = 5 + 4 + 10 + RIVERFALL_FLUID_WITNESS_COUNT;
+const EXPECTED_DURATION_MS = RIVERFALL_FLUID_FRAME_COUNT * RIVERFALL_FLUID_RECORD_STEP_MS;
+const EXPECTED_RESOURCE_COUNTS = {
+  instanceBatches: 17,
+  materialResources: 17,
+  geometryResources: 17,
+  rendererGeometries: 17,
+  rendererTextures: 2,
+} as const;
+const RESOURCE_STABILITY_TIMES_MS = [
+  0, 0,
+  1_100, 1_100,
+  3_000, 3_000,
+  4_500, 4_500,
+  5_995, 5_995,
+  6_000, 6_000,
+  0,
+] as const;
 
 let server: ViteDevServer | undefined;
 let studioOrigin = '';
@@ -78,11 +106,11 @@ test('Riverfall presents a connected animated river, cliff fall, pond, outflow, 
   const phaseZero = await page.evaluate(() => window.voxelStudio!.drawAt(0));
   expect(phaseZero.sceneRender).toEqual({
     drawCalls: 17,
-    triangles: 39_668,
+    triangles: 40_148,
     points: 0,
     lines: 0,
     instanceBatches: 17,
-    instances: 43,
+    instances: EXPECTED_INSTANCE_COUNT,
     animatedBatches: 1,
     animatedInstances: 4,
     materialResources: 17,
@@ -93,17 +121,16 @@ test('Riverfall presents a connected animated river, cliff fall, pond, outflow, 
   expect(phaseZero.scenePoseReplay).toMatchObject({
     replayId: REPLAY_ID,
     sceneId: RIVERFALL_SCENE_ID,
-    durationMs: 6_000,
+    durationMs: EXPECTED_DURATION_MS,
     provenance: {
-      solver: { name: 'studio-authored-flow-path', version: '1.0.0' },
-      gravity: [0, 0, 0],
-      lawLabels: ['kinematic.path-sampling', 'constant.arc-length'],
-      capabilityLabels: [
-        'water.visual-flow',
-        'waterfall.visual-descent',
-        'pond.visual-circulation',
-        'hidden-return-loop',
-      ],
+      solver: {
+        name: RIVERFALL_FLUID_SOLVER_NAME,
+        version: RIVERFALL_FLUID_SOLVER_VERSION,
+      },
+      fixedTimestepMs: RIVERFALL_FLUID_RECORD_STEP_MS,
+      gravity: [0, -9.81, 0],
+      lawLabels: RIVERFALL_FLUID_LAW_LABELS,
+      capabilityLabels: RIVERFALL_FLUID_CAPABILITY_LABELS,
     },
     sample: {
       wrappedTimeMs: 0,
@@ -113,6 +140,31 @@ test('Riverfall presents a connected animated river, cliff fall, pond, outflow, 
       latestEvent: null,
     },
   });
+  const composition = await page.evaluate(() => {
+    const scene = window.voxelStudio!.sceneState();
+    if (scene === null) throw new Error('Riverfall is not open while inspecting fluid witnesses.');
+    return {
+      instances: scene.placements.length,
+      fluidWitnesses: scene.placements.filter(
+        ({ model }) => model === 'studio:riverfall:flow-glint',
+      ).length,
+    };
+  });
+  expect(composition).toEqual({
+    instances: EXPECTED_INSTANCE_COUNT,
+    fluidWitnesses: RIVERFALL_FLUID_WITNESS_COUNT,
+  });
+  const resourceSamples = await page.evaluate((timesMs) => {
+    const studio = window.voxelStudio!;
+    return timesMs.map((nowMs) => ({
+      nowMs,
+      render: studio.drawAt(nowMs).sceneRender,
+    }));
+  }, RESOURCE_STABILITY_TIMES_MS);
+  for (const sample of resourceSamples) {
+    expect(sample.render, `resource counts after exact draw at ${String(sample.nowMs)} ms`)
+      .toMatchObject(EXPECTED_RESOURCE_COUNTS);
+  }
   const canvas = page.locator('.scene-canvas');
   const phaseZeroHash = await imageHash(page);
   await expect(canvas).toHaveScreenshot('model-studio-riverfall-phase-zero.png', {
@@ -120,8 +172,8 @@ test('Riverfall presents a connected animated river, cliff fall, pond, outflow, 
     maxDiffPixelRatio: MAX_DIFF_PIXEL_RATIO,
   });
 
-  // 1,100 ms is deliberately not a multiple of the 250 ms marker spacing:
-  // quarter-period sampling would merely permute 24 identical instances.
+  // This evolved pressure/gravity state is far from both the opening state and
+  // the held final frame, so it must visibly differ rather than permute witnesses.
   await page.evaluate(() => { window.voxelStudio!.drawAt(1_100); });
   const offsetFlowHash = await imageHash(page);
   expect(offsetFlowHash).not.toBe(phaseZeroHash);
@@ -147,8 +199,8 @@ test('Riverfall presents a connected animated river, cliff fall, pond, outflow, 
   });
   expect(overhead.draw.sceneRender).toMatchObject({
     drawCalls: 17,
-    triangles: 39_668,
-    instances: 43,
+    triangles: 40_148,
+    instances: EXPECTED_INSTANCE_COUNT,
   });
   await expect(canvas).toHaveScreenshot('model-studio-riverfall-overhead.png', {
     animations: 'disabled',
@@ -182,15 +234,30 @@ test('Riverfall presents a connected animated river, cliff fall, pond, outflow, 
       pitchDegrees: 30,
       viewHeight: 80,
     });
-    return studio.drawAt(5_985);
+    return studio.drawAt(5_995);
   });
   expect(reverse.scenePoseReplay?.sample).toMatchObject({
-    wrappedTimeMs: 5_985,
-    frameA: 598,
+    wrappedTimeMs: 5_995,
+    frameA: 599,
     frameB: 599,
-    alpha: 0.5,
+    alpha: 0,
   });
+  const preResetHash = await imageHash(page);
   await expect(canvas).toHaveScreenshot('model-studio-riverfall-reverse.png', {
+    animations: 'disabled',
+    maxDiffPixelRatio: MAX_DIFF_PIXEL_RATIO,
+  });
+
+  const reset = await page.evaluate(() => window.voxelStudio!.drawAt(6_000));
+  expect(reset.scenePoseReplay?.sample).toMatchObject({
+    wrappedTimeMs: 0,
+    frameA: 0,
+    frameB: 1,
+    alpha: 0,
+  });
+  const resetHash = await imageHash(page);
+  expect(resetHash).not.toBe(preResetHash);
+  await expect(canvas).toHaveScreenshot('model-studio-riverfall-reset.png', {
     animations: 'disabled',
     maxDiffPixelRatio: MAX_DIFF_PIXEL_RATIO,
   });

@@ -13,7 +13,7 @@ import {
 export interface RiverfallRelationshipV1 {
   readonly from: string;
   readonly relation: 'contains' | 'feeds' | 'falls-into' | 'drains-into'
-    | 'marks' | 'frames' | 'traces';
+    | 'marks' | 'frames' | 'samples';
   readonly to: string;
 }
 
@@ -62,8 +62,8 @@ const FOAM_RELATIONSHIPS: readonly RiverfallRelationshipV1[] =
 const FLOW_RELATIONSHIPS: readonly RiverfallRelationshipV1[] =
   createRiverfallFlowPlacementsV1().map(({ id }) => ({
     from: id,
-    relation: 'traces',
-    to: 'riverfall-cycle',
+    relation: 'samples',
+    to: 'riverfall-fluid-state',
   }));
 
 /**
@@ -88,8 +88,9 @@ export function createRiverfallScene(): SceneV1 {
     id: RIVERFALL_SCENE_ID,
     label: 'Riverfall canyon',
     summary: 'A high river runs between tree-lined banks, spills over a framed cliff, churns into '
-      + 'a pond, and drains through its front bank. Opaque voxel water and catalog-authored '
-      + 'kinematic glints visualize one-way flow; this scene does not simulate fluid dynamics.',
+      + 'a pond, and drains through its front bank. Selected particles present a deterministic '
+      + 'consumer-owned 2D PBF surface-fluid trace; the opaque water remains static rather than '
+      + 'claiming a deforming volumetric simulation.',
     placements: [
       ...STRUCTURE_PLACEMENTS,
       ...RIVERFALL_FOAM_PLACEMENTS_V1,

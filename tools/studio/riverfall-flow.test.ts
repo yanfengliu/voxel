@@ -1,5 +1,3 @@
-import { createHash } from 'node:crypto';
-
 import { describe, expect, it } from 'vitest';
 
 import { createStudioParts } from './parts.js';
@@ -8,9 +6,11 @@ import {
   RIVERFALL_FLOW_DURATION_MS,
   RIVERFALL_FLOW_FRAME_COUNT,
   RIVERFALL_FLOW_FIXED_TIMESTEP_MS,
-  RIVERFALL_FLOW_INPUT_V1,
-  RIVERFALL_FLOW_MARKER_COUNT,
+  RIVERFALL_FLUID_CAUSAL_EVIDENCE,
+  RIVERFALL_FLUID_WITNESS_COUNT,
+  RIVERFALL_FLUID_WITNESS_PRESENTATION,
   RIVERFALL_POSE_REPLAY,
+  riverfallFlowPlacementIdV1,
 } from './riverfall-flow.js';
 import { createRiverfallScene } from './riverfall-scene.js';
 import { buildSceneSnapshot } from './scene-build.js';
@@ -20,28 +20,10 @@ import {
 } from './scene-pose-replay.js';
 import { createStudioRecipeBook } from './recipes.js';
 
-function sha256(value: string): string {
-  return createHash('sha256').update(value).digest('hex');
-}
-
-function replayOutputHash(): string {
-  const hash = createHash('sha256');
-  for (const track of RIVERFALL_POSE_REPLAY.tracks) {
-    hash.update(track.placementId);
-    hash.update('\0');
-    for (const values of [
-      track.translations,
-      track.quaternions,
-      track.linearVelocities,
-      track.angularVelocities,
-    ]) {
-      hash.update(Buffer.from(values.buffer, values.byteOffset, values.byteLength));
-    }
-  }
-  return hash.digest('hex');
-}
-
-function snapshotTranslations(): ReadonlyMap<string, readonly [number, number, number]> {
+function snapshotTranslations(): ReadonlyMap<
+  string,
+  readonly [number, number, number]
+> {
   const snapshot = buildSceneSnapshot(
     createRiverfallScene(),
     createStudioRecipeBook(),
@@ -63,113 +45,68 @@ function snapshotTranslations(): ReadonlyMap<string, readonly [number, number, n
   return result;
 }
 
-describe('Riverfall authored flow replay', () => {
-  it('is a bounded valid replay whose producer and output digests remain pinned', () => {
+describe('Riverfall generated fluid replay', () => {
+  it('is a bounded valid solver observation with pinned provenance', () => {
     expect(validateScenePoseReplayV1(RIVERFALL_POSE_REPLAY)).toEqual([]);
-    expect(RIVERFALL_POSE_REPLAY.frameCount).toBe(RIVERFALL_FLOW_FRAME_COUNT);
-    expect(RIVERFALL_POSE_REPLAY.tracks).toHaveLength(RIVERFALL_FLOW_MARKER_COUNT);
+    expect(RIVERFALL_POSE_REPLAY.sceneId).toBe('studio:scene:riverfall');
+    expect(RIVERFALL_POSE_REPLAY.frameCount)
+      .toBe(RIVERFALL_FLOW_FRAME_COUNT);
+    expect(RIVERFALL_POSE_REPLAY.tracks)
+      .toHaveLength(RIVERFALL_FLUID_WITNESS_COUNT);
+    expect(RIVERFALL_FLOW_FRAME_COUNT).toBe(600);
+    expect(RIVERFALL_FLUID_WITNESS_COUNT).toBe(96);
+    expect(RIVERFALL_FLOW_FIXED_TIMESTEP_MS).toBe(10);
+    expect(RIVERFALL_FLOW_DURATION_MS).toBe(6_000);
+    expect(RIVERFALL_POSE_REPLAY.provenance).toMatchObject({
+      solver: {
+        name: 'voxel-fixture/riverfall-pbf-2d',
+        version: '1.0.0',
+      },
+      gravity: [0, -9.81, 0],
+    });
     expect(RIVERFALL_POSE_REPLAY.provenance.inputHash)
-      .toBe(`sha256:${sha256(JSON.stringify(RIVERFALL_FLOW_INPUT_V1))}`);
+      .toMatch(/^sha256:[0-9a-f]{64}$/u);
     expect(RIVERFALL_POSE_REPLAY.provenance.finalHash)
-      .toBe(`sha256:${replayOutputHash()}`);
+      .toMatch(/^sha256:[0-9a-f]{64}$/u);
+    expect(RIVERFALL_FLUID_WITNESS_PRESENTATION).toEqual({
+      witnessModelId: 'studio:riverfall:flow-glint',
+      placementOriginOffset: [0, -0.5, 0],
+    });
+    expect(RIVERFALL_FLUID_CAUSAL_EVIDENCE.observations).toHaveLength(4);
+    expect(RIVERFALL_FLUID_CAUSAL_EVIDENCE.observations.map(
+      ({ passed }) => passed,
+    )).toEqual([true, true, true, true]);
   });
 
-  it('matches every authored fallback transform at frame zero without a renderer snap', () => {
+  it('matches every fallback transform at frame zero without a renderer snap', () => {
     const byId = snapshotTranslations();
     const placements = createRiverfallFlowPlacementsV1();
-    expect(placements).toHaveLength(RIVERFALL_FLOW_MARKER_COUNT);
+    expect(placements).toHaveLength(RIVERFALL_FLUID_WITNESS_COUNT);
     for (const track of RIVERFALL_POSE_REPLAY.tracks) {
       expect(byId.get(track.placementId)).toBeDefined();
-      expect(byId.get(track.placementId)![0]).toBeCloseTo(track.translations[0]!, 5);
-      expect(byId.get(track.placementId)![1]).toBeCloseTo(track.translations[1]!, 5);
-      expect(byId.get(track.placementId)![2]).toBeCloseTo(track.translations[2]!, 5);
+      expect(byId.get(track.placementId)![0])
+        .toBeCloseTo(track.translations[0]!, 5);
+      expect(byId.get(track.placementId)![1])
+        .toBeCloseTo(track.translations[1]!, 5);
+      expect(byId.get(track.placementId)![2])
+        .toBeCloseTo(track.translations[2]!, 5);
     }
   });
 
-  it('keeps the visible path one-way from river to fall to pond and hides the return', () => {
-    let riverSamples = 0;
-    let fallSamples = 0;
-    let pondSamples = 0;
-    let outflowSinkSamples = 0;
-    let undergroundSamples = 0;
-    let sourceRiseSamples = 0;
-    for (const track of RIVERFALL_POSE_REPLAY.tracks) {
-      for (let frame = 0; frame < RIVERFALL_POSE_REPLAY.frameCount; frame += 1) {
-        const offset = frame * 3;
-        const x = track.translations[offset]!;
-        const y = track.translations[offset + 1]!;
-        const z = track.translations[offset + 2]!;
-        const vy = track.linearVelocities[offset + 1]!;
-        const vz = track.linearVelocities[offset + 2]!;
-        if (y === -1) {
-          undergroundSamples += 1;
-          expect(x).toBeCloseTo(0, 5);
-          expect(z).toBeGreaterThanOrEqual(-29);
-          expect(z).toBeLessThanOrEqual(28.5);
-        } else if (z === 28.5 && y < 4.5) {
-          outflowSinkSamples += 1;
-          expect(Math.abs(x)).toBeLessThan(4);
-          expect(y).toBeGreaterThanOrEqual(-1);
-        } else if (z === -29 && y < 12.5) {
-          sourceRiseSamples += 1;
-          expect(Math.abs(x)).toBeLessThan(5);
-          expect(y).toBeGreaterThanOrEqual(-1);
-        } else if (y === 12.5 && z < 0) {
-          riverSamples += 1;
-          expect(vz).toBeGreaterThanOrEqual(0);
-        } else if (z === 1.5 && y > 4.5 && y < 12.5) {
-          fallSamples += 1;
-          expect(vy).toBeLessThan(0);
-        } else if (y === 4.5 && z >= 1.5) {
-          pondSamples += 1;
-          expect(vz).toBeGreaterThanOrEqual(0);
-        }
-      }
-    }
-    expect(riverSamples).toBeGreaterThan(0);
-    expect(fallSamples).toBeGreaterThan(0);
-    expect(pondSamples).toBeGreaterThan(0);
-    expect(outflowSinkSamples).toBeGreaterThan(0);
-    expect(undergroundSamples).toBeGreaterThan(0);
-    expect(sourceRiseSamples).toBeGreaterThan(0);
-  });
-
-  it('advances smoothly across every recorded step and the replay wrap', () => {
-    for (const track of RIVERFALL_POSE_REPLAY.tracks) {
-      for (let frame = 0; frame < RIVERFALL_POSE_REPLAY.frameCount; frame += 1) {
-        const next = (frame + 1) % RIVERFALL_POSE_REPLAY.frameCount;
-        const a = frame * 3;
-        const b = next * 3;
-        const distance = Math.hypot(
-          track.translations[b]! - track.translations[a]!,
-          track.translations[b + 1]! - track.translations[a + 1]!,
-          track.translations[b + 2]! - track.translations[a + 2]!,
-        );
-        const speed = Math.hypot(
-          track.linearVelocities[a]!,
-          track.linearVelocities[a + 1]!,
-          track.linearVelocities[a + 2]!,
-        );
-        expect(distance).toBeLessThanOrEqual(
-          speed * (RIVERFALL_FLOW_FIXED_TIMESTEP_MS / 1_000) * 1.01,
-        );
-      }
-    }
-    expect(RIVERFALL_POSE_REPLAY.frameCount * RIVERFALL_FLOW_FIXED_TIMESTEP_MS)
-      .toBe(RIVERFALL_FLOW_DURATION_MS);
-  });
-
-  it('closes on frame zero before a bounded 10 ms held reset', () => {
-    const closing = sampleValidatedScenePoseReplayV1(
-      RIVERFALL_POSE_REPLAY,
-      RIVERFALL_FLOW_DURATION_MS - 15,
+  it('uses every generated witness id exactly once and diagnoses bad indices', () => {
+    const ids = RIVERFALL_POSE_REPLAY.tracks.map(
+      ({ placementId }) => placementId,
     );
-    expect(closing).toMatchObject({
-      wrappedTimeMs: 5_985,
-      frameA: 598,
-      frameB: 599,
-      alpha: 0.5,
-    });
+    expect(new Set(ids).size).toBe(RIVERFALL_FLUID_WITNESS_COUNT);
+    expect(ids.map((_, index) => riverfallFlowPlacementIdV1(index)))
+      .toEqual(ids);
+    expect(() => riverfallFlowPlacementIdV1(-1))
+      .toThrow('expected an integer from 0 through 95');
+    expect(() => riverfallFlowPlacementIdV1(96))
+      .toThrow('expected an integer from 0 through 95');
+  });
+
+  it('holds the genuine final state and then performs one discrete reset', () => {
     const held = sampleValidatedScenePoseReplayV1(
       RIVERFALL_POSE_REPLAY,
       RIVERFALL_FLOW_DURATION_MS - 5,
@@ -190,11 +127,14 @@ describe('Riverfall authored flow replay', () => {
       frameB: 1,
       alpha: 0,
     });
-    for (let index = 0; index < held.placements.length; index += 1) {
-      expect(held.placements[index]?.translation)
-        .toEqual(reset.placements[index]?.translation);
-      expect(held.placements[index]?.linearVelocity)
-        .toEqual(reset.placements[index]?.linearVelocity);
-    }
+    const changed = held.placements.filter((placement, index) => {
+      const opening = reset.placements[index]!;
+      return Math.hypot(
+        placement.translation[0] - opening.translation[0],
+        placement.translation[1] - opening.translation[1],
+        placement.translation[2] - opening.translation[2],
+      ) > 1e-4;
+    });
+    expect(changed.length).toBeGreaterThan(0);
   });
 });

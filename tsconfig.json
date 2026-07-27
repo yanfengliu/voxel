@@ -29,6 +29,7 @@
     "tests",
     "tools",
     "fixtures/machine-works-consumer",
+    "fixtures/riverfall-consumer",
     "eslint.config.js",
     "playwright.config.ts",
     "vitest.config.ts"

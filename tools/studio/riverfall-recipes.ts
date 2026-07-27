@@ -186,24 +186,22 @@ export function createRiverfallOutflowRecipe(): RecipeV1 {
   };
 }
 
-export function createRiverfallFlowGlintRecipe(): RecipeV1 {
+export function createRiverfallFluidWitnessRecipe(): RecipeV1 {
   return {
     schemaVersion: 'studio.voxel-recipe/1',
     id: 'studio:riverfall:flow-glint',
-    label: 'Flow glint',
+    label: 'Fluid witness',
     seed: 1,
-    size: [3, 1, 1],
-    summary: 'A compact bright dash used as a rigid directional water marker.',
-    tags: ['water', 'flow', 'marker'],
-    roles: ['empty', 'glint', 'spark'],
+    size: [1, 1, 1],
+    summary: 'A compact particle that presents one selected fluid-solver observation.',
+    tags: ['water', 'fluid', 'particle', 'witness'],
+    roles: ['empty', 'particle'],
     palette: [
       { r: 0, g: 0, b: 0 },
-      { r: 101, g: 194, b: 209 },
       { r: 174, g: 228, b: 218 },
     ],
     steps: [
-      box([0, 0, 0], [3, 1, 1], 'glint', 'Draws a bright flow dash'),
-      box([1, 0, 0], [1, 1, 1], 'spark', 'Brightens its centre'),
+      box([0, 0, 0], [1, 1, 1], 'particle', 'Marks one replayed fluid parcel'),
     ],
     motion: { ...STILL },
   };
@@ -245,7 +243,7 @@ export const RIVERFALL_RECIPES = [
   createRiverfallWaterfallRecipe(),
   createRiverfallPondRecipe(),
   createRiverfallOutflowRecipe(),
-  createRiverfallFlowGlintRecipe(),
+  createRiverfallFluidWitnessRecipe(),
   createRiverfallFoamRecipe(),
 ] as const;
 
