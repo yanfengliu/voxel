@@ -2,6 +2,9 @@ import { describe, expect, it } from 'vitest';
 
 import {
   createMachineWorksCollectionBucketPhysicalAsset,
+  createMachineWorksConveyorSlatPhysicalAsset,
+  createMachineWorksDriveDrumPhysicalAsset,
+  createMachineWorksExposedDriveCogPhysicalAsset,
   createMachineWorksInsertionHeadPhysicalAsset,
   createMachineWorksPhysicalBook,
   createMachineWorksProductBasePhysicalAsset,
@@ -26,6 +29,9 @@ const physical = createMachineWorksPhysicalBook();
 
 const IDS = [
   'studio:machine-works:rail-foundation',
+  'studio:machine-works:conveyor-slat',
+  'studio:machine-works:drive-drum',
+  'studio:machine-works:drive-cog',
   'studio:machine-works:collection-bucket',
   'studio:machine-works:transfer-carriage',
   'studio:machine-works:insertion-head',
@@ -93,7 +99,7 @@ function expectSolidCollidersMatchRecipe(
   expect(mismatches, asset.recipeId).toEqual([]);
 }
 
-function expectOneDynamicColliderPerPaintedVoxel(
+function expectOneColliderPerPaintedVoxel(
   asset: PhysicalAssetV1,
   recipe: RecipeV1,
 ): void {
@@ -118,7 +124,7 @@ function expectOneDynamicColliderPerPaintedVoxel(
       }
     }
   }
-  expect(mismatches, `${asset.recipeId} dynamic mass partition`).toEqual([]);
+  expect(mismatches, `${asset.recipeId} collider partition`).toEqual([]);
 }
 
 describe('machine works physical assets', () => {
@@ -138,7 +144,7 @@ describe('machine works physical assets', () => {
   });
 
   it('builds and compiles every sidecar without inventing nested occurrences', () => {
-    const expectedColliderCounts = [24, 13, 12, 38, 19, 18, 4];
+    const expectedColliderCounts = [26, 3, 19, 9, 13, 10, 38, 19, 18, 4];
     for (const [index, recipeId] of IDS.entries()) {
       const recipe = recipes[recipeId];
       const asset = physical[recipeId];
@@ -169,13 +175,18 @@ describe('machine works physical assets', () => {
     }
   });
 
-  it('partitions every dynamic painted voxel into exactly one mass-bearing collider', () => {
+  it('partitions conveyor and dynamic painted voxels into exactly one solid collider', () => {
     for (const recipeId of [
+      'studio:machine-works:rail-foundation',
+      'studio:machine-works:conveyor-slat',
+      'studio:machine-works:drive-drum',
+      'studio:machine-works:drive-cog',
+      'studio:machine-works:transfer-carriage',
       'studio:machine-works:product-base',
       'studio:machine-works:product-core',
       'studio:machine-works:product-cap',
     ] as const) {
-      expectOneDynamicColliderPerPaintedVoxel(physical[recipeId]!, recipes[recipeId]!);
+      expectOneColliderPerPaintedVoxel(physical[recipeId]!, recipes[recipeId]!);
     }
   });
 
@@ -197,8 +208,11 @@ describe('machine works physical assets', () => {
       return body && { key: body.key, type: body.type };
     })).toEqual([
       { key: 'foundation', type: 'fixed' },
+      { key: 'slat', type: 'kinematic' },
+      { key: 'drum', type: 'kinematic' },
+      { key: 'cog', type: 'kinematic' },
       { key: 'bucket', type: 'fixed' },
-      { key: 'carriage', type: 'kinematic' },
+      { key: 'carriage', type: 'dynamic' },
       { key: 'head', type: 'kinematic' },
       { key: 'base', type: 'dynamic' },
       { key: 'core', type: 'dynamic' },
@@ -210,16 +224,31 @@ describe('machine works physical assets', () => {
     expect(IDS.map((recipeId) =>
       physical[recipeId]?.ports.map(({ key, frame }) => ({ key, at: frame.position })))).toEqual([
       [
-        { key: 'track-entry', at: [-15.5, 2.5, 0] },
-        { key: 'track-exit', at: [15.5, 2.5, 0] },
-        { key: 'near-rail-running-surface', at: [0, 2.5, -1] },
-        { key: 'far-rail-running-surface', at: [0, 2.5, 1] },
+        { key: 'belt-entry', at: [-15.5, 2.5, 0] },
+        { key: 'belt-exit', at: [15.5, 2.5, 0] },
+        { key: 'near-side-guard', at: [0, 2.5, -3] },
+        { key: 'far-side-guard', at: [0, 2.5, 3] },
+      ],
+      [
+        { key: 'belt-contact-top', at: [0, 0.5, 0] },
+        { key: 'drum-pitch-underside', at: [0, -0.5, 0] },
+        { key: 'pitch-leading-edge', at: [4, 0, 0] },
+        { key: 'pitch-trailing-edge', at: [-4, 0, 0] },
+      ],
+      [
+        { key: 'axle', at: [0, 0, 0] },
+        { key: 'belt-pitch-top', at: [0, 5.5, 0] },
+      ],
+      [
+        { key: 'axle', at: [0, 0, 0] },
+        { key: 'phase-key', at: [0, -3, -1] },
       ],
       [{ key: 'capture-mouth', at: [0, 5, 0] }],
       [
         { key: 'load', at: [0, 3, 0] },
-        { key: 'near-shoe-running-surface', at: [0, -3, -4.5] },
-        { key: 'far-shoe-running-surface', at: [0, -3, 4.5] },
+        { key: 'belt-contact-underside', at: [0, -3, 0] },
+        { key: 'near-runner-contact', at: [0, -3, -2.5] },
+        { key: 'far-runner-contact', at: [0, -3, 2.5] },
       ],
       [
         { key: 'grip', at: [0, -9, 0] },
@@ -245,8 +274,11 @@ describe('machine works physical assets', () => {
   it('makes the consumer material and CCD inputs explicit in the sidecars', () => {
     const expected = [
       { density: undefined, friction: 0.9, restitution: 0.02 },
+      { density: undefined, friction: 1.35, restitution: 0.01 },
+      { density: undefined, friction: 1.1, restitution: 0.01 },
+      { density: undefined, friction: 1.1, restitution: 0.01 },
       { density: undefined, friction: 0.95, restitution: 0.04 },
-      { density: undefined, friction: 0.9, restitution: 0.02 },
+      { density: 0.8, friction: 1.3, restitution: 0.02 },
       { density: undefined, friction: 0.8, restitution: 0.02 },
       { density: 1.2, friction: 0.85, restitution: 0.08 },
       { density: 0.9, friction: 0.8, restitution: 0.08 },
@@ -265,6 +297,7 @@ describe('machine works physical assets', () => {
         new Set([expected[index]?.restitution]),
       );
     });
+    expect(physical['studio:machine-works:transfer-carriage']?.bodies[0]?.continuous).toBe(true);
     expect(physical['studio:machine-works:product-base']?.bodies[0]?.continuous).toBe(true);
   });
 
@@ -288,6 +321,9 @@ describe('machine works physical assets', () => {
   it('keeps each creator aligned with its physical-book slot', () => {
     const created = [
       createMachineWorksRailFoundationPhysicalAsset(),
+      createMachineWorksConveyorSlatPhysicalAsset(),
+      createMachineWorksDriveDrumPhysicalAsset(),
+      createMachineWorksExposedDriveCogPhysicalAsset(),
       createMachineWorksCollectionBucketPhysicalAsset(),
       createMachineWorksTransferCarriagePhysicalAsset(),
       createMachineWorksInsertionHeadPhysicalAsset(),

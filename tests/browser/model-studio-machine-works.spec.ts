@@ -9,9 +9,20 @@ import type {
   StudioHandleV1,
   StudioMountOptionsV1,
 } from '../../tools/studio/studio-app.js';
+import { MACHINE_WORKS_CONVEYOR_V1 } from '../../tools/studio/machine-works-conveyor.js';
 
 interface BrowserReplayModule {
   readonly MACHINE_WORKS_POSE_REPLAY: ScenePoseReplayV1;
+}
+
+interface BrowserReplaySamplerModule {
+  readonly sampleValidatedScenePoseReplayV1: (replay: ScenePoseReplayV1, timeMs: number) => {
+    readonly placements: readonly {
+      readonly placementId: string;
+      readonly translation: readonly [number, number, number];
+      readonly quaternion: readonly [number, number, number, number];
+    }[];
+  };
 }
 
 interface BrowserStudioModule {
@@ -32,8 +43,9 @@ interface BrowserRuntimeModule {
 
 const STUDIO_ROOT = resolve('tools/studio');
 const MACHINE_WORKS_SCENE_ID = 'studio:scene:contrast-machines';
-const REPLAY_DURATION_MS = 18_000;
-const COLLECTED_EVENT_TIME_MS = 16_633.333333333336;
+const REPLAY_DURATION_MS = 30_000;
+const CONTACT_EVENT_TIME_MS = 20_950;
+const COLLECTED_EVENT_TIME_MS = 24_150;
 
 let server: ViteDevServer | undefined;
 let studioOrigin = '';
@@ -76,7 +88,7 @@ const imageHash = async (page: Page): Promise<string> =>
     .update(await page.locator('.scene-canvas').screenshot({ animations: 'disabled' }))
     .digest('hex');
 
-test('Machine Works presents every committed event at its exact time and resets discretely at 18 seconds', async ({ page }) => {
+test('Machine Works presents its exposed phase-coupled cogs and belt plus every committed event before resetting at 30 seconds', async ({ page }) => {
   const errors: string[] = [];
   page.on('pageerror', (error) => errors.push(error.message));
   page.on('console', (message) => {
@@ -101,6 +113,7 @@ test('Machine Works presents every committed event at its exact time and resets 
     const source = replayModule.MACHINE_WORKS_POSE_REPLAY;
     return {
       frameCount: source.frameCount,
+      trackCount: source.tracks.length,
       fixedTimestepMs: source.provenance.fixedTimestepMs,
       durationMs: source.frameCount * source.provenance.fixedTimestepMs,
       events: source.events.map((event) => ({
@@ -113,20 +126,20 @@ test('Machine Works presents every committed event at its exact time and resets 
   });
 
   expect(replay).toMatchObject({
-    frameCount: 1_080,
+    frameCount: 1_800,
+    trackCount: 71,
     fixedTimestepMs: 1_000 / 60,
-    durationMs: REPLAY_DURATION_MS,
     events: [
       {
         id: 'machine-works:assembled',
         type: 'assembled',
-        timeMs: 9_000,
+        timeMs: 11_666.666666666668,
         placementId: 'product-base',
       },
       {
         id: 'machine-works:released',
         type: 'released',
-        timeMs: 12_000,
+        timeMs: 18_333.333333333336,
         placementId: 'assembly-carriage',
       },
       {
@@ -141,10 +154,99 @@ test('Machine Works presents every committed event at its exact time and resets 
       },
     ],
   });
-  expect(replay.events[2]?.timeMs).toBe(13_516.666666666668);
+  expect(replay.durationMs).toBeCloseTo(REPLAY_DURATION_MS, 9);
+  expect(replay.events[2]?.timeMs).toBe(CONTACT_EVENT_TIME_MS);
   expect(replay.events[3]?.timeMs).toBe(COLLECTED_EVENT_TIME_MS);
 
   const phaseHashes = [await imageHash(page)];
+  await page.evaluate(() => window.voxelStudio!.drawAt(3_000));
+  phaseHashes.push(await imageHash(page));
+  await expect(page.locator('.scene-canvas')).toHaveScreenshot(
+    'model-studio-machine-works-belt-driving.png',
+    { animations: 'disabled', maxDiffPixelRatio: 0.002 },
+  );
+  const defaultCamera = await page.evaluate(() => ({
+    view: window.voxelStudio!.viewState(),
+    center: window.voxelStudio!.viewCenter(),
+  }));
+  await page.evaluate(() => {
+    const harness = window.voxelStudio!;
+    harness.setViewCenter([-27.5, 0, 5]);
+    harness.setViewAngles({ yawDegrees: 340, pitchDegrees: 35, viewHeight: 20 });
+    harness.drawAt(0);
+  });
+  const cogPhaseAtRest = await imageHash(page);
+  await expect(page.locator('.scene-canvas')).toHaveScreenshot(
+    'model-studio-machine-works-drive-cog-phase-zero.png',
+    { animations: 'disabled', maxDiffPixelRatio: 0.002 },
+  );
+  await page.evaluate(() => {
+    window.voxelStudio!.drawAt(3_000);
+  });
+  const cogPhaseUnderDrive = await imageHash(page);
+  await expect(page.locator('.scene-canvas')).toHaveScreenshot(
+    'model-studio-machine-works-drive-cog-phase-moving.png',
+    { animations: 'disabled', maxDiffPixelRatio: 0.002 },
+  );
+  expect(cogPhaseUnderDrive).not.toBe(cogPhaseAtRest);
+  const phaseEvidence = await page.evaluate(async () => {
+    const replayUrl = new URL('generated-machine-works-replay.ts', window.location.href).href;
+    const samplerUrl = new URL('scene-pose-replay.ts', window.location.href).href;
+    const replayModule = await import(replayUrl) as unknown as BrowserReplayModule;
+    const samplerModule = await import(samplerUrl) as unknown as BrowserReplaySamplerModule;
+    const sample = (timeMs: number) => {
+      const placements = samplerModule.sampleValidatedScenePoseReplayV1(
+        replayModule.MACHINE_WORKS_POSE_REPLAY,
+        timeMs,
+      ).placements;
+      const placement = (id: string) => {
+        const found = placements.find(({ placementId }) => placementId === id);
+        if (found === undefined) {
+          throw new Error(`Machine Works focused phase evidence could not find '${id}'.`);
+        }
+        return found;
+      };
+      return {
+        west: placement('belt-drive-west').quaternion,
+        east: placement('belt-drive-east').quaternion,
+        exposedCogs: [
+          placement('belt-cog-west-near').quaternion,
+          placement('belt-cog-west-far').quaternion,
+          placement('belt-cog-east-near').quaternion,
+          placement('belt-cog-east-far').quaternion,
+        ],
+        slat: placement('belt-slat-01').translation,
+      };
+    };
+    return { atRest: sample(0), underDrive: sample(3_000) };
+  });
+  const quaternionDot = (
+    left: readonly number[],
+    right: readonly number[],
+  ): number => left.reduce((sum, component, index) =>
+    sum + component * right[index]!, 0);
+  expect(Math.abs(quaternionDot(
+    phaseEvidence.atRest.west,
+    phaseEvidence.underDrive.west,
+  ))).toBeLessThan(0.999);
+  for (const sample of [phaseEvidence.atRest, phaseEvidence.underDrive]) {
+    expect(Math.abs(quaternionDot(sample.west, sample.east))).toBeCloseTo(1, 5);
+    sample.exposedCogs.forEach((cog, index) => {
+      expect(cog).toEqual(index < 2 ? sample.west : sample.east);
+    });
+  }
+  expect(Math.hypot(
+    phaseEvidence.underDrive.slat[0] - phaseEvidence.atRest.slat[0],
+    phaseEvidence.underDrive.slat[1] - phaseEvidence.atRest.slat[1],
+    phaseEvidence.underDrive.slat[2] - phaseEvidence.atRest.slat[2],
+  )).toBeGreaterThan(0.1);
+  await page.evaluate(({ view, center }) => {
+    const harness = window.voxelStudio!;
+    harness.setViewCenter(center);
+    harness.setViewAngles(view);
+    harness.drawAt(0);
+  }, defaultCamera);
+  const restoredPhaseZeroHash = await imageHash(page);
   for (const event of replay.events) {
     const evidence = await page.evaluate((sample) => {
       const frame = window.voxelStudio!.drawAt(sample.timeMs);
@@ -157,10 +259,10 @@ test('Machine Works presents every committed event at its exact time and resets 
       };
     }, event);
 
+    expect(evidence.replay?.durationMs).toBe(REPLAY_DURATION_MS);
     expect(evidence.replay).toMatchObject({
       replayId: 'studio:pose-replay:machine-works',
       sceneId: MACHINE_WORKS_SCENE_ID,
-      durationMs: REPLAY_DURATION_MS,
       provenance: {
         solver: { name: '@dimforge/rapier3d-compat', version: '0.19.3' },
         fixedTimestepMs: 1_000 / 60,
@@ -174,7 +276,7 @@ test('Machine Works presents every committed event at its exact time and resets 
       },
     });
     expect(evidence.render).toMatchObject({
-      instances: 9,
+      instances: MACHINE_WORKS_CONVEYOR_V1.slatCount + 15,
       animatedBatches: 0,
       animatedInstances: 0,
     });
@@ -202,8 +304,8 @@ test('Machine Works presents every committed event at its exact time and resets 
   const heldHash = await imageHash(page);
   expect(held?.sample).toMatchObject({
     wrappedTimeMs: REPLAY_DURATION_MS - 1,
-    frameA: 1_079,
-    frameB: 1_079,
+    frameA: 1_799,
+    frameB: 1_799,
     alpha: 0,
     latestEvent: { id: 'machine-works:collected', type: 'collected' },
   });
@@ -225,8 +327,121 @@ test('Machine Works presents every committed event at its exact time and resets 
   });
   expect(reset.statusText).toContain('replay staged');
   expect(heldHash).not.toBe(phaseHashes[0]);
-  expect(resetHash).toBe(phaseHashes[0]);
+  expect(resetHash).toBe(restoredPhaseZeroHash);
   expect(errors).toEqual([]);
+});
+
+test('Machine Works diagnostic projection exposes the internal slat and stepped-drum wrap', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 800 });
+  const response = await page.goto(studioOrigin, { waitUntil: 'load' });
+  expect(response?.ok()).toBe(true);
+  await page.waitForFunction(() => typeof window.voxelStudio === 'object');
+  const diagnosticEvidence = await page.evaluate(async (sceneId) => {
+    const studioUrl = new URL('studio-app.ts', window.location.href).href;
+    const catalogUrl = new URL('catalog.ts', window.location.href).href;
+    const { mountStudio } = await import(studioUrl) as unknown as BrowserStudioModule;
+    const { createStudioCatalog } = await import(catalogUrl) as unknown as BrowserCatalogModule;
+    const sourceCatalog = createStudioCatalog();
+    const sourceScene = sourceCatalog.scenes?.find(({ id }) => id === sceneId);
+    if (sourceScene?.schemaVersion !== 'studio.scene/4') {
+      throw new Error(
+        `Machine Works diagnostic expected V4 scene '${sceneId}' in the live catalog.`,
+      );
+    }
+    const replayId = sourceScene.poseReplay.id;
+    const sourceReplay = sourceCatalog.scenePoseReplays?.[replayId];
+    if (sourceReplay === undefined) {
+      throw new Error(
+        `Machine Works diagnostic expected pose replay '${replayId}' in the live catalog.`,
+      );
+    }
+    const placements = sourceScene.placements.filter(({ model }) =>
+      model === 'studio:machine-works:conveyor-slat'
+        || model === 'studio:machine-works:drive-drum');
+    const placementIds = new Set(placements.map(({ id }) => id));
+    const diagnosticScene = { ...sourceScene, placements };
+    const diagnosticCatalog: StudioCatalogV1 = {
+      ...sourceCatalog,
+      scenes: [diagnosticScene],
+      scenePoseReplays: {
+        [replayId]: {
+          ...sourceReplay,
+          tracks: sourceReplay.tracks.filter(({ placementId }) =>
+            placementIds.has(placementId)),
+          events: [],
+        },
+      },
+    };
+    const root = document.createElement('div');
+    root.dataset.machineWorksDiagnostic = '';
+    root.style.cssText = 'position:fixed;inset:0;z-index:10000;background:#10161a';
+    document.body.append(root);
+    const studio = mountStudio({
+      root,
+      catalog: diagnosticCatalog,
+      publishHarness: false,
+    });
+    const diagnosticWindow = window as unknown as Window & {
+      machineWorksDiagnostic?: StudioHandleV1;
+    };
+    diagnosticWindow.machineWorksDiagnostic = studio;
+    studio.harness.openScene(diagnosticScene.id);
+    studio.harness.setSceneAnimation(false);
+    studio.harness.setDepth(false);
+    studio.harness.setEdges(true);
+    studio.harness.setLit(false);
+    studio.harness.setViewCenter([-32.16, 0, -21.9]);
+    studio.harness.setViewAngles({
+      yawDegrees: 12,
+      pitchDegrees: 15,
+      viewHeight: 9.5,
+    });
+    studio.harness.drawAt(3_000);
+    const diagnosticReplay = diagnosticCatalog.scenePoseReplays?.[replayId];
+    return {
+      placementIds: placements.map(({ id }) => id),
+      trackIds: diagnosticReplay?.tracks.map(({ placementId }) => placementId) ?? [],
+      reusesExactSourceTracks: diagnosticReplay?.tracks.every((track) =>
+        sourceReplay.tracks.includes(track)) ?? false,
+    };
+  }, MACHINE_WORKS_SCENE_ID);
+  expect(diagnosticEvidence.placementIds).toHaveLength(
+    MACHINE_WORKS_CONVEYOR_V1.slatCount + 2,
+  );
+  expect([...diagnosticEvidence.trackIds].sort()).toEqual(
+    [...diagnosticEvidence.placementIds].sort(),
+  );
+  expect(diagnosticEvidence.reusesExactSourceTracks).toBe(true);
+  try {
+    await page.addStyleTag({
+      content: [
+        '[data-machine-works-diagnostic] .viewchip,',
+        '[data-machine-works-diagnostic] .toggles,',
+        '[data-machine-works-diagnostic] .stagehint,',
+        '[data-machine-works-diagnostic] .grid-marks,',
+        '[data-machine-works-diagnostic] .highlight-marks {',
+        '  visibility: hidden !important;',
+        '}',
+      ].join('\n'),
+    });
+    const canvas = page.locator(
+      '[data-machine-works-diagnostic] .scene-canvas',
+    );
+    await expect(canvas).toBeVisible();
+    await expect(canvas).toHaveScreenshot(
+      'model-studio-machine-works-internal-drum-wrap.png',
+      { animations: 'disabled', maxDiffPixelRatio: 0.002 },
+    );
+  } finally {
+    await page.evaluate(() => {
+      const diagnosticWindow = window as unknown as Window & {
+        machineWorksDiagnostic?: StudioHandleV1;
+      };
+      diagnosticWindow.machineWorksDiagnostic?.dispose();
+      delete diagnosticWindow.machineWorksDiagnostic;
+      document.querySelector('[data-machine-works-diagnostic]')?.remove();
+    });
+  }
 });
 
 test('Machine Works rejects authored selection and edits while a real left drag only orbits', async ({ page }) => {

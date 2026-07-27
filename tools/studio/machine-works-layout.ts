@@ -4,6 +4,11 @@
  * consumer still derives and validates physical body and port coordinates
  * from the exact sidecars before it advances Rapier.
  */
+import {
+  MACHINE_WORKS_CONVEYOR_V1,
+  machineWorksDrumSceneFloorV1,
+} from './machine-works-conveyor.js';
+
 export const MACHINE_WORKS_SCENE_LAYOUT_V1 = Object.freeze({
   foundation: Object.freeze({
     at: Object.freeze([-2.9, 0, 0] as const),
@@ -49,6 +54,22 @@ export const MACHINE_WORKS_SCENE_LAYOUT_V1 = Object.freeze({
     at: Object.freeze([-20, 9, 0] as const),
     grain: 0.4,
     sizeVoxels: Object.freeze([15, 6, 11] as const),
+  }),
+  conveyor: Object.freeze({
+    slat: Object.freeze({
+      grain: MACHINE_WORKS_CONVEYOR_V1.slatGrain,
+      sizeVoxels: MACHINE_WORKS_CONVEYOR_V1.slatSizeVoxels,
+    }),
+    westDrum: Object.freeze({
+      at: machineWorksDrumSceneFloorV1('west'),
+      grain: MACHINE_WORKS_CONVEYOR_V1.drumGrain,
+      sizeVoxels: MACHINE_WORKS_CONVEYOR_V1.drumSizeVoxels,
+    }),
+    eastDrum: Object.freeze({
+      at: machineWorksDrumSceneFloorV1('east'),
+      grain: MACHINE_WORKS_CONVEYOR_V1.drumGrain,
+      sizeVoxels: MACHINE_WORKS_CONVEYOR_V1.drumSizeVoxels,
+    }),
   }),
   coreHead: Object.freeze({
     at: Object.freeze([-8, 19.3, 0] as const),

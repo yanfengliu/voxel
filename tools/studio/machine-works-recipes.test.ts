@@ -2,6 +2,9 @@ import { describe, expect, it } from 'vitest';
 
 import {
   createMachineWorksCollectionBucketRecipe,
+  createMachineWorksConveyorSlatRecipe,
+  createMachineWorksDriveDrumRecipe,
+  createMachineWorksExposedDriveCogRecipe,
   createMachineWorksInsertionHeadRecipe,
   createMachineWorksProductBaseRecipe,
   createMachineWorksProductCapRecipe,
@@ -68,9 +71,12 @@ function connectedComponentCount(recipe: RecipeV1, book: RecipeBookV1): number {
 }
 
 describe('machine works recipes', () => {
-  it('exports the seven static, independently buildable assembly-line pieces', () => {
+  it('exports the ten independently buildable assembly-line pieces', () => {
     const recipes = [
       createMachineWorksRailFoundationRecipe(),
+      createMachineWorksConveyorSlatRecipe(),
+      createMachineWorksDriveDrumRecipe(),
+      createMachineWorksExposedDriveCogRecipe(),
       createMachineWorksCollectionBucketRecipe(),
       createMachineWorksTransferCarriageRecipe(),
       createMachineWorksInsertionHeadRecipe(),
@@ -82,6 +88,9 @@ describe('machine works recipes', () => {
 
     expect(Object.keys(book)).toEqual([
       'studio:machine-works:rail-foundation',
+      'studio:machine-works:conveyor-slat',
+      'studio:machine-works:drive-drum',
+      'studio:machine-works:drive-cog',
       'studio:machine-works:collection-bucket',
       'studio:machine-works:transfer-carriage',
       'studio:machine-works:insertion-head',
@@ -107,18 +116,55 @@ describe('machine works recipes', () => {
     }
   });
 
-  it('keeps the rail foundation long, open below, and explicit at its wear rails', () => {
+  it('keeps the foundation open below and its moving belt lane clear between side guards', () => {
     const recipe = createMachineWorksRailFoundationRecipe();
     const book = createMachineWorksRecipeBook();
 
     expect(recipe.size).toEqual([31, 5, 11]);
     expect(roleAt(recipe, book, 15, 2, 5)).toBe('empty');
-    expect(roleAt(recipe, book, 15, 4, 4)).toBe('wear');
-    expect(roleAt(recipe, book, 15, 4, 6)).toBe('wear');
-    expect(roleAt(recipe, book, 13, 4, 5)).toBe('structure');
-    expect(roleAt(recipe, book, 15, 4, 2)).toBe('empty');
-    expect(roleAt(recipe, book, 15, 4, 8)).toBe('empty');
-    expect(roleAt(recipe, book, 0, 4, 5)).toBe('safety');
+    expect(roleAt(recipe, book, 13, 3, 5)).toBe('structure');
+    expect(roleAt(recipe, book, 15, 4, 2)).toBe('wear');
+    expect(roleAt(recipe, book, 15, 4, 5)).toBe('empty');
+    expect(roleAt(recipe, book, 15, 4, 8)).toBe('wear');
+    expect(roleAt(recipe, book, 0, 4, 2)).toBe('safety');
+    expect(roleAt(recipe, book, 0, 4, 5)).toBe('empty');
+  });
+
+  it('makes the belt pitch, symmetric cog solid, and keyed rotation phase mechanically legible', () => {
+    const book = createMachineWorksRecipeBook();
+    const slat = createMachineWorksConveyorSlatRecipe();
+    const drum = createMachineWorksDriveDrumRecipe();
+    const exposedCog = createMachineWorksExposedDriveCogRecipe();
+
+    expect(slat.size).toEqual([8, 1, 26]);
+    expect(roleAt(slat, book, 4, 0, 0)).toBe('safety');
+    expect(roleAt(slat, book, 4, 0, 13)).toBe('wear');
+    expect(roleAt(slat, book, 4, 0, 25)).toBe('safety');
+
+    expect(drum.size).toEqual([11, 11, 19]);
+    expect(roleAt(drum, book, 5, 0, 1)).toBe('safety');
+    expect(roleAt(drum, book, 0, 5, 1)).toBe('safety');
+    expect(roleAt(drum, book, 0, 0, 1)).toBe('empty');
+    expect(roleAt(drum, book, 5, 5, 9)).toBe('wear');
+    expect(roleAt(drum, book, 5, 1, 0)).toBe('detail');
+    expect(roleAt(drum, book, 5, 9, 0)).toBe('structure');
+    expect(exposedCog.size).toEqual([11, 11, 3]);
+    expect(roleAt(exposedCog, book, 5, 0, 1)).toBe('safety');
+    expect(roleAt(exposedCog, book, 5, 1, 0)).toBe('detail');
+    expect(roleAt(exposedCog, book, 0, 0, 1)).toBe('empty');
+    const model = buildRecipe(drum, parts, book).model;
+    const drumIsSolidAt = (x: number, y: number, z: number): boolean =>
+      (model.voxels[x + 11 * (y + 11 * z)] ?? 0) !== 0;
+    for (let z = 0; z < drum.size[2]; z += 1) {
+      for (let y = 0; y < drum.size[1]; y += 1) {
+        for (let x = 0; x < drum.size[0]; x += 1) {
+          const solid = drumIsSolidAt(x, y, z);
+          expect(drumIsSolidAt(10 - x, y, z)).toBe(solid);
+          expect(drumIsSolidAt(x, 10 - y, z)).toBe(solid);
+          expect(drumIsSolidAt(x, y, 18 - z)).toBe(solid);
+        }
+      }
+    }
   });
 
   it('leaves the collection bucket visibly open above its floor and low lip', () => {
@@ -132,12 +178,12 @@ describe('machine works recipes', () => {
     expect(roleAt(recipe, book, 7, 9, 6)).toBe('empty');
   });
 
-  it('gives the carriage a raised deck, four shoes, and clear space below its center', () => {
+  it('gives the carrier a raised deck and two broad belt-contact runners', () => {
     const recipe = createMachineWorksTransferCarriageRecipe();
     const book = createMachineWorksRecipeBook();
 
-    expect(roleAt(recipe, book, 3, 0, 0)).toBe('wear');
-    expect(roleAt(recipe, book, 11, 0, 10)).toBe('wear');
+    expect(roleAt(recipe, book, 3, 0, 2)).toBe('wear');
+    expect(roleAt(recipe, book, 11, 0, 8)).toBe('wear');
     expect(roleAt(recipe, book, 7, 0, 5)).toBe('empty');
     expect(roleAt(recipe, book, 7, 4, 5)).toBe('wear');
     expect(roleAt(recipe, book, 3, 5, 2)).toBe('safety');

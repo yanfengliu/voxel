@@ -407,7 +407,9 @@ export function validateScenePoseReplayV1(value: unknown): readonly GenomeIssueV
     });
   } else frameCount = value.frameCount;
   const timestep = provenance(value.provenance, issues);
-  const duration = frameCount !== undefined && timestep !== undefined ? frameCount * timestep : undefined;
+  const duration = frameCount !== undefined && timestep !== undefined
+    ? canonicalScenePoseReplayDurationMsV1(frameCount, timestep)
+    : undefined;
   if (duration !== undefined && duration > MAX_POSE_REPLAY_DURATION_MS) {
     issues.push({
       path: '$.provenance.fixedTimestepMs',
@@ -418,7 +420,21 @@ export function validateScenePoseReplayV1(value: unknown): readonly GenomeIssueV
   events(value.events, placementIds, duration, issues);
   return issues;
 }
-export function scenePoseReplayDurationMsV1(replay: ScenePoseReplayV1): number { return replay.frameCount * replay.provenance.fixedTimestepMs; }
+function canonicalScenePoseReplayDurationMsV1(
+  frameCount: number,
+  fixedTimestepMs: number,
+): number {
+  const computed = frameCount * fixedTimestepMs;
+  const integer = Math.round(computed);
+  const tolerance = Math.max(1, Math.abs(computed)) * Number.EPSILON * 2;
+  return Math.abs(computed - integer) <= tolerance ? integer : computed;
+}
+export function scenePoseReplayDurationMsV1(replay: ScenePoseReplayV1): number {
+  return canonicalScenePoseReplayDurationMsV1(
+    replay.frameCount,
+    replay.provenance.fixedTimestepMs,
+  );
+}
 function lerp(a: number, b: number, alpha: number): number { return a + (b - a) * alpha; }
 function interpolateVec3(values: Float32Array, frameA: number, frameB: number, alpha: number): Vec3 {
   const a = frameA * 3;

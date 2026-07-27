@@ -102,7 +102,7 @@ describe('Machine Works Rapier sidecar adapter', () => {
     await RAPIER.init();
   });
 
-  it('creates every exact carriage compound shape at the declared scale and material', () => {
+  it('creates the exact dynamic carriage compound at its declared scale and material', () => {
     const world = new RAPIER.World({ x: 0, y: -9.81, z: 0 });
     try {
       const asset = createMachineWorksTransferCarriagePhysicalAsset();
@@ -114,17 +114,18 @@ describe('Machine Works Rapier sidecar adapter', () => {
       );
       expect(instance.solidColliders).toHaveLength(asset.colliders.length);
       expect(instance.sensorColliders).toEqual([]);
-      expect(instance.body.isKinematic()).toBe(true);
+      expect(instance.body.isDynamic()).toBe(true);
+      expect(instance.body.isCcdEnabled()).toBe(true);
       const first = instance.solidColliders[0]!;
       const half = first.halfExtents();
-      expect(half.x).toBeCloseTo(0.6);
-      expect(half.y).toBeCloseTo(0.4);
-      expect(half.z).toBeCloseTo(0.4);
+      expect(half.x).toBeCloseTo(2.2);
+      expect(half.y).toBeCloseTo(0.2);
+      expect(half.z).toBeCloseTo(0.8);
       const at = first.translation();
-      expect(at.x).toBeCloseTo(2.4);
-      expect(at.y).toBeCloseTo(7.2);
-      expect(at.z).toBeCloseTo(0.2);
-      expect(first.friction()).toBeCloseTo(0.9);
+      expect(at.x).toBeCloseTo(4);
+      expect(at.y).toBeCloseTo(7);
+      expect(at.z).toBeCloseTo(1);
+      expect(first.friction()).toBeCloseTo(1.3);
       expect(first.restitution()).toBeCloseTo(0.02);
     } finally {
       world.free();

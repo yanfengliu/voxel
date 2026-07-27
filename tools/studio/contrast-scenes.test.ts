@@ -2,10 +2,17 @@ import { describe, expect, it } from 'vitest';
 
 import {
   MACHINE_WORKS_LAYOUT,
+  MACHINE_WORKS_SUPPORT_ALIGNMENT_RULE,
   machineWorksSupportAlignmentIssuesV1,
 } from '../../fixtures/machine-works-consumer/machine-works-fixture-config.js';
 import { CURATED_CONTRAST_RECIPES } from './contrast-recipes.js';
 import { createContrastScenes } from './contrast-scenes.js';
+import {
+  MACHINE_WORKS_CONVEYOR_SLAT_IDS,
+  MACHINE_WORKS_CONVEYOR_SLAT_PITCH,
+  MACHINE_WORKS_CONVEYOR_V1,
+  MACHINE_WORKS_EXPOSED_COGS_V1,
+} from './machine-works-conveyor.js';
 import { MACHINE_WORKS_SCENE_LAYOUT_V1 } from './machine-works-layout.js';
 import { validateSceneV1 } from './scene.js';
 
@@ -50,9 +57,14 @@ describe('contrast scenes', () => {
     }
     expect(scene.poseReplay).toEqual({
       id: 'studio:pose-replay:machine-works',
-      durationMs: 18_000,
+      durationMs: 30_000,
     });
+    expect(scene.summary).toMatch(/without positive-volume overlap/);
+    expect(scene.summary).toMatch(
+      /outside Rapier as non-interacting phase witnesses/,
+    );
     const byId = new Map(scene.placements.map((placement) => [placement.id, placement]));
+    expect(scene.placements).toHaveLength(MACHINE_WORKS_CONVEYOR_V1.slatCount + 15);
     expect(byId.get('core-head')?.at[0]).toBe(byId.get('product-core')?.at[0]);
     expect(byId.get('cap-head')?.at[0]).toBe(byId.get('product-cap')?.at[0]);
     expect(byId.get('collection-bucket')?.at).toEqual([32.5, 0, 0]);
@@ -70,6 +82,35 @@ describe('contrast scenes', () => {
     });
     expect(scene.placements.filter(({ model }) => model.startsWith('studio:contrast:')))
       .toHaveLength(1);
+    expect(scene.placements.filter(
+      ({ model }) => model === 'studio:machine-works:conveyor-slat',
+    )).toHaveLength(MACHINE_WORKS_CONVEYOR_V1.slatCount);
+    expect(MACHINE_WORKS_CONVEYOR_SLAT_IDS.every((id) => byId.has(id))).toBe(true);
+    expect(byId.get('belt-drive-west')).toMatchObject({
+      model: 'studio:machine-works:drive-drum',
+      at: MACHINE_WORKS_SCENE_LAYOUT_V1.conveyor.westDrum.at,
+    });
+    expect(byId.get('belt-drive-east')).toMatchObject({
+      model: 'studio:machine-works:drive-drum',
+      at: MACHINE_WORKS_SCENE_LAYOUT_V1.conveyor.eastDrum.at,
+    });
+    expect(scene.placements.filter(
+      ({ model }) => model === 'studio:machine-works:drive-cog',
+    )).toHaveLength(MACHINE_WORKS_EXPOSED_COGS_V1.length);
+    for (const { id, side, z } of MACHINE_WORKS_EXPOSED_COGS_V1) {
+      expect(byId.get(id)).toMatchObject({
+        model: 'studio:machine-works:drive-cog',
+        at: [
+          side === 'west'
+            ? MACHINE_WORKS_CONVEYOR_V1.leftAxleX
+            : MACHINE_WORKS_CONVEYOR_V1.rightAxleX,
+          MACHINE_WORKS_CONVEYOR_V1.axleY
+            - MACHINE_WORKS_CONVEYOR_V1.drumSizeVoxels[1]
+              * MACHINE_WORKS_CONVEYOR_V1.drumGrain / 2,
+          z,
+        ],
+      });
+    }
     expect([...byId.keys()]).toEqual(expect.arrayContaining([
       'assembly-foundation',
       'assembly-gantry',
@@ -83,7 +124,7 @@ describe('contrast scenes', () => {
     ]));
   });
 
-  it('pins the rail, carriage, gantry, and continuous head guides into one support chain', () => {
+  it('pins the belt, dynamic carrier, gantry, and continuous head guides into one support chain', () => {
     expect(machineWorksSupportAlignmentIssuesV1()).toEqual([]);
     const layout = MACHINE_WORKS_SCENE_LAYOUT_V1;
     const gantryRecipe = CURATED_CONTRAST_RECIPES.find(
@@ -172,6 +213,19 @@ describe('contrast scenes', () => {
     expect(capShoeCenterX).toBeLessThanOrEqual(eastRailMaxX);
     expect(gantryFrontZ).toBeCloseTo(shoeRearZ, 9);
     expect(MACHINE_WORKS_LAYOUT.capStationX).toBeLessThan(foundationRight);
+    expect(MACHINE_WORKS_LAYOUT.tipStationX).toBe(MACHINE_WORKS_CONVEYOR_V1.rightAxleX);
+    expect(
+      MACHINE_WORKS_LAYOUT.tipStationX + MACHINE_WORKS_LAYOUT.carriageHingeLocalX,
+    ).toBeCloseTo(bucketLeft, 9);
+    const paintedSlatLength =
+      MACHINE_WORKS_CONVEYOR_V1.slatSizeVoxels[0]
+        * MACHINE_WORKS_CONVEYOR_V1.slatGrain;
+    expect(MACHINE_WORKS_CONVEYOR_SLAT_PITCH - paintedSlatLength)
+      .toBeGreaterThanOrEqual(0);
+    expect(MACHINE_WORKS_CONVEYOR_SLAT_PITCH - paintedSlatLength)
+      .toBeLessThanOrEqual(
+        MACHINE_WORKS_SUPPORT_ALIGNMENT_RULE.maximumStraightSlatGap,
+      );
     expect(MACHINE_WORKS_LAYOUT.bucketCenterX).toBeGreaterThan(foundationRight);
     expect(layout.gantry.staticNonColliding).toBe(true);
   });

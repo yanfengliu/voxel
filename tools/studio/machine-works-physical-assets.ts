@@ -6,10 +6,10 @@ import {
 } from './physical-asset.js';
 
 /**
- * Physical sidecars for the static Machine works recipe set. They describe
- * rigid composition, primitive collision shapes, sensors, and attachment
- * frames only. No solver, cross-asset wiring, gravity, contact response, or
- * movement is implemented by these declarations.
+ * Physical sidecars for the Machine works recipe set. They describe rigid
+ * composition, primitive collision shapes, sensors, and attachment frames
+ * only. No solver, cross-asset wiring, gravity, contact response, or movement
+ * is implemented by these declarations.
  *
  * Every box is authored in the recipe's voxel units. A cell at [x, y, z]
  * occupies [x, x + 1] × [y, y + 1] × [z, z + 1], so box centers land on
@@ -110,18 +110,106 @@ export function createMachineWorksRailFoundationPhysicalAsset(): PhysicalAssetV1
     colliders: [
       ...openFrameColliders(body, origin, [0, 0, 0], [31, 4, 11], 1, material),
       ...tieStations.map((x) =>
-        boxCollider(body, origin, [x, 4, 0], [1, 1, 11], 'solid', material)),
-      boxCollider(body, origin, [0, 4, 4], [31, 1, 1], 'solid', material),
-      boxCollider(body, origin, [0, 4, 6], [31, 1, 1], 'solid', material),
-      boxCollider(body, origin, [0, 4, 0], [1, 1, 11], 'solid', material),
-      boxCollider(body, origin, [30, 4, 0], [1, 1, 11], 'solid', material),
+        boxCollider(body, origin, [x, 3, 1], [1, 1, 9], 'solid', material)),
+      boxCollider(body, origin, [0, 4, 2], [1, 1, 1], 'solid', material),
+      boxCollider(body, origin, [1, 4, 2], [29, 1, 1], 'solid', material),
+      boxCollider(body, origin, [30, 4, 2], [1, 1, 1], 'solid', material),
+      boxCollider(body, origin, [0, 4, 8], [1, 1, 1], 'solid', material),
+      boxCollider(body, origin, [1, 4, 8], [29, 1, 1], 'solid', material),
+      boxCollider(body, origin, [30, 4, 8], [1, 1, 1], 'solid', material),
     ],
     constraints: [],
     ports: [
-      { key: 'track-entry', body, frame: { position: [-15.5, 2.5, 0] } },
-      { key: 'track-exit', body, frame: { position: [15.5, 2.5, 0] } },
-      { key: 'near-rail-running-surface', body, frame: { position: [0, 2.5, -1] } },
-      { key: 'far-rail-running-surface', body, frame: { position: [0, 2.5, 1] } },
+      { key: 'belt-entry', body, frame: { position: [-15.5, 2.5, 0] } },
+      { key: 'belt-exit', body, frame: { position: [15.5, 2.5, 0] } },
+      { key: 'near-side-guard', body, frame: { position: [0, 2.5, -3] } },
+      { key: 'far-side-guard', body, frame: { position: [0, 2.5, 3] } },
+    ],
+  };
+}
+
+export function createMachineWorksConveyorSlatPhysicalAsset(): PhysicalAssetV1 {
+  const body = 'slat';
+  const origin = [4, 0.5, 13] as const;
+  const material = { friction: 1.35, restitution: 0.01 } as const;
+  return {
+    schemaVersion: STUDIO_PHYSICAL_ASSET_SCHEMA_V1,
+    recipeId: 'studio:machine-works:conveyor-slat',
+    bodies: [
+      { key: body, type: 'kinematic', pose: { position: origin } },
+    ],
+    colliders: [
+      boxCollider(body, origin, [0, 0, 0], [8, 1, 3], 'solid', material),
+      boxCollider(body, origin, [0, 0, 3], [8, 1, 20], 'solid', material),
+      boxCollider(body, origin, [0, 0, 23], [8, 1, 3], 'solid', material),
+    ],
+    constraints: [],
+    ports: [
+      { key: 'belt-contact-top', body, frame: { position: [0, 0.5, 0] } },
+      { key: 'drum-pitch-underside', body, frame: { position: [0, -0.5, 0] } },
+      { key: 'pitch-leading-edge', body, frame: { position: [4, 0, 0] } },
+      { key: 'pitch-trailing-edge', body, frame: { position: [-4, 0, 0] } },
+    ],
+  };
+}
+
+function driveDrumEndColliders(
+  body: string,
+  bodyPosition: Vec3,
+  z: number,
+  material: Material,
+): readonly PhysicalColliderV1[] {
+  return [
+    boxCollider(body, bodyPosition, [4, 0, z], [3, 1, 3], 'solid', material),
+    boxCollider(body, bodyPosition, [2, 1, z], [7, 1, 3], 'solid', material),
+    boxCollider(body, bodyPosition, [1, 2, z], [9, 2, 3], 'solid', material),
+    boxCollider(body, bodyPosition, [0, 4, z], [1, 3, 3], 'solid', material),
+    boxCollider(body, bodyPosition, [1, 4, z], [9, 3, 3], 'solid', material),
+    boxCollider(body, bodyPosition, [10, 4, z], [1, 3, 3], 'solid', material),
+    boxCollider(body, bodyPosition, [1, 7, z], [9, 2, 3], 'solid', material),
+    boxCollider(body, bodyPosition, [2, 9, z], [7, 1, 3], 'solid', material),
+    boxCollider(body, bodyPosition, [4, 10, z], [3, 1, 3], 'solid', material),
+  ];
+}
+
+export function createMachineWorksDriveDrumPhysicalAsset(): PhysicalAssetV1 {
+  const body = 'drum';
+  const origin = [5.5, 5.5, 9.5] as const;
+  const material = { friction: 1.1, restitution: 0.01 } as const;
+  return {
+    schemaVersion: STUDIO_PHYSICAL_ASSET_SCHEMA_V1,
+    recipeId: 'studio:machine-works:drive-drum',
+    bodies: [
+      { key: body, type: 'kinematic', pose: { position: origin } },
+    ],
+    colliders: [
+      ...driveDrumEndColliders(body, origin, 0, material),
+      boxCollider(body, origin, [2, 2, 3], [7, 7, 13], 'solid', material),
+      ...driveDrumEndColliders(body, origin, 16, material),
+    ],
+    constraints: [],
+    ports: [
+      { key: 'axle', body, frame: { position: [0, 0, 0] } },
+      { key: 'belt-pitch-top', body, frame: { position: [0, 5.5, 0] } },
+    ],
+  };
+}
+
+export function createMachineWorksExposedDriveCogPhysicalAsset(): PhysicalAssetV1 {
+  const body = 'cog';
+  const origin = [5.5, 5.5, 1.5] as const;
+  const material = { friction: 1.1, restitution: 0.01 } as const;
+  return {
+    schemaVersion: STUDIO_PHYSICAL_ASSET_SCHEMA_V1,
+    recipeId: 'studio:machine-works:drive-cog',
+    bodies: [
+      { key: body, type: 'kinematic', pose: { position: origin } },
+    ],
+    colliders: driveDrumEndColliders(body, origin, 0, material),
+    constraints: [],
+    ports: [
+      { key: 'axle', body, frame: { position: [0, 0, 0] } },
+      { key: 'phase-key', body, frame: { position: [0, -3, -1] } },
     ],
   };
 }
@@ -162,19 +250,24 @@ export function createMachineWorksCollectionBucketPhysicalAsset(): PhysicalAsset
 export function createMachineWorksTransferCarriagePhysicalAsset(): PhysicalAssetV1 {
   const body = 'carriage';
   const origin = [7.5, 3, 5.5] as const;
-  const material = { friction: 0.9, restitution: 0.02 } as const;
+  const material = { density: 0.8, friction: 1.3, restitution: 0.02 } as const;
   return {
     schemaVersion: STUDIO_PHYSICAL_ASSET_SCHEMA_V1,
     recipeId: 'studio:machine-works:transfer-carriage',
     bodies: [
-      { key: body, type: 'kinematic', pose: { position: origin } },
+      {
+        key: body,
+        type: 'dynamic',
+        pose: { position: origin },
+        continuous: true,
+        linearDamping: 0.5,
+        angularDamping: 2,
+      },
     ],
     colliders: [
-      boxCollider(body, origin, [2, 0, 0], [3, 2, 2], 'solid', material),
-      boxCollider(body, origin, [10, 0, 0], [3, 2, 2], 'solid', material),
-      boxCollider(body, origin, [2, 0, 9], [3, 2, 2], 'solid', material),
-      boxCollider(body, origin, [10, 0, 9], [3, 2, 2], 'solid', material),
-      boxCollider(body, origin, [2, 2, 1], [11, 2, 9], 'solid', material),
+      boxCollider(body, origin, [2, 0, 1], [11, 1, 4], 'solid', material),
+      boxCollider(body, origin, [2, 0, 6], [11, 1, 4], 'solid', material),
+      boxCollider(body, origin, [2, 1, 1], [11, 3, 9], 'solid', material),
       boxCollider(body, origin, [3, 4, 2], [9, 1, 7], 'solid', material),
       boxCollider(body, origin, [0, 2, 4], [2, 2, 3], 'solid', material),
       boxCollider(body, origin, [13, 2, 4], [2, 2, 3], 'solid', material),
@@ -186,8 +279,9 @@ export function createMachineWorksTransferCarriagePhysicalAsset(): PhysicalAsset
     constraints: [],
     ports: [
       { key: 'load', body, frame: { position: [0, 3, 0] } },
-      { key: 'near-shoe-running-surface', body, frame: { position: [0, -3, -4.5] } },
-      { key: 'far-shoe-running-surface', body, frame: { position: [0, -3, 4.5] } },
+      { key: 'belt-contact-underside', body, frame: { position: [0, -3, 0] } },
+      { key: 'near-runner-contact', body, frame: { position: [0, -3, -2.5] } },
+      { key: 'far-runner-contact', body, frame: { position: [0, -3, 2.5] } },
     ],
   };
 }
@@ -313,6 +407,9 @@ export function createMachineWorksProductCapPhysicalAsset(): PhysicalAssetV1 {
 export function createMachineWorksPhysicalBook(): PhysicalAssetBookV1 {
   const assets = [
     createMachineWorksRailFoundationPhysicalAsset(),
+    createMachineWorksConveyorSlatPhysicalAsset(),
+    createMachineWorksDriveDrumPhysicalAsset(),
+    createMachineWorksExposedDriveCogPhysicalAsset(),
     createMachineWorksCollectionBucketPhysicalAsset(),
     createMachineWorksTransferCarriagePhysicalAsset(),
     createMachineWorksInsertionHeadPhysicalAsset(),

@@ -101,6 +101,18 @@ describe('Studio scene pose replay validation', () => {
     expect(scenePoseReplayDurationMsV1(sixtyHz)).toBe(18_000);
   });
 
+  it('canonicalizes a near-integer 1800-frame duration to the declared 30-second boundary', () => {
+    const value = replay();
+    const sixtyHz = {
+      ...value,
+      frameCount: 1_800,
+      provenance: { ...value.provenance, fixedTimestepMs: 1_000 / 60 },
+    };
+    expect(1_800 * (1_000 / 60)).toBeGreaterThan(30_000);
+    expect(scenePoseReplayDurationMsV1(sixtyHz)).toBe(30_000);
+    expect(sampleValidatedScenePoseReplayV1(sixtyHz, 30_000).wrappedTimeMs).toBe(0);
+  });
+
   it('reports strict provenance and track errors at their exact paths', () => {
     const value = replay() as unknown as Record<string, unknown>;
     const provenance = value.provenance as Record<string, unknown>;

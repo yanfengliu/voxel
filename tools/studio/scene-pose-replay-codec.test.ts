@@ -4,6 +4,11 @@ import {
   MACHINE_WORKS_POSE_REPLAY,
   MACHINE_WORKS_POSE_REPLAY_ID,
 } from './generated-machine-works-replay.js';
+import {
+  MACHINE_WORKS_CONVEYOR_DRUM_IDS,
+  MACHINE_WORKS_CONVEYOR_SLAT_IDS,
+  MACHINE_WORKS_EXPOSED_COGS_V1,
+} from './machine-works-conveyor.js';
 import { decodeInterleavedScenePoseReplayV1 } from './scene-pose-replay-codec.js';
 import {
   scenePoseReplayDurationMsV1,
@@ -14,7 +19,7 @@ describe('encoded scene pose replay', () => {
   it('decodes the generated Machine Works trace with bounded causal evidence', () => {
     expect(MACHINE_WORKS_POSE_REPLAY_ID).toBe('studio:pose-replay:machine-works');
     expect(validateScenePoseReplayV1(MACHINE_WORKS_POSE_REPLAY)).toEqual([]);
-    expect(scenePoseReplayDurationMsV1(MACHINE_WORKS_POSE_REPLAY)).toBe(18_000);
+    expect(scenePoseReplayDurationMsV1(MACHINE_WORKS_POSE_REPLAY)).toBe(30_000);
     expect(MACHINE_WORKS_POSE_REPLAY.tracks.map(({ placementId }) => placementId)).toEqual([
       'assembly-carriage',
       'core-head',
@@ -23,6 +28,9 @@ describe('encoded scene pose replay', () => {
       'product-core',
       'product-cap',
       'collection-bucket',
+      ...MACHINE_WORKS_CONVEYOR_SLAT_IDS,
+      ...MACHINE_WORKS_CONVEYOR_DRUM_IDS,
+      ...MACHINE_WORKS_EXPOSED_COGS_V1.map(({ id }) => id),
     ]);
     expect(MACHINE_WORKS_POSE_REPLAY.events.map(({ type }) => type)).toEqual([
       'assembled',

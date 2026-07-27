@@ -9,6 +9,13 @@ import {
   VOXEL_SCENE_SCHEMA_V4,
   type SceneV1,
 } from './scene.js';
+import {
+  MACHINE_WORKS_CONVEYOR_SLAT_IDS,
+  MACHINE_WORKS_CONVEYOR_V1,
+  MACHINE_WORKS_EXPOSED_COGS_V1,
+  machineWorksExposedCogSceneFloorV1,
+  machineWorksSlatSceneFloorV1,
+} from './machine-works-conveyor.js';
 import { MACHINE_WORKS_SCENE_LAYOUT_V1 } from './machine-works-layout.js';
 
 const CELL_SPACING = 22;
@@ -90,16 +97,19 @@ function machineWorksScene(): SceneV1 {
     schemaVersion: VOXEL_SCENE_SCHEMA_V4,
     id: 'studio:scene:contrast-machines',
     label: 'Machine works',
-    summary: 'One consumer-generated fixed-step Rapier process moves a supported base through two '
-      + 'validated insertion stations, builds a three-piece signal module from exact physical sidecars, '
-      + 'tips its still-colliding carriage away, and records gravity, contact, and settled collection. '
-      + 'A static, non-colliding service gantry rests on the rail foundation while both kinematic heads '
-      + 'slide against its named side guides; after assembly, the prescribed carriage leaves the rails '
-      + 'to reach the bucket. '
-      + 'Voxel presents the replay; the consumer owns the bounded physics claim.',
+    summary: 'One consumer-generated fixed-step process drives two Rapier kinematic drums and a closed loop of exact '
+      + 'kinematic belt slats from one controller phase. Each slat follows the nominal drum pitch datum while its '
+      + 'shortened ends meet the stepped cog-cheek planes without positive-volume overlap. '
+      + 'Four exposed axle cogs copy the paired solved-drum poses outside Rapier as non-interacting phase witnesses. '
+      + 'Solver contact and friction move an axis-constrained dynamic carrier '
+      + 'through two validated insertion stations, where a three-piece signal module is assembled from '
+      + 'exact physical sidecars. A visible output hinge then tips the still-colliding carrier so gravity '
+      + 'drops the product into its collection bucket. The cog and belt motion visibly share one drive phase; '
+      + 'this fixture claims synchronized frictional transport, not simulated gear torque or belt tension. '
+      + 'Voxel presents the replay while the consumer owns the bounded physics claim.',
     poseReplay: {
       id: 'studio:pose-replay:machine-works',
-      durationMs: 18_000,
+      durationMs: 30_000,
     },
     placements: [
       {
@@ -108,6 +118,30 @@ function machineWorksScene(): SceneV1 {
         at: MACHINE_WORKS_SCENE_LAYOUT_V1.foundation.at,
         grain: MACHINE_WORKS_SCENE_LAYOUT_V1.foundation.grain,
       },
+      {
+        id: 'belt-drive-west',
+        model: 'studio:machine-works:drive-drum',
+        at: MACHINE_WORKS_SCENE_LAYOUT_V1.conveyor.westDrum.at,
+        grain: MACHINE_WORKS_SCENE_LAYOUT_V1.conveyor.westDrum.grain,
+      },
+      {
+        id: 'belt-drive-east',
+        model: 'studio:machine-works:drive-drum',
+        at: MACHINE_WORKS_SCENE_LAYOUT_V1.conveyor.eastDrum.at,
+        grain: MACHINE_WORKS_SCENE_LAYOUT_V1.conveyor.eastDrum.grain,
+      },
+      ...MACHINE_WORKS_EXPOSED_COGS_V1.map(({ id }, index) => ({
+        id,
+        model: 'studio:machine-works:drive-cog',
+        at: machineWorksExposedCogSceneFloorV1(index),
+        grain: MACHINE_WORKS_CONVEYOR_V1.drumGrain,
+      })),
+      ...MACHINE_WORKS_CONVEYOR_SLAT_IDS.map((id, index) => ({
+        id,
+        model: 'studio:machine-works:conveyor-slat',
+        at: machineWorksSlatSceneFloorV1(index),
+        grain: MACHINE_WORKS_CONVEYOR_V1.slatGrain,
+      })),
       {
         id: 'assembly-gantry',
         model: 'studio:contrast:shipyard-gantry',

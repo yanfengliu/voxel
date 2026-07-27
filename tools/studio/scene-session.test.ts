@@ -16,6 +16,10 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { RenderDeltaV1, RenderSnapshotV1 } from '../../src/core/index.js';
 import { createStudioCatalog } from './catalog.js';
+import {
+  MACHINE_WORKS_CONVEYOR_SLAT_IDS,
+  MACHINE_WORKS_EXPOSED_COGS_V1,
+} from './machine-works-conveyor.js';
 import { sampleScenePoseReplayV1 } from './scene-pose-replay.js';
 import { THREE_MATERIAL_DECORATOR_INTERNAL } from '../../src/three/materialDecoratorInternal.js';
 import {
@@ -576,10 +580,11 @@ describe('SceneSession acceptance', () => {
       poseReplays: catalog.scenePoseReplays,
     });
     expect(session.hasMotion()).toBe(true);
-    expect(session.poseReplayStatus()).toMatchObject({
+    const openingStatus = session.poseReplayStatus();
+    expect(openingStatus?.durationMs).toBeCloseTo(machineWorks.poseReplay.durationMs, 9);
+    expect(openingStatus).toMatchObject({
       replayId: machineWorks.poseReplay.id,
       sceneId: machineWorks.id,
-      durationMs: machineWorks.poseReplay.durationMs,
       provenance: {
         solver: replay.provenance.solver,
         inputHash: replay.provenance.inputHash,
@@ -588,19 +593,23 @@ describe('SceneSession acceptance', () => {
       sample: null,
     });
 
+    const assembledEvent = replay.events.find(({ type }) => type === 'assembled');
+    if (assembledEvent?.type !== 'assembled') {
+      throw new Error('The Machine Works replay must record its assembly event.');
+    }
     session.showAt(0);
-    session.showAt(9_000);
-    session.showAt(9_000);
-    const expectedSample = sampleScenePoseReplayV1(replay, 9_000);
+    session.showAt(assembledEvent.timeMs);
+    session.showAt(assembledEvent.timeMs);
+    const expectedSample = sampleScenePoseReplayV1(replay, assembledEvent.timeMs);
     expect(session.poseReplayStatus()?.sample).toMatchObject({
-      wrappedTimeMs: 9_000,
+      wrappedTimeMs: assembledEvent.timeMs,
       frameA: expectedSample.frameA,
       frameB: expectedSample.frameB,
       alpha: expectedSample.alpha,
       latestEvent: {
         id: 'machine-works:assembled',
         type: 'assembled',
-        timeMs: 9_000,
+        timeMs: assembledEvent.timeMs,
         placementId: 'product-base',
         assemblyId: 'signal-module',
         memberPlacementIds: ['product-base', 'product-core', 'product-cap'],
@@ -625,6 +634,12 @@ describe('SceneSession acceptance', () => {
       'product-core',
       'product-cap',
       'collection-bucket',
+      MACHINE_WORKS_CONVEYOR_SLAT_IDS[0],
+      MACHINE_WORKS_CONVEYOR_SLAT_IDS.at(-1),
+      'belt-drive-west',
+      'belt-drive-east',
+      MACHINE_WORKS_EXPOSED_COGS_V1[0].id,
+      MACHINE_WORKS_EXPOSED_COGS_V1.at(-1)!.id,
     ]));
     expect(runtimeControl.frames).toHaveLength(3);
     session.dispose();
@@ -708,9 +723,12 @@ describe('SceneSession acceptance', () => {
 
     expect(session.scene).toEqual(expectedScene);
     expect(session.scene).not.toBe(firstInspection);
+    expect(session.poseReplayStatus()?.durationMs).toBeCloseTo(
+      expectedScene.poseReplay.durationMs,
+      9,
+    );
     expect(session.poseReplayStatus()).toMatchObject({
       replayId: expectedScene.poseReplay.id,
-      durationMs: expectedScene.poseReplay.durationMs,
     });
 
     runtimeControl.deltaResyncsRemaining = 1;
@@ -731,9 +749,12 @@ describe('SceneSession acceptance', () => {
     session.showAt(2_000);
 
     expect(session.scene).toEqual(expectedScene);
+    expect(session.poseReplayStatus()?.durationMs).toBeCloseTo(
+      expectedScene.poseReplay.durationMs,
+      9,
+    );
     expect(session.poseReplayStatus()).toMatchObject({
       replayId: expectedScene.poseReplay.id,
-      durationMs: expectedScene.poseReplay.durationMs,
       sample: { wrappedTimeMs: 2_000 },
     });
     expect(runtimeControl.snapshots.map(({ revision }) => revision)).toEqual([1, 12, 24]);

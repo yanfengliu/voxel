@@ -36,7 +36,7 @@ describe('the studio shelf', () => {
       { name: 'Contrast: radial mechanics', count: 5 },
       { name: 'Contrast: branching forms', count: 5 },
       { name: 'Contrast: asymmetric hybrids', count: 5 },
-      { name: 'Machine Works', count: 7 },
+      { name: 'Machine Works', count: 10 },
       { name: 'Walls', count: 2 },
       { name: 'Garden', count: 7 },
       { name: 'Furniture', count: 3 },

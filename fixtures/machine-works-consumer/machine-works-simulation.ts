@@ -10,6 +10,7 @@ import RAPIER, {
 import {
   MACHINE_WORKS_ASSETS,
   MACHINE_WORKS_ATTACHMENT_RULE,
+  MACHINE_WORKS_BELT_DRIVE,
   MACHINE_WORKS_CAPABILITY_LABELS,
   MACHINE_WORKS_COLLECTION_RULE,
   MACHINE_WORKS_DURATION_MS,
@@ -27,11 +28,23 @@ import {
   type MachineWorksTrackIdV1,
 } from './machine-works-fixture-config.js';
 import {
+  MACHINE_WORKS_CONVEYOR_DRUM_IDS,
+  MACHINE_WORKS_CONVEYOR_SLAT_IDS,
+  MACHINE_WORKS_EXPOSED_COGS_V1,
+  machineWorksDrumMotionV1,
+  machineWorksSlatMotionV1,
+} from '../../tools/studio/machine-works-conveyor.js';
+import {
   attachPhysicalAssetCollidersV1,
   createPhysicalAssetBodyV1,
   scaledPhysicalPortV1,
   type RapierPoseV1,
 } from './machine-works-rapier-adapter.js';
+import { nextMachineWorksBeltSpeedV1 } from './machine-works-belt-drive.js';
+import {
+  runMachineWorksBeltCounterfactualV1,
+  type MachineWorksBeltCounterfactualV1,
+} from './machine-works-conveyor-counterfactual.js';
 import {
   IDENTITY_ROTATION,
   assertMatingFrames,
@@ -103,6 +116,14 @@ export interface MachineWorksTraceV1 {
   readonly assemblyStates: Uint8Array;
   /** One when Rapier reports an active solver contact between carriage and product. */
   readonly supportContacts: Uint8Array;
+  /** One when the dynamic carrier touches at least one exact moving belt slat. */
+  readonly beltContacts: Uint8Array;
+  /** Integrated closed-loop belt distance and commanded speed for each fixed frame. */
+  readonly beltTravel: Float32Array;
+  readonly beltSpeeds: Float32Array;
+  /** Same conveyor, carrier, and load geometry with the named cause removed. */
+  readonly zeroDriveCounterfactual: MachineWorksBeltCounterfactualV1;
+  readonly zeroFrictionCounterfactual: MachineWorksBeltCounterfactualV1;
   /** Consecutive in-tolerance fixed ticks observed before each compound merge. */
   readonly attachmentEvidence: readonly MachineWorksAttachmentEvidenceV1[];
   readonly events: readonly MachineWorksEventV1[];
@@ -176,45 +197,30 @@ function smoothstep(alpha: number): number {
   return bounded * bounded * (3 - 2 * bounded);
 }
 
-function carriageX(tick: number): number {
-  if (tick < 120) return MACHINE_WORKS_LAYOUT.entryX;
-  if (tick < 240) return lerp(MACHINE_WORKS_LAYOUT.entryX,
-    MACHINE_WORKS_LAYOUT.coreStationX, (tick - 120) / 120);
-  if (tick < 360) return MACHINE_WORKS_LAYOUT.coreStationX;
-  if (tick < 480) return lerp(MACHINE_WORKS_LAYOUT.coreStationX,
-    MACHINE_WORKS_LAYOUT.capStationX, (tick - 360) / 120);
-  if (tick < 600) return MACHINE_WORKS_LAYOUT.capStationX;
-  if (tick < 690) return lerp(MACHINE_WORKS_LAYOUT.capStationX,
-    MACHINE_WORKS_LAYOUT.bucketCenterX, (tick - 600) / 90);
-  return MACHINE_WORKS_LAYOUT.bucketCenterX;
-}
-
-function carriagePose(tick: number): RapierPoseV1 {
-  if (tick <= MACHINE_WORKS_TICKS.released) {
-    return {
-      position: {
-        x: carriageX(tick),
-        y: MACHINE_WORKS_LAYOUT.carriageCenterY,
-        z: 0,
-      },
-      rotation: IDENTITY_ROTATION,
-    };
-  }
+function carriageTipPose(tick: number, start: RapierPoseV1): RapierPoseV1 {
   const alpha = smoothstep(
     (tick - MACHINE_WORKS_TICKS.released)
       / (MACHINE_WORKS_TICKS.tipComplete - MACHINE_WORKS_TICKS.released),
   );
   const angle = MACHINE_WORKS_LAYOUT.carriageTipRadians * alpha;
-  const hingeX = MACHINE_WORKS_LAYOUT.bucketCenterX
+  const startRotation = start.rotation ?? IDENTITY_ROTATION;
+  const sine = Math.sin(angle / 2);
+  const cosine = Math.cos(angle / 2);
+  const hingeX = start.position.x
     + MACHINE_WORKS_LAYOUT.carriageHingeLocalX;
   const centerFromHinge = -MACHINE_WORKS_LAYOUT.carriageHingeLocalX;
   return {
     position: {
       x: hingeX + Math.cos(angle) * centerFromHinge,
-      y: MACHINE_WORKS_LAYOUT.carriageCenterY + Math.sin(angle) * centerFromHinge,
-      z: 0,
+      y: start.position.y + Math.sin(angle) * centerFromHinge,
+      z: start.position.z,
     },
-    rotation: { x: 0, y: 0, z: Math.sin(angle / 2), w: Math.cos(angle / 2) },
+    rotation: {
+      x: cosine * startRotation.x - sine * startRotation.y,
+      y: cosine * startRotation.y + sine * startRotation.x,
+      z: cosine * startRotation.z + sine * startRotation.w,
+      w: cosine * startRotation.w - sine * startRotation.z,
+    },
   };
 }
 
@@ -334,13 +340,47 @@ export async function simulateMachineWorksV1(): Promise<MachineWorksTraceV1> {
       },
       { grain: MACHINE_WORKS_GRAINS.foundation },
     );
+    const slatInstances = MACHINE_WORKS_CONVEYOR_SLAT_IDS.map((_, index) => {
+      const motion = machineWorksSlatMotionV1(index, 0, 0);
+      return createPhysicalAssetBodyV1(
+        world,
+        MACHINE_WORKS_ASSETS.slat,
+        { position: motion.position, rotation: motion.rotation },
+        { grain: MACHINE_WORKS_GRAINS.slat },
+      );
+    });
+    const drumInstances = MACHINE_WORKS_CONVEYOR_DRUM_IDS.map((_, index) => {
+      const motion = machineWorksDrumMotionV1(index === 0 ? 'west' : 'east', 0, 0);
+      return createPhysicalAssetBodyV1(
+        world,
+        MACHINE_WORKS_ASSETS.drum,
+        { position: motion.position, rotation: motion.rotation },
+        { grain: MACHINE_WORKS_GRAINS.drum },
+      );
+    });
+    const slatColliders = slatInstances.flatMap(({ solidColliders }) => solidColliders);
     const carriageInstance = createPhysicalAssetBodyV1(
       world,
       MACHINE_WORKS_ASSETS.carriage,
-      carriagePose(0),
+      {
+        position: {
+          x: MACHINE_WORKS_LAYOUT.entryX,
+          y: MACHINE_WORKS_LAYOUT.carriageCenterY,
+          z: 0,
+        },
+        rotation: IDENTITY_ROTATION,
+      },
       { grain: MACHINE_WORKS_GRAINS.carriage, activeEvents: ACTIVE_EVENTS },
     );
     const carriage = carriageInstance.body;
+    carriage.setEnabledTranslations(
+      ...MACHINE_WORKS_BELT_DRIVE.carrierGuide.enabledTranslations,
+      true,
+    );
+    carriage.setEnabledRotations(
+      ...MACHINE_WORKS_BELT_DRIVE.carrierGuide.enabledRotations,
+      true,
+    );
     const baseInstance = createPhysicalAssetBodyV1(
       world,
       MACHINE_WORKS_ASSETS.base,
@@ -422,6 +462,9 @@ export async function simulateMachineWorksV1(): Promise<MachineWorksTraceV1> {
     const angularVelocities = new Float32Array(translations.length);
     const assemblyStates = new Uint8Array(MACHINE_WORKS_FRAME_COUNT);
     const supportContacts = new Uint8Array(MACHINE_WORKS_FRAME_COUNT);
+    const beltContacts = new Uint8Array(MACHINE_WORKS_FRAME_COUNT);
+    const beltTravel = new Float32Array(MACHINE_WORKS_FRAME_COUNT);
+    const beltSpeeds = new Float32Array(MACHINE_WORKS_FRAME_COUNT);
     const attachmentEvidence: MachineWorksAttachmentEvidenceV1[] = [];
     const traceEvents: MachineWorksEventV1[] = [];
     const productParts: ProductCompoundPartV1[] = [
@@ -440,11 +483,17 @@ export async function simulateMachineWorksV1(): Promise<MachineWorksTraceV1> {
     let capMerged = false;
     let coreMatingDwellTicks = 0;
     let capMatingDwellTicks = 0;
+    let integratedBeltTravel = 0;
+    let commandedBeltSpeed = 0;
+    let outputServoEngaged = false;
+    let outputServoStart: RapierPoseV1 | null = null;
+    let firstBelowBucketRim: Readonly<{ tick: number; position: Vector; velocity: Vector }> | null =
+      null;
 
     const capture = (frame: number): void => {
       const corePose = coreMerged ? mergedPartPose(base, CORE_LOCAL) : rigidPose(core!);
       const capPose = capMerged ? mergedPartPose(base, CAP_LOCAL) : rigidPose(cap!);
-      [
+      const ordinaryPoses = [
         rigidPose(carriage),
         rigidPose(coreHead),
         rigidPose(capHead),
@@ -452,19 +501,114 @@ export async function simulateMachineWorksV1(): Promise<MachineWorksTraceV1> {
         corePose,
         capPose,
         rigidPose(bucketInstance.body),
+      ];
+      const slatPoses = slatInstances.map(({ body }) => rigidPose(body));
+      const drumPoses = drumInstances.map(({ body }) => rigidPose(body));
+      const exposedCogPoses = MACHINE_WORKS_EXPOSED_COGS_V1.map(
+        ({ side, z }) => {
+          const drumPose = drumPoses[side === 'west' ? 0 : 1]!;
+          return {
+            ...drumPose,
+            translation: { ...drumPose.translation, z },
+          };
+        },
+      );
+      [
+        ...ordinaryPoses,
+        ...slatPoses,
+        ...drumPoses,
+        ...exposedCogPoses,
       ].forEach((pose, slot) => {
         recordPose(
           frame, slot, pose, translations, rotations, linearVelocities, angularVelocities,
         );
       });
       assemblyStates[frame] = state;
+      beltTravel[frame] = integratedBeltTravel;
+      beltSpeeds[frame] = commandedBeltSpeed;
     };
 
     capture(0);
     for (let tick = 1; tick <= TOTAL_TICKS; tick += 1) {
-      const nextCarriage = carriagePose(tick);
-      carriage.setNextKinematicTranslation(nextCarriage.position);
-      carriage.setNextKinematicRotation(nextCarriage.rotation ?? IDENTITY_ROTATION);
+      commandedBeltSpeed = nextMachineWorksBeltSpeedV1(
+        commandedBeltSpeed,
+        carriage,
+        tick,
+      );
+      integratedBeltTravel +=
+        commandedBeltSpeed * MACHINE_WORKS_FIXED_STEP_MS / 1_000;
+      slatInstances.forEach(({ body }, index) => {
+        const motion = machineWorksSlatMotionV1(
+          index,
+          integratedBeltTravel,
+          commandedBeltSpeed,
+        );
+        body.setNextKinematicTranslation(motion.position);
+        body.setNextKinematicRotation(motion.rotation);
+      });
+      drumInstances.forEach(({ body }, index) => {
+        const motion = machineWorksDrumMotionV1(
+          index === 0 ? 'west' : 'east',
+          integratedBeltTravel,
+          commandedBeltSpeed,
+        );
+        body.setNextKinematicTranslation(motion.position);
+        body.setNextKinematicRotation(motion.rotation);
+      });
+      if (tick === MACHINE_WORKS_TICKS.released) {
+        const carrierPosition = carriage.translation();
+        const carrierRotation = carriage.rotation();
+        const carrierSpeed = magnitude(carriage.linvel());
+        const positionError =
+          Math.abs(carrierPosition.x - MACHINE_WORKS_LAYOUT.tipStationX);
+        const verticalOffset =
+          Math.abs(carrierPosition.y - MACHINE_WORKS_LAYOUT.carriageCenterY);
+        const lateralOffset = Math.abs(carrierPosition.z);
+        const orientationError = 2 * Math.acos(
+          Math.min(1, Math.abs(carrierRotation.w)),
+        );
+        if (positionError > MACHINE_WORKS_BELT_DRIVE.stationTolerance.maximumPositionError
+          || verticalOffset > MACHINE_WORKS_BELT_DRIVE.stationTolerance.maximumVerticalOffset
+          || lateralOffset > MACHINE_WORKS_BELT_DRIVE.stationTolerance.maximumLateralOffset
+          || orientationError > MACHINE_WORKS_BELT_DRIVE.stationTolerance.maximumOrientationError
+          || carrierSpeed > MACHINE_WORKS_BELT_DRIVE.stationTolerance.maximumSpeed) {
+          throw new Error(
+            `Cannot engage the Machine Works output servo at fixed tick ${String(tick)}: `
+            + `belt contact left the dynamic carrier at `
+            + `(${carrierPosition.x.toFixed(4)}, ${carrierPosition.y.toFixed(4)}, `
+            + `${carrierPosition.z.toFixed(4)}) with speed=${carrierSpeed.toFixed(4)} `
+            + `and orientation error=${orientationError.toFixed(6)}, but the visible hinge requires `
+            + `x=${String(MACHINE_WORKS_LAYOUT.tipStationX)} within `
+            + `${String(MACHINE_WORKS_BELT_DRIVE.stationTolerance.maximumPositionError)} `
+            + `world units, y within `
+            + `${String(MACHINE_WORKS_BELT_DRIVE.stationTolerance.maximumVerticalOffset)} `
+            + `of ${String(MACHINE_WORKS_LAYOUT.carriageCenterY)}, |z| at most `
+            + `${String(MACHINE_WORKS_BELT_DRIVE.stationTolerance.maximumLateralOffset)}, `
+            + `orientation error at most `
+            + `${String(MACHINE_WORKS_BELT_DRIVE.stationTolerance.maximumOrientationError)}, `
+            + `and speed at most ${String(MACHINE_WORKS_BELT_DRIVE.stationTolerance.maximumSpeed)}. `
+            + 'Tune the hashed belt controller or contact materials; the fixture will not hide '
+            + 'a failed conveyor transfer with a large kinematic snap.',
+          );
+        }
+        outputServoStart = {
+          position: { ...carrierPosition },
+          rotation: { ...carrierRotation },
+        };
+        carriage.setBodyType(RAPIER.RigidBodyType.KinematicPositionBased, true);
+        outputServoEngaged = true;
+      }
+      if (outputServoEngaged) {
+        if (outputServoStart === null) {
+          throw new Error(
+            `Cannot advance the Machine Works output servo at fixed tick ${String(tick)}: `
+            + 'its validated dynamic handoff pose was not captured.',
+          );
+        }
+        const nextCarriage = carriageTipPose(tick, outputServoStart);
+        carriage.setNextKinematicTranslation(nextCarriage.position);
+        carriage.setNextKinematicRotation(nextCarriage.rotation ?? IDENTITY_ROTATION);
+      }
       const corePartY = descendingPartY(
         tick, MACHINE_WORKS_TICKS.coreDescendStart,
         MACHINE_WORKS_TICKS.coreDescendEnd, coreRestY, coreAttachedY,
@@ -542,7 +686,8 @@ export async function simulateMachineWorksV1(): Promise<MachineWorksTraceV1> {
           throw new Error('Cannot attach Machine Works core: its source body or head fixture is absent.');
         }
         assertMachineWorksAttachmentDwellV1(
-          'product core to base',
+          `product core to base (carrier x=${carriage.translation().x.toFixed(5)}, `
+          + `beltSpeed=${commandedBeltSpeed.toFixed(5)})`,
           tick,
           coreMatingDwellTicks,
           coreMatingEvidence,
@@ -579,7 +724,8 @@ export async function simulateMachineWorksV1(): Promise<MachineWorksTraceV1> {
           throw new Error('Cannot attach Machine Works cap: its source body or head fixture is absent.');
         }
         assertMachineWorksAttachmentDwellV1(
-          'product cap to core',
+          `product cap to core (carrier x=${carriage.translation().x.toFixed(5)}, `
+          + `beltSpeed=${commandedBeltSpeed.toFixed(5)})`,
           tick,
           capMatingDwellTicks,
           capMatingEvidence,
@@ -620,6 +766,11 @@ export async function simulateMachineWorksV1(): Promise<MachineWorksTraceV1> {
       supportContacts[tick] = collidersTouch(
         world, productColliders, carriageInstance.solidColliders,
       ) ? 1 : 0;
+      beltContacts[tick] = collidersTouch(
+        world,
+        carriageInstance.solidColliders,
+        slatColliders,
+      ) ? 1 : 0;
       lastContained = compoundContainedBySensor(
         base, productParts, bucketInstance.body, MACHINE_WORKS_ASSETS.bucket,
         MACHINE_WORKS_GRAINS.bucket, MACHINE_WORKS_COLLECTION_RULE.containmentMargin,
@@ -627,6 +778,13 @@ export async function simulateMachineWorksV1(): Promise<MachineWorksTraceV1> {
       lastLinearSpeed = magnitude(base.linvel());
       lastAngularSpeed = magnitude(base.angvel());
       lastBasePosition = { ...base.translation() };
+      if (firstBelowBucketRim === null && base.translation().y < 10) {
+        firstBelowBucketRim = Object.freeze({
+          tick,
+          position: Object.freeze({ ...base.translation() }),
+          velocity: Object.freeze({ ...base.linvel() }),
+        });
+      }
       eventQueue.drainCollisionEvents((left, right, started) => {
         if (!started || contacted) return;
         const productBucketPair = (
@@ -680,15 +838,75 @@ export async function simulateMachineWorksV1(): Promise<MachineWorksTraceV1> {
         + `final base=(${lastBasePosition.x.toFixed(3)}, ${lastBasePosition.y.toFixed(3)}, `
         + `${lastBasePosition.z.toFixed(3)}), contained=${String(lastContained)}, `
         + `linearSpeed=${lastLinearSpeed.toFixed(3)}, angularSpeed=${lastAngularSpeed.toFixed(3)}. `
+        + `First y<10 sample=${firstBelowBucketRim === null ? 'none' : `tick `
+          + `${String(firstBelowBucketRim.tick)} at (`
+          + `${firstBelowBucketRim.position.x.toFixed(3)}, `
+          + `${firstBelowBucketRim.position.y.toFixed(3)}, `
+          + `${firstBelowBucketRim.position.z.toFixed(3)}) with velocity (`
+          + `${firstBelowBucketRim.velocity.x.toFixed(3)}, `
+          + `${firstBelowBucketRim.velocity.y.toFixed(3)}, `
+          + `${firstBelowBucketRim.velocity.z.toFixed(3)})`}. `
         + 'Adjust the physical sidecars, actuator, or duration instead of fabricating an event.',
       );
     }
 
+    const transportContactTicks = beltContacts
+      .slice(120, MACHINE_WORKS_TICKS.released)
+      .reduce((sum, contact) => sum + contact, 0);
+    if (transportContactTicks < 120) {
+      throw new Error(
+        `Machine Works recorded only ${String(transportContactTicks)} carrier-belt contact ticks `
+        + `during driven transport; at least 120 are required to support the frictional transport `
+        + 'claim. Correct the slat loop, carrier underside, or contact materials.',
+      );
+    }
+    const counterfactualTicks = MACHINE_WORKS_BELT_DRIVE.counterfactual.ticks;
+    const zeroDriveCounterfactual = runMachineWorksBeltCounterfactualV1({
+      tickCount: counterfactualTicks,
+      ...MACHINE_WORKS_BELT_DRIVE.counterfactual.zeroDrive,
+    });
+    if (zeroDriveCounterfactual.maximumAbsoluteDisplacement
+      > MACHINE_WORKS_BELT_DRIVE.counterfactual.zeroDrive.maximumDisplacement) {
+      throw new Error(
+        `Machine Works zero-drive counterfactual reached `
+        + `${zeroDriveCounterfactual.maximumAbsoluteDisplacement.toFixed(6)} `
+        + `world units across ${String(zeroDriveCounterfactual.tickCount)} ticks; expected at most `
+        + `${String(MACHINE_WORKS_BELT_DRIVE.counterfactual.zeroDrive.maximumDisplacement)}. `
+        + 'Remove unintended contacts or forces before claiming that belt drive causes transport.',
+      );
+    }
+    const zeroFrictionCounterfactual = runMachineWorksBeltCounterfactualV1({
+      tickCount: counterfactualTicks,
+      ...MACHINE_WORKS_BELT_DRIVE.counterfactual.zeroFriction,
+    });
+    const drivenCarrierX =
+      translations[counterfactualTicks * MACHINE_WORKS_TRACK_IDS.length * 3]!;
+    const drivenDisplacement = Math.abs(
+      drivenCarrierX - zeroFrictionCounterfactual.initialCarrierX,
+    );
+    const zeroFrictionRatio = zeroFrictionCounterfactual.maximumAbsoluteDisplacement
+      / Math.max(Number.EPSILON, drivenDisplacement);
+    if (zeroFrictionRatio
+      > MACHINE_WORKS_BELT_DRIVE.counterfactual.zeroFriction
+        .maximumDrivenDisplacementRatio) {
+      throw new Error(
+        `Machine Works zero-friction counterfactual reached `
+        + `${zeroFrictionCounterfactual.maximumAbsoluteDisplacement.toFixed(6)} world units `
+        + `while the driven trace reached ${drivenDisplacement.toFixed(6)} over the same `
+        + `${String(counterfactualTicks)} ticks (ratio ${zeroFrictionRatio.toFixed(6)}); `
+        + `expected a ratio at most ${String(
+          MACHINE_WORKS_BELT_DRIVE.counterfactual.zeroFriction
+            .maximumDrivenDisplacementRatio,
+        )}. Narrow the causal claim or correct the contact geometry before accepting the replay.`,
+      );
+    }
     const inputHash = sha256([JSON.stringify(machineWorksInputDescriptionV1())]);
     const eventJson = JSON.stringify(traceEvents);
     const finalHash = sha256([
       inputHash, translations, rotations, linearVelocities, angularVelocities,
-      assemblyStates, supportContacts, JSON.stringify(attachmentEvidence), eventJson,
+      assemblyStates, supportContacts, beltContacts, beltTravel, beltSpeeds,
+      JSON.stringify(zeroDriveCounterfactual), JSON.stringify(zeroFrictionCounterfactual),
+      JSON.stringify(attachmentEvidence), eventJson,
     ]);
     const provenance: MachineWorksTraceProvenanceV1 = Object.freeze({
       solver: Object.freeze({
@@ -713,6 +931,11 @@ export async function simulateMachineWorksV1(): Promise<MachineWorksTraceV1> {
       angularVelocities,
       assemblyStates,
       supportContacts,
+      beltContacts,
+      beltTravel,
+      beltSpeeds,
+      zeroDriveCounterfactual,
+      zeroFrictionCounterfactual,
       attachmentEvidence: Object.freeze(attachmentEvidence.map((evidence) =>
         Object.freeze({ ...evidence }))),
       events: Object.freeze(traceEvents.map((event) => Object.freeze({

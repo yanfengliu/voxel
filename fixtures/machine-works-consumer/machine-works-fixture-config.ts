@@ -1,5 +1,8 @@
 import {
   createMachineWorksCollectionBucketPhysicalAsset,
+  createMachineWorksConveyorSlatPhysicalAsset,
+  createMachineWorksDriveDrumPhysicalAsset,
+  createMachineWorksExposedDriveCogPhysicalAsset,
   createMachineWorksInsertionHeadPhysicalAsset,
   createMachineWorksProductBasePhysicalAsset,
   createMachineWorksProductCapPhysicalAsset,
@@ -7,13 +10,21 @@ import {
   createMachineWorksRailFoundationPhysicalAsset,
   createMachineWorksTransferCarriagePhysicalAsset,
 } from '../../tools/studio/machine-works-physical-assets.js';
+import {
+  MACHINE_WORKS_CONVEYOR_DRUM_IDS,
+  MACHINE_WORKS_CONVEYOR_PATH_LENGTH,
+  MACHINE_WORKS_CONVEYOR_SLAT_IDS,
+  MACHINE_WORKS_CONVEYOR_SLAT_PITCH,
+  MACHINE_WORKS_CONVEYOR_V1,
+  MACHINE_WORKS_EXPOSED_COGS_V1,
+} from '../../tools/studio/machine-works-conveyor.js';
 import { MACHINE_WORKS_SCENE_LAYOUT_V1 } from '../../tools/studio/machine-works-layout.js';
 import type { PhysicalAssetV1 } from '../../tools/studio/physical-asset.js';
 
 export const MACHINE_WORKS_SOLVER_VERSION = '0.19.3';
 export const MACHINE_WORKS_FIXED_STEP_MS = 1_000 / 60;
-export const MACHINE_WORKS_DURATION_MS = 18_000;
-export const MACHINE_WORKS_FRAME_COUNT = 1_080;
+export const MACHINE_WORKS_DURATION_MS = 30_000;
+export const MACHINE_WORKS_FRAME_COUNT = 1_800;
 export const MACHINE_WORKS_GRAVITY = Object.freeze([0, -9.81, 0] as const);
 
 export const MACHINE_WORKS_TRACK_IDS = Object.freeze([
@@ -24,6 +35,9 @@ export const MACHINE_WORKS_TRACK_IDS = Object.freeze([
   'product-core',
   'product-cap',
   'collection-bucket',
+  ...MACHINE_WORKS_CONVEYOR_SLAT_IDS,
+  ...MACHINE_WORKS_CONVEYOR_DRUM_IDS,
+  ...MACHINE_WORKS_EXPOSED_COGS_V1.map(({ id }) => id),
 ] as const);
 
 export type MachineWorksTrackIdV1 = typeof MACHINE_WORKS_TRACK_IDS[number];
@@ -36,6 +50,9 @@ export const MACHINE_WORKS_ASSETS = Object.freeze({
   core: createMachineWorksProductCorePhysicalAsset(),
   cap: createMachineWorksProductCapPhysicalAsset(),
   bucket: createMachineWorksCollectionBucketPhysicalAsset(),
+  slat: createMachineWorksConveyorSlatPhysicalAsset(),
+  drum: createMachineWorksDriveDrumPhysicalAsset(),
+  exposedCog: createMachineWorksExposedDriveCogPhysicalAsset(),
 });
 
 export const MACHINE_WORKS_GRAINS = Object.freeze({
@@ -46,23 +63,27 @@ export const MACHINE_WORKS_GRAINS = Object.freeze({
   core: MACHINE_WORKS_SCENE_LAYOUT_V1.core.grain,
   cap: MACHINE_WORKS_SCENE_LAYOUT_V1.cap.grain,
   bucket: MACHINE_WORKS_SCENE_LAYOUT_V1.bucket.grain,
+  slat: MACHINE_WORKS_CONVEYOR_V1.slatGrain,
+  drum: MACHINE_WORKS_CONVEYOR_V1.drumGrain,
+  exposedCog: MACHINE_WORKS_CONVEYOR_V1.drumGrain,
 });
 
 export const MACHINE_WORKS_TICKS = Object.freeze({
-  coreDescendStart: 240,
-  coreDescendEnd: 280,
-  coreAttached: 300,
-  capDescendStart: 480,
-  capDescendEnd: 520,
-  assembled: 540,
-  released: 720,
-  tipComplete: 780,
+  coreDescendStart: 300,
+  coreDescendEnd: 340,
+  coreAttached: 385,
+  capDescendStart: 570,
+  capDescendEnd: 610,
+  assembled: 700,
+  released: 1_100,
+  tipComplete: 1_280,
 });
 
 export const MACHINE_WORKS_LAYOUT = Object.freeze({
   entryX: MACHINE_WORKS_SCENE_LAYOUT_V1.carriage.at[0],
   coreStationX: MACHINE_WORKS_SCENE_LAYOUT_V1.coreHead.at[0],
   capStationX: MACHINE_WORKS_SCENE_LAYOUT_V1.capHead.at[0],
+  tipStationX: MACHINE_WORKS_CONVEYOR_V1.rightAxleX,
   bucketCenterX: MACHINE_WORKS_SCENE_LAYOUT_V1.bucket.at[0],
   foundationCenterX: MACHINE_WORKS_SCENE_LAYOUT_V1.foundation.at[0],
   carriageCenterY: MACHINE_WORKS_SCENE_LAYOUT_V1.carriage.at[1]
@@ -80,8 +101,74 @@ export const MACHINE_WORKS_LAYOUT = Object.freeze({
   capLoosePartCenterY: MACHINE_WORKS_SCENE_LAYOUT_V1.cap.at[1]
     + MACHINE_WORKS_SCENE_LAYOUT_V1.cap.sizeVoxels[1]
       * MACHINE_WORKS_SCENE_LAYOUT_V1.cap.grain / 2,
-  carriageHingeLocalX: -3,
+  carriageHingeLocalX: 3,
   carriageTipRadians: -Math.PI / 2,
+});
+
+export const MACHINE_WORKS_BELT_DRIVE = Object.freeze({
+  pathLength: MACHINE_WORKS_CONVEYOR_PATH_LENGTH,
+  slatPitch: MACHINE_WORKS_CONVEYOR_SLAT_PITCH,
+  slatCount: MACHINE_WORKS_CONVEYOR_V1.slatCount,
+  pitchRadius: MACHINE_WORKS_CONVEYOR_V1.pitchRadius,
+  controller: Object.freeze({
+    maximumSpeed: 10,
+    maximumAcceleration: 30,
+    brakingAcceleration: 4,
+    velocityTrackingGain: 1,
+    positionDeadband: 0.02,
+  }),
+  targetSchedule: Object.freeze([
+    Object.freeze({ range: Object.freeze([0, 59] as const), targetX: MACHINE_WORKS_LAYOUT.entryX }),
+    Object.freeze({
+      range: Object.freeze([60, 389] as const),
+      targetX: MACHINE_WORKS_LAYOUT.coreStationX,
+    }),
+    Object.freeze({
+      range: Object.freeze([390, 729] as const),
+      targetX: MACHINE_WORKS_LAYOUT.capStationX,
+    }),
+    Object.freeze({
+      range: Object.freeze([730, MACHINE_WORKS_TICKS.released] as const),
+      targetX: MACHINE_WORKS_LAYOUT.tipStationX,
+    }),
+    Object.freeze({
+      range: Object.freeze([MACHINE_WORKS_TICKS.released + 1, 1_799] as const),
+      targetX: MACHINE_WORKS_LAYOUT.tipStationX,
+    }),
+  ]),
+  carrierGuide: Object.freeze({
+    enabledTranslations: Object.freeze([true, true, false] as const),
+    enabledRotations: Object.freeze([false, false, false] as const),
+    mechanism: 'rapier-axis-locks-aligned-with-visible-foundation-guards',
+  }),
+  stationTolerance: Object.freeze({
+    maximumPositionError: 0.025,
+    maximumVerticalOffset: 1,
+    maximumLateralOffset: 1e-4,
+    maximumOrientationError: 1e-4,
+    maximumSpeed: 0.15,
+  }),
+  counterfactual: Object.freeze({
+    ticks: 240,
+    bodyOrder: Object.freeze([
+      'assembly-foundation',
+      'belt-slats',
+      'belt-drums',
+      'assembly-carriage',
+      'product-base',
+    ] as const),
+    jointMapping: 'assembly-carriage/load--product-base/carriage-mount',
+    zeroDrive: Object.freeze({
+      driveScale: 0,
+      frictionScale: 1,
+      maximumDisplacement: 0.05,
+    }),
+    zeroFriction: Object.freeze({
+      driveScale: 1,
+      frictionScale: 0,
+      maximumDrivenDisplacementRatio: 0.2,
+    }),
+  }),
 });
 
 export const MACHINE_WORKS_ATTACHMENT_RULE = Object.freeze({
@@ -94,16 +181,16 @@ export const MACHINE_WORKS_ATTACHMENT_RULE = Object.freeze({
 
 export const MACHINE_WORKS_SUPPORT_ALIGNMENT_RULE = Object.freeze({
   maximumError: 1e-9,
-  trackPortPairs: Object.freeze([
-    Object.freeze([
-      'near-rail-running-surface',
-      'near-shoe-running-surface',
-    ] as const),
-    Object.freeze([
-      'far-rail-running-surface',
-      'far-shoe-running-surface',
-    ] as const),
-  ]),
+  maximumStraightSlatGap: 0.05,
+  maximumTurnSlatGap: 0.12,
+  beltContactPorts: Object.freeze({
+    slatTop: 'belt-contact-top',
+    carriage: 'belt-contact-underside',
+  }),
+  drumPitchPorts: Object.freeze({
+    slatUnderside: 'drum-pitch-underside',
+    drum: 'belt-pitch-top',
+  }),
   headGuidePairs: Object.freeze([
     Object.freeze({
       label: 'core',
@@ -175,14 +262,12 @@ function translated(point: SupportPointV1, center: SupportPointV1): SupportPoint
   ];
 }
 
-function coordinateError(left: SupportPointV1, right: SupportPointV1, axis: 1 | 2): number {
-  return Math.abs(left[axis] - right[axis]);
-}
-
 /**
  * Verifies the visual support chain against the same named sidecar ports used
- * to derive the fixture layout. The rails are longitudinal, so their running
- * surfaces must match the carriage shoes across Y/Z while X remains free.
+ * to derive the fixture layout. The slat top meets the carrier underside, the
+ * slat underside follows the drum's nominal pitch datum, and the top run
+ * remains free to translate along X. Exact compound non-overlap is proved
+ * separately against every authored collider, not inferred from these datums.
  */
 export function machineWorksSupportAlignmentIssuesV1(): readonly string[] {
   const issues: string[] = [];
@@ -197,51 +282,142 @@ export function machineWorksSupportAlignmentIssuesV1(): readonly string[] {
     MACHINE_WORKS_LAYOUT.carriageCenterY,
     MACHINE_WORKS_SCENE_LAYOUT_V1.carriage.at[2],
   ];
-  for (const [railKey, shoeKey] of MACHINE_WORKS_SUPPORT_ALIGNMENT_RULE.trackPortPairs) {
-    const rail = translated(
-      scaledPortPosition(MACHINE_WORKS_ASSETS.foundation, railKey, MACHINE_WORKS_GRAINS.foundation),
-      foundationCenter,
-    );
-    const shoe = translated(
-      scaledPortPosition(MACHINE_WORKS_ASSETS.carriage, shoeKey, MACHINE_WORKS_GRAINS.carriage),
-      carriageCenter,
-    );
-    const yError = coordinateError(rail, shoe, 1);
-    const zError = coordinateError(rail, shoe, 2);
-    if (yError > maximum || zError > maximum) {
-      issues.push(
-        `foundation '${railKey}' and carriage '${shoeKey}' diverge across the running plane `
-        + `(yError=${yError.toFixed(6)}, zError=${zError.toFixed(6)}, allowed=${String(maximum)})`,
-      );
-    }
-  }
-  const trackEntry = translated(
+  const slatTop = translated(
     scaledPortPosition(
-      MACHINE_WORKS_ASSETS.foundation, 'track-entry', MACHINE_WORKS_GRAINS.foundation,
+      MACHINE_WORKS_ASSETS.slat,
+      MACHINE_WORKS_SUPPORT_ALIGNMENT_RULE.beltContactPorts.slatTop,
+      MACHINE_WORKS_GRAINS.slat,
+    ),
+    [
+      MACHINE_WORKS_LAYOUT.entryX,
+      MACHINE_WORKS_CONVEYOR_V1.axleY + MACHINE_WORKS_CONVEYOR_V1.pitchRadius,
+      0,
+    ],
+  );
+  const slatUnderside = translated(
+    scaledPortPosition(
+      MACHINE_WORKS_ASSETS.slat,
+      MACHINE_WORKS_SUPPORT_ALIGNMENT_RULE.drumPitchPorts.slatUnderside,
+      MACHINE_WORKS_GRAINS.slat,
+    ),
+    [
+      MACHINE_WORKS_CONVEYOR_V1.leftAxleX,
+      MACHINE_WORKS_CONVEYOR_V1.axleY + MACHINE_WORKS_CONVEYOR_V1.pitchRadius,
+      0,
+    ],
+  );
+  const carriageContact = translated(
+    scaledPortPosition(
+      MACHINE_WORKS_ASSETS.carriage,
+      MACHINE_WORKS_SUPPORT_ALIGNMENT_RULE.beltContactPorts.carriage,
+      MACHINE_WORKS_GRAINS.carriage,
+    ),
+    carriageCenter,
+  );
+  const drumTop = translated(
+    scaledPortPosition(
+      MACHINE_WORKS_ASSETS.drum,
+      MACHINE_WORKS_SUPPORT_ALIGNMENT_RULE.drumPitchPorts.drum,
+      MACHINE_WORKS_GRAINS.drum,
+    ),
+    [
+      MACHINE_WORKS_CONVEYOR_V1.leftAxleX,
+      MACHINE_WORKS_CONVEYOR_V1.axleY,
+      0,
+    ],
+  );
+  const carrierContactError = Math.max(
+    Math.abs(slatTop[1] - carriageContact[1]),
+    Math.abs(slatTop[2] - carriageContact[2]),
+  );
+  if (carrierContactError > maximum) {
+    issues.push(
+      `belt contact datums diverge: slat top=(${slatTop[1].toFixed(6)}, `
+      + `${slatTop[2].toFixed(6)}), carriage underside=(${carriageContact[1].toFixed(6)}, `
+      + `${carriageContact[2].toFixed(6)}), allowed=${String(maximum)}`,
+    );
+  }
+  const drumPitchError = Math.max(
+    Math.abs(slatUnderside[1] - drumTop[1]),
+    Math.abs(slatUnderside[2] - drumTop[2]),
+  );
+  if (drumPitchError > maximum) {
+    issues.push(
+      `drum pitch datums diverge: slat underside=(${slatUnderside[1].toFixed(6)}, `
+      + `${slatUnderside[2].toFixed(6)}), nominal drum pitch=(${drumTop[1].toFixed(6)}, `
+      + `${drumTop[2].toFixed(6)}), allowed=${String(maximum)}. Update the path and `
+      + 'named sidecar ports together; compound collision clearance has its own exact proof.',
+    );
+  }
+  const beltEntry = translated(
+    scaledPortPosition(
+      MACHINE_WORKS_ASSETS.foundation, 'belt-entry', MACHINE_WORKS_GRAINS.foundation,
     ),
     foundationCenter,
   );
-  const trackExit = translated(
+  const beltExit = translated(
     scaledPortPosition(
-      MACHINE_WORKS_ASSETS.foundation, 'track-exit', MACHINE_WORKS_GRAINS.foundation,
+      MACHINE_WORKS_ASSETS.foundation, 'belt-exit', MACHINE_WORKS_GRAINS.foundation,
     ),
     foundationCenter,
   );
   const bucketLeft = MACHINE_WORKS_SCENE_LAYOUT_V1.bucket.at[0]
     - MACHINE_WORKS_SCENE_LAYOUT_V1.bucket.sizeVoxels[0]
       * MACHINE_WORKS_SCENE_LAYOUT_V1.bucket.grain / 2;
-  if (MACHINE_WORKS_LAYOUT.entryX < trackEntry[0] - maximum
-    || MACHINE_WORKS_LAYOUT.capStationX > trackExit[0] + maximum) {
+  const beltTurnMinimumX =
+    MACHINE_WORKS_CONVEYOR_V1.leftAxleX - MACHINE_WORKS_CONVEYOR_V1.pitchRadius;
+  const beltTurnMaximumX =
+    MACHINE_WORKS_CONVEYOR_V1.rightAxleX + MACHINE_WORKS_CONVEYOR_V1.pitchRadius;
+  if (beltTurnMinimumX < beltEntry[0] - maximum
+    || beltTurnMaximumX > beltExit[0] + maximum) {
     issues.push(
-      `carriage assembly path x=[${String(MACHINE_WORKS_LAYOUT.entryX)}, `
-      + `${String(MACHINE_WORKS_LAYOUT.capStationX)}] leaves named track extent `
-      + `x=[${trackEntry[0].toFixed(3)}, ${trackExit[0].toFixed(3)}] before output transfer`,
+      `closed belt turn extent x=[${beltTurnMinimumX.toFixed(3)}, `
+      + `${beltTurnMaximumX.toFixed(3)}] leaves foundation extent `
+      + `x=[${beltEntry[0].toFixed(3)}, ${beltExit[0].toFixed(3)}]`,
     );
   }
-  if (Math.abs(trackExit[0] - bucketLeft) > maximum) {
+  const topRunTargets = [
+    MACHINE_WORKS_LAYOUT.entryX,
+    MACHINE_WORKS_LAYOUT.coreStationX,
+    MACHINE_WORKS_LAYOUT.capStationX,
+    MACHINE_WORKS_LAYOUT.tipStationX,
+  ];
+  if (topRunTargets.some((x) =>
+    x < MACHINE_WORKS_CONVEYOR_V1.leftAxleX - maximum
+      || x > MACHINE_WORKS_CONVEYOR_V1.rightAxleX + maximum)) {
     issues.push(
-      `foundation 'track-exit' x=${trackExit[0].toFixed(3)} does not meet `
+      `carrier targets [${topRunTargets.join(', ')}] do not all lie on top belt run `
+      + `x=[${String(MACHINE_WORKS_CONVEYOR_V1.leftAxleX)}, `
+      + `${String(MACHINE_WORKS_CONVEYOR_V1.rightAxleX)}]`,
+    );
+  }
+  const hingeX = MACHINE_WORKS_LAYOUT.tipStationX
+    + MACHINE_WORKS_LAYOUT.carriageHingeLocalX;
+  if (Math.abs(hingeX - bucketLeft) > maximum) {
+    issues.push(
+      `visible carrier hinge x=${hingeX.toFixed(3)} does not meet `
       + `bucket boundary x=${bucketLeft.toFixed(3)} without a gap or overlap`,
+    );
+  }
+  const slatWorldLength =
+    MACHINE_WORKS_CONVEYOR_V1.slatSizeVoxels[0] * MACHINE_WORKS_CONVEYOR_V1.slatGrain;
+  const straightSlatGap = MACHINE_WORKS_CONVEYOR_SLAT_PITCH - slatWorldLength;
+  const turnTangentSpan = 2 * MACHINE_WORKS_CONVEYOR_V1.pitchRadius * Math.tan(
+    MACHINE_WORKS_CONVEYOR_SLAT_PITCH
+      / (2 * MACHINE_WORKS_CONVEYOR_V1.pitchRadius),
+  );
+  const turnSlatGap = turnTangentSpan - slatWorldLength;
+  if (straightSlatGap < -maximum
+    || straightSlatGap > MACHINE_WORKS_SUPPORT_ALIGNMENT_RULE.maximumStraightSlatGap
+    || turnSlatGap > MACHINE_WORKS_SUPPORT_ALIGNMENT_RULE.maximumTurnSlatGap) {
+    issues.push(
+      `articulated belt clearances are outside bounds: straight gap=`
+      + `${straightSlatGap.toFixed(6)} (allowed 0..`
+      + `${String(MACHINE_WORKS_SUPPORT_ALIGNMENT_RULE.maximumStraightSlatGap)}), `
+      + `turn tangent gap=${turnSlatGap.toFixed(6)} (allowed at most `
+      + `${String(MACHINE_WORKS_SUPPORT_ALIGNMENT_RULE.maximumTurnSlatGap)}), `
+      + `pitch=${MACHINE_WORKS_CONVEYOR_SLAT_PITCH.toFixed(6)}, `
+      + `painted length=${slatWorldLength.toFixed(6)}`,
     );
   }
 
@@ -407,6 +583,9 @@ export const MACHINE_WORKS_LAW_LABELS = Object.freeze([
 
 export const MACHINE_WORKS_CAPABILITY_LABELS = Object.freeze([
   'kinematic-actuation',
+  'cog-belt-phase-coupling',
+  'belt-contact-transport',
+  'axis-constrained-dynamic-carrier',
   'validated-port-assembly',
   'compound-product',
   'colliding-tip-release',
@@ -420,7 +599,7 @@ export const MACHINE_WORKS_CAPABILITY_LABELS = Object.freeze([
  */
 export function machineWorksInputDescriptionV1(): Readonly<Record<string, unknown>> {
   return {
-    schema: 'fixture.machine-works-input/3',
+    schema: 'fixture.machine-works-input/4',
     adapterSchema: 'fixture.machine-works-rapier-adapter/1',
     solver: {
       name: '@dimforge/rapier3d-compat',
@@ -432,7 +611,10 @@ export function machineWorksInputDescriptionV1(): Readonly<Record<string, unknow
     gravity: MACHINE_WORKS_GRAVITY,
     trackOrder: MACHINE_WORKS_TRACK_IDS,
     bodyCreationOrder: [
-      'foundation', 'carriage', 'base', 'core-head', 'core', 'cap-head', 'cap', 'bucket',
+      'foundation',
+      ...MACHINE_WORKS_CONVEYOR_SLAT_IDS,
+      ...MACHINE_WORKS_CONVEYOR_DRUM_IDS,
+      'carriage', 'base', 'core-head', 'core', 'cap-head', 'cap', 'bucket',
     ],
     physicalAssets: MACHINE_WORKS_ASSETS,
     grains: MACHINE_WORKS_GRAINS,
@@ -440,32 +622,24 @@ export function machineWorksInputDescriptionV1(): Readonly<Record<string, unknow
     presentationSupports: {
       sceneLayout: MACHINE_WORKS_SCENE_LAYOUT_V1,
       alignmentRule: MACHINE_WORKS_SUPPORT_ALIGNMENT_RULE,
-      transferBeyondTrack: {
-        railExitX: MACHINE_WORKS_LAYOUT.foundationCenterX
-          + 15.5 * MACHINE_WORKS_GRAINS.foundation,
-        fromStationX: MACHINE_WORKS_LAYOUT.capStationX,
-        toBucketX: MACHINE_WORKS_LAYOUT.bucketCenterX,
-        actuation: 'kinematic-carriage-crosses-output-gap-before-tip-release',
+      exposedDriveCogs: {
+        placements: MACHINE_WORKS_EXPOSED_COGS_V1,
+        asset: 'studio:machine-works:drive-cog',
+        grain: MACHINE_WORKS_GRAINS.exposedCog,
+        interaction: 'phase-derived non-interacting replay witnesses; not ingested into Rapier',
+      },
+      outputHinge: {
+        carrierCenterX: MACHINE_WORKS_LAYOUT.tipStationX,
+        localX: MACHINE_WORKS_LAYOUT.carriageHingeLocalX,
+        bucketBoundaryX: MACHINE_WORKS_LAYOUT.bucketCenterX
+          - MACHINE_WORKS_SCENE_LAYOUT_V1.bucket.sizeVoxels[0]
+            * MACHINE_WORKS_SCENE_LAYOUT_V1.bucket.grain / 2,
+        actuation: 'visible-position-servo-after-frictional-belt-transport',
       },
     },
     timeline: {
       ticks: MACHINE_WORKS_TICKS,
-      carriageX: [
-        { range: [0, 120], from: MACHINE_WORKS_LAYOUT.entryX,
-          to: MACHINE_WORKS_LAYOUT.entryX },
-        { range: [120, 240], from: MACHINE_WORKS_LAYOUT.entryX,
-          to: MACHINE_WORKS_LAYOUT.coreStationX },
-        { range: [240, 360], from: MACHINE_WORKS_LAYOUT.coreStationX,
-          to: MACHINE_WORKS_LAYOUT.coreStationX },
-        { range: [360, 480], from: MACHINE_WORKS_LAYOUT.coreStationX,
-          to: MACHINE_WORKS_LAYOUT.capStationX },
-        { range: [480, 600], from: MACHINE_WORKS_LAYOUT.capStationX,
-          to: MACHINE_WORKS_LAYOUT.capStationX },
-        { range: [600, 690], from: MACHINE_WORKS_LAYOUT.capStationX,
-          to: MACHINE_WORKS_LAYOUT.bucketCenterX },
-        { range: [690, 1_079], from: MACHINE_WORKS_LAYOUT.bucketCenterX,
-          to: MACHINE_WORKS_LAYOUT.bucketCenterX },
-      ],
+      beltDrive: MACHINE_WORKS_BELT_DRIVE,
       tip: {
         hingeLocalX: MACHINE_WORKS_LAYOUT.carriageHingeLocalX,
         range: [MACHINE_WORKS_TICKS.released, MACHINE_WORKS_TICKS.tipComplete],
@@ -490,6 +664,19 @@ export function machineWorksInputDescriptionV1(): Readonly<Record<string, unknow
     rigidBodyOptions: {
       canSleep: true,
       continuousFromSidecar: true,
+      carrierGuide: MACHINE_WORKS_BELT_DRIVE.carrierGuide,
+    },
+    boundedClaims: {
+      asserted: [
+        'kinematic slat contact and friction transport the axis-constrained dynamic carrier',
+        'visible drums, belt slats, and collision-excluded exposed cogs share one hashed drive phase',
+      ],
+      excluded: [
+        'cog torque transmission',
+        'belt tension or compliance',
+        'tooth engagement',
+        'arbitrary-load no-slip behavior',
+      ],
     },
     lawLabels: MACHINE_WORKS_LAW_LABELS,
     capabilityLabels: MACHINE_WORKS_CAPABILITY_LABELS,

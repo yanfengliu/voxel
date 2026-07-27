@@ -2,9 +2,9 @@ import { partStepV1 } from './contrast-recipe-steps.js';
 import type { RecipeBookV1, RecipeStepV1, RecipeV1 } from './recipe.js';
 
 /**
- * Static, game-neutral pieces for composing an assembly-line study. These
- * recipes describe visible construction only; scene or game code remains
- * responsible for movement, contact, gravity, and assembly state.
+ * Game-neutral pieces for composing an assembly-line study. These recipes
+ * describe visible construction only; scene or game code remains responsible
+ * for movement, contact, gravity, and assembly state.
  */
 
 const MACHINE_COLORS = {
@@ -69,11 +69,11 @@ export function createMachineWorksRailFoundationRecipe(): RecipeV1 {
   const tieStations = [1, 5, 9, 13, 17, 21, 25, 29] as const;
   return defineMachineRecipe({
     id: 'rail-foundation',
-    label: 'Rail conveyor foundation',
+    label: 'Conveyor underframe',
     seed: 7_101,
     size: [31, 5, 11],
-    summary: 'An open underframe, repeated cross-ties, and twin shoe-aligned wear rails establish a long transfer path.',
-    tags: ['conveyor', 'rail-bed', 'foundation', 'linear'],
+    summary: 'An open underframe holds repeated low cross-ties beneath twin safety-ended side guards, leaving the moving belt lane clear.',
+    tags: ['conveyor', 'underframe', 'foundation', 'return-clearance', 'side-guards'],
     roles: ['empty', 'structure', 'wear', 'safety'],
     steps: [
       partStepV1('open-frame', [0, 0, 0], {
@@ -84,11 +84,82 @@ export function createMachineWorksRailFoundationRecipe(): RecipeV1 {
         role: 'structure',
       }, 'Builds the long open support frame'),
       ...tieStations.map((x) =>
-        machineBoxStep([x, 4, 0], [1, 1, 11], 'structure', `Lays cross-tie at station ${String(x)}`)),
-      machineBoxStep([0, 4, 4], [31, 1, 1], 'wear', 'Runs the near shoe-aligned transfer rail'),
-      machineBoxStep([0, 4, 6], [31, 1, 1], 'wear', 'Runs the far shoe-aligned transfer rail'),
-      machineBoxStep([0, 4, 0], [1, 1, 11], 'safety', 'Marks the entry end'),
-      machineBoxStep([30, 4, 0], [1, 1, 11], 'safety', 'Marks the exit end'),
+        machineBoxStep([x, 3, 1], [1, 1, 9], 'structure', `Lays recessed cross-tie at station ${String(x)}`)),
+      machineBoxStep([0, 4, 2], [1, 1, 1], 'safety', 'Marks the near guard entry'),
+      machineBoxStep([1, 4, 2], [29, 1, 1], 'wear', 'Runs the near belt-side guard'),
+      machineBoxStep([30, 4, 2], [1, 1, 1], 'safety', 'Marks the near guard exit'),
+      machineBoxStep([0, 4, 8], [1, 1, 1], 'safety', 'Marks the far guard entry'),
+      machineBoxStep([1, 4, 8], [29, 1, 1], 'wear', 'Runs the far belt-side guard'),
+      machineBoxStep([30, 4, 8], [1, 1, 1], 'safety', 'Marks the far guard exit'),
+    ],
+  });
+}
+
+export function createMachineWorksConveyorSlatRecipe(): RecipeV1 {
+  return defineMachineRecipe({
+    id: 'conveyor-slat',
+    label: 'Conveyor belt slat',
+    seed: 7_113,
+    size: [8, 1, 26],
+    summary: 'A short broad friction tread spans the carrier lane while contrasting end links expose the small clearances of the articulated belt.',
+    tags: ['conveyor', 'belt', 'slat', 'friction-contact', 'repeated-part'],
+    roles: ['empty', 'wear', 'safety'],
+    steps: [
+      machineBoxStep([0, 0, 0], [8, 1, 3], 'safety', 'Forms the near chain-link end'),
+      machineBoxStep([0, 0, 3], [8, 1, 20], 'wear', 'Lays the broad carrier-contact tread'),
+      machineBoxStep([0, 0, 23], [8, 1, 3], 'safety', 'Forms the far chain-link end'),
+    ],
+  });
+}
+
+function driveDrumEndSteps(
+  z: number,
+  end: 'near' | 'far' | 'exposed',
+): readonly RecipeStepV1[] {
+  return [
+    machineBoxStep([4, 0, z], [3, 1, 3], 'safety', `Shapes the ${end} lower cog tooth`),
+    machineBoxStep([2, 1, z], [7, 1, 3], 'structure', `Steps the ${end} lower shoulder`),
+    machineBoxStep([1, 2, z], [9, 2, 3], 'structure', `Builds the ${end} lower cog cheek`),
+    machineBoxStep([0, 4, z], [1, 3, 3], 'safety', `Shapes the ${end} left cog tooth`),
+    machineBoxStep([1, 4, z], [9, 3, 3], 'structure', `Spans the ${end} cog hub band`),
+    machineBoxStep([10, 4, z], [1, 3, 3], 'safety', `Shapes the ${end} right cog tooth`),
+    machineBoxStep([1, 7, z], [9, 2, 3], 'structure', `Builds the ${end} upper cog cheek`),
+    machineBoxStep([2, 9, z], [7, 1, 3], 'structure', `Steps the ${end} upper shoulder`),
+    machineBoxStep([4, 10, z], [3, 1, 3], 'safety', `Shapes the ${end} upper cog tooth`),
+  ];
+}
+
+export function createMachineWorksDriveDrumRecipe(): RecipeV1 {
+  return defineMachineRecipe({
+    id: 'drive-drum',
+    label: 'Cogged conveyor drive drum',
+    seed: 7_119,
+    size: [11, 11, 19],
+    summary: 'Symmetric four-tooth cog cheeks flank a deep wear barrel while off-axis face stripes make the shared belt phase visible.',
+    tags: ['conveyor', 'drive-drum', 'cog', 'axle', 'rotary'],
+    roles: ['empty', 'structure', 'wear', 'safety', 'detail'],
+    steps: [
+      ...driveDrumEndSteps(0, 'near'),
+      machineBoxStep([2, 2, 3], [7, 7, 13], 'wear', 'Extrudes the belt-contact barrel between cog cheeks'),
+      ...driveDrumEndSteps(16, 'far'),
+      machineBoxStep([5, 1, 0], [1, 4, 1], 'detail', 'Keys the near cog face with an off-axis phase stripe'),
+      machineBoxStep([5, 1, 18], [1, 4, 1], 'detail', 'Keys the far cog face with an off-axis phase stripe'),
+    ],
+  });
+}
+
+export function createMachineWorksExposedDriveCogRecipe(): RecipeV1 {
+  return defineMachineRecipe({
+    id: 'drive-cog',
+    label: 'Exposed axle phase cog',
+    seed: 7_123,
+    size: [11, 11, 3],
+    summary: 'A standalone four-tooth cog and off-axis phase key expose the drive-drum rotation beyond the underframe.',
+    tags: ['conveyor', 'drive-cog', 'axle', 'rotary', 'phase-indicator'],
+    roles: ['empty', 'structure', 'safety', 'detail'],
+    steps: [
+      ...driveDrumEndSteps(0, 'exposed'),
+      machineBoxStep([5, 1, 0], [1, 4, 1], 'detail', 'Keys the exposed face with an off-axis phase stripe'),
     ],
   });
 }
@@ -122,18 +193,16 @@ export function createMachineWorksCollectionBucketRecipe(): RecipeV1 {
 export function createMachineWorksTransferCarriageRecipe(): RecipeV1 {
   return defineMachineRecipe({
     id: 'transfer-carriage',
-    label: 'Transfer carriage',
+    label: 'Belt-driven transfer carrier',
     seed: 7_151,
     size: [15, 6, 11],
-    summary: 'A low load platform carries four rail shoes, two end bumpers, and four locating pins.',
-    tags: ['carriage', 'pallet', 'load-platform', 'rail'],
+    summary: 'Twin broad friction runners support a low load platform with end bumpers and four product-locating pins.',
+    tags: ['carrier', 'pallet', 'load-platform', 'belt-driven', 'friction-contact'],
     roles: ['empty', 'structure', 'wear', 'safety'],
     steps: [
-      machineBoxStep([2, 0, 0], [3, 2, 2], 'wear', 'Shapes the near-left rail shoe'),
-      machineBoxStep([10, 0, 0], [3, 2, 2], 'wear', 'Shapes the near-right rail shoe'),
-      machineBoxStep([2, 0, 9], [3, 2, 2], 'wear', 'Shapes the far-left rail shoe'),
-      machineBoxStep([10, 0, 9], [3, 2, 2], 'wear', 'Shapes the far-right rail shoe'),
-      machineBoxStep([2, 2, 1], [11, 2, 9], 'structure', 'Builds the carriage chassis'),
+      machineBoxStep([2, 0, 1], [11, 1, 4], 'wear', 'Forms the broad near belt-contact runner'),
+      machineBoxStep([2, 0, 6], [11, 1, 4], 'wear', 'Forms the broad far belt-contact runner'),
+      machineBoxStep([2, 1, 1], [11, 3, 9], 'structure', 'Builds the carrier chassis over both runners'),
       machineBoxStep([3, 4, 2], [9, 1, 7], 'wear', 'Lays the replaceable load deck'),
       machineBoxStep([0, 2, 4], [2, 2, 3], 'safety', 'Marks the left end bumper'),
       machineBoxStep([13, 2, 4], [2, 2, 3], 'safety', 'Marks the right end bumper'),
@@ -268,6 +337,9 @@ export function createMachineWorksProductCapRecipe(): RecipeV1 {
 export function createMachineWorksRecipeBook(): RecipeBookV1 {
   const recipes = [
     createMachineWorksRailFoundationRecipe(),
+    createMachineWorksConveyorSlatRecipe(),
+    createMachineWorksDriveDrumRecipe(),
+    createMachineWorksExposedDriveCogRecipe(),
     createMachineWorksCollectionBucketRecipe(),
     createMachineWorksTransferCarriageRecipe(),
     createMachineWorksInsertionHeadRecipe(),

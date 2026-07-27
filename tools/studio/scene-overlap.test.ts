@@ -8,7 +8,11 @@ import { catalogPartsV1, catalogRecipesV1 } from './studio-library.js';
 /**
  * A scene builder does not reject overlapping placements, so the built-in
  * scenes are pinned clean here: two models may touch but never fill the same
- * world cells, which is what z-fights on screen.
+ * world cells, which is what z-fights on screen. Pose-replay tracks can carry
+ * arbitrary rotations that authored quarter-turn placements cannot express,
+ * so their authored fallback transforms are not judged as presented poses;
+ * replay validation, fixture geometry checks, and browser phase captures cover
+ * those externally solved placements instead.
  */
 describe('the studio scenes', () => {
   const catalog = createStudioCatalog();
@@ -16,8 +20,23 @@ describe('the studio scenes', () => {
   const parts = catalogPartsV1(catalog);
 
   for (const scene of createStudioScenes()) {
-    it(`${scene.id} places no two models in the same space`, () => {
-      const overlaps = sceneOverlapsV1(scene, recipes, parts);
+    const replay = 'poseReplay' in scene
+      ? catalog.scenePoseReplays?.[scene.poseReplay.id]
+      : undefined;
+    const replayed = new Set(replay?.tracks.map(({ placementId }) => placementId) ?? []);
+    const authoredScene = replay === undefined
+      ? scene
+      : {
+          ...scene,
+          placements: scene.placements.filter(({ id }) => !replayed.has(id)),
+        };
+    const scope = replay === undefined ? 'placements' : 'non-replayed placements';
+    it(`${scene.id} ${scope} place no two models in the same space`, () => {
+      if ('poseReplay' in scene) {
+        expect(replay, `Scene '${scene.id}' must resolve pose replay '${scene.poseReplay.id}'.`)
+          .toBeDefined();
+      }
+      const overlaps = sceneOverlapsV1(authoredScene, recipes, parts);
       expect(overlaps, JSON.stringify(overlaps)).toEqual([]);
     });
   }
