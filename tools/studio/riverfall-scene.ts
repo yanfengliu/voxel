@@ -1,0 +1,104 @@
+import {
+  createRiverfallFlowPlacementsV1,
+  RIVERFALL_FLOW_DURATION_MS,
+  RIVERFALL_POSE_REPLAY_ID,
+  RIVERFALL_SCENE_ID,
+} from './riverfall-flow.js';
+import {
+  VOXEL_SCENE_SCHEMA_V4,
+  type ScenePlacementV1,
+  type SceneV1,
+} from './scene.js';
+
+export interface RiverfallRelationshipV1 {
+  readonly from: string;
+  readonly relation: 'contains' | 'feeds' | 'falls-into' | 'drains-into'
+    | 'marks' | 'frames' | 'traces';
+  readonly to: string;
+}
+
+export const RIVERFALL_TREE_PLACEMENTS_V1: readonly ScenePlacementV1[] = [
+  { id: 'tree-high-left-back', model: 'studio:tree', at: [-19, 13, -25], seed: 3 },
+  { id: 'tree-high-right-back', model: 'studio:tree', at: [19, 13, -26], seed: 5, turns: 1 },
+  { id: 'tree-high-left-middle', model: 'studio:tree', at: [-18, 13, -14], seed: 7, turns: 2 },
+  { id: 'tree-high-right-middle', model: 'studio:tree', at: [20, 13, -11], seed: 11, turns: 3 },
+  { id: 'tree-high-left-lip', model: 'studio:tree', at: [-18, 13, -3], seed: 13, turns: 1 },
+  { id: 'tree-high-right-lip', model: 'studio:tree', at: [19, 13, -2], seed: 17, turns: 2 },
+  { id: 'tree-pond-left-back', model: 'studio:tree', at: [-23, 10, 7], seed: 19, turns: 3 },
+  { id: 'tree-pond-right-back', model: 'studio:tree', at: [23, 10, 6], seed: 23 },
+  { id: 'tree-pond-left-front', model: 'studio:tree', at: [-24, 7, 20], seed: 29, turns: 2 },
+  { id: 'tree-pond-right-front', model: 'studio:tree', at: [24, 7, 19], seed: 31, turns: 1 },
+];
+
+export const RIVERFALL_FOAM_PLACEMENTS_V1: readonly ScenePlacementV1[] = [
+  { id: 'foam-impact', model: 'studio:riverfall:foam', at: [0, 4, 4] },
+  { id: 'foam-left-eddy', model: 'studio:riverfall:foam', at: [-7, 4, 12] },
+  { id: 'foam-right-eddy', model: 'studio:riverfall:foam', at: [7, 4, 18] },
+  { id: 'foam-outflow', model: 'studio:riverfall:foam', at: [0, 4, 24] },
+];
+
+const STRUCTURE_PLACEMENTS: readonly ScenePlacementV1[] = [
+  { id: 'landscape', model: 'studio:riverfall:landscape', at: [0, 0, 0] },
+  { id: 'river-surface', model: 'studio:riverfall:river', at: [0, 11, -16] },
+  { id: 'waterfall-curtain', model: 'studio:riverfall:waterfall', at: [0, 3, 0.5] },
+  { id: 'pond-surface', model: 'studio:riverfall:pond', at: [0, 3, 14] },
+  { id: 'pond-outflow', model: 'studio:riverfall:outflow', at: [0, 3, 29] },
+];
+
+const TREE_RELATIONSHIPS: readonly RiverfallRelationshipV1[] =
+  RIVERFALL_TREE_PLACEMENTS_V1.map(({ id }) => ({
+    from: id,
+    relation: 'frames',
+    to: id.includes('pond') ? 'pond-surface' : 'river-surface',
+  }));
+
+const FOAM_RELATIONSHIPS: readonly RiverfallRelationshipV1[] =
+  RIVERFALL_FOAM_PLACEMENTS_V1.map(({ id }) => ({
+    from: id,
+    relation: 'marks',
+    to: id === 'foam-outflow' ? 'pond-outflow' : 'pond-surface',
+  }));
+
+const FLOW_RELATIONSHIPS: readonly RiverfallRelationshipV1[] =
+  createRiverfallFlowPlacementsV1().map(({ id }) => ({
+    from: id,
+    relation: 'traces',
+    to: 'riverfall-cycle',
+  }));
+
+/**
+ * The authored relationship proof is kept beside the scene because SceneV1 is
+ * intentionally only renderable placement data, not a game relationship graph.
+ */
+export const RIVERFALL_RELATIONSHIPS_V1: readonly RiverfallRelationshipV1[] = [
+  { from: 'landscape', relation: 'contains', to: 'river-surface' },
+  { from: 'landscape', relation: 'frames', to: 'waterfall-curtain' },
+  { from: 'landscape', relation: 'contains', to: 'pond-surface' },
+  { from: 'river-surface', relation: 'feeds', to: 'waterfall-curtain' },
+  { from: 'waterfall-curtain', relation: 'falls-into', to: 'pond-surface' },
+  { from: 'pond-surface', relation: 'drains-into', to: 'pond-outflow' },
+  ...TREE_RELATIONSHIPS,
+  ...FOAM_RELATIONSHIPS,
+  ...FLOW_RELATIONSHIPS,
+];
+
+export function createRiverfallScene(): SceneV1 {
+  return {
+    schemaVersion: VOXEL_SCENE_SCHEMA_V4,
+    id: RIVERFALL_SCENE_ID,
+    label: 'Riverfall canyon',
+    summary: 'A high river runs between tree-lined banks, spills over a framed cliff, churns into '
+      + 'a pond, and drains through its front bank. Opaque voxel water and catalog-authored '
+      + 'kinematic glints visualize one-way flow; this scene does not simulate fluid dynamics.',
+    placements: [
+      ...STRUCTURE_PLACEMENTS,
+      ...RIVERFALL_FOAM_PLACEMENTS_V1,
+      ...RIVERFALL_TREE_PLACEMENTS_V1,
+      ...createRiverfallFlowPlacementsV1(),
+    ],
+    poseReplay: {
+      id: RIVERFALL_POSE_REPLAY_ID,
+      durationMs: RIVERFALL_FLOW_DURATION_MS,
+    },
+  };
+}

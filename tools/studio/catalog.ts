@@ -5,6 +5,10 @@ import {
   MACHINE_WORKS_POSE_REPLAY_ID,
 } from './generated-machine-works-replay.js';
 import {
+  RIVERFALL_POSE_REPLAY,
+  RIVERFALL_POSE_REPLAY_ID,
+} from './riverfall-flow.js';
+import {
   ARCH_VOID_CONTRAST_RECIPES,
   ASYMMETRIC_HYBRID_CONTRAST_RECIPES,
   BRANCHING_ORGANIC_CONTRAST_RECIPES,
@@ -66,6 +70,13 @@ import {
   createNightstandRecipe,
   createPillowRecipe,
   createPotRecipe,
+  createRiverfallFlowGlintRecipe,
+  createRiverfallFoamRecipe,
+  createRiverfallLandscapeRecipe,
+  createRiverfallOutflowRecipe,
+  createRiverfallPondRecipe,
+  createRiverfallRiverRecipe,
+  createRiverfallWaterfallRecipe,
   createSandstoneCottageRecipe,
   createSandstoneWallRecipe,
   createStarterRecipe,
@@ -140,8 +151,9 @@ export interface StudioCatalogV1 {
    */
   readonly scenes?: readonly SceneV1[];
   /**
-   * Immutable pose observations produced outside Voxel and referenced by
-   * scene id. Studio may present them; it does not advance their solver.
+   * Immutable pose observations supplied by the catalog producer and
+   * referenced by scene id. Studio may present them; it does not advance
+   * their solver or authored choreography.
    */
   readonly scenePoseReplays?: Readonly<Record<string, ScenePoseReplayV1>>;
 }
@@ -321,6 +333,20 @@ export function createStudioCatalog(): StudioCatalogV1 {
         ],
       },
       {
+        // Independently reusable assets from the Riverfall system scene. Its
+        // catalog replay moves only the flow glint instances.
+        name: 'Riverfall',
+        models: [
+          recipeEntry(createRiverfallLandscapeRecipe),
+          recipeEntry(createRiverfallRiverRecipe),
+          recipeEntry(createRiverfallWaterfallRecipe),
+          recipeEntry(createRiverfallPondRecipe),
+          recipeEntry(createRiverfallOutflowRecipe),
+          recipeEntry(createRiverfallFlowGlintRecipe),
+          recipeEntry(createRiverfallFoamRecipe),
+        ],
+      },
+      {
         name: 'Walls',
         models: [
           // The hand-built brick wall proves "texture" is pattern plus
@@ -440,6 +466,7 @@ export function createStudioCatalog(): StudioCatalogV1 {
     scenes: createStudioScenes(),
     scenePoseReplays: {
       [MACHINE_WORKS_POSE_REPLAY_ID]: MACHINE_WORKS_POSE_REPLAY,
+      [RIVERFALL_POSE_REPLAY_ID]: RIVERFALL_POSE_REPLAY,
     },
   };
 }

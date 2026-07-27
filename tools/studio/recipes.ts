@@ -8,6 +8,7 @@ import { createHouseRecipeBook } from './house-recipes.js';
 import { createHouseholdRecipeBook } from './household-recipes.js';
 import { createMachineWorksRecipeBook } from './machine-works-recipes.js';
 import { createOutdoorRecipeBook } from './outdoor-recipes.js';
+import { createRiverfallRecipeBook } from './riverfall-recipes.js';
 import { createShapesRecipeBook } from './shapes-recipes.js';
 import { createWallRecipeBook } from './wall-recipes.js';
 import type { RecipeBookV1 } from './recipe.js';
@@ -29,6 +30,7 @@ export * from './house-recipes.js';
 export * from './household-recipes.js';
 export * from './machine-works-recipes.js';
 export * from './outdoor-recipes.js';
+export * from './riverfall-recipes.js';
 export * from './shapes-recipes.js';
 export * from './wall-recipes.js';
 
@@ -47,6 +49,7 @@ export function createStudioRecipeBook(): RecipeBookV1 {
     ...createFurnitureRecipeBook(),
     ...createHouseholdRecipeBook(),
     ...createMachineWorksRecipeBook(),
+    ...createRiverfallRecipeBook(),
     ...createHouseRecipeBook(),
     ...createHomeRecipeBook(),
     ...createHomeFurnishingsRecipeBook(),

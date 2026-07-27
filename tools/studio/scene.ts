@@ -24,7 +24,8 @@ import { MAX_UNBOUNDED_CLUSTERED_POINT_LIGHTS_INTERNAL } from '../../src/three/c
  * and an IndexedDB round trip. V1 arranges models only. V2 adds bounded editable
  * point lights. V3 lets an individual light orbit deterministically. V4 may
  * reference an immutable pose replay supplied by the catalog's consumer; the
- * scene stores only the bounded reference and duration, never solver state.
+ * replay may record solver observations or authored choreography, and the
+ * scene stores only the bounded reference and duration, never producer state.
  * Older Studios reject newer behavior-bearing schemas instead of silently
  * omitting them.
  */
@@ -108,8 +109,8 @@ export interface ScenePointLightV3 extends ScenePointLightV1 {
 }
 
 /**
- * A catalog-owned replay reference. The referenced data is an authoritative
- * consumer trace, not authored animation and not physics executed by Voxel.
+ * A catalog-owned replay reference. The referenced data is an immutable
+ * consumer trace, not behavior advanced or decided by Voxel.
  */
 export interface ScenePoseReplayRefV1 {
   readonly id: string;
@@ -146,8 +147,8 @@ export interface SceneSchemaV3 extends SceneFieldsV1 {
 }
 
 /**
- * A scene whose placement poses may be replayed from a consumer-generated
- * physical trace. Voxel presents the trace; it does not solve or mutate it.
+ * A scene whose placement poses may be replayed from a catalog-supplied trace.
+ * Voxel presents the trace; it does not solve, advance, or mutate its source.
  */
 export interface SceneSchemaV4 extends SceneFieldsV1 {
   readonly schemaVersion: typeof VOXEL_SCENE_SCHEMA_V4;

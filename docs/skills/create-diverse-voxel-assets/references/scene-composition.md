@@ -61,6 +61,17 @@ Use a composite recipe when several pieces are one authored asset and the recipe
 
 Use the downstream game's simulation and adapter for gates, production, traffic, combat, water state, damage, pathing, triggers, or other gameplay behavior. The renderer presents state; it does not become authoritative simulation.
 
+For a directional visual-flow showcase that does not claim simulation:
+
+1. Author connected, independently reusable context recipes for the source, channel, transition, receiver, and exit, and keep an explicit relationship graph beside the scene because placement data alone does not prove flow.
+2. Define one plain-data polyline through every visible relationship. Sample it by constant arc length into ordinary rigid placement poses or downstream matrix deltas; never use harmonic translation for one-way travel because it reverses.
+3. Phase identical instanced markers around the path. If fading is unavailable, route the return through opaque receiving geometry, below terrain, and back up inside the opaque source so an above-ground adversarial camera cannot see backwards motion or a reset in open air.
+4. Hash the canonical path, phases, timing, and generated pose lanes; label the producer as authored kinematics, set only laws it actually follows, and state explicitly that the cue does not prove fluid volume, pressure, continuity, transparency, erosion, or gameplay state.
+5. Test fallback-pose parity, direction on each visible reach, hidden-return bounds, maximum adjacent and wrap displacement, static non-overlap, endpoint alignment, descending elevations, receiver containment, both-bank clearance, and animation-off readability.
+6. Capture default, overhead, longitudinal, and reverse/adversarial views with lighting and animation states that materially affect readability. Choose a comparison time that is not merely an integer permutation of equally phased identical markers.
+
+The built-in Riverfall canyon is the narrow visual-flow reference: seven ordinary opaque-voxel recipes and one reused seed-varying tree recipe compose a high river, framed fall, pond, and outflow with ten trees across both banks. Twenty-four instances of one glint recipe follow constant-arc-length samples around a hash-pinned closed path within a six-second replay whose return is hidden below the foundation. Its V1 trace repeats frame zero as the final frame, reducing the ordinary held reset to 10 ms while preserving the existing replay schema and avoiding a spatial pop. Private Studio V4 presents those ordinary poses through the same sparse-delta path used by other replays; fixed browser evidence pins default, overhead, longitudinal, and reverse cameras, distinct phases, and exact render workload. The reusable technique is connected recipes plus a plain path plus ordinary pose or matrix updates, not a water-specific renderer feature and not permission to call authored motion fluid simulation.
+
 For a deterministic physics demonstration, keep the solver in a consumer fixture or game and make the render lane observational:
 
 1. Author reusable visual recipes plus explicit bodies, solid/sensor colliders, and attachment ports without claiming that declarations themselves simulate.

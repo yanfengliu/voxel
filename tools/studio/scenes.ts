@@ -8,6 +8,7 @@ import {
   type SceneV1,
 } from './scene.js';
 import { createContrastScenes } from './contrast-scenes.js';
+import { createRiverfallScene } from './riverfall-scene.js';
 
 const LIGHTING_1000_COLUMNS = 40;
 const LIGHTING_1000_ROWS = 25;
@@ -281,6 +282,7 @@ export function createStudioScenes(): readonly SceneV1[] {
       ],
     },
     ...createContrastScenes(),
+    createRiverfallScene(),
     {
       schemaVersion: VOXEL_SCENE_SCHEMA_V2,
       id: 'studio:scene:lighting-lab',
