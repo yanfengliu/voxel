@@ -59,6 +59,11 @@ import {
 import type { StudioShelfItemKindV1, StudioShelfMoveV1 } from './studio-shelf-order.js';
 import type { StudioSceneLightingMetricsV1 } from './scene-lighting.js';
 import type {
+  SceneAnnotationsV1,
+  SceneViewPinDraftV1,
+  SceneViewPinV1,
+} from './scene-annotations.js';
+import type {
   ScenePoseReplayStatusV1,
   SceneRenderMetricsV1,
 } from './scene-session.js';
@@ -168,11 +173,32 @@ export interface VoxelStudioHarnessV1 {
   clearNotes(): void;
 
   /**
+   * The private review brief and captured-view pins for one stable scene id.
+   * Omitting the id reads the open scene.
+   */
+  sceneAnnotations(sceneId?: string): SceneAnnotationsV1;
+  /** Autosaves a scene-wide review brief without changing renderer-owned scene data. */
+  setSceneBrief(text: string, sceneId?: string): SceneAnnotationsV1;
+  /** Adds a fully described captured-view pin to the open scene. */
+  addSceneAnnotation(draft: SceneViewPinDraftV1): SceneViewPinV1;
+  /** Removes one captured-view pin from the open scene. */
+  removeSceneAnnotation(id: SceneViewPinV1['id']): boolean;
+  /** Clears the brief and pins for one scene, retaining monotonic pin ids. */
+  clearSceneAnnotations(sceneId?: string): void;
+  /** Pauses and restores the exact captured view and phase for one open-scene pin. */
+  showSceneAnnotation(id: SceneViewPinV1['id']): void;
+  /** Arms or disarms the scene stage's explicit one-shot annotation click. */
+  setSceneAnnotationMode(on: boolean): boolean;
+  sceneAnnotationMode(): boolean;
+
+  /**
    * Bundles words + pinned notes + the current model into a request file via
    * the dev server. Saving starts no agent or notification; the owner asks an
    * agent to process the named local file when ready.
    */
   sendRequest(words: string): Promise<SendResult>;
+  /** Saves the open scene's private brief, pins, scene snapshot, and current presented context. */
+  sendSceneRequest(words?: string): Promise<SendResult>;
 
   /** Where you stand: turn and height in degrees, and how much fits on screen. */
   viewState(): OrbitStateV1 & { readonly described: string };
@@ -426,6 +452,16 @@ export interface HarnessHostV1 {
   scenePoseReplayStatus?(): ScenePoseReplayStatusV1 | null;
   /** Tells the UI the notes changed, so lists and timeline dots catch up. */
   notesChanged(): void;
+  /** Private review artifacts for one stable scene id; optional for non-Studio test hosts. */
+  sceneAnnotations?(sceneId: string): SceneAnnotationsV1;
+  setSceneBrief?(sceneId: string, text: string): void;
+  addSceneAnnotation?(sceneId: string, draft: SceneViewPinDraftV1): SceneViewPinV1;
+  removeSceneAnnotation?(sceneId: string, id: SceneViewPinV1['id']): boolean;
+  clearSceneAnnotations?(sceneId: string): void;
+  showSceneAnnotation?(pin: SceneViewPinV1): void;
+  setSceneAnnotationMode?(on: boolean): boolean;
+  sceneAnnotationMode?(): boolean;
+  sendSceneRequest?(words?: string): Promise<SendResult>;
   /** The stage viewpoint, owned by the page; setting it redraws. */
   orbit(): OrbitStateV1 & { readonly described: string };
   /** Optional for non-visual hosts that always center their model at the origin. */
@@ -721,6 +757,25 @@ export function createStudioHarness(host: HarnessHostV1): VoxelStudioHarnessV1 {
     restoreModel = null;
   }
 
+  function annotationSceneId(requested: string | undefined, action: string): string {
+    if (requested !== undefined) return requested;
+    const scene = host.scene();
+    if (scene !== null) return scene.id;
+    throw new Error(
+      `${action} needs an open scene or an explicit stable scene id; no scene is open.`,
+    );
+  }
+
+  function sceneAnnotationDocument(id: string): SceneAnnotationsV1 {
+    if (host.sceneAnnotations === undefined) {
+      throw new Error(
+        'This Studio harness host does not provide private scene annotations. '
+        + 'Mount the browser Studio with its scene-annotation store before using this method.',
+      );
+    }
+    return host.sceneAnnotations(id);
+  }
+
   return {
     load(model) {
       const issues = validateModelV1(model);
@@ -849,8 +904,88 @@ export function createStudioHarness(host: HarnessHostV1): VoxelStudioHarnessV1 {
       host.notesChanged();
     },
 
+    sceneAnnotations(sceneId) {
+      return sceneAnnotationDocument(annotationSceneId(sceneId, 'Reading scene annotations'));
+    },
+    setSceneBrief(text, sceneId) {
+      const id = annotationSceneId(sceneId, 'Saving a scene brief');
+      if (host.setSceneBrief === undefined) {
+        throw new Error(
+          'This Studio harness host cannot save a scene brief because it did not provide a setSceneBrief hook.',
+        );
+      }
+      host.setSceneBrief(id, text);
+      return sceneAnnotationDocument(id);
+    },
+    addSceneAnnotation(draft) {
+      const id = annotationSceneId(undefined, 'Adding a scene annotation');
+      if (host.addSceneAnnotation === undefined) {
+        throw new Error(
+          'This Studio harness host cannot add a scene annotation because it did not provide an addSceneAnnotation hook.',
+        );
+      }
+      return host.addSceneAnnotation(id, draft);
+    },
+    removeSceneAnnotation(pinId) {
+      const id = annotationSceneId(undefined, 'Removing a scene annotation');
+      if (host.removeSceneAnnotation === undefined) {
+        throw new Error(
+          'This Studio harness host cannot remove a scene annotation because it did not provide a removeSceneAnnotation hook.',
+        );
+      }
+      return host.removeSceneAnnotation(id, pinId);
+    },
+    clearSceneAnnotations(sceneId) {
+      const id = annotationSceneId(sceneId, 'Clearing scene annotations');
+      if (host.clearSceneAnnotations === undefined) {
+        throw new Error(
+          'This Studio harness host cannot clear scene annotations because it did not provide a clearSceneAnnotations hook.',
+        );
+      }
+      host.clearSceneAnnotations(id);
+    },
+    showSceneAnnotation(pinId) {
+      const id = annotationSceneId(undefined, 'Showing a scene annotation');
+      if (host.showSceneAnnotation === undefined) {
+        throw new Error(
+          'This Studio harness host cannot show a scene annotation because it did not provide a showSceneAnnotation hook.',
+        );
+      }
+      const pin = sceneAnnotationDocument(id).pins.find((candidate) => candidate.id === pinId);
+      if (pin === undefined) {
+        throw new Error(
+          `Scene '${id}' has no annotation with id ${String(pinId)}, so there is no captured view to show.`,
+        );
+      }
+      host.showSceneAnnotation(pin);
+    },
+    setSceneAnnotationMode(on) {
+      if (host.setSceneAnnotationMode === undefined) {
+        throw new Error(
+          'This Studio harness host cannot change scene annotation mode because it did not provide a setSceneAnnotationMode hook.',
+        );
+      }
+      return host.setSceneAnnotationMode(on);
+    },
+    sceneAnnotationMode() {
+      if (host.sceneAnnotationMode === undefined) {
+        throw new Error(
+          'This Studio harness host cannot report scene annotation mode because it did not provide a sceneAnnotationMode hook.',
+        );
+      }
+      return host.sceneAnnotationMode();
+    },
+
     sendRequest: (words) =>
       sendRequest(buildRequest(words, host.noteStore().list(), host.session().model)),
+    sendSceneRequest(words) {
+      if (host.sendSceneRequest === undefined) {
+        throw new Error(
+          'This Studio harness host cannot save a scene request because it did not provide a sendSceneRequest hook.',
+        );
+      }
+      return host.sendSceneRequest(words);
+    },
 
     viewState: () => host.orbit(),
     viewCenter: () => host.viewCenter?.() ?? [0, 0, 0],

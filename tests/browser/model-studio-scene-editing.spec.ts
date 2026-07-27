@@ -189,13 +189,13 @@ test('scene editing: selection follows the pick, moves/undo/redo, snap, and hidd
   expect(evidence.stageHint).toContain('drag it to move');
   expect(evidence.stageHint).not.toContain('pin a note');
 
-  // Examine and Edit stay; Build, Motion, and Notes are hidden while a scene shows.
+  // Examine, Edit, and scene review Notes stay; Build and Motion are hidden.
   expect(evidence.tabs).toEqual({
     examine: false,
     edit: false,
     build: true,
     motion: true,
-    notes: true,
+    notes: false,
   });
 
   // Selecting the table opens exactly its controls.

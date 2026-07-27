@@ -36,6 +36,8 @@ export interface StudioNotesPanelV1 {
   closeNoteEditor(): void;
   /** Arms a place note on a model cell and opens the editor for it. */
   beginPlaceNote(x: number, y: number, z: number): void;
+  /** Opens the model Notes tab and focuses its revision-request field. */
+  focusRequest(): void;
   /** Attaches the top bar's Send-request shortcut to focus the request box. */
   wireRequestShortcut(button: HTMLButtonElement): void;
 }
@@ -197,16 +199,26 @@ export function createStudioNotesPanel(deps: StudioNotesDepsV1): StudioNotesPane
     });
   });
 
+  function focusRequest(): void {
+    if (!supportsNotes) return;
+    showTab('notes');
+    requestBox.focus();
+  }
+
   function wireRequestShortcut(button: HTMLButtonElement): void {
-    button.addEventListener('click', () => {
-      if (!supportsNotes) return;
-      showTab('notes');
-      requestBox.focus();
-    });
+    button.addEventListener('click', focusRequest);
   }
 
   const pane = element('div', 'pane');
   pane.append(noteHint, noteEditor, notesList, pinPlaceButton, requestBox, sendButton, requestStatus);
 
-  return { pane, renderNotes, openNoteEditor, closeNoteEditor, beginPlaceNote, wireRequestShortcut };
+  return {
+    pane,
+    renderNotes,
+    openNoteEditor,
+    closeNoteEditor,
+    beginPlaceNote,
+    focusRequest,
+    wireRequestShortcut,
+  };
 }

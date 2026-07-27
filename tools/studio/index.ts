@@ -132,3 +132,11 @@ export { buildSnapshot, filledVoxelCount, ModelBuildError } from './build.js';
 export { describeMotion, describePoseAt } from './describe.js';
 export type { VoxelStudioHarnessV1 } from './harness.js';
 export type { StudioNoteV1 } from './notes.js';
+export {
+  SceneAnnotationStore,
+  type SceneAnnotationsV1,
+  type SceneAnnotationStorageV1,
+  type SceneAnnotationStoreOptionsV1,
+  type SceneViewPinDraftV1,
+  type SceneViewPinV1,
+} from './scene-annotations.js';

@@ -184,6 +184,13 @@ const COMMANDS = {
     let model = null;
     if (sourcePath) {
       const raw = JSON.parse(await readFile(resolvePath(PROJECT_ROOT, sourcePath), 'utf8'));
+      if (raw.schemaVersion === 'studio.request/2') {
+        throw new Error(
+          `The Studio contact-sheet command cannot render '${sourcePath}' because it is a `
+          + 'studio.request/2 scene request. Inspect its JSON, then open request.scene.id from '
+          + "Studio's Scenes list; this command accepts model files or studio.request/1 model requests.",
+        );
+      }
       model = raw.schemaVersion === 'studio.request/1' ? (raw.model ?? raw.genome) : raw;
     }
     const file = join(OUTPUT_DIR, 'contact-sheet.png');

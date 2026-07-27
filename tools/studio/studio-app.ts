@@ -37,6 +37,19 @@ import {
 import { createPhysicalOverlayView } from './physical-overlay-view.js';
 import { StudioPlayer } from './player.js';
 import { referenceGridSegmentsV1, sceneReferenceGridSegmentsV1 } from './reference-grid.js';
+import { sceneResolvedContentHashesV1 } from './scene-annotation-content.js';
+import {
+  scenePresentationFingerprintV1,
+  sceneViewPinMatchesV1,
+  sceneViewPinStaleReasonV1,
+  type SceneAnnotationViewContextV1,
+} from './scene-annotation-context.js';
+import {
+  SceneAnnotationStore,
+  type SceneAnnotationsV1,
+  type SceneViewPinDraftV1,
+  type SceneViewPinV1,
+} from './scene-annotations.js';
 import type { ScenePoseReplayEventV1 } from './scene-pose-replay.js';
 import { VOXEL_SCENE_SCHEMA_V4, type SceneV1 } from './scene.js';
 import { sceneMotionWindowMsV1 } from './scene-motion.js';
@@ -72,8 +85,18 @@ import { createStudioMotionPanel, type StudioMotionPanelV1 } from './studio-moti
 import { createStudioNotesPanel, type StudioNotesPanelV1 } from './studio-notes.js';
 import { setupPanelResize } from './studio-panel-resize.js';
 import { createStudioPlayerBar, type StudioPlayerBarV1 } from './studio-player.js';
+import {
+  buildSceneRequest,
+  sendRequest as saveStudioRequest,
+  type SendResult,
+  type StudioSceneCaptureV1,
+} from './requests.js';
 import { createStudioSceneAnimationControl, sceneAnimationStageHint, sceneAnimationStatusSuffix } from './studio-scene-animation-control.js';
 import { StudioSceneAnimationTransport } from './studio-scene-animation-transport.js';
+import {
+  createStudioSceneNotesPanel,
+  type StudioSceneNotesPanelV1,
+} from './studio-scene-notes.js';
 import { createStudioShelf, type StudioShelfV1 } from './studio-shelf.js';
 import { createStudioShelfOrderWorkspace } from './studio-shelf-order.js';
 
@@ -141,6 +164,11 @@ export interface StudioMountOptionsV1 {
    * game embedding two studios can pass its own store to keep them separate.
    */
   readonly viewStore?: ViewPrefsStoreV1;
+  /**
+   * Private scene-review storage. Defaults to guarded browser localStorage;
+   * tests and multiple embedded studios may inject an isolated store.
+   */
+  readonly sceneAnnotationStore?: SceneAnnotationStore;
 }
 
 export interface StudioHandleV1 {
@@ -290,6 +318,7 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
   // back whenever a view control changes.
   const viewStore = options.viewStore ?? browserViewPrefsStore();
   const view = readViewPrefs(viewStore);
+  const sceneAnnotationStore = options.sceneAnnotationStore ?? new SceneAnnotationStore();
   const persistView = (): void => {
     writeViewPrefs(viewStore, {
       depth: depthOn, edges: session.edges, lit: session.lit, sceneAnimation: sceneTransport.enabled, wireframe: session.wireframe, grid: gridOn,
@@ -315,6 +344,10 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
   canvas.width = VIEW_WIDTH;
   canvas.height = VIEW_HEIGHT;
   const marks = element('div', 'marks');
+  // Numbered pins are duplicated by the fully labelled Notes queue. Keep the
+  // visual overlay out of the accessibility tree so the stage does not announce
+  // an unexplained bare number.
+  marks.setAttribute('aria-hidden', 'true');
   // The physical outlines live between the picture and the note rings: they
   // annotate the model, and a pinned note still reads over everything.
   const physicalView = createPhysicalOverlayView();
@@ -352,12 +385,12 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
   const modelStageHint = supportsNotes
     ? 'drag to turn · right-drag or WASD to move view · scroll to zoom · double-click to re-centre · click to pin a note'
     : 'drag to turn · right-drag or WASD to move view · scroll to zoom · double-click to re-centre';
-  // A scene is arranged, not noted: a click selects the model under the cursor
-  // and a drag moves it, so the hint speaks to that instead of pinning.
   const sceneStageHint = 'click a model to select · drag it to move · '
     + 'middle-drag to turn · right-drag or WASD to move view · scroll to zoom';
   const replaySceneStageHint = 'drag to turn · right-drag or WASD to move view · scroll to zoom · '
     + 'play or scrub the consumer replay';
+  const sceneAnnotationStageHint = 'annotation armed · click once to capture this view and phase · '
+    + 'middle-drag to turn · right-drag or WASD to move view · Escape to cancel';
   stageHint.textContent = modelStageHint;
   stageHint.id = `voxel-studio-stage-hint-${String(++stageHintSequence)}`;
   canvasWrap.tabIndex = 0;
@@ -481,6 +514,13 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
   const sceneParts = catalog.parts ?? catalogPartsV1(catalog);
   let sceneSession: SceneSession | null = null;
   let sceneOpen: SceneV1 | null = null;
+  let sceneAnnotationDocumentCache: SceneAnnotationsV1 | null = null;
+  let sceneAnnotationFingerprintCache: {
+    readonly scene: SceneV1;
+    readonly fingerprint: string;
+  } | null = null;
+  let sceneAnnotationModeOn = false;
+  let sceneNotesPanel: StudioSceneNotesPanelV1 | null = null;
   let sceneViewTranslationLocked = false;
   // A left click picks the model under the cursor; these hold each placement's
   // world box (recomputed when the scene changes) and which one is selected, so
@@ -518,7 +558,6 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
     + 'Add and arrange its models in the Edit tab.');
   const sceneMotionNote = sceneNote('Animated models, consumer pose replays, and moving point-light sources share the scene animation control. '
     + 'Lighting changes illumination, not movement. A replay presents supplied poses; Voxel does not advance its solver.');
-  const sceneNotesNote = sceneNote('Notes pin to one model. Open a model from the shelf to leave notes on it.');
   const sceneReplayReadOnlyNote = sceneNote(
     'This scene is driven by a consumer-supplied pose replay and is read-only in Studio. '
     + 'Play or scrub to inspect recorded poses, use the look and camera controls to examine them, '
@@ -529,12 +568,22 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
   // shown while a scene is open — so the model's own content underneath keeps
   // its visibility and is simply covered, never toggled out from under itself.
   const sceneInspectorPanels: HTMLElement[] = [];
-  // The tab buttons a scene does not use — Build, Motion, Notes — hidden while a
-  // scene is open, so the inspector shows only Examine and either the scene
-  // editor or a replay's explicit read-only boundary.
+  const sceneCoveredModelContents: {
+    readonly element: HTMLElement;
+    readonly ariaHidden: string | null;
+    readonly inert: boolean;
+  }[] = [];
+  // A scene does not use model construction or model-authored motion. Notes
+  // remains visible for its separate private scene-review document.
   let sceneHiddenTabs: HTMLElement[] = [];
   function setInspectorSceneMode(on: boolean): void {
     for (const content of sceneInspectorPanels) content.hidden = !on;
+    for (const covered of sceneCoveredModelContents) {
+      covered.element.inert = on || covered.inert;
+      if (on) covered.element.setAttribute('aria-hidden', 'true');
+      else if (covered.ariaHidden === null) covered.element.removeAttribute('aria-hidden');
+      else covered.element.setAttribute('aria-hidden', covered.ariaHidden);
+    }
     for (const tab of sceneHiddenTabs) tab.hidden = on;
   }
   const player = new StudioPlayer(session.model.motion.periodMs);
@@ -718,6 +767,53 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
     notesChanged() {
       notesPanel.renderNotes();
       playerBar.renderDots();
+    },
+    sceneAnnotations: readSceneAnnotationDocument,
+    setSceneBrief(sceneId, text) {
+      sceneAnnotationStore.setBrief(sceneId, text);
+      refreshSceneAnnotationDocumentCache(sceneId);
+      if (sceneOpen?.id === sceneId) sceneNotesPanel?.render(sceneId);
+    },
+    addSceneAnnotation(sceneId, draft) {
+      if (sceneOpen?.id !== sceneId) {
+        throw new Error(
+          `Scene annotation capture belongs to '${sceneId}', but ${
+            sceneOpen === null ? 'no scene is open' : `scene '${sceneOpen.id}' is open`
+          }. Open the matching scene before adding it.`,
+        );
+      }
+      const result = sceneAnnotationStore.addPin(sceneId, draft);
+      refreshSceneAnnotationDocumentCache(sceneId);
+      sceneNotesPanel?.render(sceneId);
+      drawSceneOverlays();
+      return result.pin;
+    },
+    removeSceneAnnotation(sceneId, pinId) {
+      const result = sceneAnnotationStore.removePin(sceneId, pinId);
+      refreshSceneAnnotationDocumentCache(sceneId);
+      if (sceneOpen?.id === sceneId) {
+        sceneNotesPanel?.render(sceneId);
+        drawSceneOverlays();
+      }
+      return result.removed;
+    },
+    clearSceneAnnotations(sceneId) {
+      sceneAnnotationStore.clearScene(sceneId);
+      refreshSceneAnnotationDocumentCache(sceneId);
+      if (sceneOpen?.id === sceneId) {
+        sceneNotesPanel?.render(sceneId);
+        drawSceneOverlays();
+      }
+    },
+    showSceneAnnotation,
+    setSceneAnnotationMode,
+    sceneAnnotationMode: () => sceneAnnotationModeOn,
+    sendSceneRequest(words) {
+      if (sceneOpen === null) {
+        throw new Error('A scene request needs an open scene; open one from the shelf first.');
+      }
+      const document = readSceneAnnotationDocument(sceneOpen.id);
+      return saveSceneRequest(sceneOpen.id, document, words ?? document.brief);
     },
     orbit: () => ({ ...orbit, described: describeOrbit(orbit) }),
     viewCenter: () => [...panCenter],
@@ -913,14 +1009,225 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
     syncPlayButton: () => { playerBar.syncPlayButton(); },
     redrawOverlays: positionRings,
   });
+  sceneNotesPanel = createStudioSceneNotesPanel({
+    getScene: () => sceneOpen === null ? null : { id: sceneOpen.id, label: sceneOpen.label },
+    getDocument: readSceneAnnotationDocument,
+    setBrief: (sceneId, brief) => sceneAnnotationStore.setBrief(sceneId, brief),
+    addPin: (sceneId, draft) => sceneAnnotationStore.addPin(sceneId, draft),
+    removePin: (sceneId, pinId) => sceneAnnotationStore.removePin(sceneId, pinId),
+    showPin: showSceneAnnotation,
+    getAnnotationMode: () => sceneAnnotationModeOn,
+    setAnnotationMode: setSceneAnnotationMode,
+    sendRequest: (sceneId, document) => saveSceneRequest(sceneId, document),
+    redraw: drawSceneOverlays,
+    loadWarnings: sceneAnnotationStore.loadWarnings,
+  });
   editor.wireTopBar({ openButton, newButton, copyButton });
-  notesPanel.wireRequestShortcut(requestShortcut);
+  requestShortcut.addEventListener('click', () => {
+    if (sceneOpen !== null) {
+      showTab('notes');
+      sceneNotesPanel.focusBrief();
+    } else {
+      notesPanel.focusRequest();
+    }
+  });
 
   // ---- drawing and readouts ----
+  function refreshSceneAnnotationDocumentCache(sceneId: string): SceneAnnotationsV1 {
+    const document = sceneAnnotationStore.readScene(sceneId);
+    if (sceneOpen?.id === sceneId) sceneAnnotationDocumentCache = document;
+    return document;
+  }
+
+  function readSceneAnnotationDocument(sceneId: string): SceneAnnotationsV1 {
+    return refreshSceneAnnotationDocumentCache(sceneId);
+  }
+
+  function currentSceneAnnotationFingerprint(): string {
+    if (sceneOpen === null) {
+      throw new Error('A scene annotation fingerprint needs an open scene; no scene is open.');
+    }
+    if (sceneAnnotationFingerprintCache?.scene !== sceneOpen) {
+      sceneAnnotationFingerprintCache = {
+        scene: sceneOpen,
+        fingerprint: scenePresentationFingerprintV1(
+          sceneOpen,
+          sceneResolvedContentHashesV1(sceneOpen, sceneRecipes, sceneParts),
+        ),
+      };
+    }
+    return sceneAnnotationFingerprintCache.fingerprint;
+  }
+
   function viewSignature(): string {
     return `${String(orbit.yawDegrees)}:${String(orbit.pitchDegrees)}:${String(orbit.viewHeight)}`
       + `:${depthOn ? 'depth' : 'flat'}:`
       + `${String(panCenter[0])},${String(panCenter[1])},${String(panCenter[2])}`;
+  }
+
+  function sceneAnnotationContext(): SceneAnnotationViewContextV1 {
+    if (sceneOpen === null || sceneSession === null) {
+      throw new Error('A scene annotation needs a successfully presented open scene; no scene is open.');
+    }
+    const replayStatus = sceneSession.poseReplayStatus();
+    return {
+      sceneId: sceneOpen.id,
+      sceneFingerprint: currentSceneAnnotationFingerprint(),
+      timeMs: lastShownMs,
+      orbit: { ...orbit },
+      panCenter: [...panCenter],
+      depth: depthOn,
+      lit: session.lit,
+      edges: session.edges,
+      selectedPlacementId,
+      viewport: { width: viewW, height: viewH },
+      ...(replayStatus === null
+        ? {}
+        : {
+            replay: {
+              id: replayStatus.replayId,
+              inputHash: replayStatus.provenance.inputHash,
+              finalHash: replayStatus.provenance.finalHash,
+            },
+          }),
+    };
+  }
+
+  function sceneRequestCapture(): StudioSceneCaptureV1 {
+    const context = sceneAnnotationContext();
+    return {
+      timeMs: context.timeMs,
+      orbit: { ...context.orbit },
+      center: [...context.panCenter],
+      depth: context.depth,
+      lit: context.lit,
+      edges: context.edges,
+      selectedPlacementId: context.selectedPlacementId,
+      ...(context.replay === undefined ? {} : { replay: { ...context.replay } }),
+    };
+  }
+
+  function setSceneAnnotationMode(on: boolean): boolean {
+    if (on && !supportsNotes) {
+      throw new Error(
+        'Scene annotation mode is unavailable because this Studio shell profile does not include the Notes tab.',
+      );
+    }
+    if (on && sceneOpen === null) {
+      throw new Error('Scene annotation mode needs an open scene; open a scene from the shelf first.');
+    }
+    if (on && sceneNotesPanel?.editorOpen === true) {
+      throw new Error(
+        'Finish or cancel the captured annotation that is already open before arming another scene annotation.',
+      );
+    }
+    sceneAnnotationModeOn = on;
+    canvasWrap.classList.toggle('scene-annotation-armed', on);
+    sceneNotesPanel?.syncAnnotationMode();
+    if (sceneOpen !== null) syncSceneStageHint(sceneOpen);
+    return sceneAnnotationModeOn;
+  }
+
+  function positionSceneAnnotationMarkers(): void {
+    marks.replaceChildren();
+    if (sceneOpen === null) return;
+    const document = sceneAnnotationDocumentCache?.sceneId === sceneOpen.id
+      ? sceneAnnotationDocumentCache
+      : refreshSceneAnnotationDocumentCache(sceneOpen.id);
+    if (document.pins.length === 0) return;
+    const context = sceneAnnotationContext();
+    for (const pin of document.pins) {
+      if (!sceneViewPinMatchesV1(pin, context)) continue;
+      const marker = ringAt(pin.spot.u, pin.spot.v, false);
+      marker.classList.add('scene-annotation-marker');
+      marker.dataset.annotationId = String(pin.id);
+      marker.textContent = String(pin.id);
+      marker.title = `Scene annotation ${String(pin.id)}: ${pin.text}`;
+      marks.append(marker);
+    }
+  }
+
+  function showSceneAnnotation(pin: SceneViewPinV1): void {
+    const current = sceneAnnotationContext();
+    const unavailable = sceneViewPinStaleReasonV1(pin, current);
+    if (unavailable !== null) throw new Error(unavailable);
+    const previous = {
+      orbit: { ...orbit },
+      panCenter: [...panCenter] as OrbitCenterV1,
+      depth: depthOn,
+      lit: session.lit,
+      edges: session.edges,
+      selectedPlacementId,
+      timeMs: lastShownMs,
+      enabled: sceneTransport.enabled,
+      playing: player.playing,
+    };
+    const hasMotion = sceneSession?.hasMotion() === true;
+    try {
+      sceneTransport.freezeExact(lastShownMs);
+      if (selectedPlacementId !== pin.selectedPlacementId) {
+        selectPlacement(pin.selectedPlacementId);
+      }
+      if (session.edges !== pin.edges) harness.setEdges(pin.edges);
+      if (session.lit !== pin.lit) harness.setLit(pin.lit);
+      if (depthOn !== pin.depth) setDepth(pin.depth);
+      presentView(pin.orbit, [...pin.panCenter], pin.timeMs);
+      sceneTransport.freezeExact(pin.timeMs);
+      playerBar.syncPlayButton();
+      if (!sceneViewPinMatchesV1(pin, sceneAnnotationContext())) {
+        throw new Error(
+          'The Studio presented a different camera, selection, look, phase, or viewport than the annotation captured.',
+        );
+      }
+      positionSceneAnnotationMarkers();
+    } catch (showFailure) {
+      try {
+        if (session.edges !== previous.edges) harness.setEdges(previous.edges);
+        if (session.lit !== previous.lit) harness.setLit(previous.lit);
+        if (depthOn !== previous.depth) setDepth(previous.depth);
+        presentView(previous.orbit, previous.panCenter, previous.timeMs);
+        if (selectedPlacementId !== previous.selectedPlacementId) {
+          selectPlacement(previous.selectedPlacementId);
+        }
+        sceneTransport.setEnabled(previous.enabled, previous.timeMs, hasMotion);
+        if (!previous.playing) sceneTransport.freezeExact(previous.timeMs);
+        persistView();
+        refresh();
+        playerBar.syncPlayButton();
+      } catch (restoreFailure) {
+        throw new AggregateError(
+          [showFailure, restoreFailure],
+          `Annotation ${String(pin.id)} could not be shown, and restoring the prior scene view also failed. `
+          + 'Reload this Studio before continuing.',
+          { cause: restoreFailure },
+        );
+      }
+      const reason = showFailure instanceof Error ? showFailure.message : String(showFailure);
+      throw new Error(
+        `Annotation ${String(pin.id)} could not be shown, so the prior view and playback state were restored. ${reason}`,
+        { cause: showFailure },
+      );
+    }
+  }
+
+  async function saveSceneRequest(
+    sceneId: string,
+    document: SceneAnnotationsV1,
+    words = document.brief,
+  ): Promise<SendResult> {
+    if (sceneOpen?.id !== sceneId) {
+      throw new Error(
+        `A request for scene '${sceneId}' needs that scene presented on the stage; open it and try again.`,
+      );
+    }
+    if (document.sceneId !== sceneId) {
+      throw new Error(
+        `The scene request document belongs to '${document.sceneId}', not '${sceneId}'. Reload the Notes tab and try again.`,
+      );
+    }
+    return saveStudioRequest(
+      buildSceneRequest(words, document.pins, sceneOpen, sceneRequestCapture()),
+    );
   }
 
   function drawSceneOverlays(): void {
@@ -929,6 +1236,7 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
     // Draw even when no placement is selected: the hidden draw clears any
     // pooled SVG lines left by the previous scene's selection.
     highlightView.draw(camera, { x: 0, y: 0, z: 0 }, viewW, viewH, signature, 1);
+    positionSceneAnnotationMarkers();
   }
 
   function drawFrame(timeMs: number): void {
@@ -1154,6 +1462,8 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
 
     sceneSession = candidateSession;
     sceneOpen = scene;
+    sceneAnnotationFingerprintCache = null;
+    sceneAnnotationDocumentCache = null;
     clearViewError();
     lastShownMs = 0;
     selectedPlacementId = null;
@@ -1164,6 +1474,9 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
     sceneRedo.length = 0;
     panCenter = candidatePanCenter;
     orbit = candidateOrbit;
+    sceneNotesPanel?.cancelCapture();
+    sceneAnnotationModeOn = false;
+    canvasWrap.classList.remove('scene-annotation-armed');
     canvas.style.display = 'none';
     sceneCanvas.style.display = 'block';
     // Examine carries the scene's readout; Build and the rest belong to a
@@ -1181,14 +1494,20 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
   /** Leaves the scene view for the model lane and drops every scene-only edit/selection reference. */
   function closeSceneMode(): void {
     if (sceneOpen === null) return;
+    sceneNotesPanel?.cancelCapture();
+    sceneAnnotationModeOn = false;
+    canvasWrap.classList.remove('scene-annotation-armed');
     sceneEditor.clearLightSelection();
     sceneTransport.freezeExact(lastShownMs);
     clearViewError();
     sceneOpen = null;
+    sceneAnnotationFingerprintCache = null;
+    sceneAnnotationDocumentCache = null;
     selectedPlacementId = null;
     sceneBoxes = [];
     sceneUndo.length = 0;
     sceneRedo.length = 0;
+    marks.replaceChildren();
     highlightView.setSegments([]);
     highlightView.setVisible(false);
     canvas.style.display = 'block';
@@ -1241,13 +1560,19 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
         // Retirement cleanup is allowed to fail. The visible transition is not:
         // the deleted scene must never remain on screen after it is gone.
         sceneTransport.freezeExact(lastShownMs);
+        sceneNotesPanel?.cancelCapture();
+        sceneAnnotationModeOn = false;
+        canvasWrap.classList.remove('scene-annotation-armed');
         clearViewError();
         sceneOpen = null;
+        sceneAnnotationFingerprintCache = null;
+        sceneAnnotationDocumentCache = null;
         selectedPlacementId = null;
         highlightedPartIndex = null;
         sceneBoxes = [];
         sceneUndo.length = 0;
         sceneRedo.length = 0;
+        marks.replaceChildren();
         canvas.style.display = 'block';
         sceneCanvas.style.display = 'none';
         panCenter = [0, 0, 0];
@@ -1307,6 +1632,30 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
         + (latest === undefined || latest === null ? '' : `; ${replayEventEvidence(latest)}`);
   }
 
+  function syncSceneStageHint(scene: SceneV1): void {
+    const replayReadOnly = isConsumerReplayScene(scene);
+    const lightCount = scene.lights?.length ?? 0;
+    const hasMotion = sceneSession?.hasMotion() === true;
+    const normalHint = replayReadOnly ? replaySceneStageHint : sceneStageHint;
+    const lightingHint = sceneLightingStageHint(
+      sceneAnnotationModeOn ? sceneAnnotationStageHint : normalHint,
+      lightCount,
+      session.lit,
+    );
+    sceneViewTranslationLocked = sceneViewCenterIsPinnedV1(scene, depthOn && session.lit);
+    setStageKeyboardAvailable(!sceneViewTranslationLocked);
+    const cameraHint = sceneViewTranslationLocked
+      ? lightingHint
+        + ' · right-drag and WASD translation locked for dense perspective lighting; '
+        + 'use flat view or turn lighting off'
+      : lightingHint;
+    stageHint.textContent = sceneAnimationStageHint(
+      cameraHint,
+      hasMotion,
+      sceneTransport.enabled,
+    );
+  }
+
   function refreshScene(scene: SceneV1): void {
     playerBar.setSceneMode(true);
     // Moment notes belong to the underlying model. Clear their stage marks as
@@ -1338,23 +1687,7 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
     physToggle.hidden = true;
     snapToggle.hidden = replayReadOnly;
     snapToggle.classList.toggle('on', snapOn);
-    const lightingHint = sceneLightingStageHint(
-      replayReadOnly ? replaySceneStageHint : sceneStageHint,
-      lightCount,
-      session.lit,
-    );
-    sceneViewTranslationLocked = sceneViewCenterIsPinnedV1(scene, depthOn && session.lit);
-    setStageKeyboardAvailable(!sceneViewTranslationLocked);
-    const cameraHint = sceneViewTranslationLocked
-      ? lightingHint
-        + ' · right-drag and WASD translation locked for dense perspective lighting; '
-        + 'use flat view or turn lighting off'
-      : lightingHint;
-    stageHint.textContent = sceneAnimationStageHint(
-      cameraHint,
-      hasMotion,
-      sceneTransport.enabled,
-    );
+    syncSceneStageHint(scene);
     wireframeView.setVisible(false);
     physicalView.setVisible(false);
     // The scene stands on its own ground grid, sized to how far it spreads.
@@ -1399,9 +1732,11 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
     sceneEditor.element.hidden = replayReadOnly;
     sceneReplayReadOnlyNote.hidden = !replayReadOnly;
     if (!replayReadOnly) sceneEditor.render(scene, selectedPlacementId);
+    sceneNotesPanel?.render(scene.id);
     newButton.hidden = true;
     copyButton.hidden = true;
-    requestShortcut.hidden = true;
+    requestShortcut.textContent = 'Review request…';
+    requestShortcut.hidden = !supportsNotes;
   }
 
   // ---- refresh ----
@@ -1423,6 +1758,7 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
     setInspectorSceneMode(false);
     newButton.hidden = !supportsEdit;
     copyButton.hidden = !supportsEdit;
+    requestShortcut.textContent = 'Send request';
     requestShortcut.hidden = !supportsNotes;
     const model = harness.model();
     const described = harness.describe();
@@ -1621,6 +1957,7 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
       throw workspaceFailure;
     }
     sceneOpen = next;
+    sceneAnnotationFingerprintCache = null;
     recomputeSceneBoxes();
     showSelection();
     syncSceneTransport(next, previousHadMotion);
@@ -1677,7 +2014,7 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
     });
   }
 
-  type StageGesture = 'none' | 'orbit' | 'pan' | 'move';
+  type StageGesture = 'none' | 'orbit' | 'pan' | 'move' | 'annotate';
   let gesture: StageGesture = 'none';
   let moved = false;
   let lastX = 0;
@@ -1714,6 +2051,71 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
     modelNoteClickTimer = null;
     pendingModelNoteClick = null;
   };
+  function captureSceneAnnotation(event: PointerEvent): void {
+    if (sceneOpen === null || sceneNotesPanel === null || !sceneAnnotationModeOn) return;
+    const movement = keyboard.movement();
+    if (movement.forward !== 0 || movement.right !== 0) return;
+    const previous = {
+      timeMs: lastShownMs,
+      enabled: sceneTransport.enabled,
+      playing: player.playing,
+      annotationMode: sceneAnnotationModeOn,
+    };
+    const hasMotion = sceneSession?.hasMotion() === true;
+    let transportMayHaveChanged = false;
+    try {
+      const context = sceneAnnotationContext();
+      const rect = canvasWrap.getBoundingClientRect();
+      const capture: Omit<SceneViewPinDraftV1, 'text'> = {
+        sceneFingerprint: context.sceneFingerprint,
+        spot: {
+          u: Math.min(1, Math.max(0, (event.clientX - rect.left) / rect.width)),
+          v: Math.min(1, Math.max(0, (event.clientY - rect.top) / rect.height)),
+        },
+        timeMs: context.timeMs,
+        orbit: { ...context.orbit },
+        panCenter: [...context.panCenter],
+        depth: context.depth,
+        lit: context.lit,
+        edges: context.edges,
+        selectedPlacementId: context.selectedPlacementId,
+        viewport: { ...context.viewport },
+        ...(context.replay === undefined ? {} : { replay: { ...context.replay } }),
+      };
+      transportMayHaveChanged = true;
+      sceneTransport.freezeExact(lastShownMs);
+      playerBar.syncPlayButton();
+      if (!sceneNotesPanel.beginCapture(capture)) {
+        throw new Error(
+          'The scene Notes panel did not accept the captured view. Reopen its Notes tab and try again.',
+        );
+      }
+    } catch (captureFailure) {
+      const rollbackFailures: string[] = [];
+      if (transportMayHaveChanged) {
+        try {
+          sceneTransport.setEnabled(previous.enabled, previous.timeMs, hasMotion);
+          if (!previous.playing) sceneTransport.freezeExact(previous.timeMs);
+          playerBar.syncPlayButton();
+        } catch (error) {
+          rollbackFailures.push(`playback restoration failed (${String(error)})`);
+        }
+      }
+      try {
+        setSceneAnnotationMode(previous.annotationMode);
+      } catch (error) {
+        rollbackFailures.push(`annotation-mode restoration failed (${String(error)})`);
+      }
+      const reason = captureFailure instanceof Error ? captureFailure.message : String(captureFailure);
+      const rollback = rollbackFailures.length === 0
+        ? 'The prior playback and annotation mode were restored.'
+        : `The capture also could not fully restore its prior state: ${rollbackFailures.join('; ')}.`;
+      showViewError(
+        new Error(`The scene annotation could not capture this view: ${reason} ${rollback}`),
+        'The scene annotation could not capture this view; the scene and prior notes remain unchanged.',
+      );
+    }
+  }
   // The browser's own context menu would swallow a right-drag pan.
   canvasWrap.addEventListener('contextmenu', (event) => { event.preventDefault(); });
   canvasWrap.addEventListener('pointerdown', (event) => {
@@ -1727,6 +2129,8 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
     if (event.button === 2) { gesture = 'pan'; return; }
     if (event.button !== 0) { gesture = 'none'; return; }
     if (!sceneOpen) { gesture = 'orbit'; return; }
+    if (sceneNotesPanel.editorOpen) { gesture = 'none'; return; }
+    if (sceneAnnotationModeOn) { gesture = 'annotate'; return; }
     // Replayed transforms are presented observations, while authored placement
     // boxes describe only the trace's static source. Picking or moving those
     // boxes would select stale geometry, so every left drag remains a camera
@@ -1792,6 +2196,10 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
     gesture = 'none';
     moved = false;
     dragGrab = null;
+    if (finished === 'annotate') {
+      if (!wasDrag) captureSceneAnnotation(event);
+      return;
+    }
     // A finished drag of a scene model syncs the editor list to its new spot.
     if (finished === 'move') { if (wasDrag) refresh(); return; }
     // A scene has no single model to pin a note against, so a clean click on
@@ -1851,6 +2259,10 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
     runViewAction(() => { harness.setViewAngles(zoomOrbit(orbit, Math.sign(event.deltaY))); });
   }, { passive: false });
   canvasWrap.addEventListener('dblclick', (event) => {
+    if (sceneOpen !== null && sceneNotesPanel.editorOpen) {
+      event.preventDefault();
+      return;
+    }
     cancelPendingModelNoteClick();
     const openedIntent = openedModelNoteClick;
     openedModelNoteClick = null;
@@ -2109,8 +2521,13 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
   const keyboard = createStudioKeyboard({
     root,
     sceneOpen: () => sceneOpen !== null,
-    noteEditorOpen: () => Boolean(state.pending ?? state.armedForPlace),
-    closeNoteEditor: () => { notesPanel.closeNoteEditor(); },
+    noteEditorOpen: () => sceneOpen !== null
+      ? sceneAnnotationModeOn || sceneNotesPanel.editorOpen
+      : Boolean(state.pending ?? state.armedForPlace),
+    closeNoteEditor: () => {
+      if (sceneOpen !== null) sceneNotesPanel.cancelCapture();
+      else notesPanel.closeNoteEditor();
+    },
     onMovementStart: cancelPendingModelNoteClick,
     undoScene,
     redoScene,
@@ -2417,6 +2834,7 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
   let rootWritten = false;
   try {
     acquired.push(shelfPanel);
+    acquired.push(sceneNotesPanel);
     // Watching a model get made. Its previews go through the harness, so the
     // agent walks the same construction the panel shows.
     construction = createConstructionPanel({
@@ -2467,6 +2885,17 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
     if (hasStudioTab('edit')) studioPanel('edit').append(...Array.from(editor.pane.childNodes));
     if (hasStudioTab('motion')) studioPanel('motion').append(...Array.from(motionPanel.pane.childNodes));
     if (hasStudioTab('notes')) studioPanel('notes').append(...Array.from(notesPanel.pane.childNodes));
+    for (const tab of ['edit', 'build', 'motion', 'notes'] as const) {
+      if (!hasStudioTab(tab)) continue;
+      for (const child of Array.from(studioPanel(tab).children)) {
+        if (!(child instanceof HTMLElement)) continue;
+        sceneCoveredModelContents.push({
+          element: child,
+          ariaHidden: child.getAttribute('aria-hidden'),
+          inert: child.inert,
+        });
+      }
+    }
     // A scene fills the model-only tabs with its own content — the scene editor
     // in Edit (or its replay read-only note), a short note in the rest — hidden
     // until a scene opens, so those tabs never show a stale model.
@@ -2483,11 +2912,11 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
     attachSceneInspector('edit', sceneReplayReadOnlyNote);
     attachSceneInspector('build', sceneBuildNote);
     attachSceneInspector('motion', sceneMotionNote);
-    attachSceneInspector('notes', sceneNotesNote);
-    // The tab buttons a scene hides. Examine and Edit stay; a scene is examined
-    // and edited, never built from steps, given motion, or noted per-model.
+    attachSceneInspector('notes', sceneNotesPanel.element);
+    // A scene keeps Examine, Edit, and its private Notes surface. Build and
+    // model-authored Motion remain model-only.
     const tabHost = studioShell.regions.stage.parentElement;
-    sceneHiddenTabs = (['build', 'motion', 'notes'] as const)
+    sceneHiddenTabs = (['build', 'motion'] as const)
       .map((tab) => tabHost?.querySelector<HTMLElement>(`[data-studio-tab="${tab}"]`) ?? null)
       .filter((element): element is HTMLElement => element !== null);
 
@@ -2535,6 +2964,7 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
       cancelAnimationFrame(frameHandle);
       construction.dispose();
       shelfPanel.dispose();
+      sceneNotesPanel.dispose();
       studioShell.dispose();
       keyboard.dispose();
       cancelPendingModelNoteClick();

@@ -78,7 +78,9 @@ export function createStudioKeyboard(options: StudioKeyboardOptionsV1): StudioKe
   };
   const onKeyDown = (event: KeyboardEvent): void => {
     if (!ownsEventTarget(event.target)) return;
-    if (event.key === 'Escape' && options.noteEditorOpen()) options.closeNoteEditor();
+    if (event.key === 'Escape' && !event.isComposing && options.noteEditorOpen()) {
+      options.closeNoteEditor();
+    }
     if (textEditingControl(event.target) !== null) return;
 
     const modifier = event.ctrlKey || event.metaKey;
