@@ -8,9 +8,9 @@ A game keeps its own simulation, rules, UI, and save data, and sends this engine
 
 *A real consumer: AoE2 runs Voxel as its sole world renderer — terrain, buildings, villagers, animals, and animation are all engine-drawn; the HUD is the game's own DOM. (Capture from AoE2's devlog, 2026-07-12.)*
 
-![A composed engine scene: chunk terrain plus instanced buildings and units](docs/media/showcase-town.png)
+![A composed renderer world: chunk terrain plus instanced buildings and units](docs/media/showcase-town.png)
 
-*One world carrying both lanes at once: worker-meshed chunk terrain plus two instanced batches — 16 chunks, 76 instances, 18 draw calls. Reproducible with `node scripts/render-showcase.mjs`; the same deterministic scenes back the visual-baseline tests and the named-hardware benchmarks.*
+*One world carrying both lanes at once: worker-meshed chunk terrain plus two instanced batches — 16 chunks, 76 instances, 18 draw calls. Reproducible with `node scripts/render-showcase.mjs`; the same deterministic fixtures back the visual-baseline tests and the named-hardware benchmarks.*
 
 | ![Greedy-meshed staircase chunks](docs/media/scene-staircase.png) | ![Worst-case checkerboard fragmentation](docs/media/scene-checkerboard.png) | ![Ten thousand instances in one draw call](docs/media/scene-instances-10k.png) |
 | --- | --- | --- |
@@ -24,7 +24,7 @@ A game keeps its own simulation, rules, UI, and save data, and sends this engine
 - A revision-atomic frame transaction: accepted state and presented state are tracked separately, mesh swaps commit at frame boundaries, and an accepted-but-unmeshed revision never produces a mixed frame.
 - Committed voxel/instance picking for profiled `chunkProfile` worlds presented through `voxelWorkers`; otherwise-running worlds outside that path report `no-presented-frame`, and lifecycle states have distinct unavailable outcomes. Revision-aware capture reads the same committed frame the canvas shows.
 - Explicit lifecycle everywhere: context loss and restoration as a state machine, idempotent disposal, and metrics for draw calls, triangles, staging bytes, queue depths, and GPU resource counts.
-- Deterministic test tooling: geometry oracles, browser suites, visual baselines, endurance runs, and named reference scenes recorded on named hardware.
+- Deterministic test tooling: geometry oracles, browser suites, visual baselines, endurance runs, and named reference fixtures recorded on named hardware.
 
 Each game keeps simulation, gameplay rules, UI, art direction, and the adapter that translates its state into engine inputs.
 
@@ -34,13 +34,13 @@ Each game keeps simulation, gameplay rules, UI, art direction, and the adapter t
 - `voxel/meshing` — dense palette chunks, uniform profiles and indexed adjacency/invalidation, deterministic pure mesher contracts, copied-halo visible-face oracle and greedy production mesher, packaged worker protocol/runtime, bounded scheduler, and a Three-free bounded DDA occupancy ray query.
 - `voxel/meshing/browser-worker` — the browser-only bundler entry that starts Voxel's packaged module worker; portable and custom hosts use the factory API from `voxel/meshing`.
 - `voxel/three` — the Three.js WebGL runtime: snapshot/delta ingest, runtime-rendered and host-managed frame modes, chunk and instance presentation, cameras, daylight, deterministic playback, committed picking for profiled `voxelWorkers` worlds, capture, metrics, lifecycle, and disposal.
-- `voxel/testing` — consumer-independent test helpers: reference scenes, a clock-free frame-budget reporter, the frozen mesher corpus, and deterministic ownership hooks.
+- `voxel/testing` — consumer-independent test helpers: reference-render fixtures, a clock-free frame-budget reporter, the frozen mesher corpus, and deterministic ownership hooks.
 
 The runtime is tested with `three@0.185.1` and `@types/three@0.185.0`. `three` is a narrow optional peer so core and meshing stay renderer-independent; applications importing `voxel/three` must install the tested Three runtime and deduplicate linked copies.
 
 ## Status
 
-**Version 1.0.0** — stable. Foundations, atomic deltas, the production voxel pipeline, committed presented-state picking for profiled `voxelWorkers` worlds, host/camera/context lifecycle, and both consumer proofs are delivered: AoE2 runs Voxel standalone as its sole world renderer, and City draws its building wall lane through an embedded, borrowed-renderer runtime. The frozen 1.0 candidate's hardening evidence records 760 unit tests across 92 files, 11 real-browser tests including visual baselines, a pinned hostile-input fuzz corpus, endurance runs that hold resource counts flat over 1,000 edits and 30 real device losses, a supply-chain gate, green Windows/Linux CI, and eight named reference scenes measured on named hardware ([benchmarks/results/](benchmarks/results/)) — a boundary edit through the worker path presents in ~38 ms p50, a 50k-instance sparse patch in ~1.3 ms, a pick query in ~0.1 ms on an RTX 4090. Post-release model-studio coverage brings the current repository to 1,297 unit tests across 153 files; the complete gate and all 64 browser tests remain green.
+**Version 1.0.0** — stable. Foundations, atomic deltas, the production voxel pipeline, committed presented-state picking for profiled `voxelWorkers` worlds, host/camera/context lifecycle, and both consumer proofs are delivered: AoE2 runs Voxel standalone as its sole world renderer, and City draws its building wall lane through an embedded, borrowed-renderer runtime. The frozen 1.0 candidate's hardening evidence records 760 unit tests across 92 files, 11 real-browser tests including visual baselines, a pinned hostile-input fuzz corpus, endurance runs that hold resource counts flat over 1,000 edits and 30 real device losses, a supply-chain gate, green Windows/Linux CI, and eight named reference fixtures measured on named hardware ([benchmarks/results/](benchmarks/results/)) — a boundary edit through the worker path presents in ~38 ms p50, a 50k-instance sparse patch in ~1.3 ms, a pick query in ~0.1 ms on an RTX 4090. Post-release model-studio coverage brings the current repository to 1,297 unit tests across 153 files; the complete gate and all 64 browser tests remain green.
 
 Public declarations, schema literals, delta operation discriminants, and the support matrix are frozen; changing any of them means a major release. [The support policy](docs/policies/support.md) defines the supported platforms and the evidence each claim rests on, and [the changelog](CHANGELOG.md) records what 1.0 contains. Distribution is a private tag and packed artifact; registry publication is a separate decision.
 
