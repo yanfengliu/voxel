@@ -12,6 +12,8 @@ The Studio is private development tooling, not a public runtime asset-evolution 
 - **scenes**: arrangements of reusable whole models, plus whichever lights and motion the live scene schema supports;
 - **physical sidecars**: optional separate rigid-body, collider, sensor, hinge, slide, and port meaning; they describe composition but run no solver.
 
+Resolve scenes through the live stable-ID catalog or repository when one exists. Keep the scene document, review annotations, replay payloads, and solver artifacts as separate records or artifacts; inspect the implementation and do not assume a planned repository or migration has landed.
+
 Use the reuse ladder `direct steps -> earned part -> recipe -> composed recipe -> scene`. Do not create a part before two real assets need the same shape grammar.
 
 ## Human Studio loop

@@ -1,6 +1,6 @@
 ---
 name: create-diverse-voxel-assets
-description: Create, expand, curate, or review structurally diverse procedural voxel and low-poly assets with Voxel Model Studio and downstream game adapters. Use when Codex is asked to design models, reusable parts, recipes, animations, catalogs, candidate batches, or composed scenes; make assets more creative or less repetitive; promote generated candidates; build an asset workflow or art-direction matrix; fix a scene that reads like disconnected specimens; or integrate authored assets in voxel, aoe2, city, townscaper, or another Voxel consumer.
+description: Author, expand, curate, review, promote, or integrate actual creative procedural voxel and low-poly asset content with Voxel Model Studio and downstream game adapters. Use for models, reusable parts, recipes, semantic motion, candidate batches, art-direction matrices, composed visual scenes, weak composition, or repetitive catalogs. Do not use for Studio UI, notes or annotations, scene storage/schema/migrations, general occupancy or physics architecture, or documentation cleanup unless the task also authors or reviews creative asset content.
 ---
 
 # Create Diverse Voxel Assets
@@ -9,9 +9,9 @@ Create assets through an authored, reproducible pipeline: gameplay or scene need
 
 ## Route the task
 
-- For a model, part, recipe, catalog, candidate, or promotion task, read [Voxel Studio workflow](references/voxel-studio-workflow.md) and [diversity review](references/diversity-review.md).
-- For a scene, environment, diorama, or interaction task, also read [scene composition](references/scene-composition.md).
-- For work in a game repo or across the engine boundary, also read [downstream integration](references/downstream-integration.md).
+- For creative model, part, recipe, catalog-content, candidate, or promotion work, read [Voxel Studio workflow](references/voxel-studio-workflow.md) and [diversity review](references/diversity-review.md).
+- For authoring or reviewing a composed visual scene, environment, diorama, or asset interaction, also read [scene composition](references/scene-composition.md). Do not load it merely because a tooling or storage task mentions a scene record.
+- For integrating authored content in a game repo or across the engine boundary, also read [downstream integration](references/downstream-integration.md).
 - For model motion, read the Studio and diversity references; for scene-placement or light motion, also read scene composition; for gameplay animation or state-driven poses, also read downstream integration.
 - For an asset-pipeline audit or broad creative expansion, read all four references.
 
@@ -19,7 +19,7 @@ Read the selected references completely before editing. Inspect the live reposit
 
 ## Non-negotiables
 
-- Keep simulation, game rules, saves, art direction, and game-specific semantics in the game. Keep Voxel inputs bounded, plain-data, deterministic, and game-neutral.
+- Keep authoritative simulation and game-specific semantics in the consumer/game or an explicit consumer fixture; never put them in renderer/core. Private Studio may own authoring storage, but not consumer saves or gameplay authority. Keep Voxel inputs bounded, plain-data, deterministic, and game-neutral.
 - Treat a recipe as the reproducible source of an asset. A finished voxel grid alone is evidence, not an authoring workflow.
 - Promote a reusable part only after a second real use. Prefer honest direct recipe steps to speculative abstraction.
 - Count structural ideas, not output rows. Seed changes, palette swaps, arbitrary rotations, mirrors, and small decorations do not establish creative diversity.
@@ -34,7 +34,7 @@ Read the selected references completely before editing. Inspect the live reposit
 
 ### 1. Discover the live lane
 
-Read the applicable `AGENTS.md`, package scripts, catalog, recipe and part registries, scene schema, Studio guide, and consumer adapter. Determine which capabilities are public runtime contracts, private authoring tools, or game-local code.
+Read the applicable `AGENTS.md`, package scripts, and whichever live catalog, recipe and part registries, scene schema, Studio guide, or consumer adapter the task actually touches. Determine which capabilities are public runtime contracts, private authoring tools, explicit consumer fixtures, or game-local code.
 
 Inventory the current catalog by semantic role, shape family, construction grammar, scale, palette-role rhythm, and motion. Identify repetition and missing combinations before proposing more assets.
 
@@ -68,13 +68,13 @@ Start with a relationship graph and a spatial story, then place models. Give eac
 
 Align connection points, routes, elevations, clearances, focal hierarchy, and flow direction. Use contextual terrain, water, roads, rooms, or boundaries when they are necessary to make the relationship readable.
 
-If the current authoring schema cannot express the promised interaction, either build an honest composite, move behavior to the game-owned simulation and adapter, record a deterministic consumer trace that the renderer only observes, or rename the result as a study. Never imply a working system that is only co-located specimens, and never fabricate contact or completion events from visual proximity.
+If the current authoring schema cannot express the promised interaction, either build an honest composite, move behavior to a consumer/game-owned simulation or explicit consumer fixture, record a deterministic consumer trace that the renderer only observes, or rename the result as a study. Never imply a working system that is only co-located specimens, and never fabricate contact or completion events from visual proximity.
 
 For physics-backed system scenes, the visual recipe, physical sidecar, consumer adapter, solver trace, and replay presentation must form one evidence chain. Reusing exact sidecars, validating named mating frames, keeping visible and physical supports synchronized, hashing every solver input, and making unsupported replay editing explicitly read-only are promotion requirements, not optional polish.
 
 ### 7. Promote deliberately
 
-Assign a durable id, useful name, visual thesis, family, domain, tags, and semantic motion only after review. Register the recipe, catalog entry, scenes, physical sidecar, and accepted fixture required by the live repo.
+Assign a durable id, useful name, visual thesis, family, domain, tags, and semantic motion only after review. Register only the recipe, catalog entry, scene record, physical sidecar, or accepted fixture required by the live repository; inspect the live stable-ID catalog or repository and do not assume a planned persistence target exists.
 
 Keep rejected candidates and generated evidence disposable unless the repository explicitly requires durable evidence. Never let the generator edit the catalog.
 
@@ -90,4 +90,4 @@ Run focused structural tests while iterating, then the repository's authoritativ
 
 Adversarially review non-trivial catalog or scene work. Ask the reviewer to find duplicates, weak theses, misleading interactions, boundary leaks, and evidence gaps.
 
-Report the exploration count, rejection reasons, promoted ids, contrast axes, scene relationships, visual evidence, tests, commit, and remote status. Clean task-owned browser, server, and generated output resources.
+Report visual evidence, tests, commit, and remote status. When the work generated or promoted candidates, also report the exploration count, rejection reasons, promoted ids, contrast axes, and relevant scene relationships. Clean task-owned browser, server, and generated output resources.
