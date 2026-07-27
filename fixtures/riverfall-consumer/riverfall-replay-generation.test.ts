@@ -11,6 +11,9 @@ import {
   simulateRiverfallFluidEvidenceV1,
 } from './riverfall-fluid-evidence.js';
 import { riverfallFluidReplaySourceV1 } from './riverfall-replay-codegen.js';
+import {
+  reconstructRiverfallFluidSurfaceV1,
+} from './riverfall-fluid-surface.js';
 
 const OUTPUT_URL = new URL(
   '../../tools/studio/generated-riverfall-fluid-replay.ts',
@@ -24,7 +27,9 @@ describe('Riverfall committed fluid replay', () => {
     'is byte-for-byte generated from the deterministic fluid trace',
     () => {
       const generated = riverfallFluidReplaySourceV1(
-        simulateRiverfallFluidEvidenceV1(),
+        reconstructRiverfallFluidSurfaceV1(
+          simulateRiverfallFluidEvidenceV1(),
+        ),
       );
       if (UPDATE) writeFileSync(fileURLToPath(OUTPUT_URL), generated);
       expect(readFileSync(OUTPUT_URL, 'utf8')).toBe(generated);

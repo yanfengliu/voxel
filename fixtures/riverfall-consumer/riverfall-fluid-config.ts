@@ -3,21 +3,40 @@ import {
   riverfallFluidDomainLengthV1,
   type RiverfallFluidDomainV1,
 } from '../../tools/studio/riverfall-fluid-domain.js';
+import {
+  MAX_POSE_REPLAY_FRAMES,
+  MAX_POSE_REPLAY_SAMPLES,
+} from '../../tools/studio/scene-pose-replay.js';
+import {
+  RIVERFALL_SURFACE_BASE_NORMAL_OFFSET,
+  RIVERFALL_SURFACE_CELL_COUNT,
+  RIVERFALL_SURFACE_MODEL_ID,
+  RIVERFALL_SURFACE_SEAM_MODEL_ID,
+} from '../../tools/studio/riverfall-surface-grid.js';
 
 export const RIVERFALL_FLUID_SOLVER_NAME =
   'voxel-fixture/riverfall-pbf-2d';
-export const RIVERFALL_FLUID_SOLVER_VERSION = '1.0.0';
+export const RIVERFALL_FLUID_SOLVER_VERSION = '1.2.0';
 export const RIVERFALL_FLUID_SCENE_ID = 'studio:scene:riverfall';
 export const RIVERFALL_FLUID_REPLAY_ID =
   'studio:pose-replay:riverfall-flow';
 
 export const RIVERFALL_FLUID_PARTICLE_COUNT = 288;
-export const RIVERFALL_FLUID_WITNESS_COUNT = 96;
-export const RIVERFALL_FLUID_FRAME_COUNT = 600;
-export const RIVERFALL_FLUID_RECORD_STEP_MS = 10;
-export const RIVERFALL_FLUID_SUBSTEPS_PER_FRAME = 2;
+export const RIVERFALL_FLUID_WITNESS_COUNT =
+  RIVERFALL_FLUID_PARTICLE_COUNT;
+export const RIVERFALL_FLUID_FRAME_COUNT = 240;
+export const RIVERFALL_FLUID_RECORD_STEP_MS = 25;
+export const RIVERFALL_FLUID_SUBSTEPS_PER_FRAME = 5;
 export const RIVERFALL_FLUID_SUBSTEP_MS =
   RIVERFALL_FLUID_RECORD_STEP_MS / RIVERFALL_FLUID_SUBSTEPS_PER_FRAME;
+// Surface reconstruction appends one frame-zero closing pose so replay wrap
+// never exposes a discontinuity.
+export const RIVERFALL_FLUID_MAX_FRAME_COUNT =
+  MAX_POSE_REPLAY_FRAMES - 1;
+export const RIVERFALL_FLUID_MAX_BURN_IN_SUBSTEPS =
+  MAX_POSE_REPLAY_FRAMES;
+export const RIVERFALL_FLUID_MAX_RECORDED_SAMPLES =
+  MAX_POSE_REPLAY_SAMPLES;
 
 export type RiverfallFluidAblationV1 =
   | 'baseline'
@@ -25,6 +44,14 @@ export type RiverfallFluidAblationV1 =
   | 'zero-gravity'
   | 'zero-pump'
   | 'zero-xsph';
+
+const RIVERFALL_FLUID_ABLATIONS = Object.freeze([
+  'baseline',
+  'zero-density',
+  'zero-gravity',
+  'zero-pump',
+  'zero-xsph',
+] as const satisfies readonly RiverfallFluidAblationV1[]);
 
 export interface RiverfallFluidConfigV1 {
   readonly schemaVersion: 'studio.riverfall-fluid-input/1';
@@ -36,8 +63,43 @@ export interface RiverfallFluidConfigV1 {
   readonly sceneId: string;
   readonly replayId: string;
   readonly presentation: {
-    readonly witnessModelId: 'studio:riverfall:flow-glint';
-    readonly placementOriginOffset: readonly [number, number, number];
+    readonly schemaVersion: 'studio.riverfall-fluid-surface-presentation/1';
+    readonly reconstruction:
+      'visible-particle-compact-kernel-advected-wave-field/2';
+    readonly surfaceModelId: typeof RIVERFALL_SURFACE_MODEL_ID;
+    readonly seamModelId: typeof RIVERFALL_SURFACE_SEAM_MODEL_ID;
+    readonly cellCount: number;
+    readonly baseNormalOffset: number;
+    readonly support: {
+      readonly metric: 'world-euclidean/1';
+      readonly kernel: 'wendland-c2/1';
+      readonly radius: number;
+      readonly minimumParticles: number;
+      readonly maximumInfluenceParticles: number;
+    };
+    readonly passiveTracer: {
+      readonly seedRule: 'recording-initial-strip-coordinate/1';
+      readonly longitudinalWavelength: number;
+      readonly lateralWaveNumber: number;
+    };
+    readonly advectedWave: {
+      readonly phaseRule: 'authored-flow-distance/local-speed-integral/1';
+      readonly wavelength: number;
+      readonly minimumPhaseSpeed: number;
+      readonly localSpeedScale: number;
+    };
+    readonly loopClosure: {
+      readonly rule: 'cubic-hermite-to-first-sample/1';
+      readonly transitionFrames: number;
+    };
+    readonly spatialSmoothing: number;
+    readonly signalWeights: {
+      readonly advectedWave: number;
+      readonly passiveTracer: number;
+      readonly localSpeed: number;
+      readonly localOccupancy: number;
+    };
+    readonly normalExcursion: readonly [number, number];
   };
   readonly domain: RiverfallFluidDomainV1;
   readonly recording: {
@@ -114,6 +176,8 @@ export const RIVERFALL_FLUID_LAW_LABELS = Object.freeze([
 
 export const RIVERFALL_FLUID_CAPABILITY_LABELS = Object.freeze([
   'water.surface-flow',
+  'water.particle-to-grid-surface-reconstruction',
+  'water.full-footprint-surface-presentation',
   'waterfall.gravity-accelerated-sheet',
   'pond.bounded-surface-flow',
   'hidden-pump-recirculation',
@@ -137,21 +201,51 @@ export function createRiverfallFluidConfigV1(
   overrides: RiverfallFluidConfigOverridesV1 = {},
 ): RiverfallFluidConfigV1 {
   const ablation = overrides.ablation ?? 'baseline';
-  const values = ablatedValues(ablation);
   const frameCount = overrides.frameCount ?? RIVERFALL_FLUID_FRAME_COUNT;
   const burnInSubsteps = overrides.burnInSubsteps ?? 800;
-  if (!Number.isInteger(frameCount) || frameCount < 1) {
+  if (!RIVERFALL_FLUID_ABLATIONS.includes(ablation)) {
+    throw new Error(
+      `Cannot configure Riverfall fluid ablation ${JSON.stringify(ablation)}; `
+      + `expected exactly one of ${RIVERFALL_FLUID_ABLATIONS.join(', ')}.`,
+    );
+  }
+  if (!Number.isInteger(frameCount)
+    || frameCount < 1
+    || frameCount > RIVERFALL_FLUID_MAX_FRAME_COUNT) {
     throw new Error(
       `Cannot configure Riverfall fluid recording with frameCount ${String(frameCount)}; `
-      + 'expected a positive integer.',
+      + `expected an integer from 1 through ${
+        String(RIVERFALL_FLUID_MAX_FRAME_COUNT)
+      }.`,
     );
   }
-  if (!Number.isInteger(burnInSubsteps) || burnInSubsteps < 1) {
+  if (!Number.isInteger(burnInSubsteps)
+    || burnInSubsteps < 1
+    || burnInSubsteps > RIVERFALL_FLUID_MAX_BURN_IN_SUBSTEPS) {
     throw new Error(
       `Cannot configure Riverfall fluid burn-in with ${String(burnInSubsteps)} substeps; `
-      + 'expected a positive integer so frame zero is a warmed observed state.',
+      + `expected an integer from 1 through ${
+        String(RIVERFALL_FLUID_MAX_BURN_IN_SUBSTEPS)
+      } so frame zero is a warmed observed state.`,
     );
   }
+  const particleSamples = frameCount * RIVERFALL_FLUID_WITNESS_COUNT;
+  const surfaceSamples = (frameCount + 1) * RIVERFALL_SURFACE_CELL_COUNT;
+  const recordedSamples = Math.max(particleSamples, surfaceSamples);
+  if (!Number.isSafeInteger(recordedSamples)
+    || recordedSamples > RIVERFALL_FLUID_MAX_RECORDED_SAMPLES) {
+    throw new Error(
+      `Cannot configure Riverfall fluid recording with ${
+        String(recordedSamples)
+      } output samples; ${String(frameCount)} frames require ${
+        String(particleSamples)
+      } particle witnesses and ${String(surfaceSamples)} surface cells, but `
+      + `Studio accepts at most ${
+        String(RIVERFALL_FLUID_MAX_RECORDED_SAMPLES)
+      } so the generated pose replay stays within Studio's sample limit.`,
+    );
+  }
+  const values = ablatedValues(ablation);
   return {
     schemaVersion: 'studio.riverfall-fluid-input/1',
     solver: {
@@ -162,8 +256,43 @@ export function createRiverfallFluidConfigV1(
     sceneId: RIVERFALL_FLUID_SCENE_ID,
     replayId: RIVERFALL_FLUID_REPLAY_ID,
     presentation: {
-      witnessModelId: 'studio:riverfall:flow-glint',
-      placementOriginOffset: [0, -0.5, 0],
+      schemaVersion: 'studio.riverfall-fluid-surface-presentation/1',
+      reconstruction:
+        'visible-particle-compact-kernel-advected-wave-field/2',
+      surfaceModelId: RIVERFALL_SURFACE_MODEL_ID,
+      seamModelId: RIVERFALL_SURFACE_SEAM_MODEL_ID,
+      cellCount: RIVERFALL_SURFACE_CELL_COUNT,
+      baseNormalOffset: RIVERFALL_SURFACE_BASE_NORMAL_OFFSET,
+      support: {
+        metric: 'world-euclidean/1',
+        kernel: 'wendland-c2/1',
+        radius: 10,
+        minimumParticles: 2,
+        maximumInfluenceParticles: 8,
+      },
+      passiveTracer: {
+        seedRule: 'recording-initial-strip-coordinate/1',
+        longitudinalWavelength: 24,
+        lateralWaveNumber: 0.12,
+      },
+      advectedWave: {
+        phaseRule: 'authored-flow-distance/local-speed-integral/1',
+        wavelength: 20,
+        minimumPhaseSpeed: 5,
+        localSpeedScale: 0.25,
+      },
+      loopClosure: {
+        rule: 'cubic-hermite-to-first-sample/1',
+        transitionFrames: 24,
+      },
+      spatialSmoothing: 0.7,
+      signalWeights: {
+        advectedWave: 0.55,
+        passiveTracer: 0.25,
+        localSpeed: 0.12,
+        localOccupancy: 0.08,
+      },
+      normalExcursion: [0.03, 0.44],
     },
     domain: RIVERFALL_FLUID_DOMAIN_V1,
     recording: {

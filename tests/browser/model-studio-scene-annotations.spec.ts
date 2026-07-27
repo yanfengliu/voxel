@@ -448,7 +448,7 @@ test('Riverfall pins preserve replay provenance, hide outside their captured vie
   expect(captureEvidence.replay).toMatchObject({
     replayId: RIVERFALL_REPLAY_ID,
     sceneId: RIVERFALL_SCENE_ID,
-    sample: { wrappedTimeMs: 1_100, frameA: 110, frameB: 111, alpha: 0 },
+    sample: { wrappedTimeMs: 1_100, frameA: 44, frameB: 45, alpha: 0 },
   });
   expect(captureEvidence.replay?.provenance.inputHash).toMatch(HASH_PATTERN);
   expect(captureEvidence.replay?.provenance.finalHash).toMatch(HASH_PATTERN);

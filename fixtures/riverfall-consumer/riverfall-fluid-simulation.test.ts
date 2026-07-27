@@ -4,9 +4,19 @@ import {
   riverfallFluidDomainLengthV1,
 } from '../../tools/studio/riverfall-fluid-domain.js';
 import {
+  RIVERFALL_SURFACE_CELLS_V1,
+  RIVERFALL_SURFACE_CELL_COUNT,
+} from '../../tools/studio/riverfall-surface-grid.js';
+import {
   createRiverfallFluidConfigV1,
+  RIVERFALL_FLUID_FRAME_COUNT,
+  RIVERFALL_FLUID_PARTICLE_COUNT,
+  RIVERFALL_FLUID_WITNESS_COUNT,
   riverfallFluidReachStartDistancesV1,
 } from './riverfall-fluid-config.js';
+import {
+  assertRiverfallFluidCanonicalTraceAcceptedV1,
+} from './riverfall-fluid-acceptance.js';
 import {
   simulateRiverfallFluidCausalEvidenceV1,
   simulateRiverfallFluidEvidenceV1,
@@ -25,6 +35,10 @@ import {
   simulateRiverfallFluidV1,
 } from './riverfall-fluid-simulation.js';
 import { riverfallFluidReplaySourceV1 } from './riverfall-replay-codegen.js';
+import {
+  reconstructRiverfallFluidSurfaceV1,
+  riverfallFluidSurfaceInputHashV1,
+} from './riverfall-fluid-surface.js';
 
 function expectFinite(values: Float32Array): void {
   for (const value of values) expect(Number.isFinite(value)).toBe(true);
@@ -131,12 +145,23 @@ describe('Riverfall deterministic 2D PBF', () => {
       frameCount: 180,
       burnInSubsteps: 240,
     });
-    expect(trace.placementIds).toHaveLength(96);
-    expect(trace.witnessParticleIndices).toHaveLength(96);
-    expect(trace.translations).toHaveLength(180 * 96 * 3);
-    expect(trace.rotations).toHaveLength(180 * 96 * 4);
+    expect(trace.placementIds).toHaveLength(RIVERFALL_FLUID_WITNESS_COUNT);
+    expect(trace.witnessParticleIndices)
+      .toHaveLength(RIVERFALL_FLUID_WITNESS_COUNT);
+    expect(Array.from(trace.witnessParticleIndices)).toEqual(
+      Array.from(
+        { length: RIVERFALL_FLUID_PARTICLE_COUNT },
+        (_, index) => index,
+      ),
+    );
+    expect(trace.translations)
+      .toHaveLength(180 * RIVERFALL_FLUID_WITNESS_COUNT * 3);
+    expect(trace.rotations)
+      .toHaveLength(180 * RIVERFALL_FLUID_WITNESS_COUNT * 4);
     expectFinite(trace.translations);
+    expectFinite(trace.rotations);
     expectFinite(trace.linearVelocities);
+    expectFinite(trace.angularVelocities);
     expectFinite(trace.finalState.longitudinal);
     expectFinite(trace.finalState.lateral);
     expect(trace.inputHash).toMatch(/^[0-9a-f]{64}$/u);
@@ -145,7 +170,7 @@ describe('Riverfall deterministic 2D PBF', () => {
       expect(
         trace.diagnostics.visibleParticles[frame]!
         + trace.diagnostics.hiddenParticles[frame]!,
-      ).toBe(288);
+      ).toBe(RIVERFALL_FLUID_PARTICLE_COUNT);
     }
     for (const longitudinal of trace.finalState.longitudinal) {
       expect(longitudinal).toBeGreaterThanOrEqual(0);
@@ -154,11 +179,41 @@ describe('Riverfall deterministic 2D PBF', () => {
     expect(trace.summary.maximumBoundaryCorrection).toBeLessThan(0.5);
     expect(trace.summary.maximumResidualPenetration).toBeLessThan(1e-5);
     expect(trace.summary.maximumSpeed).toBeLessThanOrEqual(24);
+    expect(trace.summary.maximumP95DensityError).toBeLessThanOrEqual(0.01);
+    expect(trace.summary.maximumDensityError).toBeLessThanOrEqual(0.3);
     expect(trace.summary.lipAttachmentCount).toBeGreaterThan(0);
     expect(trace.summary.lipAttachmentImpulse).toBeGreaterThan(0);
     expect(trace.summary.impactCount).toBeGreaterThan(0);
     expect(trace.summary.impactImpulse).toBeGreaterThan(0);
+    expect(Array.from(trace.angularVelocities).every(
+      (velocity) => velocity === 0,
+    )).toBe(true);
   }, 30_000);
+
+  it('rejects an absolute trace regression with actual and required metrics', () => {
+    const trace = simulateRiverfallFluidV1({
+      frameCount: 1,
+      burnInSubsteps: 1,
+    });
+    const maximumDensityError = trace.diagnostics.maximumDensityError.slice();
+    maximumDensityError[0] = 1;
+    const rejected = {
+      ...trace,
+      diagnostics: {
+        ...trace.diagnostics,
+        maximumDensityError,
+      },
+      summary: {
+        ...trace.summary,
+        maximumDensityError: 1,
+      },
+    };
+    expect(() =>
+      assertRiverfallFluidCanonicalTraceAcceptedV1(rejected),
+    ).toThrow(
+      'maximumDensityError actual 1; required at most 0.3',
+    );
+  });
 
   it('removes each named cause without changing the remaining world', () => {
     const evidence = simulateRiverfallFluidCausalEvidenceV1();
@@ -176,20 +231,254 @@ describe('Riverfall deterministic 2D PBF', () => {
 
   it('attests the canonical replay trace with passing causal evidence', () => {
     const trace = simulateRiverfallFluidEvidenceV1();
-    const source = riverfallFluidReplaySourceV1(trace);
-    expect(trace.frameCount).toBe(600);
-    expect(trace.translations).toHaveLength(600 * 96 * 3);
+    const surface = reconstructRiverfallFluidSurfaceV1(trace);
+    const source = riverfallFluidReplaySourceV1(surface);
+    expect(trace.frameCount).toBe(RIVERFALL_FLUID_FRAME_COUNT);
+    expect(surface.frameCount).toBe(RIVERFALL_FLUID_FRAME_COUNT + 1);
+    expect(surface.translations).toHaveLength(
+      surface.frameCount * surface.placementIds.length * 3,
+    );
+    expect(surface.placementIds).toEqual(
+      RIVERFALL_SURFACE_CELLS_V1.map(({ id }) => id),
+    );
+    expect(surface.placementIds).toHaveLength(RIVERFALL_SURFACE_CELL_COUNT);
+    expect(surface.frameCount * surface.placementIds.length).toBe(77_361);
+    expect(surface.supportDiagnostics).toMatchObject({
+      metric: 'world-euclidean/1',
+      kernel: 'wendland-c2/1',
+      radius: 10,
+      requiredMinimumParticles: 2,
+      maximumInfluenceParticles: 8,
+    });
+    expect(surface.supportDiagnostics.observedMinimumParticles)
+      .toBeGreaterThanOrEqual(2);
+    expect(surface.supportDiagnostics.maximumNearestParticleDistance)
+      .toBeLessThan(10);
+    const distantTargetIndex = RIVERFALL_SURFACE_CELLS_V1.findIndex(
+      ({ id }) => id === 'surface-pond-15-12',
+    );
+    const distantTarget = RIVERFALL_SURFACE_CELLS_V1[distantTargetIndex]!;
+    const distantWitness = Array.from(
+      trace.witnessParticleIndices,
+      (_, witness) => witness,
+    ).find((witness) => {
+      if (trace.visibleWitnesses[witness] === 0) return false;
+      const offset = witness * 3;
+      return Math.hypot(
+        trace.translations[offset]! - distantTarget.baseTranslation[0],
+        trace.translations[offset + 1]! - distantTarget.baseTranslation[1],
+        trace.translations[offset + 2]! - distantTarget.baseTranslation[2],
+      ) > 20;
+    });
+    expect(distantWitness).toBeDefined();
+    const perturbedVelocities = new Float32Array(trace.linearVelocities);
+    const distantOffset = distantWitness! * 3;
+    perturbedVelocities.set([24, -24, 24], distantOffset);
+    const perturbedSurface = reconstructRiverfallFluidSurfaceV1({
+      ...trace,
+      linearVelocities: perturbedVelocities,
+    });
+    const distantTargetOffset = distantTargetIndex * 3;
+    expect(Array.from(perturbedSurface.translations.subarray(
+      distantTargetOffset,
+      distantTargetOffset + 3,
+    ))).toEqual(Array.from(surface.translations.subarray(
+      distantTargetOffset,
+      distantTargetOffset + 3,
+    )));
+    const nearbyWitness = Array.from(
+      trace.witnessParticleIndices,
+      (_, witness) => witness,
+    ).filter((witness) => {
+      if (trace.visibleWitnesses[witness] === 0) return false;
+      const offset = witness * 3;
+      return Math.hypot(
+        trace.linearVelocities[offset]!,
+        trace.linearVelocities[offset + 1]!,
+        trace.linearVelocities[offset + 2]!,
+      ) > 0.1;
+    }).sort((left, right) => {
+      const leftOffset = left * 3;
+      const rightOffset = right * 3;
+      const distance = (offset: number): number => Math.hypot(
+        trace.translations[offset]! - distantTarget.baseTranslation[0],
+        trace.translations[offset + 1]! - distantTarget.baseTranslation[1],
+        trace.translations[offset + 2]! - distantTarget.baseTranslation[2],
+      );
+      return distance(leftOffset) - distance(rightOffset) || left - right;
+    })[0];
+    expect(nearbyWitness).toBeDefined();
+    const nearbyOffset = nearbyWitness! * 3;
+    expect(Math.hypot(
+      trace.translations[nearbyOffset]! - distantTarget.baseTranslation[0],
+      trace.translations[nearbyOffset + 1]! - distantTarget.baseTranslation[1],
+      trace.translations[nearbyOffset + 2]! - distantTarget.baseTranslation[2],
+    )).toBeLessThan(10);
+    const locallyPerturbedVelocities = new Float32Array(
+      trace.linearVelocities,
+    );
+    locallyPerturbedVelocities.fill(0, nearbyOffset, nearbyOffset + 3);
+    const locallyPerturbedSurface = reconstructRiverfallFluidSurfaceV1({
+      ...trace,
+      linearVelocities: locallyPerturbedVelocities,
+    });
+    expect(Array.from(locallyPerturbedSurface.translations.subarray(
+      distantTargetOffset,
+      distantTargetOffset + 3,
+    ))).not.toEqual(Array.from(surface.translations.subarray(
+      distantTargetOffset,
+      distantTargetOffset + 3,
+    )));
+    const alteredTopology = RIVERFALL_SURFACE_CELLS_V1.map(
+      (cell, index) => index === 0
+        ? { ...cell, flowDistance: cell.flowDistance + 0.25 }
+        : cell,
+    );
+    expect(riverfallFluidSurfaceInputHashV1(trace, alteredTopology))
+      .not.toBe(surface.inputHash);
+    const excursionAt = (frame: number, cellIndex: number): number => {
+      const cell = RIVERFALL_SURFACE_CELLS_V1[cellIndex]!;
+      const offset = (frame * surface.placementIds.length + cellIndex) * 3;
+      return (
+        (surface.translations[offset]! - cell.baseTranslation[0]) * cell.normal[0]
+        + (surface.translations[offset + 1]! - cell.baseTranslation[1])
+          * cell.normal[1]
+        + (surface.translations[offset + 2]! - cell.baseTranslation[2])
+          * cell.normal[2]
+      );
+    };
+    const movementRatios: Record<string, number> = {};
+    for (const region of ['river', 'lip', 'fall', 'pond', 'outflow'] as const) {
+      const indices = RIVERFALL_SURFACE_CELLS_V1.flatMap(
+        (cell, index) => cell.region === region ? [index] : [],
+      );
+      const moved = indices.filter(
+        (index) => Math.abs(excursionAt(22, index) - excursionAt(0, index)) >= 0.05,
+      ).length;
+      movementRatios[region] = moved / indices.length;
+    }
+    expect(
+      Object.values(movementRatios).every((ratio) => ratio >= 0.6),
+      `cells moving at least 0.05 voxel between 0 and 550 ms: ${
+        JSON.stringify(movementRatios)
+      }`,
+    ).toBe(true);
+    const adjacentHeightDeltas: number[] = [];
+    for (let frame = 0; frame < surface.frameCount; frame += 1) {
+      for (let left = 0; left < RIVERFALL_SURFACE_CELLS_V1.length; left += 1) {
+        const leftCell = RIVERFALL_SURFACE_CELLS_V1[left]!;
+        for (let right = left + 1;
+          right < RIVERFALL_SURFACE_CELLS_V1.length;
+          right += 1) {
+          const rightCell = RIVERFALL_SURFACE_CELLS_V1[right]!;
+          const distance = Math.hypot(
+            leftCell.baseTranslation[0] - rightCell.baseTranslation[0],
+            leftCell.baseTranslation[1] - rightCell.baseTranslation[1],
+            leftCell.baseTranslation[2] - rightCell.baseTranslation[2],
+          );
+          if (distance > 2.01) continue;
+          adjacentHeightDeltas.push(Math.abs(
+            excursionAt(frame, left) - excursionAt(frame, right),
+          ));
+        }
+      }
+    }
+    adjacentHeightDeltas.sort((left, right) => left - right);
+    const p95AdjacentHeightDelta = adjacentHeightDeltas[
+      Math.floor((adjacentHeightDeltas.length - 1) * 0.95)
+    ]!;
+    expect(
+      p95AdjacentHeightDelta,
+      'p95 adjacent surface height delta across every canonical frame',
+    ).toBeLessThanOrEqual(0.08);
+    for (let cellIndex = 0;
+      cellIndex < RIVERFALL_SURFACE_CELLS_V1.length;
+      cellIndex += 1) {
+      const cell = RIVERFALL_SURFACE_CELLS_V1[cellIndex]!;
+      let minimumExcursion = Number.POSITIVE_INFINITY;
+      let maximumExcursion = Number.NEGATIVE_INFINITY;
+      for (let frame = 0; frame < surface.frameCount; frame += 1) {
+        const vectorOffset = (frame * surface.placementIds.length + cellIndex) * 3;
+        const rotationOffset = (frame * surface.placementIds.length + cellIndex) * 4;
+        const delta = [
+          surface.translations[vectorOffset]! - cell.baseTranslation[0],
+          surface.translations[vectorOffset + 1]! - cell.baseTranslation[1],
+          surface.translations[vectorOffset + 2]! - cell.baseTranslation[2],
+        ] as const;
+        const excursion = delta[0] * cell.normal[0]
+          + delta[1] * cell.normal[1]
+          + delta[2] * cell.normal[2];
+        minimumExcursion = Math.min(minimumExcursion, excursion);
+        maximumExcursion = Math.max(maximumExcursion, excursion);
+        expect(Math.hypot(
+          delta[0] - cell.normal[0] * excursion,
+          delta[1] - cell.normal[1] * excursion,
+          delta[2] - cell.normal[2] * excursion,
+        )).toBeLessThan(1e-6);
+        const quaternion = Array.from(surface.rotations.subarray(
+          rotationOffset,
+          rotationOffset + 4,
+        ));
+        expect(Math.hypot(...quaternion)).toBeCloseTo(1, 5);
+        expect(quaternion).toEqual(cell.quaternion.map(Math.fround));
+      }
+      expect(minimumExcursion, cell.id).toBeGreaterThanOrEqual(
+        surface.config.presentation.normalExcursion[0] - 1e-6,
+      );
+      expect(maximumExcursion, cell.id).toBeLessThanOrEqual(
+        surface.config.presentation.normalExcursion[1] + 1e-6,
+      );
+      expect(maximumExcursion - minimumExcursion, cell.id).toBeGreaterThan(1e-4);
+    }
+    expect(Array.from(surface.angularVelocities).every(
+      (velocity) => velocity === 0,
+    )).toBe(true);
+    for (let cell = 0; cell < surface.placementIds.length; cell += 1) {
+      const firstVector = cell * 3;
+      const closingVector =
+        ((surface.frameCount - 1) * surface.placementIds.length + cell) * 3;
+      const firstRotation = cell * 4;
+      const closingRotation =
+        ((surface.frameCount - 1) * surface.placementIds.length + cell) * 4;
+      expect(Array.from(surface.translations.subarray(
+        closingVector,
+        closingVector + 3,
+      ))).toEqual(Array.from(surface.translations.subarray(
+        firstVector,
+        firstVector + 3,
+      )));
+      expect(Array.from(surface.rotations.subarray(
+        closingRotation,
+        closingRotation + 4,
+      ))).toEqual(Array.from(surface.rotations.subarray(
+        firstRotation,
+        firstRotation + 4,
+      )));
+      expect(Array.from(surface.linearVelocities.subarray(
+        closingVector,
+        closingVector + 3,
+      ))).toEqual(Array.from(surface.linearVelocities.subarray(
+        firstVector,
+        firstVector + 3,
+      )));
+    }
     expect(trace.causalEvidence.observations.every(({ passed }) => passed))
       .toBe(true);
     expect(Math.max(...trace.diagnostics.hiddenParticles)).toBeGreaterThan(0);
     expect(trace.summary.recycleCount).toBeGreaterThan(0);
-    expect(trace.provenance.finalHash).toBe(trace.finalHash);
-    expect(trace.finalHash).toMatch(/^[0-9a-f]{64}$/u);
+    expect(surface.provenance.finalHash).toBe(surface.finalHash);
+    expect(surface.provenance.inputHash).toBe(surface.inputHash);
+    expect(surface.inputHash).not.toBe(trace.inputHash);
+    expect(surface.finalHash).toMatch(/^[0-9a-f]{64}$/u);
     expect(source).toContain(
-      'export const RIVERFALL_FLUID_WITNESS_PRESENTATION = ',
+      'export const RIVERFALL_FLUID_SURFACE_PRESENTATION = ',
     );
     expect(source).toContain(
       'export const RIVERFALL_FLUID_CAUSAL_EVIDENCE = ',
     );
+    expect(source).toContain(
+      'export const RIVERFALL_FLUID_SURFACE_SUPPORT = ',
+    );
+    expect(source.length).toBeLessThan(5_500_000);
   }, 60_000);
 });

@@ -7,6 +7,9 @@ import {
   type RiverfallFluidCausalRuleV1,
 } from './riverfall-fluid-config.js';
 import {
+  assertRiverfallFluidCanonicalTraceAcceptedV1,
+} from './riverfall-fluid-acceptance.js';
+import {
   simulateRiverfallFluidV1,
   type RiverfallFluidTraceSummaryV1,
   type RiverfallFluidTraceV1,
@@ -107,6 +110,7 @@ RiverfallFluidCausalEvidenceV1 {
 export function simulateRiverfallFluidEvidenceV1():
 RiverfallFluidEvidenceTraceV1 {
   const trace = simulateRiverfallFluidV1();
+  assertRiverfallFluidCanonicalTraceAcceptedV1(trace);
   const causalEvidence = simulateRiverfallFluidCausalEvidenceV1();
   const failures = causalEvidence.observations.filter(({ passed }) => !passed);
   if (failures.length > 0) {

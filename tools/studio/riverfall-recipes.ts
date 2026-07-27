@@ -4,6 +4,10 @@ import type {
   RecipeStepV1,
   RecipeV1,
 } from './recipe.js';
+import {
+  RIVERFALL_SURFACE_MODEL_ID,
+  RIVERFALL_SURFACE_SEAM_MODEL_ID,
+} from './riverfall-surface-grid.js';
 
 const STILL = {
   periodMs: 0,
@@ -12,6 +16,9 @@ const STILL = {
   rotationRadians: [0, 0, 0],
   scale: [0, 0, 0],
 } as const;
+
+const EMPTY = { r: 0, g: 0, b: 0 } as const;
+const SURFACE_WATER = { r: 38, g: 126, b: 174 } as const;
 
 function box(
   at: readonly [number, number, number],
@@ -88,21 +95,12 @@ export function createRiverfallRiverRecipe(): RecipeV1 {
     label: 'River surface',
     seed: 1,
     size: [10, 1, 32],
-    summary: 'An opaque stepped-colour river surface for the high channel.',
+    summary: 'An opaque blue underfill beneath the simulated high-channel surface.',
     tags: ['water', 'river', 'surface'],
-    roles: ['empty', 'deep-water', 'water', 'current'],
-    palette: [
-      { r: 0, g: 0, b: 0 },
-      { r: 28, g: 91, b: 139 },
-      { r: 38, g: 126, b: 174 },
-      { r: 87, g: 178, b: 204 },
-    ],
+    roles: ['empty', 'water'],
+    palette: [EMPTY, SURFACE_WATER],
     steps: [
-      box([0, 0, 0], [10, 1, 32], 'deep-water', 'Fills the high channel'),
-      box([1, 0, 0], [8, 1, 32], 'water', 'Brightens the central current'),
-      box([4, 0, 2], [2, 1, 6], 'current', 'Marks the source current'),
-      box([2, 0, 13], [3, 1, 5], 'current', 'Breaks the current across the middle reach'),
-      box([6, 0, 23], [2, 1, 6], 'current', 'Pulls the current toward the cliff lip'),
+      box([0, 0, 0], [10, 1, 32], 'water', 'Fills beneath the reconstructed high channel'),
     ],
     motion: { ...STILL },
   };
@@ -115,22 +113,12 @@ export function createRiverfallWaterfallRecipe(): RecipeV1 {
     label: 'Waterfall curtain',
     seed: 1,
     size: [10, 9, 1],
-    summary: 'An opaque voxel curtain connecting the high river to the pond.',
+    summary: 'An opaque blue underfill behind the simulated falling-water sheet.',
     tags: ['water', 'waterfall', 'curtain'],
-    roles: ['empty', 'shadow-water', 'falling-water', 'white-water'],
-    palette: [
-      { r: 0, g: 0, b: 0 },
-      { r: 28, g: 93, b: 145 },
-      { r: 55, g: 150, b: 192 },
-      { r: 173, g: 225, b: 226 },
-    ],
+    roles: ['empty', 'water'],
+    palette: [EMPTY, SURFACE_WATER],
     steps: [
-      box([0, 0, 0], [10, 9, 1], 'falling-water', 'Drops the main curtain'),
-      box([0, 0, 0], [2, 9, 1], 'shadow-water', 'Deepens the left fold'),
-      box([5, 1, 0], [2, 8, 1], 'shadow-water', 'Deepens a central fold'),
-      box([3, 2, 0], [1, 7, 1], 'white-water', 'Draws a bright falling strand'),
-      box([8, 0, 0], [1, 8, 1], 'white-water', 'Draws a second falling strand'),
-      box([1, 0, 0], [8, 1, 1], 'white-water', 'Froths the foot of the fall'),
+      box([0, 0, 0], [10, 9, 1], 'water', 'Fills behind the reconstructed falling sheet'),
     ],
     motion: { ...STILL },
   };
@@ -143,21 +131,12 @@ export function createRiverfallPondRecipe(): RecipeV1 {
     label: 'Receiving pond',
     seed: 1,
     size: [32, 1, 26],
-    summary: 'A broad opaque pond surface with a bright plunge zone and darker edges.',
+    summary: 'A broad opaque blue underfill beneath the simulated receiving surface.',
     tags: ['water', 'pond', 'surface'],
-    roles: ['empty', 'deep-water', 'water', 'impact-water'],
-    palette: [
-      { r: 0, g: 0, b: 0 },
-      { r: 25, g: 80, b: 126 },
-      { r: 36, g: 116, b: 159 },
-      { r: 89, g: 177, b: 195 },
-    ],
+    roles: ['empty', 'water'],
+    palette: [EMPTY, SURFACE_WATER],
     steps: [
-      box([0, 0, 0], [32, 1, 26], 'deep-water', 'Fills the receiving basin'),
-      box([2, 0, 2], [28, 1, 22], 'water', 'Lightens the open pond'),
-      box([11, 0, 0], [10, 1, 7], 'impact-water', 'Marks the waterfall plunge zone'),
-      box([4, 0, 12], [7, 1, 4], 'deep-water', 'Adds a cool eddy on the left'),
-      box([21, 0, 16], [7, 1, 5], 'deep-water', 'Adds a cool eddy on the right'),
+      box([0, 0, 0], [32, 1, 26], 'water', 'Fills beneath the reconstructed receiving surface'),
     ],
     motion: { ...STILL },
   };
@@ -170,38 +149,48 @@ export function createRiverfallOutflowRecipe(): RecipeV1 {
     label: 'Pond outflow',
     seed: 1,
     size: [8, 1, 4],
-    summary: 'A narrow surface that carries the pond through the front bank opening.',
+    summary: 'A narrow opaque blue underfill beneath the simulated pond outlet.',
     tags: ['water', 'outflow', 'surface'],
-    roles: ['empty', 'water', 'current'],
-    palette: [
-      { r: 0, g: 0, b: 0 },
-      { r: 34, g: 112, b: 157 },
-      { r: 91, g: 180, b: 197 },
-    ],
+    roles: ['empty', 'water'],
+    palette: [EMPTY, SURFACE_WATER],
     steps: [
-      box([0, 0, 0], [8, 1, 4], 'water', 'Runs water through the pond rim'),
-      box([3, 0, 0], [2, 1, 4], 'current', 'Marks the exiting current'),
+      box([0, 0, 0], [8, 1, 4], 'water', 'Fills beneath the reconstructed pond outlet'),
     ],
     motion: { ...STILL },
   };
 }
 
-export function createRiverfallFluidWitnessRecipe(): RecipeV1 {
+export function createRiverfallFluidSurfaceRecipe(): RecipeV1 {
   return {
     schemaVersion: 'studio.voxel-recipe/1',
-    id: 'studio:riverfall:flow-glint',
-    label: 'Fluid witness',
+    id: RIVERFALL_SURFACE_MODEL_ID,
+    label: 'Fluid surface tile',
     seed: 1,
-    size: [1, 1, 1],
-    summary: 'A compact particle that presents one selected fluid-solver observation.',
-    tags: ['water', 'fluid', 'particle', 'witness'],
-    roles: ['empty', 'particle'],
-    palette: [
-      { r: 0, g: 0, b: 0 },
-      { r: 174, g: 228, b: 218 },
-    ],
+    size: [2, 1, 2],
+    summary: 'A shared blue tile displaced by the local fluid presentation field.',
+    tags: ['water', 'fluid', 'surface-cell'],
+    roles: ['empty', 'water'],
+    palette: [EMPTY, SURFACE_WATER],
     steps: [
-      box([0, 0, 0], [1, 1, 1], 'particle', 'Marks one replayed fluid parcel'),
+      box([0, 0, 0], [2, 1, 2], 'water', 'Covers one exact surface footprint'),
+    ],
+    motion: { ...STILL },
+  };
+}
+
+export function createRiverfallFluidSurfaceSeamRecipe(): RecipeV1 {
+  return {
+    schemaVersion: 'studio.voxel-recipe/1',
+    id: RIVERFALL_SURFACE_SEAM_MODEL_ID,
+    label: 'Fluid surface seam',
+    seed: 1,
+    size: [2, 1, 1],
+    summary: 'A half-depth blue tile that closes the waterfall lip without overhang.',
+    tags: ['water', 'fluid', 'surface-cell', 'seam'],
+    roles: ['empty', 'water'],
+    palette: [EMPTY, SURFACE_WATER],
+    steps: [
+      box([0, 0, 0], [2, 1, 1], 'water', 'Closes one exact lip footprint'),
     ],
     motion: { ...STILL },
   };
@@ -214,13 +203,13 @@ export function createRiverfallFoamRecipe(): RecipeV1 {
     label: 'Pond foam',
     seed: 1,
     size: [5, 1, 5],
-    summary: 'A sparse breathing foam patch for pond impact and eddy cues.',
+    summary: 'A same-blue raised ripple for pond impact and eddy cues.',
     tags: ['water', 'foam', 'ripple'],
     roles: ['empty', 'foam', 'highlight'],
     palette: [
-      { r: 0, g: 0, b: 0 },
-      { r: 184, g: 226, b: 218 },
-      { r: 235, g: 246, b: 225 },
+      EMPTY,
+      SURFACE_WATER,
+      SURFACE_WATER,
     ],
     steps: [
       box([2, 0, 0], [1, 1, 5], 'foam', 'Draws one broken ripple axis'),
@@ -243,7 +232,8 @@ export const RIVERFALL_RECIPES = [
   createRiverfallWaterfallRecipe(),
   createRiverfallPondRecipe(),
   createRiverfallOutflowRecipe(),
-  createRiverfallFluidWitnessRecipe(),
+  createRiverfallFluidSurfaceRecipe(),
+  createRiverfallFluidSurfaceSeamRecipe(),
   createRiverfallFoamRecipe(),
 ] as const;
 

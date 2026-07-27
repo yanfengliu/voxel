@@ -70,7 +70,8 @@ import {
   createNightstandRecipe,
   createPillowRecipe,
   createPotRecipe,
-  createRiverfallFluidWitnessRecipe,
+  createRiverfallFluidSurfaceRecipe,
+  createRiverfallFluidSurfaceSeamRecipe,
   createRiverfallFoamRecipe,
   createRiverfallLandscapeRecipe,
   createRiverfallOutflowRecipe,
@@ -334,7 +335,7 @@ export function createStudioCatalog(): StudioCatalogV1 {
       },
       {
         // Independently reusable assets from the Riverfall system scene. Its
-        // catalog replay moves only the selected fluid-witness instances.
+        // catalog replay moves only the reconstructed fluid-surface instances.
         name: 'Riverfall',
         models: [
           recipeEntry(createRiverfallLandscapeRecipe),
@@ -342,7 +343,8 @@ export function createStudioCatalog(): StudioCatalogV1 {
           recipeEntry(createRiverfallWaterfallRecipe),
           recipeEntry(createRiverfallPondRecipe),
           recipeEntry(createRiverfallOutflowRecipe),
-          recipeEntry(createRiverfallFluidWitnessRecipe),
+          recipeEntry(createRiverfallFluidSurfaceRecipe),
+          recipeEntry(createRiverfallFluidSurfaceSeamRecipe),
           recipeEntry(createRiverfallFoamRecipe),
         ],
       },

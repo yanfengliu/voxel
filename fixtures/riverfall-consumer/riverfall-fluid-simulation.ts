@@ -1,11 +1,10 @@
-import { createHash, type Hash } from 'node:crypto';
+import { createHash } from 'node:crypto';
 
 import {
   validateRiverfallFluidDomainV1,
 } from '../../tools/studio/riverfall-fluid-domain.js';
 import {
   canonicalRiverfallFluidInputJsonV1,
-  canonicalRiverfallFluidJsonV1,
   createRiverfallFluidConfigV1,
   RIVERFALL_FLUID_WITNESS_COUNT,
   type RiverfallFluidConfigOverridesV1,
@@ -19,7 +18,9 @@ import {
   type RiverfallFluidStateV1,
   type RiverfallFluidStepDiagnosticsV1,
 } from './riverfall-pbf.js';
-
+import {
+  finalRiverfallFluidTraceHashV1,
+} from './riverfall-fluid-trace-hash.js';
 export interface RiverfallFluidTraceDiagnosticsV1 {
   readonly visibleParticles: Uint16Array;
   readonly hiddenParticles: Uint16Array;
@@ -63,6 +64,11 @@ export interface RiverfallFluidTraceV1 {
   readonly frameCount: number;
   readonly placementIds: readonly string[];
   readonly witnessParticleIndices: Uint16Array;
+  /** Witness strip coordinates at recording frame zero, after burn-in. */
+  readonly recordingInitialLongitudinal: Float32Array;
+  readonly recordingInitialLateral: Float32Array;
+  /** Frame-major flag for whether each witness occupies a visible reach. */
+  readonly visibleWitnesses: Uint8Array;
   /** Frame-major, then witness-major. */
   readonly translations: Float32Array;
   readonly rotations: Float32Array;
@@ -242,6 +248,7 @@ function captureFrame(
   translations: Float32Array,
   rotations: Float32Array,
   linearVelocities: Float32Array,
+  visibleWitnesses: Uint8Array,
 ): void {
   for (let witness = 0; witness < indices.length; witness += 1) {
     const particle = indices[witness]!;
@@ -251,6 +258,8 @@ function captureFrame(
     translations.set(mapped.position, vectorOffset);
     linearVelocities.set(mapped.velocity, vectorOffset);
     rotations[rotationOffset + 3] = 1;
+    visibleWitnesses[frame * indices.length + witness] =
+      mapped.visibility === 'visible' ? 1 : 0;
   }
 }
 
@@ -299,82 +308,6 @@ function summarize(
   };
 }
 
-function littleEndianBytes(values: ArrayBufferView): Uint8Array {
-  const count = values.byteLength / (
-    values instanceof Float32Array ? Float32Array.BYTES_PER_ELEMENT
-      : Uint16Array.BYTES_PER_ELEMENT
-  );
-  const bytes = new Uint8Array(values.byteLength);
-  const output = new DataView(bytes.buffer);
-  if (values instanceof Float32Array) {
-    for (let index = 0; index < count; index += 1) {
-      output.setFloat32(index * 4, values[index]!, true);
-    }
-  } else if (values instanceof Uint16Array) {
-    for (let index = 0; index < count; index += 1) {
-      output.setUint16(index * 2, values[index]!, true);
-    }
-  } else {
-    throw new Error(
-      `Cannot hash Riverfall fluid ${values.constructor.name}; `
-      + 'expected Float32Array or Uint16Array.',
-    );
-  }
-  return bytes;
-}
-
-function hashField(
-  hash: Hash,
-  name: string,
-  value: string | ArrayBufferView,
-): void {
-  const nameBytes = new TextEncoder().encode(name);
-  const valueBytes = typeof value === 'string'
-    ? new TextEncoder().encode(value)
-    : littleEndianBytes(value);
-  const length = new Uint8Array(8);
-  const view = new DataView(length.buffer);
-  view.setUint32(0, nameBytes.length, true);
-  view.setUint32(4, valueBytes.length, true);
-  hash.update(length);
-  hash.update(nameBytes);
-  hash.update(valueBytes);
-}
-
-function finalTraceHash(
-  inputHash: string,
-  translations: Float32Array,
-  rotations: Float32Array,
-  linearVelocities: Float32Array,
-  angularVelocities: Float32Array,
-  diagnostics: RiverfallFluidTraceDiagnosticsV1,
-  summary: RiverfallFluidTraceSummaryV1,
-  finalState: RiverfallFluidStateV1,
-  witnessParticleIndices: Uint16Array,
-  placementIds: readonly string[],
-): string {
-  const hash = createHash('sha256');
-  hashField(hash, 'domain', 'studio.riverfall-fluid-trace/1');
-  hashField(hash, 'inputHash', inputHash);
-  hashField(hash, 'witnessParticleIndices', witnessParticleIndices);
-  hashField(hash, 'placementIds', canonicalRiverfallFluidJsonV1(placementIds));
-  for (const [name, values] of Object.entries({
-    translations,
-    rotations,
-    linearVelocities,
-    angularVelocities,
-    ...diagnostics,
-    finalLongitudinal: finalState.longitudinal,
-    finalLateral: finalState.lateral,
-    finalLongitudinalVelocity: finalState.longitudinalVelocity,
-    finalLateralVelocity: finalState.lateralVelocity,
-  })) {
-    hashField(hash, name, values);
-  }
-  hashField(hash, 'summary', JSON.stringify(summary));
-  return hash.digest('hex');
-}
-
 export function simulateRiverfallFluidV1(
   overrides: RiverfallFluidConfigOverridesV1 = {},
 ): RiverfallFluidTraceV1 {
@@ -392,6 +325,14 @@ export function simulateRiverfallFluidV1(
     );
   }
   const indices = witnessIndices(config);
+  const recordingInitialLongitudinal = Float32Array.from(
+    indices,
+    (particle) => state.longitudinal[particle]!,
+  );
+  const recordingInitialLateral = Float32Array.from(
+    indices,
+    (particle) => state.lateral[particle]!,
+  );
   const vectorValues = config.recording.frameCount * indices.length * 3;
   const translations = new Float32Array(vectorValues);
   const rotations = new Float32Array(
@@ -399,6 +340,9 @@ export function simulateRiverfallFluidV1(
   );
   const linearVelocities = new Float32Array(vectorValues);
   const angularVelocities = new Float32Array(vectorValues);
+  const visibleWitnesses = new Uint8Array(
+    config.recording.frameCount * indices.length,
+  );
   const diagnostics = createDiagnostics(config.recording.frameCount);
   captureFrame(
     0,
@@ -408,6 +352,7 @@ export function simulateRiverfallFluidV1(
     translations,
     rotations,
     linearVelocities,
+    visibleWitnesses,
   );
   writeDiagnostics(diagnostics, 0, {
     ...lastStep,
@@ -434,6 +379,7 @@ export function simulateRiverfallFluidV1(
       translations,
       rotations,
       linearVelocities,
+      visibleWitnesses,
     );
   }
   const summary = summarize(diagnostics);
@@ -446,7 +392,7 @@ export function simulateRiverfallFluidV1(
   const inputHash = createHash('sha256')
     .update(canonicalRiverfallFluidInputJsonV1(config))
     .digest('hex');
-  const finalHash = finalTraceHash(
+  const finalHash = finalRiverfallFluidTraceHashV1(
     inputHash,
     translations,
     rotations,
@@ -456,6 +402,9 @@ export function simulateRiverfallFluidV1(
     summary,
     state,
     indices,
+    recordingInitialLongitudinal,
+    recordingInitialLateral,
+    visibleWitnesses,
     placementIds,
   );
   return {
@@ -464,6 +413,9 @@ export function simulateRiverfallFluidV1(
     frameCount: config.recording.frameCount,
     placementIds,
     witnessParticleIndices: indices,
+    recordingInitialLongitudinal,
+    recordingInitialLateral,
+    visibleWitnesses,
     translations,
     rotations,
     linearVelocities,

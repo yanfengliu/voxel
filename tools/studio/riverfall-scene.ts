@@ -30,12 +30,7 @@ export const RIVERFALL_TREE_PLACEMENTS_V1: readonly ScenePlacementV1[] = [
   { id: 'tree-pond-right-front', model: 'studio:tree', at: [24, 7, 19], seed: 31, turns: 1 },
 ];
 
-export const RIVERFALL_FOAM_PLACEMENTS_V1: readonly ScenePlacementV1[] = [
-  { id: 'foam-impact', model: 'studio:riverfall:foam', at: [0, 4, 4] },
-  { id: 'foam-left-eddy', model: 'studio:riverfall:foam', at: [-7, 4, 12] },
-  { id: 'foam-right-eddy', model: 'studio:riverfall:foam', at: [7, 4, 18] },
-  { id: 'foam-outflow', model: 'studio:riverfall:foam', at: [0, 4, 24] },
-];
+export const RIVERFALL_FOAM_PLACEMENTS_V1: readonly ScenePlacementV1[] = [];
 
 const STRUCTURE_PLACEMENTS: readonly ScenePlacementV1[] = [
   { id: 'landscape', model: 'studio:riverfall:landscape', at: [0, 0, 0] },
@@ -50,13 +45,6 @@ const TREE_RELATIONSHIPS: readonly RiverfallRelationshipV1[] =
     from: id,
     relation: 'frames',
     to: id.includes('pond') ? 'pond-surface' : 'river-surface',
-  }));
-
-const FOAM_RELATIONSHIPS: readonly RiverfallRelationshipV1[] =
-  RIVERFALL_FOAM_PLACEMENTS_V1.map(({ id }) => ({
-    from: id,
-    relation: 'marks',
-    to: id === 'foam-outflow' ? 'pond-outflow' : 'pond-surface',
   }));
 
 const FLOW_RELATIONSHIPS: readonly RiverfallRelationshipV1[] =
@@ -78,7 +66,6 @@ export const RIVERFALL_RELATIONSHIPS_V1: readonly RiverfallRelationshipV1[] = [
   { from: 'waterfall-curtain', relation: 'falls-into', to: 'pond-surface' },
   { from: 'pond-surface', relation: 'drains-into', to: 'pond-outflow' },
   ...TREE_RELATIONSHIPS,
-  ...FOAM_RELATIONSHIPS,
   ...FLOW_RELATIONSHIPS,
 ];
 
@@ -88,12 +75,12 @@ export function createRiverfallScene(): SceneV1 {
     id: RIVERFALL_SCENE_ID,
     label: 'Riverfall canyon',
     summary: 'A high river runs between tree-lined banks, spills over a framed cliff, churns into '
-      + 'a pond, and drains through its front bank. Selected particles present a deterministic '
-      + 'consumer-owned 2D PBF surface-fluid trace; the opaque water remains static rather than '
-      + 'claiming a deforming volumetric simulation.',
+      + 'a pond, and drains through its front bank. A deterministic consumer-owned 2D PBF trace '
+      + 'is reconstructed with compact local support onto one blue tile field covering the river, '
+      + 'lip, fall, pond, and outflow. A speed-modulated presentation carrier makes the complete '
+      + 'sheet legible; it is not a solved volumetric or free-surface height simulation.',
     placements: [
       ...STRUCTURE_PLACEMENTS,
-      ...RIVERFALL_FOAM_PLACEMENTS_V1,
       ...RIVERFALL_TREE_PLACEMENTS_V1,
       ...createRiverfallFlowPlacementsV1(),
     ],
