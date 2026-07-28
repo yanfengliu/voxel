@@ -23,7 +23,7 @@ Use the reuse ladder `direct steps -> earned part -> recipe -> composed recipe -
 3. Use **Examine** for metadata and role, **Build** for construction stages and nested reuse, **Motion** for phase semantics, and **Notes** for review findings.
 4. Inspect the asset from several yaws, at the intended game scale, in both study-edge and game-like presentation where applicable.
 5. Pin concrete notes against geometry or composition.
-6. Use Build stages and fixed views for the subtraction-and-relocation pass; pin a note whenever an element's job, location, support, actuation, or handoff is not visibly legible.
+6. Use Build stages and fixed views for subtraction, relocation, and simplification; pin a note whenever an element's named beneficiary, job, location, support, actuation, handoff, or minimum adequate form is not visibly legible.
 7. Use **Send request** only as a brief handoff. Voxel's dev server saves JSON under `tools/studio/requests/`; it does not start an agent or send a notification.
 
 Everything important should also be reachable through `window.voxelStudio`. Prefer that harness for deterministic browser evidence rather than inventing a parallel debug path.
@@ -48,7 +48,7 @@ For a curated contrast recipe:
 
 Use direct steps when no reusable grammar fits. Use `partStepV1` for an earned part and nested recipe placement for a reusable assembly. Watch the Build stages to catch forbidden nested-occurrence intersections, hidden duplicate mass, accidental or unexplained repainting, no-op steps, clipped mirrors, and misleading construction prose. Direct steps within one recipe may layer deliberately when the builder contract permits it.
 
-For a non-trivial recipe, group steps into named authored features and record each feature, part invocation, material accent, and motion in its Build note or a creator-local purpose map; reserve the fuller location, removal, and relationship record for non-obvious or mechanical choices, and test coverage without inventing a public schema.
+For every recipe, map every direct step, part invocation, nested recipe, deliberate void, material accent, exception, and motion to an exact creator-local purpose record. Repeated steps may share one record only when one bounded rule gives every member the same job. Require named dependency, location datum, removal and relocation failure, smallest adequate form, evidence, and honesty boundary for every record; a Build note is a concise UI explanation, not a substitute. Test exact coverage and reject missing, duplicate, stale, or boilerplate records without inventing a public schema.
 
 Run `npm run studio:build <modelId>` for a headless construction sheet when the live script supports the model. Inspect `scripts/studio.mjs` and `package.json` before assuming additional subcommands in a consumer repo.
 
@@ -93,11 +93,12 @@ Run this inside the repository's owned headless browser and Studio-server cleanu
 Before promotion:
 
 1. Rebuild the candidate from its frozen recipe.
-2. Compare it with its nearest live catalog neighbors from multiple fixed yaws.
-3. Inspect its Build stages and intended game-scale silhouette.
-4. Confirm at least two independent major contrast axes and no orientation, reflection, seed, palette, or padding false positive.
-5. Give it a durable authored identity and rewrite generated construction prose where needed.
-6. Place it into a coherent scene or a clearly labeled comparison board only when that evidence adds value.
-7. Update `tools/studio/fixtures/diversity-accepted-v1.json` manually only after the accepted visual and structural evidence has been reviewed.
+2. Prove the exact no-orphan purpose record and run subtraction, relocation, and simplification at the intended camera and scale.
+3. Compare it with its nearest live catalog neighbors from multiple fixed yaws.
+4. Inspect its Build stages and intended game-scale silhouette.
+5. Confirm at least two independent major contrast axes and no orientation, reflection, seed, palette, padding, or decorative-noise false positive.
+6. Give it a durable authored identity and rewrite generated construction prose where needed.
+7. Place it into a coherent scene or a clearly labeled comparison board only when that evidence adds value.
+8. Update `tools/studio/fixtures/diversity-accepted-v1.json` manually only after the accepted purpose, visual, and structural evidence has been reviewed.
 
 Run focused recipe, catalog, diversity, scene, and browser tests while iterating. Run `npm run verify` before committing code in Voxel.

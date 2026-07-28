@@ -18,7 +18,7 @@ List the scene's nodes and edges before coordinates.
 
 Give each placement a role such as source, destination, support, crossing, control, transfer, storage, service access, boundary, hazard, or landmark.
 
-Give every placement, including foundations, context, and landmarks, a named purpose and at least one intentional relation:
+Give every placement, including foundations, context, landmarks, lights, and moving cues, a named beneficiary, purpose, location datum, removal and relocation failure, smallest adequate form, evidence, and at least one intentional relation:
 
 ```text
 feeds -> gates -> carries -> crosses -> drains
@@ -32,7 +32,7 @@ terminates -> anchors
 
 If an asset has no relation, remove it or move it to a comparison board. A landmark must still anchor hierarchy, orientation, or navigation.
 
-For each placement record why it is present, why it has this coordinate and orientation, what changes if it is removed, and which datum or relationship relocation would break. If none, remove it or move it to comparison evidence.
+For each placement record who or what needs it, why it is present, why it has this coordinate and orientation, what changes if it is removed, which datum or relationship relocation would break, why a smaller or existing element is insufficient, and what live evidence proves the claim. If any answer is absent, remove it or move it to comparison evidence.
 
 When the live scene schema has no relationship fields, keep the graph as authored design data, creator constants, tests, or concise documentation rather than silently inventing a runtime contract. Encode its visible consequences through positions, turns, elevations, periods, and model choices.
 
@@ -120,4 +120,4 @@ If the reviewer sees isolated specimens, repair composition rather than explaini
 
 Add scene-specific tests for important relationships: shared axes, adjacency, elevation, turns, clearances, model roles, synchronized periods, schema capabilities, and fixed default-view evidence. Keep generic catalog-membership coverage separate; membership does not prove composition.
 
-When intent is encoded as creator constants, add coverage tests that every scene placement and recipe has an exact live purpose-map entry, every direct recipe step or authored feature has a purpose-bearing Build note or feature record, and no record names a missing element. For mechanisms, test visible-to-physical support alignment, grounded load paths, named attachment frames, actuator-to-body linkage, allowed-axis clearance, contact-before-grasp, stable carried relative transform, release-before-deposition, and absence of proximity-only teleports. Keep subtraction and relocation readability as fixed-view human review; a purpose string alone does not prove the rendered result.
+When intent is encoded as creator constants, add coverage tests that every scene placement, light, motion, recipe, direct step, part invocation, deliberate void, material transition, and bounded procedural group has an exact live purpose-map entry, and no record names a missing element. Reject duplicate ids and unrecorded exceptions. For mechanisms, test visible-to-physical support alignment, grounded load paths, named attachment frames, actuator-to-body linkage, allowed-axis clearance, contact-before-grasp, stable carried relative transform, release-before-deposition, and absence of proximity-only teleports. Keep subtraction, relocation, simplification, and readability as fixed-view human review; a purpose string alone does not prove the rendered result.

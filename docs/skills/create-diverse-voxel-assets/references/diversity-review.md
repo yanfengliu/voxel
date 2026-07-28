@@ -12,8 +12,10 @@ Camera, scale, and viewing distance:
 Semantic role:
 Art-direction invariants:
 Physical, picking, and animation needs:
-Purpose map (authored feature -> job):
-Removal consequence and relocation datum:
+Purpose map (exact authored scope -> named beneficiary -> job):
+Location datum and removal or relocation failure:
+Smallest adequate form and rejected simplifications:
+Purpose evidence and honesty boundary:
 Mechanism truth (supports and anchors, actuation or power, constraints, contact, transfer, release):
 Nearest existing assets:
 Must preserve:
@@ -82,6 +84,8 @@ Reject a candidate when its apparent difference comes mainly from:
 - a new name or domain tag on old geometry;
 - metric distance that is visually negligible at game scale;
 - a decorative voxel group, material change, accent, or motion whose removal changes no function, structure, semantics, or intended-scale readability;
+- an authored choice with no named beneficiary elsewhere in the asset, scene, interaction, or consumer;
+- a generic purpose note unsupported by exact scope, location, subtraction, relocation, simplification, and live evidence;
 - a mechanism whose support, load path, actuation or power, constraints, or handoff is absent or contradicted by its visible form.
 
 Also reject a visually novel asset when it cannot be rebuilt, does not fit the consumer's camera or performance budget, breaks picking or physical meaning, or contradicts the art direction.
@@ -101,7 +105,7 @@ Fixed-view evidence:
 Motion evidence:
 Scene role:
 Reuse introduced:
-Purpose and subtraction record:
+No-orphan coverage, subtraction, relocation, and simplification record:
 Mechanical-truth evidence:
 Residual risks:
 Reviewer decision:

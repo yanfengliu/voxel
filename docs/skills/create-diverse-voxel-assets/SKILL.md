@@ -1,6 +1,6 @@
 ---
 name: create-diverse-voxel-assets
-description: Author, expand, curate, review, promote, or integrate actual creative procedural voxel and low-poly asset content with Voxel Model Studio and downstream game adapters. Use for models, reusable parts, recipes, semantic motion, candidate batches, art-direction matrices, composed visual scenes, weak composition, or repetitive catalogs. Do not use for Studio UI, notes or annotations, scene storage/schema/migrations, general occupancy or physics architecture, or documentation cleanup unless the task also authors or reviews creative asset content.
+description: Author, expand, curate, purpose-audit, review, promote, or integrate actual creative procedural voxel and low-poly asset content with Voxel Model Studio and downstream game adapters. Use for models, reusable parts, recipes, semantic motion, candidate batches, art-direction matrices, composed visual scenes, unexplained geometry, weak composition, or repetitive catalogs. Do not use for Studio UI, notes or annotations, scene storage/schema/migrations, general occupancy or physics architecture, or documentation cleanup unless the task also authors or reviews creative asset content.
 ---
 
 # Create Diverse Voxel Assets
@@ -9,11 +9,12 @@ Create assets through an authored, reproducible pipeline: gameplay or scene need
 
 ## Route the task
 
+- For every task that creates, changes, promotes, or reviews visible asset or scene content, read [purpose accountability](references/purpose-accountability.md). It is the acceptance gate for every other route.
 - For creative model, part, recipe, catalog-content, candidate, or promotion work, read [Voxel Studio workflow](references/voxel-studio-workflow.md) and [diversity review](references/diversity-review.md).
 - For authoring or reviewing a composed visual scene, environment, diorama, or asset interaction, also read [scene composition](references/scene-composition.md). Do not load it merely because a tooling or storage task mentions a scene record.
 - For integrating authored content in a game repo or across the engine boundary, also read [downstream integration](references/downstream-integration.md).
 - For model motion, read the Studio and diversity references; for scene-placement or light motion, also read scene composition; for gameplay animation or state-driven poses, also read downstream integration.
-- For an asset-pipeline audit or broad creative expansion, read all four references.
+- For an asset-pipeline audit or broad creative expansion, read purpose accountability plus all four route references — all five references total.
 
 Read the selected references completely before editing. Inspect the live repository and its instructions before relying on any command, path, schema, count, or consumer status in the references.
 
@@ -27,7 +28,8 @@ Read the selected references completely before editing. Inspect the live reposit
 - Treat fingerprints and batch scores as search evidence, never as aesthetic approval. Review every promoted design from multiple views at its intended game scale.
 - Never auto-promote generated candidates or rewrite accepted fixtures from generation output.
 - Distinguish a comparison board from a composed scene. A grid of unrelated models stays a contact sheet even when every model shares a domain.
-- Run a purpose-and-subtraction pass at authored-decision granularity: map every visible voxel group or material change, direct step, part, recipe or model feature, placement, and motion to a functional, structural, semantic, causal, or readability job; ask what is lost if it is removed and whether relocation improves that job. Delete or redesign ornament, and do not use diversity metrics to rescue it.
+- Enforce the no-orphan-pixel invariant at authored-decision granularity. Every visible voxel group, bounded generative rule, exception, void, material change, direct step, part invocation, recipe or model feature, placement, light, and motion must name who or what requires it, its job, location datum, removal and relocation failure, smallest adequate form, evidence, and honesty boundary. Delete anything without that dependency chain; “looks cool,” generic realism, symmetry, surface breakup, and plausible prose do not pass.
+- Treat a purpose record as a falsifiable claim, not approval. Require exact record-to-authoring coverage plus subtraction, relocation, simplification, and intended-view evidence before promotion.
 - Make visible mechanisms mechanically legible: show or explicitly account for support and load paths, anchors and joints, actuation or power transmission, constrained degrees of freedom, contact or grasp, transfer, and release. If the artifact cannot honestly express these, move the behavior to a consumer fixture or label it a static or kinematic study.
 - Give motion semantic work. Do not animate an asset merely to make a playback control active.
 - Verify visual behavior in a real browser at fixed camera, viewport, and device scale. Do not approve a rendering or composition from source inspection alone.
@@ -44,7 +46,7 @@ Inventory the current catalog by semantic role, shape family, construction gramm
 
 State the gameplay or scene job, viewing distance, art-direction invariants, physical or picking needs, animation meaning, and nearest existing neighbors.
 
-For every dominant mass, void, material-role transition, accent, and moving element, name its purpose and removal consequence. For mechanisms, name the load path, anchor, actuator or power source, joint or constraint, and contact, transfer, and release sequence.
+Write the purpose ledger before geometry. Trace every authored decision to the consumer, interaction, asset, or scene relationship that requires it; include location, removal, relocation, minimality, evidence, and honesty boundaries. For mechanisms, name the load path, anchor, actuator or power source, joint or constraint, and contact, transfer, and release sequence.
 
 Give each candidate family a one-sentence visual thesis. Name the major axes it must change and the constraints it must preserve. Include at least one cross-family hypothesis and one wildcard hypothesis that changes the organizing idea rather than tuning parameters.
 
@@ -60,7 +62,7 @@ Build the smallest useful asset first: direct steps, then an earned reusable par
 
 Reject empty, invalid, clipped, no-op, non-rebuildable, unintentionally intersecting, hidden-duplicate, or unexplained destructive-repainting results before visual review. Preserve deliberate layering inside one recipe when the live builder permits it.
 
-Before visual review, run a subtraction-and-relocation pass. Remove each authored feature in turn at the intended camera and scale; restore it only when removal weakens function, structure, semantic or causal meaning, or readability. If it has a job but no reason to be where it is, anchor it to a mating frame, load path, route, clearance, or focal hierarchy, or remove it.
+Before visual review, prove exact purpose-ledger coverage, then run subtraction, relocation, and simplification. Remove each authored scope in turn at the intended camera and scale; restore it only when the recorded failure occurs. Move it away from its datum and reduce it toward the smallest adequate form. If the claim survives removal, arbitrary relocation, or simplification, delete or redesign the scope.
 
 ### 5. Select narrow with evidence
 
@@ -94,6 +96,6 @@ Translate game state through the consumer adapter into the engine's current plai
 
 Run focused structural tests while iterating, then the repository's authoritative gate. Capture fixed multi-view evidence for models, phase evidence for motion, and a default-view plus adversarial-view proof for scenes.
 
-Adversarially review non-trivial catalog or scene work. Ask the reviewer to find duplicates, weak theses, misleading interactions, boundary leaks, and evidence gaps.
+Adversarially review non-trivial catalog or scene work. Ask the reviewer to find orphan decisions, counterfeit purposes, arbitrary locations, needless complexity, duplicates, weak theses, misleading interactions, boundary leaks, and evidence gaps.
 
-Report visual evidence, tests, commit, and remote status. When the work generated or promoted candidates, also report the exploration count, rejection reasons, promoted ids, contrast axes, and relevant scene relationships. Clean task-owned browser, server, and generated output resources.
+Report the no-orphan audit, visual evidence, tests, commit, and remote status. When the work generated or promoted candidates, also report the exploration count, rejection reasons, promoted ids, contrast axes, and relevant scene relationships. Clean task-owned browser, server, and generated output resources.

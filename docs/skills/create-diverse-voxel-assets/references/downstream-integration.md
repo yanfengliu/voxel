@@ -6,7 +6,7 @@ Use this reference when asset work happens in a Voxel consumer, moves between re
 
 Read the consumer's instructions, rendering adapter, catalog or asset registry, camera, picking path, animation path, performance budgets, and representative gameplay scene before designing. Treat the following fleet examples as orientation only; verify current status in live files.
 
-Require each visible feature to map to authoritative state or interaction, physical structure, or an intentional readability cue. Do not integrate render-only machinery that the consumer cannot support; remove it or label the artifact as a study.
+Require each visible feature, bounded procedural group, exception, placement, material transition, light, and motion to name the authoritative consumer state, interaction, physical structure, or specific readability need that requires it. Prove exact scope, location, removal and relocation failure, smallest adequate form, and live evidence; a generic purpose note does not establish necessity. Do not integrate render-only machinery that the consumer cannot support; remove it or label the artifact as a study.
 
 Voxel is a renderer and authoring reference, not the owner of a game's simulation, commands, save format, UI, faction rules, economy, pathfinding, or art direction.
 
