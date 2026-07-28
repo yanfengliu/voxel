@@ -74,18 +74,35 @@ async function stageBox(page: Page): Promise<{
 }
 
 async function dragStage(page: Page, dx: number, dy: number): Promise<void> {
+  await dragStageWithButton(page, dx, dy, 'left');
+}
+
+async function dragStageWithButton(
+  page: Page,
+  dx: number,
+  dy: number,
+  button: 'left' | 'middle' | 'right',
+): Promise<void> {
   const box = await stageBox(page);
   const x = box.x + box.width / 2;
   const y = box.y + box.height / 2;
   await page.mouse.move(x, y);
-  await page.mouse.down();
+  await page.mouse.down({ button });
   await page.mouse.move(x + dx, y + dy, { steps: 6 });
-  await page.mouse.up();
+  await page.mouse.up({ button });
 }
 
 async function clickStage(page: Page): Promise<void> {
+  await clickStageAt(page, 0.5, 0.5);
+}
+
+async function clickStageAt(
+  page: Page,
+  u: number,
+  v: number,
+): Promise<void> {
   const box = await stageBox(page);
-  await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
+  await page.mouse.click(box.x + box.width * u, box.y + box.height * v);
 }
 
 async function pickVisiblePlacement(page: Page): Promise<string> {
@@ -187,12 +204,13 @@ test('editable scenes keep Notes visible and annotation mode owns one gesture wi
   await dragStage(page, 90, 35);
   expect(await page.evaluate(() => window.voxelStudio!.sceneAnnotationMode())).toBe(true);
   expect(await panel.getByLabel('Annotation note').isHidden()).toBe(true);
+  await expect(page.locator('.scene-annotation-draft-marker')).toHaveCount(0);
   expect(await page.evaluate(() => ({
     scene: structuredClone(window.voxelStudio!.sceneState()),
     selected: window.voxelStudio!.selectedPlacement(),
     view: window.voxelStudio!.viewState(),
   }))).toEqual(beforeCapture);
-  await clickStage(page);
+  await clickStageAt(page, 0.29, 0.67);
   const pinText = panel.getByLabel('Annotation note');
   await expect(pinText).toBeVisible();
   await expect(annotate).toHaveAttribute('aria-pressed', 'false');
@@ -202,6 +220,71 @@ test('editable scenes keep Notes visible and annotation mode owns one gesture wi
     selected: window.voxelStudio!.selectedPlacement(),
     view: window.voxelStudio!.viewState(),
   }))).toEqual(beforeCapture);
+  const draftMarker = page.locator('.scene-annotation-draft-marker');
+  await expect(draftMarker).toHaveCount(1);
+  await expect(draftMarker).toBeVisible();
+  await expect(draftMarker).toHaveText('+');
+  await expect(panel).toContainText('The + on the picture marks this captured spot');
+  await expect(panel.getByRole('status')).toContainText('The + marks the exact captured spot');
+  await expect(page.locator('.stagehint')).toContainText('+ marks the exact spot');
+  await expect(page.locator('.canvas-wrap')).not.toHaveAttribute('aria-keyshortcuts');
+  expect(await page.locator('[data-studio-region="top"]').evaluate(
+    (region: HTMLElement) => region.inert,
+  )).toBe(true);
+  expect(await page.locator('[data-studio-region="shelf"]').evaluate(
+    (region: HTMLElement) => region.inert,
+  )).toBe(true);
+  expect(await page.locator('[data-studio-region="player"]').evaluate(
+    (region: HTMLElement) => region.inert,
+  )).toBe(true);
+  expect(await page.getByRole('tab').evaluateAll((tabs: HTMLButtonElement[]) =>
+    tabs.every((tab) => tab.disabled))).toBe(true);
+  expect(await page.locator('.col-resize').evaluateAll((handles: HTMLElement[]) =>
+    handles.every((handle) => handle.inert))).toBe(true);
+  const lockedPresentation = await page.evaluate(() => ({
+    scene: structuredClone(window.voxelStudio!.sceneState()),
+    view: window.voxelStudio!.viewState(),
+    center: window.voxelStudio!.viewCenter(),
+    player: window.voxelStudio!.playerState(),
+  }));
+  await dragStageWithButton(page, 60, 35, 'middle');
+  await dragStageWithButton(page, 60, 35, 'right');
+  const lockedStage = await stageBox(page);
+  await page.mouse.move(
+    lockedStage.x + lockedStage.width / 2,
+    lockedStage.y + lockedStage.height / 2,
+  );
+  await page.mouse.wheel(0, 180);
+  await page.locator('.canvas-wrap').focus();
+  await page.keyboard.press('KeyW');
+  await page.keyboard.press('Space');
+  await page.keyboard.press('Control+z');
+  expect(await page.evaluate(() => ({
+    scene: structuredClone(window.voxelStudio!.sceneState()),
+    view: window.voxelStudio!.viewState(),
+    center: window.voxelStudio!.viewCenter(),
+    player: window.voxelStudio!.playerState(),
+  }))).toEqual(lockedPresentation);
+  await expect(draftMarker).toHaveCount(1);
+  await pinText.focus();
+  const draftCanvasSize = await page.locator('.scene-canvas').evaluate(
+    (canvas: HTMLCanvasElement) => ({ width: canvas.width, height: canvas.height }),
+  );
+  await page.setViewportSize({ width: 660, height: 500 });
+  await page.waitForTimeout(50);
+  expect(await page.locator('.scene-canvas').evaluate(
+    (canvas: HTMLCanvasElement) => ({ width: canvas.width, height: canvas.height }),
+  )).toEqual(draftCanvasSize);
+  await expect(draftMarker).toHaveCount(1);
+  await page.setViewportSize({ width: 640, height: 480 });
+  await page.waitForTimeout(50);
+  const draftMarkerBox = await draftMarker.boundingBox();
+  if (!draftMarkerBox) throw new Error('the captured annotation draft marker has no on-screen box');
+  const markedStage = await stageBox(page);
+  expect(draftMarkerBox.x + draftMarkerBox.width / 2)
+    .toBeCloseTo(markedStage.x + markedStage.width * 0.29, 0);
+  expect(draftMarkerBox.y + draftMarkerBox.height / 2)
+    .toBeCloseTo(markedStage.y + markedStage.height * 0.67, 0);
   // Escape belongs to an active IME composition and must not cancel the draft.
   await pinText.evaluate((textarea) => {
     const event = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true });
@@ -209,6 +292,9 @@ test('editable scenes keep Notes visible and annotation mode owns one gesture wi
     textarea.dispatchEvent(event);
   });
   await expect(pinText).toBeVisible();
+  await panel.getByRole('button', { name: 'Queue' }).click();
+  await expect(panel.getByRole('status')).toContainText('needs a note');
+  await expect(draftMarker).toHaveCount(1);
 
   // Shift+Enter is a newline and does not queue; Enter alone queues exactly
   // one pin. The visible ordinal is the same order exposed by the harness.
@@ -220,18 +306,33 @@ test('editable scenes keep Notes visible and annotation mode owns one gesture wi
   await page.keyboard.press('Enter');
   await expect(pinText).toBeHidden();
   await expect(annotate).toBeFocused();
+  await expect(draftMarker).toHaveCount(0);
+  expect(await page.locator('[data-studio-region="top"]').evaluate(
+    (region: HTMLElement) => region.inert,
+  )).toBe(false);
+  await expect(page.locator('.canvas-wrap')).toHaveAttribute('aria-keyshortcuts', 'W A S D');
+  expect(await page.getByRole('tab').evaluateAll((tabs: HTMLButtonElement[]) =>
+    tabs.every((tab) => !tab.disabled))).toBe(true);
   const annotations = await page.evaluate(() => window.voxelStudio!.sceneAnnotations());
   expect(annotations.brief).toBe('Keep the aisle open and the chairs readable.');
   expect(annotations.pins).toHaveLength(1);
   expect(annotations.pins[0]?.text).toBe('Move this chair\nPreserve the aisle');
   expect(annotations.pins[0]?.selectedPlacementId).toBe(selected);
+  expect(annotations.pins[0]?.spot.u).toBeCloseTo(0.29, 2);
+  expect(annotations.pins[0]?.spot.v).toBeCloseTo(0.67, 2);
   const marker = page.locator('.scene-annotation-marker');
   await expect(marker).toHaveCount(1);
   await expect(marker).toBeVisible();
   await expect(marker).toContainText('1');
   const markerBox = await marker.boundingBox();
-  expect(markerBox?.width).toBeGreaterThanOrEqual(20);
-  expect(markerBox?.height).toBeGreaterThanOrEqual(20);
+  if (!markerBox) throw new Error('the queued annotation marker has no on-screen box');
+  expect(markerBox.width).toBeGreaterThanOrEqual(20);
+  expect(markerBox.height).toBeGreaterThanOrEqual(20);
+  const queuedStage = await stageBox(page);
+  expect(markerBox.x + markerBox.width / 2)
+    .toBeCloseTo(queuedStage.x + queuedStage.width * 0.29, 0);
+  expect(markerBox.y + markerBox.height / 2)
+    .toBeCloseTo(queuedStage.y + queuedStage.height * 0.67, 0);
   await page.evaluate(() => { window.voxelStudio!.selectPlacement(null); });
   await expect(marker).toHaveCount(0);
   await panel.getByRole('button', { name: /Show annotation 1/ }).click();
@@ -240,16 +341,132 @@ test('editable scenes keep Notes visible and annotation mode owns one gesture wi
 
   // Escape cancels the next captured draft without appending another pin.
   await annotate.click();
-  await clickStage(page);
+  await clickStageAt(page, 0.92, 0.82);
   await expect(pinText).toBeVisible();
+  await expect(draftMarker).toHaveCount(1);
+  const showSavedAnnotation = panel.getByRole('button', { name: /Show annotation 1/ });
+  await expect(showSavedAnnotation).toBeDisabled();
+  await expect(showSavedAnnotation).toHaveAttribute(
+    'title',
+    'Queue or cancel the current draft before restoring another captured view',
+  );
+  const edgeDraftMarkerBox = await draftMarker.boundingBox();
+  if (!edgeDraftMarkerBox) throw new Error('the near-edge annotation draft marker has no on-screen box');
+  const edgeMarkedStage = await stageBox(page);
+  expect(edgeDraftMarkerBox.x + edgeDraftMarkerBox.width / 2)
+    .toBeCloseTo(edgeMarkedStage.x + edgeMarkedStage.width * 0.92, 0);
+  expect(edgeDraftMarkerBox.y + edgeDraftMarkerBox.height / 2)
+    .toBeCloseTo(edgeMarkedStage.y + edgeMarkedStage.height * 0.82, 0);
+  const capturedDraftView = await page.evaluate(() => {
+    const { yawDegrees, pitchDegrees, viewHeight } = window.voxelStudio!.viewState();
+    return { yawDegrees, pitchDegrees, viewHeight };
+  });
+  await page.evaluate(({ yawDegrees }) => {
+    window.voxelStudio!.setViewAngles({ yawDegrees: yawDegrees + 1 });
+  }, capturedDraftView);
+  await expect(draftMarker).toHaveCount(0);
+  await page.evaluate(() => { window.voxelStudio!.setLit(!window.voxelStudio!.lit()); });
+  await expect(page.locator('.stagehint')).toContainText('+ marks the exact spot');
+  await expect(page.locator('.canvas-wrap')).not.toHaveAttribute('aria-keyshortcuts');
+  await page.evaluate(() => { window.voxelStudio!.setLit(!window.voxelStudio!.lit()); });
+  await page.evaluate((view) => { window.voxelStudio!.setViewAngles(view); }, capturedDraftView);
+  await expect(draftMarker).toHaveCount(1);
   await pinText.pressSequentially('This draft should be canceled');
   await page.keyboard.press('Escape');
   await expect(pinText).toBeHidden();
   await expect(annotate).toBeFocused();
+  await expect(draftMarker).toHaveCount(0);
+  await expect(showSavedAnnotation).toBeEnabled();
   expect(await page.evaluate(() => ({
     mode: window.voxelStudio!.sceneAnnotationMode(),
     pins: window.voxelStudio!.sceneAnnotations().pins.length,
   }))).toEqual({ mode: false, pins: 1 });
+  expect(errors).toEqual([]);
+});
+
+test('draft markers preserve the exact target and keep their badge visible at every stage edge', async ({ page }) => {
+  const errors = collectPageErrors(page);
+  await page.setViewportSize({ width: 1_280, height: 800 });
+  await loadScene(page, DINING_SCENE_ID);
+  const panel = await openNotes(page);
+  const annotate = panel.getByRole('button', { name: 'Annotate scene' });
+  const cases = [
+    { name: 'left', u: 0.02, v: 0.5 },
+    { name: 'right', u: 0.98, v: 0.5 },
+    { name: 'top', u: 0.05, v: 0.005 },
+    { name: 'bottom', u: 0.5, v: 0.995 },
+    { name: 'bottom-left corner', u: 0.02, v: 0.995 },
+    { name: 'bottom-right corner', u: 0.98, v: 0.995 },
+  ] as const;
+
+  for (const edge of cases) {
+    await annotate.click();
+    const preClickStage = await stageBox(page);
+    const hitSurface = await page.evaluate(({ x, y }) => {
+      const hit = document.elementFromPoint(x, y);
+      return {
+        tag: hit?.tagName ?? null,
+        classes: hit instanceof HTMLElement ? Array.from(hit.classList) : [],
+        point: { x, y },
+        viewport: { width: innerWidth, height: innerHeight },
+      };
+    }, {
+      x: preClickStage.x + preClickStage.width * edge.u,
+      y: preClickStage.y + preClickStage.height * edge.v,
+    });
+    expect(
+      hitSurface,
+      `${edge.name} annotation target should reach the stage interaction surface: ${JSON.stringify(hitSurface)}`,
+    )
+      .toMatchObject({ tag: 'DIV', classes: expect.arrayContaining(['canvas-wrap']) });
+    await clickStageAt(page, edge.u, edge.v);
+    const marker = page.locator('.scene-annotation-draft-marker');
+    const target = page.locator('.scene-annotation-draft-anchor .scene-annotation-target');
+    const leader = page.locator('.scene-annotation-draft-anchor .scene-annotation-leader');
+    await expect(marker, `${edge.name} marker`).toBeVisible();
+    await expect(target, `${edge.name} target`).toBeVisible();
+    const stage = await stageBox(page);
+    const markerBox = await marker.boundingBox();
+    const targetBox = await target.boundingBox();
+    const leaderBox = await leader.boundingBox();
+    if (!markerBox || !targetBox || !leaderBox) {
+      throw new Error(`the ${edge.name} annotation marker did not expose complete geometry`);
+    }
+    expect(targetBox.x + targetBox.width / 2).toBeCloseTo(stage.x + stage.width * edge.u, 0);
+    expect(targetBox.y + targetBox.height / 2).toBeCloseTo(stage.y + stage.height * edge.v, 0);
+    expect(markerBox.x).toBeGreaterThanOrEqual(stage.x);
+    expect(markerBox.y).toBeGreaterThanOrEqual(stage.y);
+    expect(markerBox.x + markerBox.width).toBeLessThanOrEqual(stage.x + stage.width);
+    expect(markerBox.y + markerBox.height).toBeLessThanOrEqual(stage.y + stage.height);
+    expect(Math.max(leaderBox.width, leaderBox.height)).toBeGreaterThan(0);
+    if (edge.name === 'bottom-right corner') {
+      const frozenCanvasSize = await page.locator('.scene-canvas').evaluate(
+        (canvas: HTMLCanvasElement) => ({ width: canvas.width, height: canvas.height }),
+      );
+      await page.setViewportSize({ width: 1_120, height: 700 });
+      await expect.poll(async () => {
+        const resizedStage = await stageBox(page);
+        const resizedMarker = await marker.boundingBox();
+        const resizedTarget = await target.boundingBox();
+        if (!resizedMarker || !resizedTarget) return false;
+        const targetX = resizedTarget.x + resizedTarget.width / 2;
+        const targetY = resizedTarget.y + resizedTarget.height / 2;
+        return resizedMarker.x >= resizedStage.x
+          && resizedMarker.y >= resizedStage.y
+          && resizedMarker.x + resizedMarker.width <= resizedStage.x + resizedStage.width
+          && resizedMarker.y + resizedMarker.height <= resizedStage.y + resizedStage.height
+          && Math.abs(targetX - (resizedStage.x + resizedStage.width * edge.u)) <= 1
+          && Math.abs(targetY - (resizedStage.y + resizedStage.height * edge.v)) <= 1;
+      }).toBe(true);
+      expect(await page.locator('.scene-canvas').evaluate(
+        (canvas: HTMLCanvasElement) => ({ width: canvas.width, height: canvas.height }),
+      )).toEqual(frozenCanvasSize);
+    }
+    await page.keyboard.press('Escape');
+    await expect(marker).toHaveCount(0);
+  }
+
+  expect(await page.evaluate(() => window.voxelStudio!.sceneAnnotations().pins)).toEqual([]);
   expect(errors).toEqual([]);
 });
 
@@ -476,27 +693,43 @@ test('Riverfall pins preserve replay provenance, hide outside their captured vie
   await expect(page.getByRole('alert')).toContainText('prior playback and annotation mode were restored');
   await expect(annotate).toHaveAttribute('aria-pressed', 'true');
   await expect(panel.getByLabel('Annotation note')).toBeHidden();
+  await expect(page.locator('.scene-annotation-draft-marker')).toHaveCount(0);
   expect(await page.evaluate(() => window.voxelStudio!.playerState())).toEqual(beforeRejectedCapture);
 
   // A replay scene normally maps left drag to orbit. Armed annotation consumes
   // that same real gesture without changing the view; because it was a drag
-  // rather than the promised click, capture stays armed until the next click.
+  // rather than the promised click, capture stays armed and live playback is
+  // restored until the next press.
+  await page.evaluate(() => { window.voxelStudio!.play(); });
+  await expect.poll(async () => page.evaluate(() => window.voxelStudio!.playerState().playing))
+    .toBe(true);
   await dragStage(page, 95, 40);
   expect(await page.evaluate(() => window.voxelStudio!.viewState())).toEqual(captureEvidence.view);
   expect(await page.evaluate(() => window.voxelStudio!.sceneAnnotationMode())).toBe(true);
+  expect(await page.evaluate(() => window.voxelStudio!.playerState().playing)).toBe(true);
   await expect(panel.getByLabel('Annotation note')).toBeHidden();
-  await clickStage(page);
+  const captureStage = await stageBox(page);
+  const captureX = captureStage.x + captureStage.width / 2;
+  const captureY = captureStage.y + captureStage.height / 2;
+  await page.mouse.move(captureX, captureY);
+  await page.mouse.down();
+  const pressedPlayer = await page.evaluate(() => window.voxelStudio!.playerState());
+  expect(pressedPlayer.playing).toBe(false);
+  await page.waitForTimeout(80);
+  expect(await page.evaluate(() => window.voxelStudio!.playerState())).toEqual(pressedPlayer);
+  await page.mouse.up();
   expect(await page.evaluate(() => window.voxelStudio!.sceneAnnotationMode())).toBe(false);
   const pinText = panel.getByLabel('Annotation note');
   await expect(pinText).toBeVisible();
+  await expect(page.locator('.scene-annotation-draft-marker')).toHaveText('+');
   await pinText.fill('The falling sheet should connect cleanly into the pond.');
   await page.keyboard.press('Enter');
+  await expect(page.locator('.scene-annotation-draft-marker')).toHaveCount(0);
 
   const pin = (await page.evaluate(() => window.voxelStudio!.sceneAnnotations().pins[0]))!;
   expect(pin).toMatchObject({
     sceneId: RIVERFALL_SCENE_ID,
     text: 'The falling sheet should connect cleanly into the pond.',
-    timeMs: 1_100,
     orbit: {
       yawDegrees: captureEvidence.view.yawDegrees,
       pitchDegrees: captureEvidence.view.pitchDegrees,
@@ -513,6 +746,7 @@ test('Riverfall pins preserve replay provenance, hide outside their captured vie
       finalHash: captureEvidence.replay?.provenance.finalHash,
     },
   });
+  expect(pin.timeMs).toBeCloseTo(pressedPlayer.timeMs, 0);
   expect(pin.viewport.width).toBeGreaterThan(0);
   expect(pin.viewport.height).toBeGreaterThan(0);
   expect(captureEvidence.animation).toBe(true);
@@ -564,7 +798,8 @@ test('Riverfall pins preserve replay provenance, hide outside their captured vie
   expect(restored.lit).toBe(pin.lit);
   expect(restored.edges).toBe(pin.edges);
   expect(restored.animation).toBe(true);
-  expect(restored.player).toMatchObject({ playing: false, timeMs: pin.timeMs });
+  expect(restored.player.playing).toBe(false);
+  expect(restored.player.timeMs).toBeCloseTo(pin.timeMs, 0);
   await expect(page.locator('.scene-annotation-marker')).toHaveCount(1);
 
   await page.evaluate(() => {
@@ -603,7 +838,8 @@ test('Riverfall pins preserve replay provenance, hide outside their captured vie
     player: window.voxelStudio!.playerState(),
   }));
   expect(restored.animation).toBe(true);
-  expect(restored.player).toMatchObject({ playing: false, timeMs: pin.timeMs });
+  expect(restored.player.playing).toBe(false);
+  expect(restored.player.timeMs).toBeCloseTo(pin.timeMs, 0);
   await expect(page.locator('.scene-annotation-marker')).toHaveCount(1);
 
   const canvasBeforeResize = await page.locator('.scene-canvas').evaluate((canvas: HTMLCanvasElement) => ({

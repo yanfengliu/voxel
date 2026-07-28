@@ -84,27 +84,34 @@ function sameReplay(
     && pin.finalHash === current.finalHash;
 }
 
-/** True only while the stage still presents the evidence this pin captured. */
+/** True only while the stage still presents the evidence this capture recorded. */
+export function sceneCapturedViewMatchesV1(
+  capture: Omit<SceneAnnotationViewContextV1, 'sceneId'>,
+  current: SceneAnnotationViewContextV1,
+): boolean {
+  return capture.sceneFingerprint === current.sceneFingerprint
+    && near(capture.timeMs, current.timeMs, TIME_EPSILON_MS)
+    && near(capture.orbit.yawDegrees, current.orbit.yawDegrees)
+    && near(capture.orbit.pitchDegrees, current.orbit.pitchDegrees)
+    && near(capture.orbit.viewHeight, current.orbit.viewHeight)
+    && near(capture.panCenter[0], current.panCenter[0])
+    && near(capture.panCenter[1], current.panCenter[1])
+    && near(capture.panCenter[2], current.panCenter[2])
+    && capture.depth === current.depth
+    && capture.lit === current.lit
+    && capture.edges === current.edges
+    && capture.selectedPlacementId === current.selectedPlacementId
+    && capture.viewport.width === current.viewport.width
+    && capture.viewport.height === current.viewport.height
+    && sameReplay(capture.replay, current.replay);
+}
+
+/** True only while the stage still presents the evidence this saved pin captured. */
 export function sceneViewPinMatchesV1(
   pin: SceneViewPinV1,
   current: SceneAnnotationViewContextV1,
 ): boolean {
-  return pin.sceneId === current.sceneId
-    && pin.sceneFingerprint === current.sceneFingerprint
-    && near(pin.timeMs, current.timeMs, TIME_EPSILON_MS)
-    && near(pin.orbit.yawDegrees, current.orbit.yawDegrees)
-    && near(pin.orbit.pitchDegrees, current.orbit.pitchDegrees)
-    && near(pin.orbit.viewHeight, current.orbit.viewHeight)
-    && near(pin.panCenter[0], current.panCenter[0])
-    && near(pin.panCenter[1], current.panCenter[1])
-    && near(pin.panCenter[2], current.panCenter[2])
-    && pin.depth === current.depth
-    && pin.lit === current.lit
-    && pin.edges === current.edges
-    && pin.selectedPlacementId === current.selectedPlacementId
-    && pin.viewport.width === current.viewport.width
-    && pin.viewport.height === current.viewport.height
-    && sameReplay(pin.replay, current.replay);
+  return pin.sceneId === current.sceneId && sceneCapturedViewMatchesV1(pin, current);
 }
 
 /**

@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import type { SceneViewPinV1 } from './scene-annotations.js';
 import {
+  sceneCapturedViewMatchesV1,
   scenePresentationFingerprintV1,
   sceneViewPinMatchesV1,
   sceneViewPinStaleReasonV1,
@@ -70,6 +71,16 @@ describe('scene annotation presentation context', () => {
     expect(sceneViewPinMatchesV1(pin(), { ...context(), lit: true })).toBe(false);
     expect(sceneViewPinMatchesV1(pin(), { ...context(), edges: false })).toBe(false);
     expect(sceneViewPinMatchesV1(pin(), { ...context(), selectedPlacementId: null })).toBe(false);
+  });
+
+  it('matches an unsaved capture without inventing a saved pin identity', () => {
+    const { sceneId, ...capture } = context();
+    expect(sceneId).toBe(scene.id);
+    expect(sceneCapturedViewMatchesV1(capture, context())).toBe(true);
+    expect(sceneCapturedViewMatchesV1(capture, {
+      ...context(),
+      orbit: { ...context().orbit, yawDegrees: 31 },
+    })).toBe(false);
   });
 
   it('distinguishes stale scene or replay evidence from a restorable view difference', () => {

@@ -82,8 +82,21 @@ export function createStudioKeyboard(options: StudioKeyboardOptionsV1): StudioKe
     if (!ownsEventTarget(event.target)) return;
     if (event.key === 'Escape' && !event.isComposing && options.noteEditorOpen()) {
       options.closeNoteEditor();
+      clearMovement();
+      return;
     }
     if (textEditingControl(event.target) !== null) return;
+    if (options.noteEditorOpen()) {
+      clearMovement();
+      const key = event.key.toLowerCase();
+      const blocked = movementCode(event) !== null
+        || event.code === 'Space'
+        || event.key === ' '
+        || event.key === 'Spacebar'
+        || ((event.ctrlKey || event.metaKey) && (key === 'z' || key === 'y'));
+      if (blocked) event.preventDefault();
+      return;
+    }
 
     const modifier = event.ctrlKey || event.metaKey;
     const undoKey = event.key === 'z' || event.key === 'Z';

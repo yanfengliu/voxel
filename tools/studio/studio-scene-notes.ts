@@ -8,6 +8,7 @@ import {
   type StudioSceneNotesDepsV1,
   type StudioSceneNotesPanelV1,
 } from './studio-scene-notes-types.js';
+import { createStudioSceneNotesFocusV1 } from './studio-scene-notes-focus.js';
 import { createStudioSceneNotesViewV1 } from './studio-scene-notes-view.js';
 
 export type {
@@ -50,12 +51,31 @@ export function createStudioSceneNotesPanel(
     sendButton,
     status,
   } = createStudioSceneNotesViewV1();
+  const focus = createStudioSceneNotesFocusV1({
+    editor,
+    pinText,
+    annotateButton,
+    pinShowButtons: () => pinShowButtons,
+  });
   function setStatus(message: string, tone: 'idle' | 'ok' | 'bad' = 'idle'): void {
     status.dataset.tone = tone;
     status.textContent = message;
   }
   function reportPersistence(result: SceneAnnotationPersistenceResultV1): void {
     setStatus(result.message, result.persisted ? 'ok' : 'bad');
+  }
+
+  function updatePinShowAvailability(): void {
+    const sceneAvailable = renderedAvailable === true;
+    const draftOpen = pendingCapture !== null;
+    for (const show of pinShowButtons.values()) {
+      show.disabled = !sceneAvailable || draftOpen;
+      show.title = draftOpen
+        ? 'Queue or cancel the current draft before restoring another captured view'
+        : sceneAvailable
+        ? 'Restore this captured view and phase'
+        : "Open this annotation's scene before restoring its captured view and phase";
+    }
   }
 
   function activeSceneId(action: string): string | null {
@@ -81,7 +101,10 @@ export function createStudioSceneNotesPanel(
     const annotationMode = deps.getAnnotationMode();
     annotateButton.setAttribute('aria-pressed', String(annotationMode));
     annotateButton.classList.toggle('armed', annotationMode);
-    captureHint.textContent = annotationMode
+    updatePinShowAvailability();
+    captureHint.textContent = pendingCapture !== null
+      ? 'The + on the picture marks this captured spot. Presentation controls stay locked until you queue the note or cancel it.'
+      : annotationMode
       ? 'Annotation is armed. Click the picture once to capture its current view and phase, or press this button to cancel.'
       : 'Turn annotation on, then click the picture once to capture its current view and phase.';
   }
@@ -112,37 +135,6 @@ export function createStudioSceneNotesPanel(
     }
   }
 
-  function editorOwnsFocus(): boolean {
-    const active = pinText.ownerDocument.activeElement;
-    return active !== null && editor.contains(active);
-  }
-
-  function restoreFocusAfterEditorCloses(editorHadFocus: boolean): void {
-    if (!editorHadFocus) return;
-    if (!annotateButton.disabled) {
-      annotateButton.focus();
-      return;
-    }
-    const active = pinText.ownerDocument.activeElement;
-    if (active instanceof HTMLElement) active.blur();
-  }
-
-  function focusPinShowOrAnnotate(preferredPinIds: readonly number[]): void {
-    for (const pinId of preferredPinIds) {
-      const show = pinShowButtons.get(pinId);
-      if (show !== undefined && !show.disabled) {
-        show.focus();
-        return;
-      }
-    }
-    const firstAvailable = [...pinShowButtons.values()].find((show) => !show.disabled);
-    if (firstAvailable !== undefined) {
-      firstAvailable.focus();
-    } else if (!annotateButton.disabled) {
-      annotateButton.focus();
-    }
-  }
-
   function renderPins(document: SceneAnnotationsV1, available: boolean): void {
     pinListeners.abort();
     pinListeners = new AbortController();
@@ -170,10 +162,10 @@ export function createStudioSceneNotesPanel(
           deps.showPin(pin);
           deps.redraw();
           setStatus(`Showing annotation #${String(number)} at its captured view and phase.`, 'ok');
-          focusPinShowOrAnnotate([pin.id]);
+          focus.focusPinShowOrAnnotate([pin.id]);
         } catch (error) {
           setStatus(`Annotation #${String(number)} could not be shown: ${errorMessage(error)}`, 'bad');
-          focusPinShowOrAnnotate([pin.id]);
+          focus.focusPinShowOrAnnotate([pin.id]);
         }
       }, { signal: pinListeners.signal });
       const text = element('span', 'note-text');
@@ -195,12 +187,12 @@ export function createStudioSceneNotesPanel(
               `Annotation #${String(number)} was not removed because it is no longer in this scene.`,
               'bad',
             );
-            focusPinShowOrAnnotate([pin.id, ...followingIds, ...precedingIds]);
+            focus.focusPinShowOrAnnotate([pin.id, ...followingIds, ...precedingIds]);
             return;
           }
           reportPersistence(result.persistence);
           deps.redraw();
-          focusPinShowOrAnnotate([...followingIds, ...precedingIds]);
+          focus.focusPinShowOrAnnotate([...followingIds, ...precedingIds]);
         } catch (error) {
           setStatus(`Annotation #${String(number)} could not be removed: ${errorMessage(error)}`, 'bad');
         }
@@ -227,7 +219,7 @@ export function createStudioSceneNotesPanel(
       sceneGeneration += 1;
       briefFailureMessage = null;
       setStatus('');
-      restoreEditorFocus = editorOwnsFocus();
+      restoreEditorFocus = focus.editorOwnsFocus();
       pendingCapture = null;
       editor.hidden = true;
       pinText.value = '';
@@ -268,7 +260,7 @@ export function createStudioSceneNotesPanel(
       setStatus(loadFailure, 'bad');
     }
     updateModePresentation();
-    restoreFocusAfterEditorCloses(restoreEditorFocus);
+    focus.restoreAfterEditorCloses(restoreEditorFocus);
   }
 
   function beginCapture(capture: SceneViewPinCaptureV1): boolean {
@@ -279,8 +271,9 @@ export function createStudioSceneNotesPanel(
       pendingCapture = copiedCapture;
       pinText.value = '';
       editor.hidden = false;
+      updateModePresentation();
       setStatus(
-        `Captured the view and phase at ${String(Math.round(capture.timeMs))} milliseconds. Add the note to queue it.`,
+        `Captured the pressed view and phase at ${String(Math.round(capture.timeMs))} milliseconds. The + marks the exact captured spot; add the note to queue it.`,
         'ok',
       );
       pinText.focus();
@@ -290,19 +283,29 @@ export function createStudioSceneNotesPanel(
       pendingCapture = null;
       pinText.value = '';
       editor.hidden = true;
+      updateModePresentation();
+      try {
+        deps.redraw();
+      } catch (unlockError) {
+        throw new AggregateError(
+          [error, unlockError],
+          'The scene annotation draft failed to open, and its presentation lock could not be released. Reload this Studio before continuing.',
+          { cause: unlockError },
+        );
+      }
       throw error;
     }
   }
 
   function cancelCapture(): void {
     if (disposed) return;
-    const restoreEditorFocus = editorOwnsFocus();
+    const restoreEditorFocus = focus.editorOwnsFocus();
     const hadCapture = pendingCapture !== null || deps.getAnnotationMode();
     pendingCapture = null;
     pinText.value = '';
     editor.hidden = true;
     const disarmed = setMode(false);
-    restoreFocusAfterEditorCloses(restoreEditorFocus);
+    focus.restoreAfterEditorCloses(restoreEditorFocus);
     if (hadCapture && disarmed) setStatus('Scene annotation canceled.');
     deps.redraw();
   }
@@ -324,12 +327,12 @@ export function createStudioSceneNotesPanel(
     }
     try {
       const result = deps.addPin(activeId, { ...pendingCapture, text });
-      const restoreEditorFocus = editorOwnsFocus();
+      const restoreEditorFocus = focus.editorOwnsFocus();
       pendingCapture = null;
       pinText.value = '';
       editor.hidden = true;
       render(activeId);
-      restoreFocusAfterEditorCloses(restoreEditorFocus);
+      focus.restoreAfterEditorCloses(restoreEditorFocus);
       reportPersistence(result.persistence);
       deps.redraw();
     } catch (error) {
@@ -479,12 +482,9 @@ export function createStudioSceneNotesPanel(
 
   return {
     element: root,
-    get annotationMode() {
-      return deps.getAnnotationMode();
-    },
-    get editorOpen() {
-      return pendingCapture !== null;
-    },
+    get annotationMode() { return deps.getAnnotationMode(); },
+    get editorOpen() { return pendingCapture !== null; },
+    get capturedDraft() { return pendingCapture; },
     render,
     syncAnnotationMode,
     beginCapture,

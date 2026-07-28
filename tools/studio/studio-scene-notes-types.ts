@@ -54,6 +54,8 @@ export interface StudioSceneNotesPanelV1 {
   readonly element: HTMLElement;
   readonly annotationMode: boolean;
   readonly editorOpen: boolean;
+  /** The accepted unsaved capture currently identified by the draft marker. */
+  readonly capturedDraft: SceneViewPinCaptureV1 | null;
   render(sceneId: string): void;
   /** Mirrors an app- or harness-driven mode change into this panel's controls. */
   syncAnnotationMode(): void;
