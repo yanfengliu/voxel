@@ -17,6 +17,12 @@ import {
   machineWorksSlatSceneFloorV1,
 } from './machine-works-conveyor.js';
 import { MACHINE_WORKS_SCENE_LAYOUT_V1 } from './machine-works-layout.js';
+import {
+  MACHINE_WORKS_OUTPUT_DOCK_PLACEMENT_ID,
+  MACHINE_WORKS_OUTPUT_DOCK_RECIPE_ID,
+  MACHINE_WORKS_PRESS_BRIDGE_PLACEMENT_ID,
+  MACHINE_WORKS_PRESS_BRIDGE_RECIPE_ID,
+} from './machine-works-purpose.js';
 
 const CELL_SPACING = 22;
 const DISPLAY_GRAIN = 0.65;
@@ -97,16 +103,22 @@ function machineWorksScene(): SceneV1 {
     schemaVersion: VOXEL_SCENE_SCHEMA_V4,
     id: 'studio:scene:contrast-machines',
     label: 'Machine works',
-    summary: 'One consumer-generated fixed-step process drives two Rapier kinematic drums and a closed loop of exact '
-      + 'kinematic belt slats from one controller phase. Each slat follows the nominal drum pitch datum while its '
-      + 'shortened ends meet the stepped cog-cheek planes without positive-volume overlap. '
-      + 'Four exposed axle cogs copy the paired solved-drum poses outside Rapier as non-interacting phase witnesses. '
-      + 'Solver contact and friction move an axis-constrained dynamic carrier '
-      + 'through two validated insertion stations, where a three-piece signal module is assembled from '
-      + 'exact physical sidecars. A visible output hinge then tips the still-colliding carrier so gravity '
-      + 'drops the product into its collection bucket. The cog and belt motion visibly share one drive phase; '
-      + 'this fixture claims synchronized frictional transport, not simulated gear torque or belt tension. '
-      + 'Voxel presents the replay while the consumer owns the bounded physics claim.',
+    summary: 'One consumer-generated fixed-step process drives two Rapier kinematic drums and a closed loop of '
+      + 'exact belt slats from one controller phase; contact and friction move the axis-constrained dynamic carrier. '
+      + 'Four press-bridge feet meet occupied foundation pads, and each narrowed cream stator keeps at least 0.4 '
+      + 'world units of running clearance inside an orange moving C-yoke; rear pads and straight faces expose alignment without '
+      + 'claiming captive guide constraints. A face-connected cabinet-to-bus route identifies external actuation service to the fixed servo '
+      + 'housings and stators, while a head-local buffer starts precharged for pickup holding. Each slide begins with one component already contacting and retained at its energized magnetic pickup face, '
+      + 'follows an externally prescribed vertical position command, then de-energizes only after a two-voxel key '
+      + 'enters empty socket clearance, the cap crown reaches its core seat, and position, orientation, speed, dwell, '
+      + 'and merge-penetration checks pass. The fixture '
+      + 'does not simulate charging, a flexible moving cable, electricity, motor torque, or jaw motion; retention after release is an explicit '
+      + 'software compound weld rather than a solved latch. A widened carrier trunnion enters two foundation-contacting '
+      + 'outboard bearing cradles beyond the belt and face-meets a visible servo coupler; live swept clearance passes '
+      + 'before the position command tips the still-physical carrier about that bucket-boundary axis so gravity drops the welded product into '
+      + 'the collection bucket; the dock is visual alignment evidence, not a revolute constraint or torque model. Four '
+      + 'minimal exterior radial flags remain non-interacting phase witnesses, not torque or tooth-engagement evidence. Voxel '
+      + 'presents the replay while the consumer owns each bounded claim.',
     poseReplay: {
       id: 'studio:pose-replay:machine-works',
       durationMs: 30_000,
@@ -143,10 +155,16 @@ function machineWorksScene(): SceneV1 {
         grain: MACHINE_WORKS_CONVEYOR_V1.slatGrain,
       })),
       {
-        id: 'assembly-gantry',
-        model: 'studio:contrast:shipyard-gantry',
-        at: MACHINE_WORKS_SCENE_LAYOUT_V1.gantry.at,
-        grain: MACHINE_WORKS_SCENE_LAYOUT_V1.gantry.grain,
+        id: MACHINE_WORKS_PRESS_BRIDGE_PLACEMENT_ID,
+        model: MACHINE_WORKS_PRESS_BRIDGE_RECIPE_ID,
+        at: MACHINE_WORKS_SCENE_LAYOUT_V1.pressBridge.at,
+        grain: MACHINE_WORKS_SCENE_LAYOUT_V1.pressBridge.grain,
+      },
+      {
+        id: MACHINE_WORKS_OUTPUT_DOCK_PLACEMENT_ID,
+        model: MACHINE_WORKS_OUTPUT_DOCK_RECIPE_ID,
+        at: MACHINE_WORKS_SCENE_LAYOUT_V1.outputDock.at,
+        grain: MACHINE_WORKS_SCENE_LAYOUT_V1.outputDock.grain,
       },
       {
         id: 'collection-bucket',

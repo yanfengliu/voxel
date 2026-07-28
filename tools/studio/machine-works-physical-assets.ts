@@ -117,6 +117,10 @@ export function createMachineWorksRailFoundationPhysicalAsset(): PhysicalAssetV1
       boxCollider(body, origin, [0, 4, 8], [1, 1, 1], 'solid', material),
       boxCollider(body, origin, [1, 4, 8], [29, 1, 1], 'solid', material),
       boxCollider(body, origin, [30, 4, 8], [1, 1, 1], 'solid', material),
+      boxCollider(body, origin, [8, 4, 6], [5, 1, 2], 'solid', material),
+      boxCollider(body, origin, [8, 4, 9], [5, 1, 2], 'solid', material),
+      boxCollider(body, origin, [21, 4, 6], [5, 1, 2], 'solid', material),
+      boxCollider(body, origin, [21, 4, 9], [5, 1, 2], 'solid', material),
     ],
     constraints: [],
     ports: [
@@ -124,6 +128,48 @@ export function createMachineWorksRailFoundationPhysicalAsset(): PhysicalAssetV1
       { key: 'belt-exit', body, frame: { position: [15.5, 2.5, 0] } },
       { key: 'near-side-guard', body, frame: { position: [0, 2.5, -3] } },
       { key: 'far-side-guard', body, frame: { position: [0, 2.5, 3] } },
+    ],
+  };
+}
+
+export function createMachineWorksPressBridgePhysicalAsset(): PhysicalAssetV1 {
+  const body = 'press-bridge';
+  const origin = [12.5, 10, 3] as const;
+  const material = { friction: 0.8, restitution: 0.02 } as const;
+  return {
+    schemaVersion: STUDIO_PHYSICAL_ASSET_SCHEMA_V1,
+    recipeId: 'studio:machine-works:press-bridge',
+    bodies: [
+      { key: body, type: 'fixed', pose: { position: origin } },
+    ],
+    colliders: [
+      ...openFrameColliders(body, origin, [0, 0, 0], [5, 15, 6], 1, material),
+      ...openFrameColliders(body, origin, [20, 0, 0], [5, 15, 6], 1, material),
+      boxCollider(body, origin, [7, 0, 0], [1, 15, 1], 'solid', material),
+      boxCollider(body, origin, [17, 0, 0], [1, 15, 1], 'solid', material),
+      boxCollider(body, origin, [5, 0, 0], [1, 15, 1], 'solid', material),
+      boxCollider(body, origin, [19, 0, 0], [1, 15, 1], 'solid', material),
+      boxCollider(body, origin, [4, 15, 0], [17, 2, 3], 'solid', material),
+      boxCollider(body, origin, [4, 17, 0], [4, 3, 4], 'solid', material),
+      boxCollider(body, origin, [17, 17, 0], [4, 3, 4], 'solid', material),
+      boxCollider(body, origin, [8, 19, 3], [9, 1, 1], 'solid', material),
+      boxCollider(body, origin, [10, 15, 3], [5, 4, 3], 'solid', material),
+    ],
+    constraints: [],
+    ports: [
+      { key: 'west-front-foundation-foot', body, frame: { position: [-10, -10, -2.5] } },
+      { key: 'west-rear-foundation-foot', body, frame: { position: [-10, -10, 2.5] } },
+      { key: 'east-front-foundation-foot', body, frame: { position: [10, -10, -2.5] } },
+      { key: 'east-rear-foundation-foot', body, frame: { position: [10, -10, 2.5] } },
+      { key: 'core-west-alignment', body, frame: { position: [-8, -2.5, -3] } },
+      { key: 'core-east-alignment', body, frame: { position: [-5, -2.5, -3] } },
+      { key: 'cap-west-alignment', body, frame: { position: [5, -2.5, -3] } },
+      { key: 'cap-east-alignment', body, frame: { position: [8, -2.5, -3] } },
+      { key: 'core-actuator-spine', body, frame: { position: [-7, -2.5, -2.5] } },
+      { key: 'cap-actuator-spine', body, frame: { position: [7, -2.5, -2.5] } },
+      { key: 'core-servo', body, frame: { position: [-6.5, 8.5, -1] } },
+      { key: 'cap-servo', body, frame: { position: [6.5, 8.5, -1] } },
+      { key: 'power-controller', body, frame: { position: [0, 7, 1.5] } },
     ],
   };
 }
@@ -205,11 +251,14 @@ export function createMachineWorksExposedDriveCogPhysicalAsset(): PhysicalAssetV
     bodies: [
       { key: body, type: 'kinematic', pose: { position: origin } },
     ],
-    colliders: driveDrumEndColliders(body, origin, 0, material),
+    colliders: [
+      boxCollider(body, origin, [4, 4, 0], [3, 3, 3], 'solid', material),
+      boxCollider(body, origin, [4, 1, 0], [3, 3, 3], 'solid', material),
+    ],
     constraints: [],
     ports: [
       { key: 'axle', body, frame: { position: [0, 0, 0] } },
-      { key: 'phase-key', body, frame: { position: [0, -3, -1] } },
+      { key: 'phase-key', body, frame: { position: [0, -3, 0] } },
     ],
   };
 }
@@ -235,8 +284,6 @@ export function createMachineWorksCollectionBucketPhysicalAsset(): PhysicalAsset
       boxCollider(body, origin, [1, 9, 10], [13, 1, 2], 'solid', material),
       boxCollider(body, origin, [1, 9, 2], [2, 1, 8], 'solid', material),
       boxCollider(body, origin, [12, 9, 2], [2, 1, 8], 'solid', material),
-      boxCollider(body, origin, [0, 5, 5], [2, 2, 3], 'solid', material),
-      boxCollider(body, origin, [13, 5, 5], [2, 2, 3], 'solid', material),
       // This bounded interior volume reports overlap only; it blocks nothing.
       boxCollider(body, origin, [3, 1, 3], [9, 8, 7], 'sensor'),
     ],
@@ -247,9 +294,45 @@ export function createMachineWorksCollectionBucketPhysicalAsset(): PhysicalAsset
   };
 }
 
+export function createMachineWorksOutputDockPhysicalAsset(): PhysicalAssetV1 {
+  const body = 'output-dock';
+  const origin = [4.5, 4.5, 15.5] as const;
+  const material = { friction: 0.9, restitution: 0.02 } as const;
+  return {
+    schemaVersion: STUDIO_PHYSICAL_ASSET_SCHEMA_V1,
+    recipeId: 'studio:machine-works:output-dock',
+    bodies: [
+      { key: body, type: 'fixed', pose: { position: origin } },
+    ],
+    colliders: [
+      boxCollider(body, origin, [1, 0, 3], [6, 1, 3], 'solid', material),
+      boxCollider(body, origin, [6, 1, 4], [1, 5, 2], 'solid', material),
+      boxCollider(body, origin, [2, 5, 4], [4, 1, 2], 'solid', material),
+      boxCollider(body, origin, [1, 0, 25], [6, 1, 3], 'solid', material),
+      boxCollider(body, origin, [6, 1, 25], [1, 5, 2], 'solid', material),
+      boxCollider(body, origin, [2, 5, 25], [4, 1, 2], 'solid', material),
+      boxCollider(body, origin, [4, 2, 27], [1, 2, 1], 'solid', material),
+      boxCollider(body, origin, [2, 0, 28], [5, 1, 2], 'solid', material),
+      boxCollider(body, origin, [2, 1, 28], [5, 5, 2], 'solid', material),
+      boxCollider(body, origin, [3, 2, 30], [3, 3, 1], 'solid', material),
+      boxCollider(body, origin, [0, 0, 28], [2, 1, 2], 'solid', material),
+      boxCollider(body, origin, [0, 1, 28], [1, 3, 2], 'solid', material),
+      boxCollider(body, origin, [0, 4, 28], [2, 1, 2], 'solid', material),
+    ],
+    constraints: [],
+    ports: [
+      { key: 'pivot-axis', body, frame: { position: [0, -1.5, 0] } },
+      { key: 'near-bearing-bore', body, frame: { position: [0, -1.5, -10.5] } },
+      { key: 'far-bearing-bore', body, frame: { position: [0, -1.5, 10.5] } },
+      { key: 'servo-output', body, frame: { position: [0, -1.5, 11.5] } },
+      { key: 'servo-service', body, frame: { position: [-2.5, 0, 13.5] } },
+    ],
+  };
+}
+
 export function createMachineWorksTransferCarriagePhysicalAsset(): PhysicalAssetV1 {
   const body = 'carriage';
-  const origin = [7.5, 3, 5.5] as const;
+  const origin = [7.5, 3, 11.5] as const;
   const material = { density: 0.8, friction: 1.3, restitution: 0.02 } as const;
   return {
     schemaVersion: STUDIO_PHYSICAL_ASSET_SCHEMA_V1,
@@ -265,16 +348,13 @@ export function createMachineWorksTransferCarriagePhysicalAsset(): PhysicalAsset
       },
     ],
     colliders: [
-      boxCollider(body, origin, [2, 0, 1], [11, 1, 4], 'solid', material),
-      boxCollider(body, origin, [2, 0, 6], [11, 1, 4], 'solid', material),
-      boxCollider(body, origin, [2, 1, 1], [11, 3, 9], 'solid', material),
-      boxCollider(body, origin, [3, 4, 2], [9, 1, 7], 'solid', material),
-      boxCollider(body, origin, [0, 2, 4], [2, 2, 3], 'solid', material),
-      boxCollider(body, origin, [13, 2, 4], [2, 2, 3], 'solid', material),
-      boxCollider(body, origin, [3, 5, 2], [1, 1, 1], 'solid', material),
-      boxCollider(body, origin, [11, 5, 2], [1, 1, 1], 'solid', material),
-      boxCollider(body, origin, [3, 5, 8], [1, 1, 1], 'solid', material),
-      boxCollider(body, origin, [11, 5, 8], [1, 1, 1], 'solid', material),
+      boxCollider(body, origin, [2, 0, 7], [11, 1, 4], 'solid', material),
+      boxCollider(body, origin, [2, 0, 12], [11, 1, 4], 'solid', material),
+      boxCollider(body, origin, [2, 1, 7], [11, 3, 9], 'solid', material),
+      boxCollider(body, origin, [3, 4, 8], [9, 1, 7], 'solid', material),
+      boxCollider(body, origin, [0, 2, 10], [2, 2, 3], 'solid', material),
+      boxCollider(body, origin, [13, 2, 10], [1, 2, 3], 'solid', material),
+      boxCollider(body, origin, [14, 2, 0], [1, 2, 23], 'solid', material),
     ],
     constraints: [],
     ports: [
@@ -282,13 +362,17 @@ export function createMachineWorksTransferCarriagePhysicalAsset(): PhysicalAsset
       { key: 'belt-contact-underside', body, frame: { position: [0, -3, 0] } },
       { key: 'near-runner-contact', body, frame: { position: [0, -3, -2.5] } },
       { key: 'far-runner-contact', body, frame: { position: [0, -3, 2.5] } },
+      { key: 'tip-pivot-axis', body, frame: { position: [7, 0, 0] } },
+      { key: 'near-trunnion', body, frame: { position: [7, 0, -10.5] } },
+      { key: 'far-trunnion', body, frame: { position: [7, 0, 10.5] } },
+      { key: 'servo-drive-face', body, frame: { position: [7, 0, 11.5] } },
     ],
   };
 }
 
 export function createMachineWorksInsertionHeadPhysicalAsset(): PhysicalAssetV1 {
   const body = 'head';
-  const origin = [6.5, 9, 5.5] as const;
+  const origin = [6.5, 9, 10.5] as const;
   const material = { friction: 0.8, restitution: 0.02 } as const;
   return {
     schemaVersion: STUDIO_PHYSICAL_ASSET_SCHEMA_V1,
@@ -297,29 +381,34 @@ export function createMachineWorksInsertionHeadPhysicalAsset(): PhysicalAssetV1 
       { key: body, type: 'kinematic', pose: { position: origin } },
     ],
     colliders: [
-      ...openFrameColliders(body, origin, [2, 10, 1], [9, 7, 9], 1, material),
-      boxCollider(body, origin, [0, 15, 4], [13, 2, 3], 'solid', material),
-      boxCollider(body, origin, [5, 5, 4], [3, 10, 3], 'solid', material),
-      ...openFrameColliders(body, origin, [3, 7, 2], [7, 5, 7], 1, material),
-      boxCollider(body, origin, [2, 4, 2], [9, 2, 7], 'solid', material),
-      boxCollider(body, origin, [2, 0, 3], [2, 4, 5], 'solid', material),
-      boxCollider(body, origin, [9, 0, 3], [2, 4, 5], 'solid', material),
-      boxCollider(body, origin, [4, 1, 4], [1, 2, 3], 'solid', material),
-      boxCollider(body, origin, [8, 1, 4], [1, 2, 3], 'solid', material),
-      boxCollider(body, origin, [1, 8, 10], [1, 2, 1], 'solid', material),
-      boxCollider(body, origin, [1, 8, 8], [1, 2, 2], 'solid', material),
-      boxCollider(body, origin, [2, 8, 8], [1, 2, 1], 'solid', material),
-      boxCollider(body, origin, [11, 8, 10], [1, 2, 1], 'solid', material),
-      boxCollider(body, origin, [11, 8, 8], [1, 2, 2], 'solid', material),
-      boxCollider(body, origin, [10, 8, 8], [1, 2, 1], 'solid', material),
-      boxCollider(body, origin, [4, 17, 0], [5, 1, 11], 'solid', material),
+      boxCollider(body, origin, [3, 0, 7], [7, 1, 7], 'solid', material),
+      boxCollider(body, origin, [3, 1, 7], [7, 3, 7], 'solid', material),
+      boxCollider(body, origin, [4, 4, 7], [5, 3, 2], 'solid', material),
+      boxCollider(body, origin, [5, 4, 9], [1, 14, 3], 'solid', material),
+      boxCollider(body, origin, [6, 4, 10], [1, 14, 2], 'solid', material),
+      boxCollider(body, origin, [7, 4, 9], [1, 14, 3], 'solid', material),
+      boxCollider(body, origin, [6, 4, 9], [1, 14, 1], 'solid', material),
+      boxCollider(body, origin, [2, 7, 7], [3, 5, 7], 'solid', material),
+      boxCollider(body, origin, [8, 7, 7], [3, 5, 7], 'solid', material),
+      boxCollider(body, origin, [5, 7, 7], [3, 2, 2], 'solid', material),
+      boxCollider(body, origin, [5, 7, 12], [3, 2, 2], 'solid', material),
+      boxCollider(body, origin, [5, 10, 7], [3, 2, 2], 'solid', material),
+      boxCollider(body, origin, [5, 10, 12], [3, 2, 2], 'solid', material),
+      boxCollider(body, origin, [1, 8, 13], [11, 2, 2], 'solid', material),
+      boxCollider(body, origin, [1, 8, 15], [1, 2, 1], 'solid', material),
+      boxCollider(body, origin, [11, 8, 15], [1, 2, 1], 'solid', material),
+      boxCollider(body, origin, [2, 8, 15], [1, 2, 6], 'solid', material),
+      boxCollider(body, origin, [10, 8, 15], [1, 2, 6], 'solid', material),
+      boxCollider(body, origin, [3, 8, 20], [7, 2, 1], 'solid', material),
     ],
     constraints: [],
     ports: [
-      { key: 'grip', body, frame: { position: [0, -9, 0] } },
+      { key: 'pickup-face', body, frame: { position: [0, -9, 0] } },
+      { key: 'pickup-buffer', body, frame: { position: [0, -3.5, -2.5] } },
       { key: 'mount', body, frame: { position: [0, 9, 0] } },
-      { key: 'west-rear-guide', body, frame: { position: [-5, 0, 5.5] } },
-      { key: 'east-rear-guide', body, frame: { position: [5, 0, 5.5] } },
+      { key: 'west-rear-alignment', body, frame: { position: [-5, 0, 5.5] } },
+      { key: 'east-rear-alignment', body, frame: { position: [5, 0, 5.5] } },
+      { key: 'actuator-yoke-cavity', body, frame: { position: [0, 0, 7] } },
     ],
   };
 }
@@ -339,10 +428,6 @@ export function createMachineWorksProductBasePhysicalAsset(): PhysicalAssetV1 {
       boxCollider(body, origin, [3, 0, 0], [5, 1, 3], 'solid', material),
       boxCollider(body, origin, [3, 0, 8], [5, 1, 3], 'solid', material),
       ...openFrameColliders(body, origin, [3, 1, 3], [5, 3, 5], 1, material),
-      boxCollider(body, origin, [1, 1, 4], [2, 1, 3], 'solid', material),
-      boxCollider(body, origin, [8, 1, 4], [2, 1, 3], 'solid', material),
-      boxCollider(body, origin, [4, 1, 1], [3, 1, 2], 'solid', material),
-      boxCollider(body, origin, [4, 1, 8], [3, 1, 2], 'solid', material),
     ],
     constraints: [],
     ports: [
@@ -365,16 +450,17 @@ export function createMachineWorksProductCorePhysicalAsset(): PhysicalAssetV1 {
     colliders: [
       boxCollider(body, origin, [2, 0, 2], [3, 2, 3], 'solid', material),
       ...openFrameColliders(body, origin, [0, 2, 0], [7, 7, 7], 1, material),
-      boxCollider(body, origin, [2, 2, 2], [3, 7, 3], 'solid', material),
+      boxCollider(body, origin, [2, 2, 2], [3, 5, 3], 'solid', material),
       boxCollider(body, origin, [1, 5, 0], [5, 1, 1], 'solid', material),
       boxCollider(body, origin, [3, 5, 1], [1, 1, 1], 'solid', material),
       boxCollider(body, origin, [3, 5, 5], [1, 1, 2], 'solid', material),
-      boxCollider(body, origin, [3, 9, 3], [1, 1, 1], 'solid', material),
     ],
     constraints: [],
     ports: [
-      { key: 'base-key', body, frame: { position: [0, -5, 0] } },
-      { key: 'cap-socket', body, frame: { position: [0, 5, 0] } },
+      { key: 'base-key', body, frame: { position: [0, -3, 0] } },
+      { key: 'cap-socket', body, frame: { position: [0, 4, 0] } },
+      { key: 'cap-seat', body, frame: { position: [0, 4, 0] } },
+      { key: 'pickup-face', body, frame: { position: [0, 4, 0] } },
     ],
   };
 }
@@ -398,8 +484,10 @@ export function createMachineWorksProductCapPhysicalAsset(): PhysicalAssetV1 {
     ],
     constraints: [],
     ports: [
-      { key: 'core-key', body, frame: { position: [0, -2.5, 0] } },
+      { key: 'core-key', body, frame: { position: [0, -0.5, 0] } },
+      { key: 'shoulder-seat', body, frame: { position: [0, -0.5, 0] } },
       { key: 'top-datum', body, frame: { position: [0, 2.5, 0] } },
+      { key: 'pickup-face', body, frame: { position: [0, 2.5, 0] } },
     ],
   };
 }
@@ -407,10 +495,12 @@ export function createMachineWorksProductCapPhysicalAsset(): PhysicalAssetV1 {
 export function createMachineWorksPhysicalBook(): PhysicalAssetBookV1 {
   const assets = [
     createMachineWorksRailFoundationPhysicalAsset(),
+    createMachineWorksPressBridgePhysicalAsset(),
     createMachineWorksConveyorSlatPhysicalAsset(),
     createMachineWorksDriveDrumPhysicalAsset(),
     createMachineWorksExposedDriveCogPhysicalAsset(),
     createMachineWorksCollectionBucketPhysicalAsset(),
+    createMachineWorksOutputDockPhysicalAsset(),
     createMachineWorksTransferCarriagePhysicalAsset(),
     createMachineWorksInsertionHeadPhysicalAsset(),
     createMachineWorksProductBasePhysicalAsset(),

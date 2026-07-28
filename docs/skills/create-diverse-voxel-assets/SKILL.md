@@ -27,6 +27,8 @@ Read the selected references completely before editing. Inspect the live reposit
 - Treat fingerprints and batch scores as search evidence, never as aesthetic approval. Review every promoted design from multiple views at its intended game scale.
 - Never auto-promote generated candidates or rewrite accepted fixtures from generation output.
 - Distinguish a comparison board from a composed scene. A grid of unrelated models stays a contact sheet even when every model shares a domain.
+- Run a purpose-and-subtraction pass at authored-decision granularity: map every visible voxel group or material change, direct step, part, recipe or model feature, placement, and motion to a functional, structural, semantic, causal, or readability job; ask what is lost if it is removed and whether relocation improves that job. Delete or redesign ornament, and do not use diversity metrics to rescue it.
+- Make visible mechanisms mechanically legible: show or explicitly account for support and load paths, anchors and joints, actuation or power transmission, constrained degrees of freedom, contact or grasp, transfer, and release. If the artifact cannot honestly express these, move the behavior to a consumer fixture or label it a static or kinematic study.
 - Give motion semantic work. Do not animate an asset merely to make a playback control active.
 - Verify visual behavior in a real browser at fixed camera, viewport, and device scale. Do not approve a rendering or composition from source inspection alone.
 
@@ -42,6 +44,8 @@ Inventory the current catalog by semantic role, shape family, construction gramm
 
 State the gameplay or scene job, viewing distance, art-direction invariants, physical or picking needs, animation meaning, and nearest existing neighbors.
 
+For every dominant mass, void, material-role transition, accent, and moving element, name its purpose and removal consequence. For mechanisms, name the load path, anchor, actuator or power source, joint or constraint, and contact, transfer, and release sequence.
+
 Give each candidate family a one-sentence visual thesis. Name the major axes it must change and the constraints it must preserve. Include at least one cross-family hypothesis and one wildcard hypothesis that changes the organizing idea rather than tuning parameters.
 
 ### 3. Generate wide by hypothesis
@@ -55,6 +59,8 @@ Use deterministic batch generation to cover a neighborhood, then author ideas ou
 Build the smallest useful asset first: direct steps, then an earned reusable part, then a recipe, then a composed recipe, then a scene. Keep role names separate from consumer colors. Preserve deterministic seeds and a reconstructable build history.
 
 Reject empty, invalid, clipped, no-op, non-rebuildable, unintentionally intersecting, hidden-duplicate, or unexplained destructive-repainting results before visual review. Preserve deliberate layering inside one recipe when the live builder permits it.
+
+Before visual review, run a subtraction-and-relocation pass. Remove each authored feature in turn at the intended camera and scale; restore it only when removal weakens function, structure, semantic or causal meaning, or readability. If it has a job but no reason to be where it is, anchor it to a mating frame, load path, route, clearance, or focal hierarchy, or remove it.
 
 ### 5. Select narrow with evidence
 

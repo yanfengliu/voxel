@@ -203,7 +203,7 @@ export function machineWorksExposedCogMotionV1(
     || index < 0
     || index >= MACHINE_WORKS_EXPOSED_COGS_V1.length) {
     throw new Error(
-      `Cannot sample Machine Works exposed drive cog ${String(index)}: expected an integer from 0 `
+      `Cannot sample Machine Works exposed phase flag ${String(index)}: expected an integer from 0 `
       + `through ${String(MACHINE_WORKS_EXPOSED_COGS_V1.length - 1)}.`,
     );
   }

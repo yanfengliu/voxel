@@ -18,7 +18,7 @@ List the scene's nodes and edges before coordinates.
 
 Give each placement a role such as source, destination, support, crossing, control, transfer, storage, service access, boundary, hazard, or landmark.
 
-Give every non-background placement at least one intentional relation:
+Give every placement, including foundations, context, and landmarks, a named purpose and at least one intentional relation:
 
 ```text
 feeds -> gates -> carries -> crosses -> drains
@@ -30,7 +30,9 @@ contains -> releases
 terminates -> anchors
 ```
 
-If an asset has no relation, remove it, move it to a comparison board, or state why it is an intentional landmark.
+If an asset has no relation, remove it or move it to a comparison board. A landmark must still anchor hierarchy, orientation, or navigation.
+
+For each placement record why it is present, why it has this coordinate and orientation, what changes if it is removed, and which datum or relationship relocation would break. If none, remove it or move it to comparison evidence.
 
 When the live scene schema has no relationship fields, keep the graph as authored design data, creator constants, tests, or concise documentation rather than silently inventing a runtime contract. Encode its visible consequences through positions, turns, elevations, periods, and model choices.
 
@@ -46,6 +48,8 @@ Establish:
 6. enough contextual surface to explain relationships without swallowing reusable models into one undifferentiated grid.
 
 Place crossings perpendicular to what they cross. Attach controls to what they control. Make stairs and lifts reach real levels. Make signals face an approach. Make supports meet their loads. Make channels enter and leave compatible openings.
+
+For visible mechanisms, trace the support or load path to ground or parent, anchor and joint, actuator or transmitted power, allowed motion and clearance, and contact, grasp, transfer, and release sequence. Visual adjacency does not prove a handoff, and a decorative frame does not prove support or power.
 
 Overlap-free placement is only a validity gate. It does not prove contact, flow, access, hierarchy, or meaning.
 
@@ -103,11 +107,17 @@ Ask a fresh reviewer:
 2. Which object is focal, and why?
 3. What connects to what?
 4. Where does movement or flow begin and end?
-5. Which placement could be removed without changing the story?
-6. Is any claimed interaction only proximity?
+5. For every visible feature, what job would be lost if it vanished?
+6. Which feature can move elsewhere without weakening its job, and if it can, why is it here?
+7. What supports each moving element, how is it attached and constrained, and what actuates or powers it?
+8. What exact contact or event causes each pickup, carry, release, or transfer?
+9. Does any shape or material choice communicate only ornament rather than load, routing, safety, hierarchy, or state?
+10. Is any claimed interaction only proximity?
 
 If the reviewer sees isolated specimens, repair composition rather than explaining the title more loudly.
 
 ## Test durable intent
 
 Add scene-specific tests for important relationships: shared axes, adjacency, elevation, turns, clearances, model roles, synchronized periods, schema capabilities, and fixed default-view evidence. Keep generic catalog-membership coverage separate; membership does not prove composition.
+
+When intent is encoded as creator constants, add coverage tests that every scene placement and recipe has an exact live purpose-map entry, every direct recipe step or authored feature has a purpose-bearing Build note or feature record, and no record names a missing element. For mechanisms, test visible-to-physical support alignment, grounded load paths, named attachment frames, actuator-to-body linkage, allowed-axis clearance, contact-before-grasp, stable carried relative transform, release-before-deposition, and absence of proximity-only teleports. Keep subtraction and relocation readability as fixed-view human review; a purpose string alone does not prove the rendered result.

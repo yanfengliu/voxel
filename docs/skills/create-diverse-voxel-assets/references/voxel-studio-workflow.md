@@ -23,7 +23,8 @@ Use the reuse ladder `direct steps -> earned part -> recipe -> composed recipe -
 3. Use **Examine** for metadata and role, **Build** for construction stages and nested reuse, **Motion** for phase semantics, and **Notes** for review findings.
 4. Inspect the asset from several yaws, at the intended game scale, in both study-edge and game-like presentation where applicable.
 5. Pin concrete notes against geometry or composition.
-6. Use **Send request** only as a brief handoff. Voxel's dev server saves JSON under `tools/studio/requests/`; it does not start an agent or send a notification.
+6. Use Build stages and fixed views for the subtraction-and-relocation pass; pin a note whenever an element's job, location, support, actuation, or handoff is not visibly legible.
+7. Use **Send request** only as a brief handoff. Voxel's dev server saves JSON under `tools/studio/requests/`; it does not start an agent or send a notification.
 
 Everything important should also be reachable through `window.voxelStudio`. Prefer that harness for deterministic browser evidence rather than inventing a parallel debug path.
 
@@ -46,6 +47,8 @@ For a curated contrast recipe:
 4. Add it to a hand-authored scene only when it has a real compositional role. Catalog coverage alone belongs in contact-sheet evidence.
 
 Use direct steps when no reusable grammar fits. Use `partStepV1` for an earned part and nested recipe placement for a reusable assembly. Watch the Build stages to catch forbidden nested-occurrence intersections, hidden duplicate mass, accidental or unexplained repainting, no-op steps, clipped mirrors, and misleading construction prose. Direct steps within one recipe may layer deliberately when the builder contract permits it.
+
+For a non-trivial recipe, group steps into named authored features and record each feature, part invocation, material accent, and motion in its Build note or a creator-local purpose map; reserve the fuller location, removal, and relationship record for non-obvious or mechanical choices, and test coverage without inventing a public schema.
 
 Run `npm run studio:build <modelId>` for a headless construction sheet when the live script supports the model. Inspect `scripts/studio.mjs` and `package.json` before assuming additional subcommands in a consumer repo.
 

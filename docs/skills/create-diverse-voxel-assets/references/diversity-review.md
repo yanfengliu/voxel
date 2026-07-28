@@ -12,6 +12,9 @@ Camera, scale, and viewing distance:
 Semantic role:
 Art-direction invariants:
 Physical, picking, and animation needs:
+Purpose map (authored feature -> job):
+Removal consequence and relocation datum:
+Mechanism truth (supports and anchors, actuation or power, constraints, contact, transfer, release):
 Nearest existing assets:
 Must preserve:
 Must differ:
@@ -77,7 +80,9 @@ Reject a candidate when its apparent difference comes mainly from:
 - one parameter exaggerated without a new hierarchy;
 - motion that moves the whole asset without semantic meaning;
 - a new name or domain tag on old geometry;
-- metric distance that is visually negligible at game scale.
+- metric distance that is visually negligible at game scale;
+- a decorative voxel group, material change, accent, or motion whose removal changes no function, structure, semantics, or intended-scale readability;
+- a mechanism whose support, load path, actuation or power, constraints, or handoff is absent or contradicted by its visible form.
 
 Also reject a visually novel asset when it cannot be rebuilt, does not fit the consumer's camera or performance budget, breaks picking or physical meaning, or contradicts the art direction.
 
@@ -96,6 +101,8 @@ Fixed-view evidence:
 Motion evidence:
 Scene role:
 Reuse introduced:
+Purpose and subtraction record:
+Mechanical-truth evidence:
 Residual risks:
 Reviewer decision:
 ```

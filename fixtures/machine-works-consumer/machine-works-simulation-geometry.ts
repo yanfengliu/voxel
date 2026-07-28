@@ -32,6 +32,11 @@ export interface MatingFrameEvidenceV1 {
   readonly withinTolerance: boolean;
 }
 
+export interface PoseCorrectionV1 {
+  readonly position: number;
+  readonly angleRadians: number;
+}
+
 export function rotateVector(rotation: Rotation, vector: Vector): Vector {
   const tx = 2 * (rotation.y * vector.z - rotation.z * vector.y);
   const ty = 2 * (rotation.z * vector.x - rotation.x * vector.z);
@@ -53,6 +58,45 @@ function subtractVectors(left: Vector, right: Vector): Vector {
 
 export function magnitude(vector: Vector): number {
   return Math.hypot(vector.x, vector.y, vector.z);
+}
+
+function normalizedRotationDot(left: Rotation, right: Rotation): number {
+  const leftMagnitude = Math.hypot(left.x, left.y, left.z, left.w);
+  const rightMagnitude = Math.hypot(right.x, right.y, right.z, right.w);
+  if (!Number.isFinite(leftMagnitude) || leftMagnitude <= 0
+    || !Number.isFinite(rightMagnitude) || rightMagnitude <= 0) {
+    throw new Error(
+      'Cannot measure Machine Works orientation: both quaternions must have finite, '
+      + 'nonzero magnitude.',
+    );
+  }
+  const dot = (
+    left.x * right.x + left.y * right.y + left.z * right.z + left.w * right.w
+  ) / (leftMagnitude * rightMagnitude);
+  return Math.max(-1, Math.min(1, dot));
+}
+
+export function measurePoseCorrection(
+  actual: Pick<RecordedRigidPoseV1, 'translation' | 'rotation'>,
+  canonical: Pick<RecordedRigidPoseV1, 'translation' | 'rotation'>,
+): PoseCorrectionV1 {
+  const position = magnitude(subtractVectors(actual.translation, canonical.translation));
+  if (!Number.isFinite(position) || position < 0) {
+    throw new Error(
+      `Cannot measure Machine Works merge correction: translation distance ${String(position)} `
+      + 'is not finite and nonnegative.',
+    );
+  }
+  const angleRadians = 2 * Math.acos(
+    Math.min(1, Math.abs(normalizedRotationDot(actual.rotation, canonical.rotation))),
+  );
+  if (!Number.isFinite(angleRadians) || angleRadians < 0) {
+    throw new Error(
+      `Cannot measure Machine Works merge correction: angular distance ${String(angleRadians)} `
+      + 'radians is not finite and nonnegative.',
+    );
+  }
+  return { position, angleRadians };
 }
 
 export function rigidPose(body: RigidBody): RecordedRigidPoseV1 {
@@ -139,11 +183,7 @@ export function measureMatingFrames(
   ));
   const firstRotation = worldAnchorRotation(first, firstAnchor);
   const secondRotation = worldAnchorRotation(second, secondAnchor);
-  const orientationDot = Math.abs(
-    firstRotation.x * secondRotation.x + firstRotation.y * secondRotation.y
-      + firstRotation.z * secondRotation.z + firstRotation.w * secondRotation.w,
-  );
-  const orientationError = 1 - orientationDot;
+  const orientationError = 1 - Math.abs(normalizedRotationDot(firstRotation, secondRotation));
   return {
     positionError,
     relativeSpeed,
@@ -284,6 +324,32 @@ export function collidersTouch(
     }
   }
   return false;
+}
+
+/**
+ * Returns the deepest negative contact distance across two exact collider
+ * compounds. Boundary contact is zero; a positive result is solver
+ * penetration that must remain inside the caller's declared slop budget.
+ */
+export function maximumColliderPenetration(
+  world: World,
+  left: readonly Collider[],
+  right: readonly Collider[],
+): number {
+  let maximumPenetration = 0;
+  for (const first of left) {
+    for (const second of right) {
+      world.contactPair(first, second, (manifold) => {
+        for (let contact = 0; contact < manifold.numContacts(); contact += 1) {
+          maximumPenetration = Math.max(
+            maximumPenetration,
+            -manifold.contactDist(contact),
+          );
+        }
+      });
+    }
+  }
+  return maximumPenetration;
 }
 
 export function strongestProductContact(

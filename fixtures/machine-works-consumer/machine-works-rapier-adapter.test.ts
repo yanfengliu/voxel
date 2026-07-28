@@ -320,7 +320,7 @@ describe('Machine Works Rapier sidecar adapter', () => {
         { position: { x: 24, y: 5, z: 0 } },
         { grain: 1 },
       );
-      expect(bucket.solidColliders).toHaveLength(12);
+      expect(bucket.solidColliders).toHaveLength(10);
       expect(bucket.sensorColliders).toHaveLength(1);
       expect(bucket.sensorColliders[0]?.isSensor()).toBe(true);
       expect(bucket.sensorColliders[0]?.halfExtents()).toEqual({ x: 4.5, y: 4, z: 3.5 });

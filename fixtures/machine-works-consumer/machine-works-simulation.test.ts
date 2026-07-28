@@ -6,7 +6,9 @@ import {
   MACHINE_WORKS_ATTACHMENT_RULE,
   MACHINE_WORKS_BELT_DRIVE,
   MACHINE_WORKS_COLLECTION_RULE,
+  MACHINE_WORKS_HEAD_ACTUATION_RULE,
   MACHINE_WORKS_LAYOUT,
+  MACHINE_WORKS_PICKUP_RULE,
   MACHINE_WORKS_TICKS,
   machineWorksInputDescriptionV1,
 } from './machine-works-fixture-config.js';
@@ -15,6 +17,8 @@ import {
   MACHINE_WORKS_FRAME_COUNT,
   MACHINE_WORKS_TRACK_IDS,
   assertMachineWorksAttachmentDwellV1,
+  assertMachineWorksMergeCorrectionV1,
+  assertMachineWorksMergePenetrationV1,
   nextMachineWorksMatingDwellTicksV1,
   simulateMachineWorksV1,
   type MachineWorksTraceV1,
@@ -105,11 +109,50 @@ function rotation(
   ];
 }
 
+function relativeTranslation(
+  trace: MachineWorksTraceV1,
+  frame: number,
+  childPlacementId: string,
+  parentPlacementId: string,
+): readonly [number, number, number] {
+  const child = translation(trace, frame, childPlacementId);
+  const parent = translation(trace, frame, parentPlacementId);
+  return [
+    child[0] - parent[0],
+    child[1] - parent[1],
+    child[2] - parent[2],
+  ];
+}
+
 describe('Machine Works consumer physics fixture', () => {
   let trace: MachineWorksTraceV1;
 
   beforeAll(async () => {
     trace = await simulateMachineWorksV1();
+  });
+
+  it('rejects merge penetration above the hashed slop budget', () => {
+    expect(() => assertMachineWorksMergePenetrationV1(
+      'adversarial overlap',
+      42,
+      MACHINE_WORKS_ATTACHMENT_RULE.maximumMergePenetration + 0.000_001,
+    )).toThrow(/adversarial overlap.*fixed tick 42.*exceeds the declared merge slop/s);
+  });
+
+  it('rejects an excessive or invalid canonical merge correction', () => {
+    expect(() => assertMachineWorksMergeCorrectionV1(
+      'adversarial correction',
+      43,
+      {
+        position: MACHINE_WORKS_ATTACHMENT_RULE.maximumMergePositionCorrection + 0.000_001,
+        angleRadians: 0,
+      },
+    )).toThrow(/adversarial correction.*fixed tick 43.*exceeding limits/s);
+    expect(() => assertMachineWorksMergeCorrectionV1(
+      'invalid correction',
+      44,
+      { position: Number.NaN, angleRadians: -1 },
+    )).toThrow(/invalid correction.*fixed tick 44.*finite and nonnegative/s);
   });
 
   it('emits one bounded immutable pose and velocity frame per fixed tick', () => {
@@ -136,7 +179,63 @@ describe('Machine Works consumer physics fixture', () => {
     });
     expect(trace.provenance.capabilityLabels).toContain('colliding-tip-release');
     expect(trace.provenance.capabilityLabels).toContain('belt-contact-transport');
-    expect(trace.provenance.capabilityLabels).toContain('cog-belt-phase-coupling');
+    expect(trace.provenance.capabilityLabels).toContain('drive-phase-indicators');
+    expect(trace.provenance.capabilityLabels).toContain('preloaded-magnetic-pickup');
+    expect(trace.provenance.capabilityLabels).toContain('validated-keyed-seat');
+  });
+
+  it('keeps each preloaded component on its magnetic pickup face until keyed insertion releases it', () => {
+    expect(MACHINE_WORKS_PICKUP_RULE).toMatchObject({
+      loading: 'preloaded-before-frame-zero',
+      hold: 'energized-fixed-joint',
+      pickupDuringReplay: false,
+      articulatedJaws: false,
+    });
+    expect(MACHINE_WORKS_HEAD_ACTUATION_RULE).toMatchObject({
+      supportPlacementId: 'assembly-press-bridge',
+      solverMode: 'kinematic-position-command',
+      pickupStateAtFrameZero: 'precharged-and-energized',
+    });
+    expect(MACHINE_WORKS_HEAD_ACTUATION_RULE.externalActuationPath)
+      .toEqual(expect.arrayContaining(['face-connected-overhead-bus', 'fixed-linear-stator-spines']));
+    expect(MACHINE_WORKS_HEAD_ACTUATION_RULE.pickupHoldPath)
+      .toEqual(expect.arrayContaining(['precharged-head-local-energy-buffer', 'electromagnetic-pickup-plates']));
+
+    const coreAtStart = relativeTranslation(trace, 0, 'product-core', 'core-head');
+    const coreBeforeLock = relativeTranslation(
+      trace,
+      MACHINE_WORKS_TICKS.coreAttached - 1,
+      'product-core',
+      'core-head',
+    );
+    const capAtStart = relativeTranslation(trace, 0, 'product-cap', 'cap-head');
+    const capBeforeLock = relativeTranslation(
+      trace,
+      MACHINE_WORKS_TICKS.assembled - 1,
+      'product-cap',
+      'cap-head',
+    );
+    const coreHoldError = Math.max(...coreBeforeLock.map((value, axis) =>
+      Math.abs(value - coreAtStart[axis]!)));
+    const capHoldError = Math.max(...capBeforeLock.map((value, axis) =>
+      Math.abs(value - capAtStart[axis]!)));
+    expect(coreHoldError).toBeLessThan(MACHINE_WORKS_ATTACHMENT_RULE.maximumPositionError);
+    expect(capHoldError).toBeLessThan(MACHINE_WORKS_ATTACHMENT_RULE.maximumPositionError);
+
+    const coreAfterRelease = relativeTranslation(
+      trace,
+      MACHINE_WORKS_TICKS.coreAttached + 30,
+      'product-core',
+      'core-head',
+    );
+    const capAfterRelease = relativeTranslation(
+      trace,
+      MACHINE_WORKS_TICKS.assembled + 30,
+      'product-cap',
+      'cap-head',
+    );
+    expect(coreAfterRelease[1]).not.toBeCloseTo(coreAtStart[1], 2);
+    expect(capAfterRelease[1]).not.toBeCloseTo(capAtStart[1], 2);
   });
 
   it('requires consecutive mating-port dwell before either compound merge', () => {
@@ -146,16 +245,34 @@ describe('Machine Works consumer physics fixture', () => {
         mergeTick: MACHINE_WORKS_TICKS.coreAttached,
         qualifyingTicks: expect.any(Number),
         requiredTicks: MACHINE_WORKS_ATTACHMENT_RULE.minimumDwellTicks,
+        positionCorrection: expect.any(Number),
+        orientationCorrection: expect.any(Number),
+        maximumPenetration: expect.any(Number),
+        allowedPenetration: MACHINE_WORKS_ATTACHMENT_RULE.maximumMergePenetration,
       },
       {
         attachment: 'cap-to-core',
         mergeTick: MACHINE_WORKS_TICKS.assembled,
         qualifyingTicks: expect.any(Number),
         requiredTicks: MACHINE_WORKS_ATTACHMENT_RULE.minimumDwellTicks,
+        positionCorrection: expect.any(Number),
+        orientationCorrection: expect.any(Number),
+        maximumPenetration: expect.any(Number),
+        allowedPenetration: MACHINE_WORKS_ATTACHMENT_RULE.maximumMergePenetration,
       },
     ]);
     for (const evidence of trace.attachmentEvidence) {
       expect(evidence.qualifyingTicks).toBeGreaterThanOrEqual(evidence.requiredTicks);
+      expect(evidence.positionCorrection)
+        .toBeLessThanOrEqual(MACHINE_WORKS_ATTACHMENT_RULE.maximumMergePositionCorrection);
+      expect(evidence.positionCorrection).toBeGreaterThanOrEqual(0);
+      expect(evidence.orientationCorrection)
+        .toBeLessThanOrEqual(
+          MACHINE_WORKS_ATTACHMENT_RULE.maximumMergeAngularCorrectionRadians,
+        );
+      expect(evidence.orientationCorrection).toBeGreaterThanOrEqual(0);
+      expect(evidence.maximumPenetration).toBeGreaterThanOrEqual(0);
+      expect(evidence.maximumPenetration).toBeLessThanOrEqual(evidence.allowedPenetration);
     }
     expect(trace.assemblyStates[MACHINE_WORKS_TICKS.coreAttached - 1]).toBe(0);
     expect(trace.assemblyStates[MACHINE_WORKS_TICKS.coreAttached]).toBe(1);
@@ -195,6 +312,10 @@ describe('Machine Works consumer physics fixture', () => {
   it('hashes the minimum dwell rule as part of the complete canonical solver input', () => {
     const description = machineWorksInputDescriptionV1();
     expect(description).toMatchObject({
+      timeline: {
+        headActuation: MACHINE_WORKS_HEAD_ACTUATION_RULE,
+      },
+      pickupRule: MACHINE_WORKS_PICKUP_RULE,
       assemblyRule: {
         maximumOrientationError: MACHINE_WORKS_ATTACHMENT_RULE.maximumOrientationError,
         minimumDwellTicks: MACHINE_WORKS_ATTACHMENT_RULE.minimumDwellTicks,
@@ -223,8 +344,14 @@ describe('Machine Works consumer physics fixture', () => {
       throw new Error('The Machine Works trace must contain solver contact evidence.');
     }
     expect(contact.point.every(Number.isFinite)).toBe(true);
-    expect(contact.point[0]).toBeGreaterThanOrEqual(MACHINE_WORKS_LAYOUT.bucketCenterX - 6);
-    expect(contact.point[0]).toBeLessThanOrEqual(MACHINE_WORKS_LAYOUT.bucketCenterX + 6);
+    const bucketHalfWidth = MACHINE_WORKS_SCENE_LAYOUT_V1.bucket.sizeVoxels[0]
+      * MACHINE_WORKS_SCENE_LAYOUT_V1.bucket.grain / 2;
+    expect(contact.point[0]).toBeGreaterThanOrEqual(
+      MACHINE_WORKS_LAYOUT.bucketCenterX - bucketHalfWidth,
+    );
+    expect(contact.point[0]).toBeLessThanOrEqual(
+      MACHINE_WORKS_LAYOUT.bucketCenterX + bucketHalfWidth,
+    );
     expect(contact.point[1]).toBeGreaterThanOrEqual(0);
     const bucketTop = MACHINE_WORKS_SCENE_LAYOUT_V1.bucket.at[1]
       + MACHINE_WORKS_SCENE_LAYOUT_V1.bucket.sizeVoxels[1]
@@ -388,18 +515,23 @@ describe('Machine Works consumer physics fixture', () => {
     const description = machineWorksInputDescriptionV1();
     expect(description).toMatchObject({
       presentationSupports: {
-        exposedDriveCogs: {
+        exposedDrivePhaseFlags: {
           placements: MACHINE_WORKS_EXPOSED_COGS_V1,
           interaction: expect.stringContaining('not ingested into Rapier'),
+        },
+        outputDock: {
+          placementId: 'assembly-output-dock',
+          interaction: expect.stringMatching(/trunnion.*not ingested into Rapier/i),
         },
       },
     });
     expect(description.bodyCreationOrder).not.toEqual(expect.arrayContaining(
       MACHINE_WORKS_EXPOSED_COGS_V1.map(({ id }) => id),
     ));
+    expect(description.bodyCreationOrder).not.toContain('output-dock');
   });
 
-  it('keeps the release carriage physical while its servo tips out of the fall path', () => {
+  it('keeps the release carriage physical while its visible dock-aligned servo tips out of the fall path', () => {
     const released = trace.events.find(({ kind }) => kind === 'released')!.tick;
     const beforeHandoff = translation(trace, released - 1, 'assembly-carriage');
     const handoff = translation(trace, released, 'assembly-carriage');
@@ -408,6 +540,33 @@ describe('Machine Works consumer physics fixture', () => {
     const handoffVelocity = linearVelocity(trace, released, 'assembly-carriage');
     const tipped = translation(trace, MACHINE_WORKS_TICKS.tipComplete, 'assembly-carriage');
     const tippedRotation = rotation(trace, MACHINE_WORKS_TICKS.tipComplete, 'assembly-carriage');
+    expect(trace.outputDockEvidence).toMatchObject({
+      tick: released,
+      tipRadians: MACHINE_WORKS_LAYOUT.carriageTipRadians,
+      requiredClearance: MACHINE_WORKS_SCENE_LAYOUT_V1.outputDock.minimumSweptClearance,
+      limitingFoundationCarrierSolid: 6,
+      limitingFoundationSolid: 22,
+      limitingBucketCarrierSolid: 3,
+      limitingBucketSolid: 8,
+    });
+    expect(trace.outputDockEvidence.pivot[0]).toBeCloseTo(
+      handoff[0] + MACHINE_WORKS_LAYOUT.carriageTipPivotLocalX,
+      5,
+    );
+    expect(trace.outputDockEvidence.pivot[1]).toBeCloseTo(handoff[1], 5);
+    expect(trace.outputDockEvidence.sweptRadius).toBeCloseTo(Math.hypot(0.2, 0.4), 5);
+    expect(trace.outputDockEvidence.minimumClearance)
+      .toBeGreaterThan(trace.outputDockEvidence.requiredClearance);
+    expect(trace.outputDockEvidence.minimumClearance).toBeCloseTo(
+      MACHINE_WORKS_LAYOUT.outputDockCenterX + 0.6
+        - trace.outputDockEvidence.pivot[0]
+        - trace.outputDockEvidence.sweptRadius,
+      5,
+    );
+    expect(trace.outputDockEvidence.minimumFoundationClearance)
+      .toBeCloseTo(0.7517552918291432, 6);
+    expect(trace.outputDockEvidence.minimumBucketClearance)
+      .toBeCloseTo(0.5989688873291019, 6);
     expect(Math.hypot(
       handoff[0] - beforeHandoff[0],
       handoff[1] - beforeHandoff[1],
@@ -423,13 +582,13 @@ describe('Machine Works consumer physics fixture', () => {
     )).toBeLessThan(0.01);
     expect(tipped).toEqual(expect.arrayContaining([
       expect.closeTo(
-        handoff[0] + MACHINE_WORKS_LAYOUT.carriageHingeLocalX,
+        handoff[0] + MACHINE_WORKS_LAYOUT.carriageTipPivotLocalX,
         3,
       ),
       expect.closeTo(
-        handoff[1]
+          handoff[1]
           + Math.sin(MACHINE_WORKS_LAYOUT.carriageTipRadians)
-            * -MACHINE_WORKS_LAYOUT.carriageHingeLocalX,
+            * -MACHINE_WORKS_LAYOUT.carriageTipPivotLocalX,
         3,
       ),
       expect.closeTo(handoff[2], 3),
@@ -492,5 +651,6 @@ describe('Machine Works consumer physics fixture', () => {
     expect(repeated.zeroDriveCounterfactual).toEqual(trace.zeroDriveCounterfactual);
     expect(repeated.zeroFrictionCounterfactual).toEqual(trace.zeroFrictionCounterfactual);
     expect(repeated.attachmentEvidence).toEqual(trace.attachmentEvidence);
+    expect(repeated.outputDockEvidence).toEqual(trace.outputDockEvidence);
   });
 });

@@ -4,34 +4,26 @@ import { resolve } from 'node:path';
 import { expect, test, type Page } from '@playwright/test';
 import { createServer, type ViteDevServer } from 'vite';
 import type { StudioCatalogV1 } from '../../tools/studio/catalog.js';
-import type { ScenePoseReplayV1 } from '../../tools/studio/scene-pose-replay.js';
-import type {
-  StudioHandleV1,
-  StudioMountOptionsV1,
-} from '../../tools/studio/studio-app.js';
+import type { StudioHandleV1 } from '../../tools/studio/studio-app.js';
 import { MACHINE_WORKS_CONVEYOR_V1 } from '../../tools/studio/machine-works-conveyor.js';
-
-interface BrowserReplayModule {
-  readonly MACHINE_WORKS_POSE_REPLAY: ScenePoseReplayV1;
-}
-
-interface BrowserReplaySamplerModule {
-  readonly sampleValidatedScenePoseReplayV1: (replay: ScenePoseReplayV1, timeMs: number) => {
-    readonly placements: readonly {
-      readonly placementId: string;
-      readonly translation: readonly [number, number, number];
-      readonly quaternion: readonly [number, number, number, number];
-    }[];
-  };
-}
-
-interface BrowserStudioModule {
-  readonly mountStudio: (options: StudioMountOptionsV1) => StudioHandleV1;
-}
-
-interface BrowserCatalogModule {
-  readonly createStudioCatalog: () => StudioCatalogV1;
-}
+import {
+  MACHINE_WORKS_ATTACHMENT_RULE,
+  MACHINE_WORKS_FIXED_STEP_MS,
+  MACHINE_WORKS_TICKS,
+} from '../../fixtures/machine-works-consumer/machine-works-fixture-config.js';
+import {
+  MACHINE_WORKS_PICKUP_TRANSFER_TOLERANCE,
+  MACHINE_WORKS_PORT_COINCIDENCE_TOLERANCE,
+  disposeMachineWorksSubset,
+  drawMachineWorksSubsetAt,
+  groundOrbitCenterForSubject,
+  measureMachineWorksHandoffEvidence,
+  mountMachineWorksSubset,
+  type BrowserReplayModule,
+  type BrowserReplaySamplerModule,
+  type BrowserCatalogModule,
+  type BrowserStudioModule,
+} from './machine-works-browser-support.js';
 
 interface BrowserRuntimeModule {
   readonly ThreeRenderRuntime: {
@@ -44,8 +36,63 @@ interface BrowserRuntimeModule {
 const STUDIO_ROOT = resolve('tools/studio');
 const MACHINE_WORKS_SCENE_ID = 'studio:scene:contrast-machines';
 const REPLAY_DURATION_MS = 30_000;
-const CONTACT_EVENT_TIME_MS = 20_950;
-const COLLECTED_EVENT_TIME_MS = 24_150;
+const CORE_DESCENDING_TIME_MS = 330 * MACHINE_WORKS_FIXED_STEP_MS;
+const CAP_DESCENDING_TIME_MS = 600 * MACHINE_WORKS_FIXED_STEP_MS;
+const CORE_SEATED_TIME_MS = MACHINE_WORKS_TICKS.coreAttached * MACHINE_WORKS_FIXED_STEP_MS;
+const CORE_RETRACTED_TIME_MS = (
+  MACHINE_WORKS_TICKS.coreAttached + 60
+) * MACHINE_WORKS_FIXED_STEP_MS;
+const CAP_SEATED_TIME_MS = MACHINE_WORKS_TICKS.assembled * MACHINE_WORKS_FIXED_STEP_MS;
+const CAP_RETRACTED_TIME_MS = (
+  MACHINE_WORKS_TICKS.assembled + 60
+) * MACHINE_WORKS_FIXED_STEP_MS;
+const CONTACT_EVENT_TIME_MS = 20_866.666666666668;
+const COLLECTED_EVENT_TIME_MS = 27_416.666666666668;
+const OUTPUT_DOCK_TIME_MS = MACHINE_WORKS_TICKS.released * MACHINE_WORKS_FIXED_STEP_MS;
+const CORE_PICKUP_CAMERA = {
+  center: groundOrbitCenterForSubject([-8.2, 17, 0], 335, 40),
+  view: { yawDegrees: 335, pitchDegrees: 40, viewHeight: 20 },
+} as const;
+const CAP_PICKUP_CAMERA = {
+  center: groundOrbitCenterForSubject([8.2, 17, 0], 25, 40),
+  view: { yawDegrees: 25, pitchDegrees: 40, viewHeight: 20 },
+} as const;
+const CORE_ENTRY_CAMERA = {
+  center: groundOrbitCenterForSubject([-8.2, 13.2, 0], 285, 20),
+  view: { yawDegrees: 285, pitchDegrees: 20, viewHeight: 8 },
+} as const;
+const CORE_SEAT_CAMERA = {
+  center: groundOrbitCenterForSubject([-8.2, 13.8, 0], 285, 40),
+  view: { yawDegrees: 285, pitchDegrees: 40, viewHeight: 7.5 },
+} as const;
+const CAP_ENTRY_CAMERA = {
+  center: groundOrbitCenterForSubject([8.2, 15, 0], 285, 20),
+  view: { yawDegrees: 285, pitchDegrees: 20, viewHeight: 8 },
+} as const;
+const CAP_SEAT_CAMERA = {
+  center: groundOrbitCenterForSubject([8.2, 15, 0], 285, 40),
+  view: { yawDegrees: 285, pitchDegrees: 40, viewHeight: 8 },
+} as const;
+const STATOR_CAMERA = {
+  center: groundOrbitCenterForSubject([-8.2, 21, 3], 205, 35),
+  view: { yawDegrees: 205, pitchDegrees: 35, viewHeight: 16 },
+} as const;
+const STATOR_OVERHEAD_CAMERA = {
+  center: groundOrbitCenterForSubject([-8.2, 19.4, 2.8], 180, 84),
+  view: { yawDegrees: 180, pitchDegrees: 84, viewHeight: 8 },
+} as const;
+const OUTPUT_CAMERA = {
+  center: groundOrbitCenterForSubject([29, 8.5, 0], 335, 28),
+  view: { yawDegrees: 335, pitchDegrees: 28, viewHeight: 24 },
+} as const;
+const OUTPUT_CLOSE_CAMERA = {
+  center: groundOrbitCenterForSubject([25.5, 10.5, 0], 270, 45),
+  view: { yawDegrees: 270, pitchDegrees: 45, viewHeight: 17 },
+} as const;
+const OUTPUT_SERVICE_CAMERA = {
+  center: groundOrbitCenterForSubject([25.5, 10, 1.5], 330, 38),
+  view: { yawDegrees: 330, pitchDegrees: 38, viewHeight: 14 },
+} as const;
 
 let server: ViteDevServer | undefined;
 let studioOrigin = '';
@@ -88,7 +135,7 @@ const imageHash = async (page: Page): Promise<string> =>
     .update(await page.locator('.scene-canvas').screenshot({ animations: 'disabled' }))
     .digest('hex');
 
-test('Machine Works presents its exposed phase-coupled cogs and belt plus every committed event before resetting at 30 seconds', async ({ page }) => {
+test('Machine Works presents its minimal phase flags and belt plus every committed event before resetting at 30 seconds', async ({ page }) => {
   const errors: string[] = [];
   page.on('pageerror', (error) => errors.push(error.message));
   page.on('console', (message) => {
@@ -209,7 +256,7 @@ test('Machine Works presents its exposed phase-coupled cogs and belt plus every 
       return {
         west: placement('belt-drive-west').quaternion,
         east: placement('belt-drive-east').quaternion,
-        exposedCogs: [
+        exposedPhaseFlags: [
           placement('belt-cog-west-near').quaternion,
           placement('belt-cog-west-far').quaternion,
           placement('belt-cog-east-near').quaternion,
@@ -231,8 +278,8 @@ test('Machine Works presents its exposed phase-coupled cogs and belt plus every 
   ))).toBeLessThan(0.999);
   for (const sample of [phaseEvidence.atRest, phaseEvidence.underDrive]) {
     expect(Math.abs(quaternionDot(sample.west, sample.east))).toBeCloseTo(1, 5);
-    sample.exposedCogs.forEach((cog, index) => {
-      expect(cog).toEqual(index < 2 ? sample.west : sample.east);
+    sample.exposedPhaseFlags.forEach((flag, index) => {
+      expect(flag).toEqual(index < 2 ? sample.west : sample.east);
     });
   }
   expect(Math.hypot(
@@ -276,7 +323,7 @@ test('Machine Works presents its exposed phase-coupled cogs and belt plus every 
       },
     });
     expect(evidence.render).toMatchObject({
-      instances: MACHINE_WORKS_CONVEYOR_V1.slatCount + 15,
+      instances: MACHINE_WORKS_CONVEYOR_V1.slatCount + 16,
       animatedBatches: 0,
       animatedInstances: 0,
     });
@@ -329,6 +376,305 @@ test('Machine Works presents its exposed phase-coupled cogs and belt plus every 
   expect(heldHash).not.toBe(phaseHashes[0]);
   expect(resetHash).toBe(restoredPhaseZeroHash);
   expect(errors).toEqual([]);
+});
+
+test('Machine Works focused unlit station view shows contacting magnetic pickup, keyed handoff, and head retraction', async ({ page }) => {
+  await mountMachineWorks(page);
+  const focusedPlacementIds = [
+    'assembly-carriage',
+    'core-head',
+    'cap-head',
+    'product-base',
+    'product-core',
+    'product-cap',
+  ];
+  const focusedEvidence = await mountMachineWorksSubset(page, {
+    placementIds: focusedPlacementIds,
+    trackedPlacementIds: focusedPlacementIds,
+    ...CORE_PICKUP_CAMERA,
+  });
+  expect([...focusedEvidence.placementIds].sort()).toEqual([...focusedPlacementIds].sort());
+  expect([...focusedEvidence.trackIds].sort()).toEqual([...focusedPlacementIds].sort());
+  await page.addStyleTag({
+    content: [
+      '.viewchip, .toggles, .stagehint, .grid-marks, .highlight-marks {',
+      '  visibility: hidden !important;',
+      '}',
+    ].join('\n'),
+  });
+  const canvas = page.locator('[data-machine-works-focused] .scene-canvas');
+  const focusedImageHash = async (): Promise<string> =>
+    createHash('sha256')
+      .update(await canvas.screenshot({ animations: 'disabled' }))
+      .digest('hex');
+
+  try {
+    const stationHashes = [await focusedImageHash()];
+    await expect(canvas).toHaveScreenshot(
+      'model-studio-machine-works-pickup-preloaded.png',
+      { animations: 'disabled', maxDiffPixelRatio: 0.002 },
+    );
+
+    await drawMachineWorksSubsetAt(page, CORE_RETRACTED_TIME_MS, CORE_PICKUP_CAMERA);
+    stationHashes.push(await focusedImageHash());
+    await expect(canvas).toHaveScreenshot(
+      'model-studio-machine-works-core-head-retracted.png',
+      { animations: 'disabled', maxDiffPixelRatio: 0.002 },
+    );
+
+    await drawMachineWorksSubsetAt(page, 0, CAP_PICKUP_CAMERA);
+    stationHashes.push(await focusedImageHash());
+    await expect(canvas).toHaveScreenshot(
+      'model-studio-machine-works-cap-pickup-preloaded.png',
+      { animations: 'disabled', maxDiffPixelRatio: 0.002 },
+    );
+
+    await drawMachineWorksSubsetAt(page, CAP_RETRACTED_TIME_MS, CAP_PICKUP_CAMERA);
+    stationHashes.push(await focusedImageHash());
+    await expect(canvas).toHaveScreenshot(
+      'model-studio-machine-works-cap-head-retracted.png',
+      { animations: 'disabled', maxDiffPixelRatio: 0.002 },
+    );
+
+    const handoffEvidence = await measureMachineWorksHandoffEvidence(page);
+
+    expect(handoffEvidence.initialPickup.core.positionError)
+      .toBeLessThanOrEqual(MACHINE_WORKS_PORT_COINCIDENCE_TOLERANCE);
+    expect(handoffEvidence.initialPickup.cap.positionError)
+      .toBeLessThanOrEqual(MACHINE_WORKS_PORT_COINCIDENCE_TOLERANCE);
+    for (const evidence of [handoffEvidence.core, handoffEvidence.cap]) {
+      expect(evidence.preMerge.pickup.positionError)
+        .toBeLessThanOrEqual(MACHINE_WORKS_PORT_COINCIDENCE_TOLERANCE);
+      expect(evidence.preMerge.mating.positionError)
+        .toBeLessThanOrEqual(MACHINE_WORKS_ATTACHMENT_RULE.maximumPositionError);
+      expect(evidence.preMerge.mating.relativeSpeed)
+        .toBeLessThanOrEqual(MACHINE_WORKS_ATTACHMENT_RULE.maximumRelativeSpeed);
+      expect(evidence.preMerge.mating.orientationQuaternionError)
+        .toBeLessThanOrEqual(MACHINE_WORKS_ATTACHMENT_RULE.maximumOrientationError);
+      expect(evidence.merge.pickup.positionError)
+        .toBeLessThanOrEqual(MACHINE_WORKS_PICKUP_TRANSFER_TOLERANCE);
+      expect(evidence.merge.mating.positionError)
+        .toBeLessThanOrEqual(MACHINE_WORKS_PORT_COINCIDENCE_TOLERANCE);
+      evidence.merge.mating.delta.forEach((axisError) => {
+        expect(Math.abs(axisError))
+          .toBeLessThanOrEqual(MACHINE_WORKS_PORT_COINCIDENCE_TOLERANCE);
+      });
+      expect(evidence.merge.mating.orientationQuaternionError)
+        .toBeLessThanOrEqual(MACHINE_WORKS_ATTACHMENT_RULE.maximumOrientationError);
+      expect(evidence.postRelease.pickup.positionError)
+        .toBeGreaterThan(evidence.merge.pickup.positionError);
+      expect(evidence.postRelease.mating.positionError)
+        .toBeLessThanOrEqual(MACHINE_WORKS_PORT_COINCIDENCE_TOLERANCE);
+      expect(evidence.separated.pickup.positionError).toBeGreaterThan(0.5);
+      expect(evidence.separated.mating.positionError)
+        .toBeLessThanOrEqual(MACHINE_WORKS_PORT_COINCIDENCE_TOLERANCE);
+      expect(evidence.separated.mating.orientationQuaternionError)
+        .toBeLessThanOrEqual(MACHINE_WORKS_ATTACHMENT_RULE.maximumOrientationError);
+    }
+    for (const seatEvidence of [
+      handoffEvidence.cap.merge.seat,
+      handoffEvidence.cap.postRelease.seat,
+      handoffEvidence.cap.separated.seat,
+    ]) {
+      expect(seatEvidence?.positionError)
+        .toBeLessThanOrEqual(MACHINE_WORKS_PORT_COINCIDENCE_TOLERANCE);
+      seatEvidence?.delta.forEach((axisError) => {
+        expect(Math.abs(axisError))
+          .toBeLessThanOrEqual(MACHINE_WORKS_PORT_COINCIDENCE_TOLERANCE);
+      });
+    }
+    expect(new Set(stationHashes).size).toBe(stationHashes.length);
+  } finally {
+    await disposeMachineWorksSubset(page);
+  }
+});
+
+test('Machine Works isolated product views expose both entering keys and the cap shoulder seat', async ({ page }) => {
+  await mountMachineWorks(page);
+  await page.addStyleTag({
+    content: [
+      '.viewchip, .toggles, .stagehint, .grid-marks, .highlight-marks {',
+      '  visibility: hidden !important;',
+      '}',
+    ].join('\n'),
+  });
+  const corePlacementIds = ['product-base', 'product-core'];
+  await mountMachineWorksSubset(page, {
+    placementIds: corePlacementIds,
+    trackedPlacementIds: corePlacementIds,
+    ...CORE_ENTRY_CAMERA,
+  });
+  let canvas = page.locator('[data-machine-works-focused] .scene-canvas');
+  try {
+    await drawMachineWorksSubsetAt(page, CORE_DESCENDING_TIME_MS, CORE_ENTRY_CAMERA);
+    await expect(canvas).toHaveScreenshot(
+      'model-studio-machine-works-core-key-entering.png',
+      { animations: 'disabled', maxDiffPixelRatio: 0.002 },
+    );
+    await drawMachineWorksSubsetAt(page, CORE_SEATED_TIME_MS, CORE_SEAT_CAMERA);
+    await expect(canvas).toHaveScreenshot(
+      'model-studio-machine-works-core-seat-close.png',
+      { animations: 'disabled', maxDiffPixelRatio: 0.002 },
+    );
+  } finally {
+    await disposeMachineWorksSubset(page);
+  }
+
+  const capPlacementIds = ['product-core', 'product-cap'];
+  await mountMachineWorksSubset(page, {
+    placementIds: capPlacementIds,
+    trackedPlacementIds: capPlacementIds,
+    ...CAP_ENTRY_CAMERA,
+  });
+  canvas = page.locator('[data-machine-works-focused] .scene-canvas');
+  try {
+    await drawMachineWorksSubsetAt(page, CAP_DESCENDING_TIME_MS, CAP_ENTRY_CAMERA);
+    await expect(canvas).toHaveScreenshot(
+      'model-studio-machine-works-cap-key-entering.png',
+      { animations: 'disabled', maxDiffPixelRatio: 0.002 },
+    );
+    await drawMachineWorksSubsetAt(page, CAP_SEATED_TIME_MS, CAP_SEAT_CAMERA);
+    await expect(canvas).toHaveScreenshot(
+      'model-studio-machine-works-cap-seat-close.png',
+      { animations: 'disabled', maxDiffPixelRatio: 0.002 },
+    );
+  } finally {
+    await disposeMachineWorksSubset(page);
+  }
+});
+
+test('Machine Works isolated mechanism views expose the kinematic stator study and grounded output pivot', async ({ page }) => {
+  await mountMachineWorks(page);
+  const statorPlacementIds = [
+    'assembly-press-bridge',
+    'core-head',
+  ];
+  const statorTrackIds = ['core-head'];
+  const statorEvidence = await mountMachineWorksSubset(page, {
+    placementIds: statorPlacementIds,
+    trackedPlacementIds: statorTrackIds,
+    ...STATOR_CAMERA,
+  });
+  expect([...statorEvidence.placementIds].sort()).toEqual(
+    [...statorPlacementIds].sort(),
+  );
+  expect([...statorEvidence.trackIds].sort()).toEqual([...statorTrackIds].sort());
+  await page.addStyleTag({
+    content: [
+      '.viewchip, .toggles, .stagehint, .grid-marks, .highlight-marks {',
+      '  visibility: hidden !important;',
+      '}',
+    ].join('\n'),
+  });
+  let canvas = page.locator('[data-machine-works-focused] .scene-canvas');
+
+  try {
+    await page.evaluate((timeMs) => {
+      const focusedWindow = window as unknown as Window & {
+        machineWorksFocused?: StudioHandleV1;
+      };
+      const harness = focusedWindow.machineWorksFocused?.harness;
+      if (harness === undefined) {
+        throw new Error('Machine Works focused mount is unavailable for the stator study.');
+      }
+      harness.setDepth(false);
+      harness.setLit(false);
+      harness.setEdges(true);
+      harness.drawAt(timeMs);
+    }, CORE_DESCENDING_TIME_MS);
+    await expect(canvas).toHaveScreenshot(
+      'model-studio-machine-works-stator-yoke.png',
+      { animations: 'disabled', maxDiffPixelRatio: 0.002 },
+    );
+    await drawMachineWorksSubsetAt(page, CORE_DESCENDING_TIME_MS, STATOR_OVERHEAD_CAMERA);
+    await expect(canvas).toHaveScreenshot(
+      'model-studio-machine-works-stator-yoke-overhead.png',
+      { animations: 'disabled', maxDiffPixelRatio: 0.002 },
+    );
+  } finally {
+    await disposeMachineWorksSubset(page);
+  }
+
+  const outputPlacementIds = [
+    'assembly-foundation',
+    'assembly-output-dock',
+    'collection-bucket',
+    'assembly-carriage',
+    'product-base',
+    'product-core',
+    'product-cap',
+  ];
+  const outputTrackIds = [
+    'collection-bucket',
+    'assembly-carriage',
+    'product-base',
+    'product-core',
+    'product-cap',
+  ];
+  const outputEvidence = await mountMachineWorksSubset(page, {
+    placementIds: outputPlacementIds,
+    trackedPlacementIds: outputTrackIds,
+    ...OUTPUT_CAMERA,
+  });
+  expect([...outputEvidence.placementIds].sort()).toEqual(
+    [...outputPlacementIds].sort(),
+  );
+  expect([...outputEvidence.trackIds].sort()).toEqual(
+    [...outputTrackIds].sort(),
+  );
+  canvas = page.locator('[data-machine-works-focused] .scene-canvas');
+
+  try {
+    await page.evaluate((timeMs) => {
+      const focusedWindow = window as unknown as Window & {
+        machineWorksFocused?: StudioHandleV1;
+      };
+      const harness = focusedWindow.machineWorksFocused?.harness;
+      if (harness === undefined) {
+        throw new Error('Machine Works focused mount is unavailable for the output dock.');
+      }
+      harness.setDepth(false);
+      harness.setLit(false);
+      harness.setEdges(true);
+      harness.drawAt(timeMs);
+    }, OUTPUT_DOCK_TIME_MS);
+    await expect(canvas).toHaveScreenshot(
+      'model-studio-machine-works-output-dock.png',
+      { animations: 'disabled', maxDiffPixelRatio: 0.002 },
+    );
+  } finally {
+    await disposeMachineWorksSubset(page);
+  }
+
+  const outputMechanismPlacementIds = [
+    'assembly-foundation',
+    'assembly-output-dock',
+    'assembly-carriage',
+  ];
+  const outputMechanismEvidence = await mountMachineWorksSubset(page, {
+    placementIds: outputMechanismPlacementIds,
+    trackedPlacementIds: ['assembly-carriage'],
+    ...OUTPUT_CLOSE_CAMERA,
+  });
+  expect([...outputMechanismEvidence.placementIds].sort()).toEqual(
+    [...outputMechanismPlacementIds].sort(),
+  );
+  expect(outputMechanismEvidence.trackIds).toEqual(['assembly-carriage']);
+  canvas = page.locator('[data-machine-works-focused] .scene-canvas');
+  try {
+    await drawMachineWorksSubsetAt(page, OUTPUT_DOCK_TIME_MS, OUTPUT_CLOSE_CAMERA);
+    await expect(canvas).toHaveScreenshot(
+      'model-studio-machine-works-output-dock-close.png',
+      { animations: 'disabled', maxDiffPixelRatio: 0.002 },
+    );
+    await drawMachineWorksSubsetAt(page, OUTPUT_DOCK_TIME_MS, OUTPUT_SERVICE_CAMERA);
+    await expect(canvas).toHaveScreenshot(
+      'model-studio-machine-works-output-dock-service.png',
+      { animations: 'disabled', maxDiffPixelRatio: 0.002 },
+    );
+  } finally {
+    await disposeMachineWorksSubset(page);
+  }
 });
 
 test('Machine Works diagnostic projection exposes the internal slat and stepped-drum wrap', async ({ page }) => {

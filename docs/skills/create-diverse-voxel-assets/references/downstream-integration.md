@@ -6,6 +6,8 @@ Use this reference when asset work happens in a Voxel consumer, moves between re
 
 Read the consumer's instructions, rendering adapter, catalog or asset registry, camera, picking path, animation path, performance budgets, and representative gameplay scene before designing. Treat the following fleet examples as orientation only; verify current status in live files.
 
+Require each visible feature to map to authoritative state or interaction, physical structure, or an intentional readability cue. Do not integrate render-only machinery that the consumer cannot support; remove it or label the artifact as a study.
+
 Voxel is a renderer and authoring reference, not the owner of a game's simulation, commands, save format, UI, faction rules, economy, pathfinding, or art direction.
 
 Confirm that the requested semantic role or entity already exists in the game's authoritative content. If it does not, separate the gameplay or content-design addition from the rendering work and obtain the authority that broader change needs; do not create a render-only fiction that the simulation cannot produce.

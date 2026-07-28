@@ -14,6 +14,16 @@ import {
   MACHINE_WORKS_EXPOSED_COGS_V1,
 } from './machine-works-conveyor.js';
 import { MACHINE_WORKS_SCENE_LAYOUT_V1 } from './machine-works-layout.js';
+import {
+  MACHINE_WORKS_OUTPUT_DOCK_PLACEMENT_ID,
+  MACHINE_WORKS_OUTPUT_DOCK_RECIPE_ID,
+  MACHINE_WORKS_PRESS_BRIDGE_PLACEMENT_ID,
+  MACHINE_WORKS_PRESS_BRIDGE_RECIPE_ID,
+} from './machine-works-purpose.js';
+import {
+  createMachineWorksOutputDockRecipe,
+  createMachineWorksPressBridgeRecipe,
+} from './machine-works-recipes.js';
 import { validateSceneV1 } from './scene.js';
 
 describe('contrast scenes', () => {
@@ -59,12 +69,22 @@ describe('contrast scenes', () => {
       id: 'studio:pose-replay:machine-works',
       durationMs: 30_000,
     });
-    expect(scene.summary).toMatch(/without positive-volume overlap/);
+    expect(scene.summary).toMatch(/press-bridge feet meet occupied foundation pads/);
+    expect(scene.summary).toMatch(/narrowed cream stator keeps at least 0\.4 world units of running clearance inside an orange moving C-yoke/);
+    expect(scene.summary).toMatch(/two-voxel key enters empty socket clearance.*cap crown reaches its core seat/);
+    expect(scene.summary).toMatch(/software compound weld rather than a solved latch/);
     expect(scene.summary).toMatch(
-      /outside Rapier as non-interacting phase witnesses/,
+      /does not simulate charging, a flexible moving cable, electricity, motor torque, or jaw motion/,
     );
+    expect(scene.summary).toMatch(
+      /face-connected cabinet-to-bus route.*head-local buffer starts precharged/,
+    );
+    expect(scene.summary).toMatch(
+      /carrier trunnion enters two foundation-contacting outboard bearing cradles.*servo coupler/,
+    );
+    expect(scene.summary).toMatch(/minimal exterior radial flags remain non-interacting phase witnesses/);
     const byId = new Map(scene.placements.map((placement) => [placement.id, placement]));
-    expect(scene.placements).toHaveLength(MACHINE_WORKS_CONVEYOR_V1.slatCount + 15);
+    expect(scene.placements).toHaveLength(MACHINE_WORKS_CONVEYOR_V1.slatCount + 16);
     expect(byId.get('core-head')?.at[0]).toBe(byId.get('product-core')?.at[0]);
     expect(byId.get('cap-head')?.at[0]).toBe(byId.get('product-cap')?.at[0]);
     expect(byId.get('collection-bucket')?.at).toEqual([32.5, 0, 0]);
@@ -75,13 +95,18 @@ describe('contrast scenes', () => {
       at: MACHINE_WORKS_SCENE_LAYOUT_V1.foundation.at,
       grain: MACHINE_WORKS_SCENE_LAYOUT_V1.foundation.grain,
     });
-    expect(byId.get('assembly-gantry')).toMatchObject({
-      model: 'studio:contrast:shipyard-gantry',
-      at: MACHINE_WORKS_SCENE_LAYOUT_V1.gantry.at,
-      grain: MACHINE_WORKS_SCENE_LAYOUT_V1.gantry.grain,
+    expect(byId.get(MACHINE_WORKS_PRESS_BRIDGE_PLACEMENT_ID)).toMatchObject({
+      model: MACHINE_WORKS_PRESS_BRIDGE_RECIPE_ID,
+      at: MACHINE_WORKS_SCENE_LAYOUT_V1.pressBridge.at,
+      grain: MACHINE_WORKS_SCENE_LAYOUT_V1.pressBridge.grain,
+    });
+    expect(byId.get(MACHINE_WORKS_OUTPUT_DOCK_PLACEMENT_ID)).toMatchObject({
+      model: MACHINE_WORKS_OUTPUT_DOCK_RECIPE_ID,
+      at: MACHINE_WORKS_SCENE_LAYOUT_V1.outputDock.at,
+      grain: MACHINE_WORKS_SCENE_LAYOUT_V1.outputDock.grain,
     });
     expect(scene.placements.filter(({ model }) => model.startsWith('studio:contrast:')))
-      .toHaveLength(1);
+      .toHaveLength(0);
     expect(scene.placements.filter(
       ({ model }) => model === 'studio:machine-works:conveyor-slat',
     )).toHaveLength(MACHINE_WORKS_CONVEYOR_V1.slatCount);
@@ -113,7 +138,8 @@ describe('contrast scenes', () => {
     }
     expect([...byId.keys()]).toEqual(expect.arrayContaining([
       'assembly-foundation',
-      'assembly-gantry',
+      MACHINE_WORKS_PRESS_BRIDGE_PLACEMENT_ID,
+      MACHINE_WORKS_OUTPUT_DOCK_PLACEMENT_ID,
       'assembly-carriage',
       'core-head',
       'cap-head',
@@ -124,99 +150,101 @@ describe('contrast scenes', () => {
     ]));
   });
 
-  it('pins the belt, dynamic carrier, gantry, and continuous head guides into one support chain', () => {
+  it('pins the belt, dynamic carrier, grounded press bridge, and actuator alignment datums into one support chain', () => {
     expect(machineWorksSupportAlignmentIssuesV1()).toEqual([]);
     const layout = MACHINE_WORKS_SCENE_LAYOUT_V1;
-    const gantryRecipe = CURATED_CONTRAST_RECIPES.find(
-      ({ recipe }) => recipe.id === 'studio:contrast:shipyard-gantry',
-    )?.recipe;
-    expect(gantryRecipe?.size).toEqual(layout.gantry.sizeVoxels);
-    expect(gantryRecipe?.steps.slice(0, 3)).toMatchObject([
+    const bridgeRecipe = createMachineWorksPressBridgeRecipe();
+    const outputDockRecipe = createMachineWorksOutputDockRecipe();
+    expect(bridgeRecipe.size).toEqual(layout.pressBridge.sizeVoxels);
+    expect(outputDockRecipe.size).toEqual(layout.outputDock.sizeVoxels);
+    expect(bridgeRecipe.steps.slice(0, 2)).toMatchObject([
       {
         kind: 'part',
         part: 'open-frame',
-        at: layout.gantry.guideTowers.west.atVoxels,
+        at: layout.pressBridge.guideTowers.west.atVoxels,
         settings: {
-          width: layout.gantry.guideTowers.west.sizeVoxels[0],
-          height: layout.gantry.guideTowers.west.sizeVoxels[1],
-          depth: layout.gantry.guideTowers.west.sizeVoxels[2],
+          width: layout.pressBridge.guideTowers.west.sizeVoxels[0],
+          height: layout.pressBridge.guideTowers.west.sizeVoxels[1],
+          depth: layout.pressBridge.guideTowers.west.sizeVoxels[2],
           thickness: 1,
         },
       },
       {
         kind: 'part',
         part: 'open-frame',
-        at: layout.gantry.guideTowers.east.atVoxels,
+        at: layout.pressBridge.guideTowers.east.atVoxels,
         settings: {
-          width: layout.gantry.guideTowers.east.sizeVoxels[0],
-          height: layout.gantry.guideTowers.east.sizeVoxels[1],
-          depth: layout.gantry.guideTowers.east.sizeVoxels[2],
+          width: layout.pressBridge.guideTowers.east.sizeVoxels[0],
+          height: layout.pressBridge.guideTowers.east.sizeVoxels[1],
+          depth: layout.pressBridge.guideTowers.east.sizeVoxels[2],
           thickness: 1,
-        },
-      },
-      {
-        kind: 'part',
-        part: 'truss-span',
-        at: layout.gantry.lowerChord.atVoxels,
-        settings: {
-          length: layout.gantry.lowerChord.sizeVoxels[0],
-          depth: layout.gantry.lowerChord.sizeVoxels[2],
         },
       },
     ]);
+    expect(bridgeRecipe.steps.some((step) =>
+      step.kind === 'part' && step.part === 'truss-span')).toBe(false);
+    expect(bridgeRecipe.summary).toMatch(/four foundation feet.*linear-stator spines.*empty moving C-yoke cavities/i);
     const foundationTop = layout.foundation.at[1]
       + layout.foundation.sizeVoxels[1] * layout.foundation.grain;
     const foundationRight = layout.foundation.at[0]
       + layout.foundation.sizeVoxels[0] * layout.foundation.grain / 2;
     const bucketLeft = layout.bucket.at[0]
       - layout.bucket.sizeVoxels[0] * layout.bucket.grain / 2;
-    expect(layout.gantry.guideRails).toEqual({
-      west: {
+    expect(layout.pressBridge.guideRails).toEqual({
+      coreWest: {
         atVoxels: [4, 0, 0],
         sizeVoxels: [1, 15, 1],
       },
-      east: {
+      coreEast: {
+        atVoxels: [7, 0, 0],
+        sizeVoxels: [1, 15, 1],
+      },
+      capWest: {
+        atVoxels: [17, 0, 0],
+        sizeVoxels: [1, 15, 1],
+      },
+      capEast: {
         atVoxels: [20, 0, 0],
         sizeVoxels: [1, 15, 1],
       },
     });
-    const westRailMinX = layout.gantry.at[0]
-      + (layout.gantry.guideRails.west.atVoxels[0]
-        - layout.gantry.sizeVoxels[0] / 2) * layout.gantry.grain;
-    const westRailMaxX = westRailMinX
-      + layout.gantry.guideRails.west.sizeVoxels[0] * layout.gantry.grain;
-    const eastRailMinX = layout.gantry.at[0]
-      + (layout.gantry.guideRails.east.atVoxels[0]
-        - layout.gantry.sizeVoxels[0] / 2) * layout.gantry.grain;
-    const eastRailMaxX = eastRailMinX
-      + layout.gantry.guideRails.east.sizeVoxels[0] * layout.gantry.grain;
-    const coreShoeCenterX = layout.coreHead.at[0]
-      + (layout.headGuideShoes.west.atVoxels[0]
-        + layout.headGuideShoes.west.sizeVoxels[0] / 2
-        - layout.coreHead.sizeVoxels[0] / 2) * layout.coreHead.grain;
-    const capShoeCenterX = layout.capHead.at[0]
-      + (layout.headGuideShoes.east.atVoxels[0]
-        + layout.headGuideShoes.east.sizeVoxels[0] / 2
-        - layout.capHead.sizeVoxels[0] / 2) * layout.capHead.grain;
-    const gantryFrontZ = layout.gantry.at[2]
-      - layout.gantry.sizeVoxels[2] * layout.gantry.grain / 2;
+    const guideChecks = [
+      { head: layout.coreHead, shoe: layout.headAlignmentPads.west,
+        rail: layout.pressBridge.guideRails.coreWest },
+      { head: layout.coreHead, shoe: layout.headAlignmentPads.east,
+        rail: layout.pressBridge.guideRails.coreEast },
+      { head: layout.capHead, shoe: layout.headAlignmentPads.west,
+        rail: layout.pressBridge.guideRails.capWest },
+      { head: layout.capHead, shoe: layout.headAlignmentPads.east,
+        rail: layout.pressBridge.guideRails.capEast },
+    ] as const;
+    for (const { head, shoe, rail } of guideChecks) {
+      const shoeCenterX = head.at[0]
+        + (shoe.atVoxels[0] + shoe.sizeVoxels[0] / 2
+          - head.sizeVoxels[0] / 2) * head.grain;
+      const railMinX = layout.pressBridge.at[0]
+        + (rail.atVoxels[0] - layout.pressBridge.sizeVoxels[0] / 2)
+          * layout.pressBridge.grain;
+      const railMaxX = railMinX + rail.sizeVoxels[0] * layout.pressBridge.grain;
+      expect(shoeCenterX).toBeGreaterThanOrEqual(railMinX);
+      expect(shoeCenterX).toBeLessThanOrEqual(railMaxX);
+    }
+    const bridgeFrontZ = layout.pressBridge.at[2]
+      - layout.pressBridge.sizeVoxels[2] * layout.pressBridge.grain / 2;
     const shoeRearZ = layout.coreHead.at[2]
-      + (layout.headGuideShoes.west.atVoxels[2]
-        + layout.headGuideShoes.west.sizeVoxels[2]
+      + (layout.headAlignmentPads.west.atVoxels[2]
+        + layout.headAlignmentPads.west.sizeVoxels[2]
         - layout.coreHead.sizeVoxels[2] / 2) * layout.coreHead.grain;
 
-    expect(foundationTop).toBe(layout.gantry.at[1]);
+    expect(foundationTop).toBe(layout.pressBridge.at[1]);
     expect(foundationRight).toBeCloseTo(bucketLeft);
-    expect(coreShoeCenterX).toBeGreaterThanOrEqual(westRailMinX);
-    expect(coreShoeCenterX).toBeLessThanOrEqual(westRailMaxX);
-    expect(capShoeCenterX).toBeGreaterThanOrEqual(eastRailMinX);
-    expect(capShoeCenterX).toBeLessThanOrEqual(eastRailMaxX);
-    expect(gantryFrontZ).toBeCloseTo(shoeRearZ, 9);
+    expect(bridgeFrontZ).toBeCloseTo(shoeRearZ, 9);
     expect(MACHINE_WORKS_LAYOUT.capStationX).toBeLessThan(foundationRight);
     expect(MACHINE_WORKS_LAYOUT.tipStationX).toBe(MACHINE_WORKS_CONVEYOR_V1.rightAxleX);
     expect(
-      MACHINE_WORKS_LAYOUT.tipStationX + MACHINE_WORKS_LAYOUT.carriageHingeLocalX,
-    ).toBeCloseTo(bucketLeft, 9);
+      MACHINE_WORKS_LAYOUT.tipStationX + MACHINE_WORKS_LAYOUT.carriageTipPivotLocalX,
+    ).toBeCloseTo(layout.outputDock.at[0], 9);
+    expect(bucketLeft - layout.outputDock.at[0]).toBeCloseTo(0.2, 9);
     const paintedSlatLength =
       MACHINE_WORKS_CONVEYOR_V1.slatSizeVoxels[0]
         * MACHINE_WORKS_CONVEYOR_V1.slatGrain;
@@ -227,7 +255,7 @@ describe('contrast scenes', () => {
         MACHINE_WORKS_SUPPORT_ALIGNMENT_RULE.maximumStraightSlatGap,
       );
     expect(MACHINE_WORKS_LAYOUT.bucketCenterX).toBeGreaterThan(foundationRight);
-    expect(layout.gantry.staticNonColliding).toBe(true);
+    expect(layout.pressBridge.staticNonColliding).toBe(true);
   });
 
   it('gives semantic motion to three contact sheets and the consumer replay scene', () => {
