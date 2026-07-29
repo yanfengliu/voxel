@@ -1,6 +1,6 @@
 # Purpose graph
 
-Status: accepted design direction on 2026-07-28. The model, the checker kernel, and projections of Machine Works and Windmill are implemented in `tools/studio/purpose-graph.ts`, `purpose-graph-check.ts`, `machine-works-purpose-graph.ts`, and `windmill-purpose-graph.ts`. Nothing in `src/` depends on it; it is an authoring-time tool, not a renderer or solver contract.
+Status: accepted design direction on 2026-07-28. The model, the checker kernel, and projections of Machine Works, Windmill, and Riverfall are implemented in `tools/studio/purpose-graph.ts`, `purpose-graph-check.ts`, `machine-works-purpose-graph.ts`, `windmill-purpose-graph.ts`, and `riverfall-purpose-graph.ts`. Nothing in `src/` depends on it; it is an authoring-time tool, not a renderer or solver contract.
 
 ## Why
 
@@ -58,6 +58,10 @@ Windmill's prose was mutually justifying in two places. The cam nose said it exi
 The fix was not to pick a winner. A contact pair exists for the contact, and the contact exists for the motion the scene has to show, so both participants now point at an `interface` node. That is a more honest account than either sentence was alone, and `purpose-graph-live.test.ts` pins the literal prose reading as a rejected cycle so the finding cannot quietly return.
 
 Machine Works projected without restructuring. Its press bridge, output dock, and exposed phase flags became tracked open obligations, which matches what the design record already said about each of them staying outside the solver.
+
+Riverfall is the first system to declare two quantities at once, and they differ. It is **closed in water mass** — 288 particles carry fixed mass and recirculate, so nothing is created at the inlet or destroyed at the outflow — and **open in energy**, with work entering through the hidden recirculation pump and the inlet forcing and leaving through XSPH smoothing and dissipative boundary impacts. The pump is the reason those are different claims: it moves particles inside the system rather than across its edge, so it is an energy source and not a material one. A test adds an evaporation sink to the graph and confirms the kernel then rejects the closed water claim.
+
+Projecting Riverfall also found two gaps the prose had not separated. The fixture runs `zero-density`, `zero-gravity`, `zero-pump`, and `zero-xsph` ablations, but nothing disables the dissipative boundary impact or the inlet forcing, so the work each of those does is never isolated from the others. Both are now tracked open obligations naming the run that would close them. Its presentation constructs — carrier phase, carried tracer, occupancy proxy, normal displacement, neighbour smoothing, loop bridge, and concealed underfill — each carry their own record and their own statement that they are not a solved water height, energy, or density field, instead of sharing one disclaimer at the end of a long paragraph.
 
 ## Adding a system
 

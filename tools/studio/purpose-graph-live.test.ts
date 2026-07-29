@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  createRiverfallFluidConfigV1,
+  RIVERFALL_FLUID_PARTICLE_COUNT,
+} from '../../fixtures/riverfall-consumer/riverfall-fluid-config.js';
+import {
   createMachineWorksPurposeGraphV1,
 } from './machine-works-purpose-graph.js';
 import {
@@ -9,8 +13,15 @@ import {
 } from './purpose-graph-check.js';
 import {
   isPurposeBoundaryKindV1,
+  purposeBoundaryV1,
+  purposeGraphV1,
   type PurposeNodeIdV1,
 } from './purpose-graph.js';
+import {
+  createRiverfallPurposeGraphV1,
+  RIVERFALL_BOUND_ABLATIONS_V1,
+  RIVERFALL_CLOSED_PARTICLE_COUNT_V1,
+} from './riverfall-purpose-graph.js';
 import {
   WINDMILL_COMPACT_PURPOSE_NEEDS_V1,
 } from './windmill-compact-purpose-needs.js';
@@ -169,5 +180,118 @@ describe('the prose beneficiary sentences the graph replaces', () => {
       (item) => item.code === 'justification-cycle',
     );
     expect(cycle?.message).toContain('closes on itself');
+  });
+});
+
+describe('the Riverfall purpose graph', () => {
+  const graph = createRiverfallPurposeGraphV1();
+  const report = checkPurposeGraphV1(graph);
+
+  it('is well-formed', () => {
+    expect(() => { assertPurposeGraphV1(graph); }).not.toThrow();
+    expect(report.ok).toBe(true);
+  });
+
+  it('is closed in water mass and open in energy', () => {
+    const water = graph.conservationClaims.find(
+      (claim) => claim.quantity === 'water-mass',
+    );
+    const energy = graph.conservationClaims.find(
+      (claim) => claim.quantity === 'energy',
+    );
+
+    expect(water?.closed).toBe(true);
+    expect(water?.sourceIds).toEqual([]);
+    expect(water?.sinkIds).toEqual([]);
+    expect(energy?.closed).toBe(false);
+    expect(energy?.sourceIds).toHaveLength(2);
+    expect(energy?.sinkIds).toHaveLength(2);
+  });
+
+  it('refuses a closed water claim once a crossing is declared', () => {
+    const leaking = purposeGraphV1(
+      graph.systemId,
+      [
+        ...graph.nodes,
+        purposeBoundaryV1({
+          id: 'riverfall:sink:evaporation',
+          kind: 'material-sink',
+          label: 'Evaporation',
+          job: 'Remove water from the reach.',
+          quantity: 'water-mass',
+          visibility: 'invisible',
+          truncates: 'Everything about the air above the surface.',
+          requiredBy: ['riverfall:need:water-reads-as-flowing'],
+          evidence: {
+            kind: 'open',
+            reason: 'Nothing models it.',
+            wouldBeClosedBy: 'A run that meters mass leaving the surface.',
+          },
+          honestyBoundary: 'None.',
+        }),
+      ],
+      graph.conservationClaims,
+    );
+
+    const leakingReport = checkPurposeGraphV1(leaking);
+    expect(leakingReport.findings.map((item) => item.code))
+      .toContain('closed-claim-with-boundary');
+  });
+
+  it('records the two forcings that no ablation isolates', () => {
+    const open = report.openObligations.map((item) => item.nodeId);
+
+    expect(open).toContain('riverfall:source:inlet-forcing');
+    expect(open).toContain('riverfall:sink:impact-dissipation');
+    expect(open).toContain('riverfall:motion:dissipative-boundary-impact');
+  });
+
+  it('binds every other law to an ablation the fixture actually runs', () => {
+    const bound = graph.nodes
+      .filter((node) => node.evidence.kind === 'bound')
+      .map((node) => (node.evidence.kind === 'bound' ? node.evidence.proofId : ''))
+      .filter((proofId) => proofId.includes('ablation'));
+
+    expect(bound.length).toBeGreaterThan(0);
+    for (const proofId of bound) {
+      const named = RIVERFALL_BOUND_ABLATIONS_V1.some(
+        (ablation) => proofId.includes(ablation),
+      );
+      expect(named, `${proofId} names a real fixture ablation`).toBe(true);
+    }
+  });
+
+  it('marks every presentation construct as not a solved field', () => {
+    const presentation = graph.nodes.filter(
+      (node) => node.id.startsWith('riverfall:presentation:'),
+    );
+
+    expect(presentation.length).toBeGreaterThan(4);
+    for (const node of presentation) {
+      expect(node.honestyBoundary, `${node.id} states what it is not`)
+        .toContain('not a solved water height');
+    }
+  });
+});
+
+describe('the Riverfall graph against the live fixture', () => {
+  it('names only ablations the fixture accepts', () => {
+    for (const ablation of RIVERFALL_BOUND_ABLATIONS_V1) {
+      expect(
+        () => createRiverfallFluidConfigV1({ ablation }),
+        `the fixture still runs '${ablation}'`,
+      ).not.toThrow();
+    }
+  });
+
+  it('would reject an ablation the fixture does not run', () => {
+    expect(() => createRiverfallFluidConfigV1({
+      ablation: 'zero-impact' as never,
+    })).toThrow(/zero-impact/);
+  });
+
+  it('keeps its closed-mass particle count in step with the fixture', () => {
+    expect(RIVERFALL_CLOSED_PARTICLE_COUNT_V1)
+      .toBe(RIVERFALL_FLUID_PARTICLE_COUNT);
   });
 });
