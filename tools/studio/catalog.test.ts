@@ -44,7 +44,7 @@ describe('the studio shelf', () => {
       { name: 'Contrast: branching forms', count: 5 },
       { name: 'Contrast: asymmetric hybrids', count: 5 },
       { name: 'Machine Works', count: 12 },
-      { name: 'Riverfall', count: 8 },
+      { name: 'Riverfall', count: 10 },
       { name: 'Windmill', count: 4 },
       { name: 'Walls', count: 2 },
       { name: 'Garden', count: 7 },
