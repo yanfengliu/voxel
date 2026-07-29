@@ -20,6 +20,7 @@ describe('the studio library', () => {
       'box',
       'branching-form',
       'brick-course',
+      'chain-ring',
       'foliage',
       'open-frame',
       'picket-run',

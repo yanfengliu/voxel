@@ -2,6 +2,12 @@ import { describe, expect, it } from 'vitest';
 
 import { createStudioCatalog } from './catalog.js';
 import { createStudioRecipeBook } from './recipes.js';
+import { validateScenePoseReplayV1OrV2 } from './scene-pose-replay.js';
+import {
+  createWindmillPhysicalBook,
+  WINDMILL_PHYSICAL_ASSET_SET_V1,
+} from './windmill-physical-assets.js';
+import { WINDMILL_SCENE_ID } from './windmill-layout.js';
 
 /**
  * The discoverability contract: a saved recipe that cannot be found is a
@@ -38,16 +44,38 @@ describe('the studio shelf', () => {
       { name: 'Contrast: asymmetric hybrids', count: 5 },
       { name: 'Machine Works', count: 12 },
       { name: 'Riverfall', count: 8 },
+      { name: 'Windmill', count: 4 },
       { name: 'Walls', count: 2 },
       { name: 'Garden', count: 7 },
       { name: 'Furniture', count: 3 },
       { name: 'Bedroom furniture', count: 8 },
+      { name: 'Chain', count: 2 },
       { name: 'Roof studies', count: 3 },
       { name: 'House', count: 2 },
       { name: 'Home', count: 3 },
       { name: 'Home furnishings', count: 10 },
       { name: 'Outdoors', count: 4 },
     ]);
+  });
+
+  it('gives every Windmill entry the one selected compact sidecar book', () => {
+    const windmill = createStudioCatalog().sections.find(
+      (section) => section.name === 'Windmill',
+    );
+    expect(windmill).toBeDefined();
+    const shared = createWindmillPhysicalBook();
+    expect(shared).toBe(WINDMILL_PHYSICAL_ASSET_SET_V1.physicalAssetBook);
+    for (const entry of windmill?.models ?? []) {
+      const made = entry.howItsMade();
+      expect(made.physical, entry.id).toBe(shared);
+      expect(made.physical?.[entry.id], entry.id).toBe(shared[entry.id]);
+    }
+  });
+
+  it('opts only the Windmill scene into occupied-bounds opening framing', () => {
+    expect(createStudioCatalog().sceneOpeningViews).toEqual({
+      [WINDMILL_SCENE_ID]: 'occupied-world-bounds',
+    });
   });
 
   it('links every V4 scene to one valid catalog replay for that exact scene', () => {
@@ -62,6 +90,7 @@ describe('the studio shelf', () => {
       if (replay === undefined) {
         throw new Error(`Catalog V4 scene '${scene.id}' is missing replay '${scene.poseReplay.id}'.`);
       }
+      expect(validateScenePoseReplayV1OrV2(replay), scene.poseReplay.id).toEqual([]);
       expect(replay.sceneId).toBe(scene.id);
       expect(replay.frameCount * replay.provenance.fixedTimestepMs)
         .toBeCloseTo(scene.poseReplay.durationMs, 8);

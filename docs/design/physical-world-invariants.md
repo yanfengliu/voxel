@@ -146,13 +146,15 @@ keys rather than mutable step-array indexes. Its minimum generic data is:
 
 ## Voxel-derived colliders
 
-Accepted design direction on 2026-07-28; not implemented. Every model in this repository is a voxel grid, and no cell is more privileged than another, so collider authoring should not require a human to pick which parts of a model get an accurate shape.
+Accepted design direction on 2026-07-28. The decomposition is implemented in `tools/studio/voxel-colliders.ts`; nothing yet feeds it into a sidecar or a solver. Every model in this repository is a voxel grid, and no cell is more privileged than another, so collider authoring should not require a human to pick which parts of a model get an accurate shape.
 
 Non-convexity is not a problem for voxel content. Any occupied set is exactly the union of axis-aligned boxes, and every box is convex, so a voxel model needs no hull approximation and loses no fidelity — an interlocked ring, a hollow shell, and a torus all decompose exactly. What the convex restriction actually costs is collider count, not accuracy, and count is bounded by merging runs of occupied cells into maximal boxes the same way the renderer already merges faces.
 
 The consequence for the sidecar is that hand-picked primitives should become the exception rather than the interface. A body should be able to declare that its colliders are derived from its own occupied cells under a named merge rule and a declared budget, with hand-authored primitives reserved for deliberate simplifications that the author states as such. Until that exists, the validator's shape list stands and any voxel-faithful body must be written as explicit compound boxes.
 
-The open questions are the merge rule's determinism across mirrored and nested occurrences, the collider budget at which a many-body contact island stops solving in real time, and whether a derived decomposition stays stable enough between revisions to keep replay traces comparable. None is answered yet, and no fixture has measured them.
+`decomposeVoxelsV1` merges runs of solid cells into maximal boxes in a fixed z-then-y-then-x order, so the same occupancy always yields the same boxes in the same order. `voxelDecompositionIssuesV1` checks a decomposition against the occupancy it came from and reports three failures that are otherwise silent until something tunnels or sticks: a solid cell no box covers, a box that fills empty space, and two boxes claiming one cell. A hollow shell, a ring, and a ragged pseudo-random volume all pass exactly, with the hole left open.
+
+The open questions are unchanged. The collider budget at which a many-body contact island stops solving in real time is unmeasured, no fixture consumes the output yet, and determinism across mirrored and nested occurrences is untested because the decomposition currently runs on a built model rather than on a recipe occurrence.
 
 Visual recipe nesting means reuse and placement only. It does not infer a
 physical connection. A chair's legs, seat, and back can compile to multiple

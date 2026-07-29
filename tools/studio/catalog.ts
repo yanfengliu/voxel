@@ -9,6 +9,9 @@ import {
   RIVERFALL_POSE_REPLAY_ID,
 } from './riverfall-flow.js';
 import {
+  WINDMILL_POSE_REPLAY,
+} from './generated-windmill-replay.js';
+import {
   ARCH_VOID_CONTRAST_RECIPES,
   ASYMMETRIC_HYBRID_CONTRAST_RECIPES,
   BRANCHING_ORGANIC_CONTRAST_RECIPES,
@@ -21,12 +24,19 @@ import type { StudioModelV1 } from './model.js';
 import { createMachineWorksPhysicalBook } from './machine-works-physical-assets.js';
 import { createStudioParts } from './parts.js';
 import type { PhysicalAssetBookV1 } from './physical-asset.js';
+import { createWindmillPhysicalBook } from './windmill-physical-assets.js';
+import {
+  WINDMILL_REPLAY_TRACE_BINDING_V1,
+} from './windmill-replay-trace-binding.js';
+import { WINDMILL_SCENE_ID } from './windmill-layout.js';
 import { buildRecipe, type PartShelfV1, type RecipeBookV1, type RecipeV1 } from './recipe.js';
 import type { SceneV1 } from './scene.js';
-import type { ScenePoseReplayV1 } from './scene-pose-replay.js';
+import type { ScenePoseReplayV1OrV2 } from './scene-pose-replay.js';
 import { createStudioScenes } from './scenes.js';
 import {
   createBrickCottageRecipe,
+  createChainCrossedLinkRecipe,
+  createChainUprightLinkRecipe,
   createBrickWallRecipe,
   createBedFrameRecipe,
   createBedroomFurnitureSetRecipe,
@@ -91,6 +101,7 @@ import {
   createTulipPotRecipe,
   createTulipRecipe,
   createVioletFlowerPotRecipe,
+  createWindmillRecipeBook,
 } from './recipes.js';
 
 /**
@@ -158,7 +169,15 @@ export interface StudioCatalogV1 {
    * referenced by scene id. Studio may present them; it does not advance
    * their solver or authored choreography.
    */
-  readonly scenePoseReplays?: Readonly<Record<string, ScenePoseReplayV1>>;
+  readonly scenePoseReplays?: Readonly<Record<string, ScenePoseReplayV1OrV2>>;
+  /**
+   * Explicit scene-owned opening-frame policies. Omitted scenes retain the
+   * stable origin-centered Studio framing used by existing catalogs.
+   */
+  readonly sceneOpeningViews?: Readonly<Record<
+    string,
+    'occupied-world-bounds'
+  >>;
 }
 
 /** A small model that is obviously a model, so the studio never opens on noise. */
@@ -353,6 +372,14 @@ export function createStudioCatalog(): StudioCatalogV1 {
         ],
       },
       {
+        name: 'Windmill',
+        // All four entries receive the same frozen compact sidecar book.
+        // Collider identity is derived from exact geometry box keys there;
+        // the catalog owns no independent physical proxy or numeric mapping.
+        models: Object.values(createWindmillRecipeBook()).map((recipe) =>
+          recipeEntry(() => recipe, { physical: createWindmillPhysicalBook })),
+      },
+      {
         name: 'Walls',
         models: [
           // The hand-built brick wall proves "texture" is pattern plus
@@ -403,6 +430,15 @@ export function createStudioCatalog(): StudioCatalogV1 {
           bedroomEntry(createNightstandRecipe),
           bedroomEntry(createTableLampRecipe),
           bedroomEntry(createBedroomFurnitureSetRecipe),
+        ],
+      },
+      {
+        // One ring in two planes. Alternating them is the whole mechanism the
+        // Chain link study scene shows, so both belong on the shelf together.
+        name: 'Chain',
+        models: [
+          recipeEntry(createChainUprightLinkRecipe),
+          recipeEntry(createChainCrossedLinkRecipe),
         ],
       },
       {
@@ -473,6 +509,10 @@ export function createStudioCatalog(): StudioCatalogV1 {
     scenePoseReplays: {
       [MACHINE_WORKS_POSE_REPLAY_ID]: MACHINE_WORKS_POSE_REPLAY,
       [RIVERFALL_POSE_REPLAY_ID]: RIVERFALL_POSE_REPLAY,
+      [WINDMILL_REPLAY_TRACE_BINDING_V1.replayId]: WINDMILL_POSE_REPLAY,
+    },
+    sceneOpeningViews: {
+      [WINDMILL_SCENE_ID]: 'occupied-world-bounds',
     },
   };
 }

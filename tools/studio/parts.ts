@@ -14,6 +14,7 @@ import {
   radialWheelPart,
   trussSpanPart,
 } from './expressive-parts.js';
+import { chainRingPart } from './chain-link-part.js';
 import type { PartFragmentV1, PartShelfV1 } from './recipe.js';
 
 /**
@@ -271,6 +272,7 @@ export function createStudioParts(): PartShelfV1 {
   return {
     box: boxPart,
     'brick-course': brickCoursePart,
+    'chain-ring': chainRingPart,
     foliage: foliagePart,
     'picket-run': picketRunPart,
     'arch-span': archSpanPart,

@@ -1,3 +1,4 @@
+import { createChainRecipeBook } from './chain-recipes.js';
 import { createCottageRecipeBook } from './cottage-recipes.js';
 import { createContrastRecipeBook } from './contrast-recipes.js';
 import { createFurnitureRecipeBook } from './furniture-recipes.js';
@@ -11,6 +12,7 @@ import { createOutdoorRecipeBook } from './outdoor-recipes.js';
 import { createRiverfallRecipeBook } from './riverfall-recipes.js';
 import { createShapesRecipeBook } from './shapes-recipes.js';
 import { createWallRecipeBook } from './wall-recipes.js';
+import { createWindmillRecipeBook } from './windmill-recipes.js';
 import type { RecipeBookV1 } from './recipe.js';
 
 /**
@@ -20,6 +22,7 @@ import type { RecipeBookV1 } from './recipe.js';
  * all, so discovering a recipe never depends on knowing which file it
  * lives in. Tests pin that every recipe here also stands on the shelf.
  */
+export * from './chain-recipes.js';
 export * from './cottage-recipes.js';
 export * from './contrast-recipes.js';
 export * from './furniture-recipes.js';
@@ -33,6 +36,7 @@ export * from './outdoor-recipes.js';
 export * from './riverfall-recipes.js';
 export * from './shapes-recipes.js';
 export * from './wall-recipes.js';
+export * from './windmill-recipes.js';
 
 /**
  * Every saved recipe, by id — the book a build may place recipes from.
@@ -45,11 +49,13 @@ export function createStudioRecipeBook(): RecipeBookV1 {
     ...createContrastRecipeBook(),
     ...createWallRecipeBook(),
     ...createGardenRecipeBook(),
+    ...createChainRecipeBook(),
     ...createCottageRecipeBook(),
     ...createFurnitureRecipeBook(),
     ...createHouseholdRecipeBook(),
     ...createMachineWorksRecipeBook(),
     ...createRiverfallRecipeBook(),
+    ...createWindmillRecipeBook(),
     ...createHouseRecipeBook(),
     ...createHomeRecipeBook(),
     ...createHomeFurnishingsRecipeBook(),

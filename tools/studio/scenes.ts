@@ -7,6 +7,18 @@ import {
   type SceneSchemaV3,
   type SceneV1,
 } from './scene.js';
+import {
+  chainLinkCentreV1,
+  chainLinkPlacementYV1,
+  chainLinkPlaneV1,
+  chainSpanV1,
+  CHAIN_LINK_COUNT_V1,
+  CHAIN_OUTER_RADIUS_V1,
+} from './chain-layout.js';
+import {
+  CHAIN_CROSSED_RECIPE_ID,
+  CHAIN_UPRIGHT_RECIPE_ID,
+} from './chain-recipes.js';
 import { createContrastScenes } from './contrast-scenes.js';
 import { createRiverfallScene } from './riverfall-scene.js';
 import { createWindmillScene } from './windmill-scene.js';
@@ -161,6 +173,54 @@ function createLighting1000Scene(): SceneSchemaV3 {
 }
 
 /**
+ * The chain, laid out straight.
+ *
+ * A scene placement carries a position and quarter-turns about the up axis and
+ * nothing else, so it cannot tilt a link to follow a hanging curve. That means
+ * a catenary cannot be authored here honestly: the shape a chain takes under
+ * its own weight is solver output, not placement data. This scene therefore
+ * shows the one thing placement data can prove — that the links are threaded —
+ * and says plainly that it is not hanging.
+ */
+function createChainLinkStudyScene(): SceneV1 {
+  const wallOffset = CHAIN_OUTER_RADIUS_V1 + 2;
+  return {
+    schemaVersion: VOXEL_SCENE_SCHEMA_V1,
+    id: 'studio:scene:chain-links',
+    label: 'Chain link study',
+    summary: 'Eleven steel rings, each turned ninety degrees from its '
+      + 'neighbours so every link passes through the next one\'s hole. Nothing '
+      + 'joins them: they are held together only by being solid rings that '
+      + 'thread each other. This is a static study laid out straight. A scene '
+      + 'placement cannot tilt a link, so the hanging curve and the swing are '
+      + 'solver work, and neither is shown here.',
+    placements: [
+      // Two courses per pier, because one sandstone wall is ten tall and the
+      // upright links reach fifteen; a pier the chain hangs over the top of
+      // would not read as holding it.
+      ...([['west', -chainSpanV1() / 2 - wallOffset],
+        ['east', chainSpanV1() / 2 + wallOffset]] as const)
+        .flatMap(([side, x]) => [0, 10].map((lift) => ({
+          id: `anchor-${side}-${lift === 0 ? 'lower' : 'upper'}`,
+          model: 'studio:sandstone-wall',
+          at: [x, lift, 0] as readonly [number, number, number],
+          turns: 1,
+        }))),
+      ...Array.from({ length: CHAIN_LINK_COUNT_V1 }, (_, index) => {
+        const [x, , z] = chainLinkCentreV1(index);
+        return {
+          id: `link-${String(index).padStart(2, '0')}`,
+          model: chainLinkPlaneV1(index) === 'xy'
+            ? CHAIN_UPRIGHT_RECIPE_ID
+            : CHAIN_CROSSED_RECIPE_ID,
+          at: [x, chainLinkPlacementYV1(index), z] as readonly [number, number, number],
+        };
+      }),
+    ],
+  };
+}
+
+/**
  * The engine studio's own example scenes: arrangements of shelf models standing
  * together in one world. They prove the scene lane and show what a scene is —
  * finished models placed side by side, not merged into a new recipe. A game
@@ -303,6 +363,7 @@ export function createStudioScenes(): readonly SceneV1[] {
         { id: 'classic-back-right', model: 'studio:three-flower-pot', at: [11, 0, -10] },
       ],
     },
+    createChainLinkStudyScene(),
     ...createContrastScenes(),
     createRiverfallScene(),
     createWindmillScene(),
