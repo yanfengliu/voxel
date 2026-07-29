@@ -101,11 +101,18 @@ export function createStudioPlayerBar(deps: StudioPlayerBarDepsV1): StudioPlayer
 
   function showSceneTime(timeMs: number): void {
     const period = player.periodMs;
-    const wrapped = period > 0 ? ((timeMs % period) + period) % period : 0;
+    const shown = period <= 0
+      ? 0
+      : player.playback === 'once'
+        ? Math.min(period, Math.max(0, timeMs))
+        : ((timeMs % period) + period) % period;
     timeLabel.textContent = period > 0
       ? `${String(Math.round(timeMs))} ms elapsed Â· ${String(period)} ms scrub window`
       : 'still Â· one scene frame';
-    if (document.activeElement !== timeline) timeline.value = String(Math.round(wrapped));
+    if (period > 0 && player.playback === 'once') {
+      timeLabel.textContent = `${String(Math.round(shown))} ms of ${String(period)} ms · one shot`;
+    }
+    if (document.activeElement !== timeline) timeline.value = String(Math.round(shown));
   }
 
   function setSceneMode(on: boolean, hasMotion = false): void {
@@ -128,7 +135,10 @@ export function createStudioPlayerBar(deps: StudioPlayerBarDepsV1): StudioPlayer
     stepBack.disabled = period <= 0;
     stepForward.disabled = period <= 0;
     timeline.disabled = period <= 0;
-    timeline.max = String(Math.max(period - 1, 0));
+    timeline.max = String(Math.max(
+      player.playback === 'once' ? period : period - 1,
+      0,
+    ));
   }
 
   playButton.addEventListener('click', () => {

@@ -1,13 +1,19 @@
 import { describe, expect, it } from 'vitest';
 
 import {
-  MAX_POSE_REPLAY_EVENT_MEMBERS,
   sampleScenePoseReplayV1,
+  sampleScenePoseReplayV2,
   sampleValidatedScenePoseReplayV1,
   scenePoseReplayDurationMsV1,
+} from './scene-pose-replay-sampling.js';
+import {
+  MAX_POSE_REPLAY_EVENT_MEMBERS,
   STUDIO_SCENE_POSE_REPLAY_SCHEMA_V1,
+  STUDIO_SCENE_POSE_REPLAY_SCHEMA_V2,
   validateScenePoseReplayV1,
+  validateScenePoseReplayV2,
   type ScenePoseReplayV1,
+  type ScenePoseReplayV2,
 } from './scene-pose-replay.js';
 
 const HASH_A = `sha256:${'a'.repeat(64)}`;
@@ -210,6 +216,19 @@ describe('Studio scene pose replay validation', () => {
       '$.events[0]',
     ]));
   });
+
+  it('requires an explicit one-shot policy on the versioned finite contract', () => {
+    const finite: ScenePoseReplayV2 = {
+      ...replay(),
+      schemaVersion: STUDIO_SCENE_POSE_REPLAY_SCHEMA_V2,
+      playback: 'once',
+    };
+    expect(validateScenePoseReplayV2(finite)).toEqual([]);
+    const malformed = { ...finite, playback: 'loop' };
+    expect(validateScenePoseReplayV2(malformed)).toContainEqual(expect.objectContaining({
+      path: '$.playback',
+    }));
+  });
 });
 
 describe('Studio scene pose replay sampling', () => {
@@ -312,6 +331,20 @@ describe('Studio scene pose replay sampling', () => {
     const reset = sampleScenePoseReplayV1(value, 200);
     expect(reset.frameA).toBe(0);
     expect(reset.placements[0]?.translation).toEqual([0, 0, 0]);
+  });
+
+  it('clamps a finite V2 replay without fabricating a reset seam', () => {
+    const finite: ScenePoseReplayV2 = {
+      ...replay(),
+      schemaVersion: STUDIO_SCENE_POSE_REPLAY_SCHEMA_V2,
+      playback: 'once',
+    };
+    const held = sampleScenePoseReplayV2(finite, 5_000);
+    expect(held.playbackTimeMs).toBe(200);
+    expect(held.frameA).toBe(1);
+    expect(held.frameB).toBe(1);
+    expect(held.placements[0]?.translation).toEqual([10, 20, 30]);
+    expect(sampleScenePoseReplayV2(finite, -1).playbackTimeMs).toBe(0);
   });
 
   it('is deterministic without mutating recorded arrays', () => {

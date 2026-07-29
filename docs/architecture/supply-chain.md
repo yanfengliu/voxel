@@ -36,7 +36,7 @@ asset is not automatically appropriate for a reusable engine package; if one is
 ever imported, its source, version, license, and redistribution terms belong in
 this document before it ships.
 
-Development dependencies are MIT or Apache-2.0 and are not redistributed. The gate checks each declared license against an allowed permissive set and fails on an unknown or non-permissive one. `@dimforge/rapier3d-compat` is used only by the headless Machine Works consumer fixture to generate a committed numeric pose replay; `src/`, `dist`, and the package tarball do not import or include its JS/WASM implementation. Its source is the npm registry package locked at `0.19.3`, its declared license is Apache-2.0, the lockfile records registry integrity, and the generation test pins the trace byte-for-byte with SHA-256 input and final hashes.
+Development dependencies are MIT or Apache-2.0 and are not redistributed. The gate checks each declared license against an allowed permissive set and fails on an unknown or non-permissive one. `@dimforge/rapier3d-compat` is used only by the headless Machine Works and Windmill consumer fixtures to generate committed numeric pose replays through their shared fixture-private exact-sidecar adapter; `src/`, `dist`, and the package tarball do not import or include its JS/WASM implementation. Its source is the npm registry package locked at `0.19.3`, its declared license is Apache-2.0, the lockfile records registry integrity, and generation tests bind each trace to SHA-256 input and final hashes.
 
 | Dependency | Version | License |
 | --- | --- | --- |

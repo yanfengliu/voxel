@@ -1,6 +1,7 @@
 import {
   type ScenePoseReplayEventV1,
   type ScenePoseReplayV1,
+  type ScenePoseReplayV1OrV2,
 } from './scene-pose-replay.js';
 
 export function copyScenePoseReplayEventV1(
@@ -36,14 +37,23 @@ export function copyScenePoseReplayEventV1(
  * storage that another caller can mutate after acceptance.
  */
 export function copyScenePoseReplayV1(replay: ScenePoseReplayV1): ScenePoseReplayV1 {
-  return {
-    schemaVersion: replay.schemaVersion,
+  return copyScenePoseReplayV1OrV2(replay) as ScenePoseReplayV1;
+}
+
+export function copyScenePoseReplayV1OrV2(
+  replay: ScenePoseReplayV1OrV2,
+): ScenePoseReplayV1OrV2 {
+  const shared = {
     sceneId: replay.sceneId,
     frameCount: replay.frameCount,
     provenance: {
       solver: { ...replay.provenance.solver },
       fixedTimestepMs: replay.provenance.fixedTimestepMs,
-      gravity: [...replay.provenance.gravity],
+      gravity: [
+        replay.provenance.gravity[0],
+        replay.provenance.gravity[1],
+        replay.provenance.gravity[2],
+      ] as const,
       inputHash: replay.provenance.inputHash,
       finalHash: replay.provenance.finalHash,
       lawLabels: [...replay.provenance.lawLabels],
@@ -58,4 +68,7 @@ export function copyScenePoseReplayV1(replay: ScenePoseReplayV1): ScenePoseRepla
     })),
     events: replay.events.map(copyScenePoseReplayEventV1),
   };
+  return replay.schemaVersion === 'studio.scene-pose-replay/2'
+    ? { schemaVersion: replay.schemaVersion, playback: replay.playback, ...shared }
+    : { schemaVersion: replay.schemaVersion, ...shared };
 }

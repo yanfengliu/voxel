@@ -1,9 +1,14 @@
 import { describe, expect, it } from 'vitest';
 
-import { copyScenePoseReplayV1 } from './scene-pose-replay-copy.js';
+import {
+  copyScenePoseReplayV1,
+  copyScenePoseReplayV1OrV2,
+} from './scene-pose-replay-copy.js';
 import {
   STUDIO_SCENE_POSE_REPLAY_SCHEMA_V1,
+  STUDIO_SCENE_POSE_REPLAY_SCHEMA_V2,
   type ScenePoseReplayV1,
+  type ScenePoseReplayV2,
 } from './scene-pose-replay.js';
 
 const HASH = `sha256:${'a'.repeat(64)}`;
@@ -60,5 +65,21 @@ describe('copyScenePoseReplayV1', () => {
     expect(copy.provenance.gravity).toEqual([0, -9.81, 0]);
     expect(copy.provenance.lawLabels).toEqual(['gravity']);
     expect(copy.events[0]).toMatchObject({ point: [1, 2, 3] });
+  });
+
+  it('preserves the finite V2 schema and playback policy while detaching channels', () => {
+    const source: ScenePoseReplayV2 = {
+      ...replay(),
+      schemaVersion: STUDIO_SCENE_POSE_REPLAY_SCHEMA_V2,
+      playback: 'once',
+    };
+    const copy = copyScenePoseReplayV1OrV2(source);
+    source.tracks[0]!.translations[0] = 99;
+
+    expect(copy).toMatchObject({
+      schemaVersion: STUDIO_SCENE_POSE_REPLAY_SCHEMA_V2,
+      playback: 'once',
+    });
+    expect(Array.from(copy.tracks[0]!.translations)).toEqual([1, 2, 3]);
   });
 });

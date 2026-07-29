@@ -1,6 +1,6 @@
 import type { RenderSnapshotV1 } from '../../src/core/index.js';
 
-import { buildSnapshot } from './build.js';
+import { buildSnapshot, filledGridBoundsV1 } from './build.js';
 import { setVoxelSize } from './edit.js';
 import { modelVoxelSizeV1, type GenomeIssueV1 } from './model.js';
 import { buildRecipe, mixSeed, type PartShelfV1, type RecipeBookV1 } from './recipe.js';
@@ -177,6 +177,8 @@ export function buildSceneSnapshot(
     const sourceBatch = built.batches[0];
     // An empty model draws nothing; it simply contributes no body to the scene.
     if (geometry?.kind !== 'geometry' || material?.kind !== 'material' || !sourceBatch) continue;
+    const filled = filledGridBoundsV1(model);
+    if (filled === null) continue;
 
     const geometryKey = `geometry:${String(index)}`;
     const materialKey = `material:${String(index)}`;
@@ -192,10 +194,13 @@ export function buildSceneSnapshot(
     const count = group.placements.length;
     const matrices = new Float32Array(count * 16);
     const instanceKeys: string[] = [];
-    // A scene stands models on a floor, so a placement's `at` is where the
-    // model's base goes, not its middle. The geometry is centred on its own
-    // middle, so its lowest point is exactly how far to lift it.
-    const baseLift = -geometry.bounds.min.y;
+    // A scene stands the occupied voxel solid on the floor. Presentation-only
+    // face outlines extend past that solid, so deriving the lift from meshed
+    // bounds would move every instance when edges are toggled and would make an
+    // authoritative pose replay depend on a view preference.
+    const baseLift = (
+      (filled.max.y - filled.min.y + 1) * modelVoxelSizeV1(model)
+    ) / 2;
     group.placements.forEach((placement, slot) => {
       writePlacementMatrix(
         matrices,

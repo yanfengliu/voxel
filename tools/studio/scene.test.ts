@@ -383,6 +383,28 @@ describe('building a scene into a snapshot', () => {
     expect([matrices[44], matrices[45], matrices[46]]).toEqual([12, lift, 0]);
   });
 
+  it('keeps placement transforms independent from decorative face outlines', () => {
+    const subject = scene([
+      { id: 'a', model: 'studio:chair', at: [2, 3, 4] },
+    ]);
+    const withEdges = buildSceneSnapshot(subject, recipes, parts, { edges: true });
+    const withoutEdges = buildSceneSnapshot(subject, recipes, parts, { edges: false });
+    expect(Array.from(withEdges.batches[0]?.matrices ?? [])).toEqual(
+      Array.from(withoutEdges.batches[0]?.matrices ?? []),
+    );
+    const outlinedGeometry = withEdges.resources.find(
+      (resource) => resource.kind === 'geometry',
+    );
+    const solidGeometry = withoutEdges.resources.find(
+      (resource) => resource.kind === 'geometry',
+    );
+    expect(outlinedGeometry?.kind).toBe('geometry');
+    expect(solidGeometry?.kind).toBe('geometry');
+    if (outlinedGeometry?.kind === 'geometry' && solidGeometry?.kind === 'geometry') {
+      expect(outlinedGeometry.bounds.min.y).toBeLessThan(solidGeometry.bounds.min.y);
+    }
+  });
+
   it('threads a rising revision through the snapshot and its bodies', () => {
     // A look change re-accepts at a higher revision, so the runtime updates
     // rather than ignoring a same-revision snapshot.

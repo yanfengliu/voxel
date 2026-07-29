@@ -238,7 +238,7 @@ test('Machine Works presents its minimal phase flags and belt plus every committ
   expect(cogPhaseUnderDrive).not.toBe(cogPhaseAtRest);
   const phaseEvidence = await page.evaluate(async () => {
     const replayUrl = new URL('generated-machine-works-replay.ts', window.location.href).href;
-    const samplerUrl = new URL('scene-pose-replay.ts', window.location.href).href;
+    const samplerUrl = new URL('scene-pose-replay-sampling.ts', window.location.href).href;
     const replayModule = await import(replayUrl) as unknown as BrowserReplayModule;
     const samplerModule = await import(samplerUrl) as unknown as BrowserReplaySamplerModule;
     const sample = (timeMs: number) => {
@@ -366,6 +366,7 @@ test('Machine Works presents its minimal phase flags and belt plus every committ
   }, REPLAY_DURATION_MS);
   const resetHash = await imageHash(page);
   expect(reset.replayStatus?.sample).toEqual({
+    playbackTimeMs: 0,
     wrappedTimeMs: 0,
     frameA: 0,
     frameB: 1,

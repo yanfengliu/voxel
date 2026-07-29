@@ -213,7 +213,7 @@ export async function drawMachineWorksSubsetAt(
 export async function measureMachineWorksHandoffEvidence(page: Page) {
   return page.evaluate(async ({ ports, timing }) => {
     const replayUrl = new URL('generated-machine-works-replay.ts', window.location.href).href;
-    const samplerUrl = new URL('scene-pose-replay.ts', window.location.href).href;
+    const samplerUrl = new URL('scene-pose-replay-sampling.ts', window.location.href).href;
     const replayModule = await import(replayUrl) as unknown as BrowserReplayModule;
     const samplerModule = await import(samplerUrl) as unknown as BrowserReplaySamplerModule;
     type Vec3 = readonly [number, number, number];

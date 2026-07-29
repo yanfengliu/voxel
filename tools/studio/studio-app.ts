@@ -58,6 +58,7 @@ import {
 import type { ScenePoseReplayEventV1 } from './scene-pose-replay.js';
 import { VOXEL_SCENE_SCHEMA_V4, type SceneV1 } from './scene.js';
 import { sceneMotionWindowMsV1 } from './scene-motion.js';
+import { sceneOpeningViewV1 } from './scene-opening-view.js';
 import { clampSceneViewV1, sceneViewCenterIsPinnedV1 } from './scene-orbit.js';
 import { createSceneWorkspace } from './scene-workspace.js';
 import {
@@ -509,8 +510,8 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
     ...DEFAULT_ORBIT,
     viewHeight: fitViewHeight(firstModel.size, modelVoxelSizeV1(firstModel)),
   });
-  // The point the camera looks at; a right-drag pan slides it, opening a model
-  // or scene re-centres it on the origin.
+  // The point the camera looks at; a right-drag pan slides it, while opening a
+  // model or an ordinary scene returns to the stable world origin.
   let panCenter: OrbitCenterV1 = [0, 0, 0];
   let viewW = VIEW_WIDTH;
   let viewH = VIEW_HEIGHT;
@@ -1269,6 +1270,7 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
       playerBar.showSceneTime(timeMs);
       syncSceneStatus(sceneOpen);
       drawSceneOverlays();
+      if (sceneTransport.finishAtEnd(timeMs)) playerBar.syncPlayButton();
       return;
     }
     session.showAt(timeMs);
@@ -1358,11 +1360,14 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
   }
 
   // ---- scene view ----
-  /** A view height that frames the whole scene, from how far its models spread. */
+  /** The stable origin-centered fit retained by scenes without an opt-in view. */
   function sceneFitHeight(scene: SceneV1): number {
     let reach = 8;
     for (const placement of scene.placements) {
-      reach = Math.max(reach, Math.hypot(placement.at[0], placement.at[2]) + 10);
+      reach = Math.max(
+        reach,
+        Math.hypot(placement.at[0], placement.at[2]) + 10,
+      );
     }
     return Math.min(AUTO_FIT_MAX_VIEW_HEIGHT, reach * 2.4);
   }
@@ -1379,6 +1384,7 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
     const transportPeriodMs = hasMotion ? Math.max(1, sceneMotionWindowMsV1(scene, sceneRecipes)) : 0;
     sceneTransport.sync({
       hasMotion, previousHasMotion, periodMs: transportPeriodMs, lastShownMs,
+      playback: sceneSession?.poseReplayStatus()?.playback ?? 'loop',
       applyPeriod: (periodMs) => { playerBar.applyPeriod(periodMs); },
     });
     playerBar.showSceneTime(lastShownMs);
@@ -1399,10 +1405,17 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
     const previousOrbit = orbit;
     const previousPanCenter = panCenter;
     const previousShownMs = lastShownMs;
+    const openingPolicy = catalog.sceneOpeningViews?.[scene.id];
+    const openingView = openingPolicy === 'occupied-world-bounds'
+      ? sceneOpeningViewV1(scene, sceneRecipes, sceneParts)
+      : null;
     const candidateView = clampSceneViewV1(
-      { ...orbit, viewHeight: sceneFitHeight(scene) },
+      {
+        ...orbit,
+        viewHeight: openingView?.viewHeight ?? sceneFitHeight(scene),
+      },
       scene,
-      [0, 0, 0],
+      openingView?.center ?? [0, 0, 0],
       { lit: session.lit, depth: depthOn },
     );
     const candidatePanCenter = candidateView.center;
@@ -1514,6 +1527,7 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
     canvasWrap.classList.remove('scene-annotation-armed');
     sceneEditor.clearLightSelection();
     sceneTransport.freezeExact(lastShownMs);
+    player.setPlayback('loop', performance.now());
     clearViewError();
     sceneOpen = null;
     sceneAnnotationFingerprintCache = null;
@@ -1575,6 +1589,7 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
         // Retirement cleanup is allowed to fail. The visible transition is not:
         // the deleted scene must never remain on screen after it is gone.
         sceneTransport.freezeExact(lastShownMs);
+        player.setPlayback('loop', performance.now());
         sceneNotesPanel?.cancelCapture();
         sceneAnnotationModeOn = false;
         canvasWrap.classList.remove('scene-annotation-armed');
@@ -1639,6 +1654,7 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
       + sceneLightingStatusSuffix(lightCount, session.lit)
       + sceneAnimationStatusSuffix(hasMotion, sceneTransport.enabled)
       + (replayReadOnly ? ' · consumer replay · read-only' : '')
+      + (replay?.playback === 'once' ? ' · one shot' : '')
       + replaySuffix;
     statusChip.title = replay === null || replay === undefined
       ? ''

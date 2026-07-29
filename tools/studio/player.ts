@@ -16,12 +16,14 @@
 
 const MIN_SPEED = 0.1;
 const MAX_SPEED = 8;
+export type StudioPlaybackV1 = 'loop' | 'once';
 
 export class StudioPlayer {
   #periodMs: number;
   #playing = false;
   #speed = 1;
-  /** Position within [0, period) at the last re-anchor. */
+  #playback: StudioPlaybackV1 = 'loop';
+  /** Cyclic phase in [0, period), or finite time in [0, period], at the last re-anchor. */
   #heldMs = 0;
   /** The caller's "now" at the last re-anchor; meaningful while playing. */
   #anchorNow = 0;
@@ -42,17 +44,27 @@ export class StudioPlayer {
     return this.#periodMs;
   }
 
-  /** The position within the period at the caller's "now". */
+  get playback(): StudioPlaybackV1 {
+    return this.#playback;
+  }
+
+  /** The cyclic phase or finite observation time at the caller's "now". */
   timeAt(now: number): number {
     if (this.#periodMs <= 0) return 0;
     if (!this.#playing) return this.#heldMs;
     const advanced = this.#heldMs + (now - this.#anchorNow) * this.#speed;
+    if (this.#playback === 'once') {
+      return Math.min(this.#periodMs, Math.max(0, advanced));
+    }
     return ((advanced % this.#periodMs) + this.#periodMs) % this.#periodMs;
   }
 
   play(now: number): void {
     // A still model has nothing to play; pretending would divide by zero.
     if (this.#periodMs <= 0 || this.#playing) return;
+    if (this.#playback === 'once' && this.#heldMs >= this.#periodMs) {
+      this.#heldMs = 0;
+    }
     this.#playing = true;
     this.#anchorNow = now;
   }
@@ -64,9 +76,30 @@ export class StudioPlayer {
   }
 
   seek(timeMs: number, now: number): void {
-    const max = this.#periodMs > 0 ? this.#periodMs - 1 : 0;
+    const max = this.#periodMs > 0
+      ? this.#playback === 'once' ? this.#periodMs : this.#periodMs - 1
+      : 0;
     this.#heldMs = Math.min(Math.max(0, Math.round(timeMs)), max);
     this.#anchorNow = now;
+  }
+
+  /** Holds the exact terminal state of a finite replay after it was presented. */
+  holdAtEnd(now: number): void {
+    if (this.#playback !== 'once' || this.#periodMs <= 0) return;
+    this.#heldMs = this.#periodMs;
+    this.#anchorNow = now;
+    this.#playing = false;
+  }
+
+  /** Changes boundary behavior while preserving the currently observed time. */
+  setPlayback(playback: StudioPlaybackV1, now: number): void {
+    if (this.#playback === playback) return;
+    const current = this.timeAt(now);
+    this.#playback = playback;
+    this.#anchorNow = now;
+    this.#heldMs = playback === 'once'
+      ? Math.min(this.#periodMs, Math.max(0, current))
+      : Math.min(Math.max(0, current), Math.max(0, this.#periodMs - 1));
   }
 
   setSpeed(speed: number, now: number): void {
@@ -93,6 +126,7 @@ export class StudioPlayer {
       this.#playing = false;
       return;
     }
-    this.#heldMs = Math.min(Math.round(fraction * next), next - 1);
+    const maximum = this.#playback === 'once' ? next : next - 1;
+    this.#heldMs = Math.min(Math.round(fraction * next), maximum);
   }
 }

@@ -25,6 +25,7 @@ describe('StudioSceneAnimationTransport', () => {
       previousHasMotion: null,
       periodMs: 1_800,
       lastShownMs: 0,
+      playback: 'loop',
       applyPeriod: (periodMs) => { on.player.setPeriod(periodMs, 0); },
     });
     expect(on.player.playing).toBe(true);
@@ -36,6 +37,7 @@ describe('StudioSceneAnimationTransport', () => {
       previousHasMotion: null,
       periodMs: 1_800,
       lastShownMs: 0,
+      playback: 'loop',
       applyPeriod: (periodMs) => { off.player.setPeriod(periodMs, 0); },
     });
     expect(off.player.playing).toBe(false);
@@ -83,6 +85,7 @@ describe('StudioSceneAnimationTransport', () => {
       previousHasMotion: null,
       periodMs: 1_000,
       lastShownMs: 0,
+      playback: 'loop',
       applyPeriod: (periodMs) => { player.setPeriod(periodMs, 0); },
     });
     setNow(250);
@@ -92,9 +95,34 @@ describe('StudioSceneAnimationTransport', () => {
       previousHasMotion: true,
       periodMs: 1_800,
       lastShownMs: 250,
+      playback: 'loop',
       applyPeriod: (periodMs) => { player.setPeriod(periodMs, 250); },
     });
     expect(player.playing).toBe(false);
     expect(transport.shouldAdvance(true)).toBe(false);
+  });
+
+  it('holds a finite replay at its end and restarts only on explicit enable', () => {
+    const { player, transport, setNow } = fixture(true);
+    transport.sync({
+      hasMotion: true,
+      previousHasMotion: null,
+      periodMs: 1_000,
+      lastShownMs: 0,
+      playback: 'once',
+      applyPeriod: (periodMs) => { player.setPeriod(periodMs, 0); },
+    });
+    setNow(1_250);
+    expect(transport.timeAt(1_250)).toBe(1_000);
+    expect(transport.finishAtEnd(1_000)).toBe(true);
+    expect(player.playing).toBe(false);
+    expect(player.timeAt(1_250)).toBe(1_000);
+    expect(transport.shouldAdvance(true)).toBe(false);
+
+    setNow(2_000);
+    transport.setEnabled(true, 1_000, true);
+    expect(player.playing).toBe(true);
+    expect(player.timeAt(2_000)).toBe(0);
+    expect(transport.timeAt(2_000)).toBe(0);
   });
 });

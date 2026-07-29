@@ -1,9 +1,11 @@
 import {
   validateScenePoseReplayV1,
+  validateScenePoseReplayV2,
   type ScenePoseReplayEventV1,
   type ScenePoseReplayProvenanceV1,
   type ScenePoseReplayTrackV1,
   type ScenePoseReplayV1,
+  type ScenePoseReplayV2,
 } from './scene-pose-replay.js';
 
 export interface EncodedInterleavedScenePoseReplayV1 {
@@ -17,6 +19,10 @@ export interface EncodedInterleavedScenePoseReplayV1 {
   readonly linearVelocitiesBase64: string;
   readonly angularVelocitiesBase64: string;
   readonly events: readonly ScenePoseReplayEventV1[];
+}
+export interface EncodedInterleavedScenePoseReplayV2
+  extends EncodedInterleavedScenePoseReplayV1 {
+  readonly playback: 'once';
 }
 
 function decodeFloat32LittleEndian(
@@ -120,6 +126,30 @@ export function decodeInterleavedScenePoseReplayV1(
   if (issues.length > 0) {
     throw new Error(
       `Decoded scene pose replay '${encoded.sceneId}' is invalid: `
+      + issues.map((issue) => `${issue.path} ${issue.message}`).join('; '),
+    );
+  }
+  return replay;
+}
+
+/**
+ * Decodes a finite observation without introducing a cyclic reset. The binary
+ * channels are identical to V1; the versioned playback field changes only how
+ * Studio maps time at the trace boundary.
+ */
+export function decodeInterleavedScenePoseReplayV2(
+  encoded: EncodedInterleavedScenePoseReplayV2,
+): ScenePoseReplayV2 {
+  const cyclic = decodeInterleavedScenePoseReplayV1(encoded);
+  const replay: ScenePoseReplayV2 = {
+    ...cyclic,
+    schemaVersion: 'studio.scene-pose-replay/2',
+    playback: encoded.playback,
+  };
+  const issues = validateScenePoseReplayV2(replay);
+  if (issues.length > 0) {
+    throw new Error(
+      `Decoded finite scene pose replay '${encoded.sceneId}' is invalid: `
       + issues.map((issue) => `${issue.path} ${issue.message}`).join('; '),
     );
   }

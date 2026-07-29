@@ -1,4 +1,4 @@
-import { modelCenterV1 } from './build.js';
+import { filledGridBoundsV1, modelCenterV1 } from './build.js';
 import { setVoxelSize } from './edit.js';
 import { modelVoxelSizeV1, type StudioModelV1 } from './model.js';
 import { buildRecipe, mixSeed, type PartShelfV1, type RecipeBookV1 } from './recipe.js';
@@ -15,30 +15,6 @@ export interface PlacementBoxV1 {
   readonly id: string;
   readonly min: readonly [number, number, number];
   readonly max: readonly [number, number, number];
-}
-
-/** The bounds of a model's filled cells, or null when it is empty. */
-function filledBounds(
-  model: StudioModelV1,
-): { readonly min: [number, number, number]; readonly max: [number, number, number] } | null {
-  const [sx, sy, sz] = model.size;
-  let minX = Infinity; let minY = Infinity; let minZ = Infinity;
-  let maxX = -Infinity; let maxY = -Infinity; let maxZ = -Infinity;
-  for (let z = 0; z < sz; z += 1) {
-    for (let y = 0; y < sy; y += 1) {
-      for (let x = 0; x < sx; x += 1) {
-        if ((model.voxels[x + sx * (y + sy * z)] ?? 0) === 0) continue;
-        if (x < minX) minX = x;
-        if (y < minY) minY = y;
-        if (z < minZ) minZ = z;
-        if (x > maxX) maxX = x;
-        if (y > maxY) maxY = y;
-        if (z > maxZ) maxZ = z;
-      }
-    }
-  }
-  if (minX === Infinity) return null;
-  return { min: [minX, minY, minZ], max: [maxX, maxY, maxZ] };
 }
 
 /** Every placement's world box, in scene order. Unknown or empty models are skipped. */
@@ -63,16 +39,16 @@ export function placementWorldBoxesV1(
       if (modelVoxelSizeV1(model) !== grain) model = setVoxelSize(model, grain);
       byModel.set(key, model);
     }
-    const bounds = filledBounds(model);
+    const bounds = filledGridBoundsV1(model);
     if (!bounds) continue;
     const middle = modelCenterV1(model);
     // Local box: centred on the model's middle, scaled by grain. A filled cell
     // spans one unit, so the high corner runs one past the last filled cell.
-    const lxMin = (bounds.min[0] - middle.x) * grain;
-    const lxMax = (bounds.max[0] + 1 - middle.x) * grain;
-    const lzMin = (bounds.min[2] - middle.z) * grain;
-    const lzMax = (bounds.max[2] + 1 - middle.z) * grain;
-    const height = (bounds.max[1] + 1 - bounds.min[1]) * grain;
+    const lxMin = (bounds.min.x - middle.x) * grain;
+    const lxMax = (bounds.max.x + 1 - middle.x) * grain;
+    const lzMin = (bounds.min.z - middle.z) * grain;
+    const lzMax = (bounds.max.z + 1 - middle.z) * grain;
+    const height = (bounds.max.y + 1 - bounds.min.y) * grain;
     const [ax, ay, az] = placement.at;
     const turns = (((placement.turns ?? 0) % 4) + 4) % 4;
     // Quarter-turn the local box about the up axis, then take its new extent.

@@ -21,15 +21,19 @@ import {
 } from './scene-pose-delta.js';
 import {
   copyScenePoseReplayEventV1,
-  copyScenePoseReplayV1,
+  copyScenePoseReplayV1OrV2,
 } from './scene-pose-replay-copy.js';
 import {
-  sampleValidatedScenePoseReplayV1,
-  scenePoseReplayDurationMsV1,
-  validateScenePoseReplayV1,
+  sampleValidatedScenePoseReplayV1OrV2,
+  scenePoseReplayDurationMsV1OrV2,
+  scenePoseReplayPlaybackV1,
+} from './scene-pose-replay-sampling.js';
+import {
+  validateScenePoseReplayV1OrV2,
   type ScenePoseReplayEventV1,
+  type ScenePoseReplayPlaybackV1,
   type ScenePoseReplayProvenanceV1,
-  type ScenePoseReplayV1,
+  type ScenePoseReplayV1OrV2,
 } from './scene-pose-replay.js';
 import {
   StudioSceneLighting,
@@ -90,11 +94,13 @@ export interface SceneSessionOptionsV1 {
   readonly lit?: boolean;
   readonly wireframe?: boolean;
   /** Consumer-produced observations addressable by a V4 scene reference. */
-  readonly poseReplays?: Readonly<Record<string, ScenePoseReplayV1>>;
+  readonly poseReplays?: Readonly<Record<string, ScenePoseReplayV1OrV2>>;
 }
 
 export interface ScenePoseReplaySampleStatusV1 {
-  readonly wrappedTimeMs: number;
+  readonly playbackTimeMs: number;
+  /** Present only for legacy cyclic V1 replays. */
+  readonly wrappedTimeMs?: number;
   readonly frameA: number;
   readonly frameB: number;
   readonly alpha: number;
@@ -107,6 +113,7 @@ export interface ScenePoseReplayStatusV1 {
   readonly replayId: string;
   readonly sceneId: string;
   readonly durationMs: number;
+  readonly playback: ScenePoseReplayPlaybackV1;
   readonly provenance: ScenePoseReplayProvenanceV1;
   readonly sample: ScenePoseReplaySampleStatusV1 | null;
 }
@@ -208,8 +215,8 @@ export class SceneSession {
   #scene: SceneV1;
   readonly #recipes: RecipeBookV1;
   readonly #parts: PartShelfV1;
-  readonly #poseReplays: Readonly<Record<string, ScenePoseReplayV1>>;
-  #poseReplay: ScenePoseReplayV1 | null = null;
+  readonly #poseReplays: Readonly<Record<string, ScenePoseReplayV1OrV2>>;
+  #poseReplay: ScenePoseReplayV1OrV2 | null = null;
   #poseSnapshot: RenderSnapshotV1 | null = null;
   #acceptedPoseTimeMs: number | null = null;
   #acceptedPoseSample: ScenePoseReplaySampleStatusV1 | null = null;
@@ -466,7 +473,8 @@ export class SceneSession {
     return {
       replayId: this.#scene.poseReplay.id,
       sceneId: replay.sceneId,
-      durationMs: scenePoseReplayDurationMsV1(replay),
+      durationMs: scenePoseReplayDurationMsV1OrV2(replay),
+      playback: scenePoseReplayPlaybackV1(replay),
       provenance: {
         solver: { ...replay.provenance.solver },
         fixedTimestepMs: replay.provenance.fixedTimestepMs,
@@ -587,7 +595,7 @@ export class SceneSession {
     this.#lighting.setIlluminationEnabled(this.#lit);
   }
 
-  #resolvePoseReplayInternal(scene: SceneV1): ScenePoseReplayV1 | null {
+  #resolvePoseReplayInternal(scene: SceneV1): ScenePoseReplayV1OrV2 | null {
     if (scene.schemaVersion !== 'studio.scene/4') return null;
     const replay = this.#poseReplays[scene.poseReplay.id];
     if (replay === undefined) {
@@ -596,21 +604,21 @@ export class SceneSession {
         + 'provide that replay. Add the immutable consumer trace to scenePoseReplays or remove the V4 scene.',
       );
     }
-    const issues = validateScenePoseReplayV1(replay);
+    const issues = validateScenePoseReplayV1OrV2(replay);
     if (issues.length > 0) {
       throw new Error(
         `Scene '${scene.id}' cannot use pose replay '${scene.poseReplay.id}': `
         + issues.map((issue) => `${issue.path} ${issue.message}`).join('; '),
       );
     }
-    const ownedReplay = copyScenePoseReplayV1(replay);
+    const ownedReplay = copyScenePoseReplayV1OrV2(replay);
     if (ownedReplay.sceneId !== scene.id) {
       throw new Error(
         `Scene '${scene.id}' cannot use pose replay '${scene.poseReplay.id}' because the replay belongs `
         + `to scene '${ownedReplay.sceneId}'. Regenerate the trace for the intended scene id.`,
       );
     }
-    const actualDurationMs = scenePoseReplayDurationMsV1(ownedReplay);
+    const actualDurationMs = scenePoseReplayDurationMsV1OrV2(ownedReplay);
     if (Math.abs(actualDurationMs - scene.poseReplay.durationMs) > 1e-6) {
       throw new Error(
         `Scene '${scene.id}' declares pose replay duration ${String(scene.poseReplay.durationMs)} ms, `
@@ -636,8 +644,8 @@ export class SceneSession {
     const replay = this.#poseReplay;
     const snapshot = this.#poseSnapshot;
     if (replay === null || snapshot === null) return;
-    const sample = sampleValidatedScenePoseReplayV1(replay, nowMs);
-    if (sample.wrappedTimeMs === this.#acceptedPoseTimeMs) return;
+    const sample = sampleValidatedScenePoseReplayV1OrV2(replay, nowMs);
+    if (sample.playbackTimeMs === this.#acceptedPoseTimeMs) return;
     const poses: ValidatedScenePlacementPoseMapV1 = new Map(
       sample.placements.map((placement) => [
         placement.placementId,
@@ -678,10 +686,13 @@ export class SceneSession {
     }
     this.#revision = nextRevision;
     this.#poseSnapshot = { ...snapshot, revision: nextRevision };
-    this.#acceptedPoseTimeMs = sample.wrappedTimeMs;
+    this.#acceptedPoseTimeMs = sample.playbackTimeMs;
     const latestEvent = sample.eventsThroughTime.at(-1);
     this.#acceptedPoseSample = {
-      wrappedTimeMs: sample.wrappedTimeMs,
+      playbackTimeMs: sample.playbackTimeMs,
+      ...(scenePoseReplayPlaybackV1(replay) === 'loop'
+        ? { wrappedTimeMs: sample.playbackTimeMs }
+        : {}),
       frameA: sample.frameA,
       frameB: sample.frameB,
       alpha: sample.alpha,

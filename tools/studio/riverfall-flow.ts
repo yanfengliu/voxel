@@ -8,6 +8,8 @@ import {
 } from './generated-riverfall-fluid-replay.js';
 import {
   scenePoseReplayDurationMsV1,
+} from './scene-pose-replay-sampling.js';
+import {
   type ScenePoseReplayV1,
 } from './scene-pose-replay.js';
 import {

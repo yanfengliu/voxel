@@ -114,7 +114,7 @@ export interface ScenePointLightV3 extends ScenePointLightV1 {
  */
 export interface ScenePoseReplayRefV1 {
   readonly id: string;
-  /** Exact finite scrub/loop duration, which must match the resolved replay. */
+  /** Exact scrub/playback duration, which must match the resolved replay. */
   readonly durationMs: number;
 }
 

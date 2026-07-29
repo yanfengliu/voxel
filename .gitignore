@@ -6,3 +6,6 @@ tmp/
 .playwright-cli/
 .git-broken-*/
 tools/studio/requests/
+
+# Chromium GPU spam from browser test runs.
+debug.log

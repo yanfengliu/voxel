@@ -9,10 +9,16 @@ import {
   MACHINE_WORKS_CONVEYOR_SLAT_IDS,
   MACHINE_WORKS_EXPOSED_COGS_V1,
 } from './machine-works-conveyor.js';
-import { decodeInterleavedScenePoseReplayV1 } from './scene-pose-replay-codec.js';
+import {
+  decodeInterleavedScenePoseReplayV1,
+  decodeInterleavedScenePoseReplayV2,
+} from './scene-pose-replay-codec.js';
 import {
   scenePoseReplayDurationMsV1,
+} from './scene-pose-replay-sampling.js';
+import {
   validateScenePoseReplayV1,
+  validateScenePoseReplayV2,
 } from './scene-pose-replay.js';
 
 describe('encoded scene pose replay', () => {
@@ -78,5 +84,37 @@ describe('encoded scene pose replay', () => {
       ...base,
       translationsBase64: '***',
     })).toThrow('expected canonical base64');
+  });
+
+  it('decodes and preserves the explicit finite V2 playback contract', () => {
+    const base64 = (values: readonly number[]) =>
+      Buffer.from(new Float32Array(values).buffer).toString('base64');
+    const replay = decodeInterleavedScenePoseReplayV2({
+      playback: 'once',
+      sceneId: 'scene:finite',
+      frameCount: 1,
+      placementIds: ['placement:finite'],
+      provenance: {
+        solver: { name: 'solver', version: '1' },
+        fixedTimestepMs: 16,
+        gravity: [0, -9.81, 0],
+        inputHash: `sha256:${'a'.repeat(64)}`,
+        finalHash: `sha256:${'b'.repeat(64)}`,
+        lawLabels: ['rigid-body.gravity'],
+        capabilityLabels: ['pose-output'],
+      },
+      translationsBase64: base64([1, 2, 3]),
+      quaternionsBase64: base64([0, 0, 0, 1]),
+      linearVelocitiesBase64: base64([0, 0, 0]),
+      angularVelocitiesBase64: base64([0, 1, 0]),
+      events: [],
+    });
+
+    expect(validateScenePoseReplayV2(replay)).toEqual([]);
+    expect(replay).toMatchObject({
+      schemaVersion: 'studio.scene-pose-replay/2',
+      playback: 'once',
+      sceneId: 'scene:finite',
+    });
   });
 });

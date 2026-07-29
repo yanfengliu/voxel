@@ -20,7 +20,13 @@ import {
   MACHINE_WORKS_CONVEYOR_SLAT_IDS,
   MACHINE_WORKS_EXPOSED_COGS_V1,
 } from './machine-works-conveyor.js';
-import { sampleScenePoseReplayV1 } from './scene-pose-replay.js';
+import {
+  sampleValidatedScenePoseReplayV1OrV2,
+} from './scene-pose-replay-sampling.js';
+import {
+  STUDIO_SCENE_POSE_REPLAY_SCHEMA_V2,
+  type ScenePoseReplayV2,
+} from './scene-pose-replay.js';
 import { THREE_MATERIAL_DECORATOR_INTERNAL } from '../../src/three/materialDecoratorInternal.js';
 import {
   VOXEL_SCENE_SCHEMA_V1,
@@ -600,7 +606,10 @@ describe('SceneSession acceptance', () => {
     session.showAt(0);
     session.showAt(assembledEvent.timeMs);
     session.showAt(assembledEvent.timeMs);
-    const expectedSample = sampleScenePoseReplayV1(replay, assembledEvent.timeMs);
+    const expectedSample = sampleValidatedScenePoseReplayV1OrV2(
+      replay,
+      assembledEvent.timeMs,
+    );
     expect(session.poseReplayStatus()?.sample).toMatchObject({
       wrappedTimeMs: assembledEvent.timeMs,
       frameA: expectedSample.frameA,
@@ -784,7 +793,7 @@ describe('SceneSession acceptance', () => {
     if (event === undefined || firstTrack === undefined) {
       throw new Error('The V4 replay fixture must contain at least one event and pose track.');
     }
-    const sampleBeforeMutation = sampleScenePoseReplayV1(replay, event.timeMs);
+    const sampleBeforeMutation = sampleValidatedScenePoseReplayV1OrV2(replay, event.timeMs);
     const trackedBeforeMutation = sampleBeforeMutation.placements[0]!;
     const translationsBeforeMutation = new Float32Array(firstTrack.translations);
     const gravityBeforeMutation = [...replay.provenance.gravity] as [number, number, number];
@@ -820,6 +829,60 @@ describe('SceneSession acceptance', () => {
       firstTrack.translations.set(translationsBeforeMutation);
       (replay.provenance.gravity as unknown as number[])[1] = gravityBeforeMutation[1];
       (event as unknown as { id: string }).id = eventIdBeforeMutation;
+      session.dispose();
+    }
+  });
+
+  it('accepts, owns, reports, and clamps a finite V2 replay', () => {
+    const catalog = createStudioCatalog();
+    const replayScene = catalog.scenes?.find(isReplayScene);
+    if (replayScene === undefined || catalog.recipes === undefined || catalog.parts === undefined
+      || catalog.scenePoseReplays === undefined) {
+      throw new Error('The Studio catalog must provide one complete V4 replay fixture.');
+    }
+    const source = catalog.scenePoseReplays[replayScene.poseReplay.id];
+    if (source === undefined) {
+      throw new Error(`The V4 scene is missing replay '${replayScene.poseReplay.id}'.`);
+    }
+    const finite: ScenePoseReplayV2 = {
+      ...structuredClone(source),
+      schemaVersion: STUDIO_SCENE_POSE_REPLAY_SCHEMA_V2,
+      playback: 'once',
+    };
+    const track = finite.tracks[0];
+    if (track === undefined) throw new Error('The finite replay needs one tracked placement.');
+    const finalOffset = (finite.frameCount - 1) * 3;
+    const expectedTranslation = Array.from(
+      track.translations.slice(finalOffset, finalOffset + 3),
+    );
+    const originalGravity = [...finite.provenance.gravity];
+    const session = new SceneSession(replayScene, catalog.recipes, catalog.parts, {
+      canvas: {} as HTMLCanvasElement,
+      camera: camera(),
+      poseReplays: { [replayScene.poseReplay.id]: finite },
+    });
+
+    try {
+      track.translations.fill(999);
+      (finite.provenance.gravity as unknown as number[])[1] = 999;
+      session.showAt(replayScene.poseReplay.durationMs + 1_000);
+      const status = session.poseReplayStatus();
+      expect(status).toMatchObject({
+        playback: 'once',
+        provenance: { gravity: originalGravity },
+        sample: { playbackTimeMs: replayScene.poseReplay.durationMs },
+      });
+      expect(status?.sample).not.toHaveProperty('wrappedTimeMs');
+      const upsert = runtimeControl.deltas.flatMap(({ operations }) => operations)
+        .find((operation) => operation.op === 'patch-batch-instances'
+          && operation.upserts.instanceKeys.includes(track.placementId));
+      if (upsert?.op !== 'patch-batch-instances') {
+        throw new Error(`Expected a finite pose patch for '${track.placementId}'.`);
+      }
+      const slot = upsert.upserts.instanceKeys.indexOf(track.placementId);
+      expect(Array.from(upsert.upserts.matrices.slice(slot * 16 + 12, slot * 16 + 15)))
+        .toEqual(expectedTranslation);
+    } finally {
       session.dispose();
     }
   });

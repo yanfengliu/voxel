@@ -17,6 +17,8 @@ import { createRiverfallScene } from './riverfall-scene.js';
 import { buildSceneSnapshot } from './scene-build.js';
 import {
   sampleValidatedScenePoseReplayV1,
+} from './scene-pose-replay-sampling.js';
+import {
   validateScenePoseReplayV1,
 } from './scene-pose-replay.js';
 import { createStudioRecipeBook } from './recipes.js';

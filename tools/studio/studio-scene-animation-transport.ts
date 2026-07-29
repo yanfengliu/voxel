@@ -1,10 +1,11 @@
-import type { StudioPlayer } from './player.js';
+import type { StudioPlaybackV1, StudioPlayer } from './player.js';
 
 export interface SceneAnimationSyncV1 {
   readonly hasMotion: boolean;
   readonly previousHasMotion: boolean | null;
   readonly periodMs: number;
   readonly lastShownMs: number;
+  readonly playback: StudioPlaybackV1;
   applyPeriod(periodMs: number): void;
 }
 
@@ -18,6 +19,7 @@ export class StudioSceneAnimationTransport {
   #enabled: boolean;
   #manual = false;
   #openedAtMs = 0;
+  #playback: StudioPlaybackV1 = 'loop';
 
   constructor(player: StudioPlayer, enabled: boolean, now: () => number) {
     this.#player = player;
@@ -67,6 +69,8 @@ export class StudioSceneAnimationTransport {
     const now = this.#now();
     const previousPlaying = this.#player.playing;
     const previousManual = this.#manual;
+    this.#playback = request.playback;
+    this.#player.setPlayback(request.playback, now);
     request.applyPeriod(request.periodMs);
     const phaseMs = this.#phaseInternal(request.lastShownMs);
 
@@ -100,24 +104,46 @@ export class StudioSceneAnimationTransport {
   }
 
   timeAt(frameNowMs: number): number {
-    return Math.max(0, (frameNowMs - this.#openedAtMs) * this.#player.speed);
+    const elapsed = Math.max(0, (frameNowMs - this.#openedAtMs) * this.#player.speed);
+    return this.#playback === 'once'
+      ? Math.min(this.#player.periodMs, elapsed)
+      : elapsed;
+  }
+
+  /** Stops only after the finite terminal pose has been successfully presented. */
+  finishAtEnd(presentedTimeMs: number): boolean {
+    if (this.#playback !== 'once'
+      || this.#player.periodMs <= 0
+      || presentedTimeMs < this.#player.periodMs) return false;
+    const now = this.#now();
+    this.#player.holdAtEnd(now);
+    this.#openedAtMs = now - this.#player.periodMs / Math.max(this.#player.speed, 0.1);
+    this.#manual = true;
+    return true;
   }
 
   #applyEnabledInternal(on: boolean, lastShownMs: number): void {
     const now = this.#now();
+    const restart = on
+      && this.#playback === 'once'
+      && this.#player.periodMs > 0
+      && lastShownMs >= this.#player.periodMs;
+    const targetMs = restart ? 0 : this.#phaseInternal(lastShownMs);
     this.#player.pause(now);
-    this.#player.seek(this.#phaseInternal(lastShownMs), now);
+    this.#player.seek(targetMs, now);
     if (on) {
       this.#player.play(now);
-      this.#openedAtMs = now - lastShownMs / Math.max(this.#player.speed, 0.1);
+      const elapsedMs = this.#playback === 'loop' ? lastShownMs : targetMs;
+      this.#openedAtMs = now - elapsedMs / Math.max(this.#player.speed, 0.1);
     }
     this.#manual = !on;
   }
 
   #phaseInternal(lastShownMs: number): number {
     const periodMs = this.#player.periodMs;
-    return periodMs > 0
-      ? ((lastShownMs % periodMs) + periodMs) % periodMs
-      : 0;
+    if (periodMs <= 0) return 0;
+    return this.#playback === 'once'
+      ? Math.min(periodMs, Math.max(0, lastShownMs))
+      : ((lastShownMs % periodMs) + periodMs) % periodMs;
   }
 }

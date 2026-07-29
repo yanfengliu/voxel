@@ -29,6 +29,32 @@ describe('studio player', () => {
     expect(player.timeAt(7_100)).toBe(100);
   });
 
+  it('holds a one-shot at its exact end and restarts only after explicit Play', () => {
+    const player = new StudioPlayer(1_000);
+    player.setPlayback('once', 0);
+    player.play(0);
+    expect(player.timeAt(1_250)).toBe(1_000);
+    player.holdAtEnd(1_250);
+    expect(player.playing).toBe(false);
+    expect(player.timeAt(9_000)).toBe(1_000);
+
+    player.play(9_000);
+    expect(player.playing).toBe(true);
+    expect(player.timeAt(9_000)).toBe(0);
+    expect(player.timeAt(9_250)).toBe(250);
+  });
+
+  it('keeps cyclic and finite seek boundaries distinct', () => {
+    const player = new StudioPlayer(1_000);
+    player.seek(1_000, 0);
+    expect(player.timeAt(0)).toBe(999);
+    player.setPlayback('once', 0);
+    player.seek(1_000, 0);
+    expect(player.timeAt(0)).toBe(1_000);
+    player.setPlayback('loop', 0);
+    expect(player.timeAt(0)).toBe(999);
+  });
+
   it('freezes where it was paused and resumes from there', () => {
     const player = new StudioPlayer(1000);
     player.play(0);

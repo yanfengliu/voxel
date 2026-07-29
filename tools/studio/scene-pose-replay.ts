@@ -4,6 +4,8 @@ import type { GenomeIssueV1 } from './model.js';
  * choreography. It records observations; it is not a solver or integrator.
  */
 export const STUDIO_SCENE_POSE_REPLAY_SCHEMA_V1 = 'studio.scene-pose-replay/1' as const;
+export const STUDIO_SCENE_POSE_REPLAY_SCHEMA_V2 = 'studio.scene-pose-replay/2' as const;
+export type ScenePoseReplayPlaybackV1 = 'loop' | 'once';
 export const MAX_POSE_REPLAY_FRAMES = 36_000;
 export const MAX_POSE_REPLAY_TRACKS = 4_096;
 export const MAX_POSE_REPLAY_SAMPLES = 1_000_000;
@@ -71,6 +73,24 @@ export interface ScenePoseReplayV1 {
   /** Nondecreasing; array order resolves equal-time events. */
   readonly events: readonly ScenePoseReplayEventV1[];
 }
+/**
+ * A finite observation that must not invent a physical seam at its boundary.
+ *
+ * V1 remains the cyclic replay contract. V2 deliberately supports only
+ * one-shot playback: Studio clamps to the final recorded state and waits for
+ * an explicit restart.
+ */
+export interface ScenePoseReplayV2 {
+  readonly schemaVersion: typeof STUDIO_SCENE_POSE_REPLAY_SCHEMA_V2;
+  readonly playback: 'once';
+  readonly sceneId: string;
+  readonly frameCount: number;
+  readonly provenance: ScenePoseReplayProvenanceV1;
+  readonly tracks: readonly ScenePoseReplayTrackV1[];
+  /** Nondecreasing; array order resolves equal-time events. */
+  readonly events: readonly ScenePoseReplayEventV1[];
+}
+export type ScenePoseReplayV1OrV2 = ScenePoseReplayV1 | ScenePoseReplayV2;
 export interface SampledScenePosePlacementV1 {
   readonly placementId: string;
   readonly translation: Vec3;
@@ -80,6 +100,15 @@ export interface SampledScenePosePlacementV1 {
 }
 export interface SampledScenePoseReplayV1 {
   readonly wrappedTimeMs: number;
+  readonly frameA: number;
+  readonly frameB: number;
+  readonly alpha: number;
+  readonly placements: readonly SampledScenePosePlacementV1[];
+  readonly eventsThroughTime: readonly ScenePoseReplayEventV1[];
+}
+export interface SampledScenePoseReplayV2 {
+  /** Input time clamped to the finite observation interval. */
+  readonly playbackTimeMs: number;
   readonly frameA: number;
   readonly frameB: number;
   readonly alpha: number;
@@ -96,6 +125,12 @@ function isRecord(value: unknown): value is UnknownRecord {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 function finite(value: unknown): value is number { return typeof value === 'number' && Number.isFinite(value); }
+function durationMs(frameCount: number, fixedTimestepMs: number): number {
+  const computed = frameCount * fixedTimestepMs;
+  const integer = Math.round(computed);
+  return Math.abs(computed - integer) <= Math.max(1, Math.abs(computed)) * Number.EPSILON * 2
+    ? integer : computed;
+}
 function keys(value: UnknownRecord, path: string, allowed: readonly string[], issues: GenomeIssueV1[]): void {
   const expected = new Set(allowed);
   Object.keys(value).forEach((key) => {
@@ -386,15 +421,32 @@ function events(
     }
   }
 }
-/** Reports every structural, reference, finiteness, and boundedness issue. */
-export function validateScenePoseReplayV1(value: unknown): readonly GenomeIssueV1[] {
+function validateScenePoseReplayInternal(
+  value: unknown,
+  schemaVersion: typeof STUDIO_SCENE_POSE_REPLAY_SCHEMA_V1
+    | typeof STUDIO_SCENE_POSE_REPLAY_SCHEMA_V2,
+): readonly GenomeIssueV1[] {
   const issues: GenomeIssueV1[] = [];
   if (!isRecord(value)) return [{ path: '$', message: 'Expected a Studio scene pose replay object.' }];
-  keys(value, '$', ['schemaVersion', 'sceneId', 'frameCount', 'provenance', 'tracks', 'events'], issues);
-  if (value.schemaVersion !== STUDIO_SCENE_POSE_REPLAY_SCHEMA_V1) {
+  const once = schemaVersion === STUDIO_SCENE_POSE_REPLAY_SCHEMA_V2;
+  keys(
+    value,
+    '$',
+    once
+      ? ['schemaVersion', 'playback', 'sceneId', 'frameCount', 'provenance', 'tracks', 'events']
+      : ['schemaVersion', 'sceneId', 'frameCount', 'provenance', 'tracks', 'events'],
+    issues,
+  );
+  if (value.schemaVersion !== schemaVersion) {
     issues.push({
       path: '$.schemaVersion',
-      message: `Expected '${STUDIO_SCENE_POSE_REPLAY_SCHEMA_V1}'; received ${String(value.schemaVersion)}.`,
+      message: `Expected '${schemaVersion}'; received ${String(value.schemaVersion)}.`,
+    });
+  }
+  if (once && value.playback !== 'once') {
+    issues.push({
+      path: '$.playback',
+      message: `Expected 'once' so a finite replay holds its last physical state; received ${String(value.playback)}.`,
     });
   }
   text(value.sceneId, '$.sceneId', issues);
@@ -408,7 +460,7 @@ export function validateScenePoseReplayV1(value: unknown): readonly GenomeIssueV
   } else frameCount = value.frameCount;
   const timestep = provenance(value.provenance, issues);
   const duration = frameCount !== undefined && timestep !== undefined
-    ? canonicalScenePoseReplayDurationMsV1(frameCount, timestep)
+    ? durationMs(frameCount, timestep)
     : undefined;
   if (duration !== undefined && duration > MAX_POSE_REPLAY_DURATION_MS) {
     issues.push({
@@ -420,106 +472,25 @@ export function validateScenePoseReplayV1(value: unknown): readonly GenomeIssueV
   events(value.events, placementIds, duration, issues);
   return issues;
 }
-function canonicalScenePoseReplayDurationMsV1(
-  frameCount: number,
-  fixedTimestepMs: number,
-): number {
-  const computed = frameCount * fixedTimestepMs;
-  const integer = Math.round(computed);
-  const tolerance = Math.max(1, Math.abs(computed)) * Number.EPSILON * 2;
-  return Math.abs(computed - integer) <= tolerance ? integer : computed;
+/** Reports every structural, reference, finiteness, and boundedness issue in a cyclic V1 replay. */
+export function validateScenePoseReplayV1(value: unknown): readonly GenomeIssueV1[] {
+  return validateScenePoseReplayInternal(value, STUDIO_SCENE_POSE_REPLAY_SCHEMA_V1);
 }
-export function scenePoseReplayDurationMsV1(replay: ScenePoseReplayV1): number {
-  return canonicalScenePoseReplayDurationMsV1(
-    replay.frameCount,
-    replay.provenance.fixedTimestepMs,
-  );
+/** Reports every structural, reference, finiteness, and boundedness issue in a finite V2 replay. */
+export function validateScenePoseReplayV2(value: unknown): readonly GenomeIssueV1[] {
+  return validateScenePoseReplayInternal(value, STUDIO_SCENE_POSE_REPLAY_SCHEMA_V2);
 }
-function lerp(a: number, b: number, alpha: number): number { return a + (b - a) * alpha; }
-function interpolateVec3(values: Float32Array, frameA: number, frameB: number, alpha: number): Vec3 {
-  const a = frameA * 3;
-  const b = frameB * 3;
-  return [
-    lerp(values[a]!, values[b]!, alpha),
-    lerp(values[a + 1]!, values[b + 1]!, alpha),
-    lerp(values[a + 2]!, values[b + 2]!, alpha),
-  ];
-}
-function normalize(quaternion: Quaternion): Quaternion {
-  const length = Math.hypot(...quaternion); return quaternion.map((component) => component / length) as unknown as Quaternion;
-}
-function interpolateQuaternion(values: Float32Array, frameA: number, frameB: number, alpha: number): Quaternion {
-  const a = frameA * 4;
-  const b = frameB * 4;
-  const from = normalize([values[a]!, values[a + 1]!, values[a + 2]!, values[a + 3]!]);
-  let to = normalize([values[b]!, values[b + 1]!, values[b + 2]!, values[b + 3]!]);
-  let dot = from[0] * to[0] + from[1] * to[1] + from[2] * to[2] + from[3] * to[3];
-  if (dot < 0) {
-    to = [-to[0], -to[1], -to[2], -to[3]];
-    dot = -dot;
+export function validateScenePoseReplayV1OrV2(value: unknown): readonly GenomeIssueV1[] {
+  if (!isRecord(value)) return [{ path: '$', message: 'Expected a Studio scene pose replay object.' }];
+  if (value.schemaVersion === STUDIO_SCENE_POSE_REPLAY_SCHEMA_V1) {
+    return validateScenePoseReplayV1(value);
   }
-  if (dot > 0.9995) {
-    return normalize([
-      lerp(from[0], to[0], alpha), lerp(from[1], to[1], alpha),
-      lerp(from[2], to[2], alpha), lerp(from[3], to[3], alpha),
-    ]);
+  if (value.schemaVersion === STUDIO_SCENE_POSE_REPLAY_SCHEMA_V2) {
+    return validateScenePoseReplayV2(value);
   }
-  const theta = Math.acos(Math.min(1, dot));
-  const sinTheta = Math.sin(theta);
-  const fromWeight = Math.sin((1 - alpha) * theta) / sinTheta;
-  const toWeight = Math.sin(alpha * theta) / sinTheta;
-  return normalize([
-    from[0] * fromWeight + to[0] * toWeight, from[1] * fromWeight + to[1] * toWeight,
-    from[2] * fromWeight + to[2] * toWeight, from[3] * fromWeight + to[3] * toWeight,
-  ]);
-}
-/**
- * Samples a replay already accepted by `validateScenePoseReplayV1`, without
- * rescanning its frame arrays. The final recorded frame is held through the
- * last interval; wrapping to zero is an explicit replay reset, never a
- * fabricated high-speed interpolation from the final physical state.
- */
-export function sampleValidatedScenePoseReplayV1(replay: ScenePoseReplayV1, timeMs: number): SampledScenePoseReplayV1 {
-  if (!Number.isFinite(timeMs)) {
-    throw new Error(`Cannot sample Studio scene pose replay at ${String(timeMs)} ms; expected a finite time.`);
-  }
-  const duration = scenePoseReplayDurationMsV1(replay);
-  const remainder = timeMs % duration;
-  // Adding `duration` to a positive remainder can erase a tiny representable
-  // event-boundary epsilon before the second modulo. Only offset negatives.
-  const wrappedTimeMs = remainder < 0 ? remainder + duration : remainder === 0 ? 0 : remainder;
-  const framePosition = wrappedTimeMs / replay.provenance.fixedTimestepMs;
-  const frameA = Math.min(replay.frameCount - 1, Math.floor(framePosition));
-  const frameB = Math.min(frameA + 1, replay.frameCount - 1);
-  const alpha = frameB === frameA
-    ? 0
-    : Math.max(0, Math.min(1, framePosition - frameA));
-  let eventEnd = 0; let eventHigh = replay.events.length;
-  while (eventEnd < eventHigh) {
-    const middle = (eventEnd + eventHigh) >>> 1; if (replay.events[middle]!.timeMs <= wrappedTimeMs) eventEnd = middle + 1; else eventHigh = middle;
-  }
-  return {
-    wrappedTimeMs,
-    frameA,
-    frameB,
-    alpha,
-    placements: replay.tracks.map((track) => ({
-      placementId: track.placementId,
-      translation: interpolateVec3(track.translations, frameA, frameB, alpha),
-      quaternion: interpolateQuaternion(track.quaternions, frameA, frameB, alpha),
-      linearVelocity: interpolateVec3(track.linearVelocities, frameA, frameB, alpha),
-      angularVelocity: interpolateVec3(track.angularVelocities, frameA, frameB, alpha),
-    })),
-    eventsThroughTime: replay.events.slice(0, eventEnd),
-  };
-}
-/** Validates once for a one-off sample; frame loops should use the validated sampler. */
-export function sampleScenePoseReplayV1(replay: ScenePoseReplayV1, timeMs: number): SampledScenePoseReplayV1 {
-  const issues = validateScenePoseReplayV1(replay);
-  if (issues.length > 0) {
-    const shown = issues.slice(0, 8).map((issue) => `${issue.path}: ${issue.message}`).join('; ');
-    const omitted = issues.length > 8 ? `; plus ${String(issues.length - 8)} more issue(s)` : '';
-    throw new Error(`Cannot sample Studio scene pose replay: ${shown}${omitted}`);
-  }
-  return sampleValidatedScenePoseReplayV1(replay, timeMs);
+  return [{
+    path: '$.schemaVersion',
+    message: `Expected '${STUDIO_SCENE_POSE_REPLAY_SCHEMA_V1}' or `
+      + `'${STUDIO_SCENE_POSE_REPLAY_SCHEMA_V2}'; received ${String(value.schemaVersion)}.`,
+  }];
 }

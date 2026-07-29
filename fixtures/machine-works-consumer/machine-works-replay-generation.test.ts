@@ -4,7 +4,9 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
 import { MACHINE_WORKS_POSE_REPLAY } from '../../tools/studio/generated-machine-works-replay.js';
-import { sampleValidatedScenePoseReplayV1 } from '../../tools/studio/scene-pose-replay.js';
+import {
+  sampleValidatedScenePoseReplayV1,
+} from '../../tools/studio/scene-pose-replay-sampling.js';
 import { machineWorksReplaySourceV1 } from './machine-works-replay-codegen.js';
 import { simulateMachineWorksV1 } from './machine-works-simulation.js';
 
