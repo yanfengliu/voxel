@@ -1,4 +1,8 @@
-import { createHash } from 'node:crypto';
+import {
+  canonicalEvidenceDigestV1,
+  evidenceSha256V1,
+} from '../evidence-hash.js';
+import { encodeReplayChannelsV1 } from '../replay-codegen.js';
 
 import {
   CHAIN_REPLAY_FRAME_COUNT,
@@ -48,14 +52,6 @@ export function chainPlacementIdV1(index: number): string {
   return `link-${String(index).padStart(2, '0')}`;
 }
 
-function encodeFloat32(values: readonly number[]): string {
-  const array = Float32Array.from(values);
-  const bytes = new Uint8Array(array.buffer, array.byteOffset, array.byteLength);
-  let binary = '';
-  for (const byte of bytes) binary += String.fromCharCode(byte);
-  return Buffer.from(binary, 'binary').toString('base64');
-}
-
 export interface ChainReplaySourceV1 {
   readonly source: string;
   readonly frameCount: number;
@@ -86,7 +82,7 @@ export async function chainReplaySourceV1(): Promise<ChainReplaySourceV1> {
 
   // The inputs that fully determine the run. Anything absent here that changes
   // the trace would be an undeclared input, which is the failure this guards.
-  const canonicalInput = JSON.stringify({
+  const canonicalInput = {
     grain: CHAIN_GRAIN_V1,
     gravity: CHAIN_GRAVITY_V1,
     slack: CHAIN_SLACK_V1,
@@ -99,12 +95,13 @@ export async function chainReplaySourceV1(): Promise<ChainReplaySourceV1> {
     placementIds,
     colliderCount: run.colliderCount,
     jointCount: run.jointCount,
-  });
-  const inputHash = `sha256:${createHash('sha256').update(canonicalInput).digest('hex')}`;
-  const finalHash = `sha256:${createHash('sha256')
-    .update(Buffer.from(Float32Array.from(translations).buffer))
-    .update(Buffer.from(Float32Array.from(quaternions).buffer))
-    .digest('hex')}`;
+  };
+  // Canonical JSON sorts keys, so a reordered field cannot change the digest.
+  const inputHash = canonicalEvidenceDigestV1(canonicalInput);
+  const finalHash = `sha256:${evidenceSha256V1([
+    new Uint8Array(Float32Array.from(translations).buffer),
+    new Uint8Array(Float32Array.from(quaternions).buffer),
+  ])}`;
 
   const encoded = {
     sceneId: CHAIN_REPLAY_SCENE_ID,
@@ -131,10 +128,12 @@ export async function chainReplaySourceV1(): Promise<ChainReplaySourceV1> {
         'chain.pendulum-swing',
       ],
     },
-    translationsBase64: encodeFloat32(translations),
-    quaternionsBase64: encodeFloat32(quaternions),
-    linearVelocitiesBase64: encodeFloat32(linearVelocities),
-    angularVelocitiesBase64: encodeFloat32(angularVelocities),
+    ...encodeReplayChannelsV1({
+      translations,
+      quaternions,
+      linearVelocities,
+      angularVelocities,
+    }),
     events: [],
     playback: 'once' as const,
   };

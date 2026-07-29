@@ -16,7 +16,7 @@ describe('windmill evidence finite-number boundary', () => {
     'rejects %s instead of canonicalizing it as null',
     (value) => {
       expect(() => canonicalWindmillEvidenceJsonV1({ measured: value }))
-        .toThrow(/non-finite windmill evidence number/);
+        .toThrow(/non-finite evidence number/);
       expect(() => assertFiniteWindmillCompactEvidenceV1({
         nested: [{ measured: value }],
       })).toThrow(/evidence\.nested\[0\]\.measured.*every measured result/);

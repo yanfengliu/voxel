@@ -1,3 +1,4 @@
+import { encodeReplayChannelsV1 } from '../replay-codegen.js';
 import {
   WINDMILL_POSE_REPLAY_ID,
   WINDMILL_SCENE_ID,
@@ -13,20 +14,6 @@ import {
   assertWindmillCompactRecordedTraceV1,
 } from './windmill-compact-trace-integrity.js';
 
-function float32LittleEndianBytes(values: Float32Array): Uint8Array {
-  const bytes = new Uint8Array(
-    values.length * Float32Array.BYTES_PER_ELEMENT,
-  );
-  const view = new DataView(bytes.buffer);
-  values.forEach((value, index) => {
-    view.setFloat32(index * Float32Array.BYTES_PER_ELEMENT, value, true);
-  });
-  return bytes;
-}
-
-function base64LittleEndian(values: Float32Array): string {
-  return Buffer.from(float32LittleEndianBytes(values)).toString('base64');
-}
 
 function eventSource(
   event: WindmillCompactReplayEventV1,
@@ -58,10 +45,12 @@ export function windmillReplaySourceV2(
       inputHash: `sha256:${trace.provenance.inputHash}`,
       finalHash: `sha256:${trace.provenance.finalHash}`,
     },
-    translationsBase64: base64LittleEndian(trace.translations),
-    quaternionsBase64: base64LittleEndian(trace.rotations),
-    linearVelocitiesBase64: base64LittleEndian(trace.linearVelocities),
-    angularVelocitiesBase64: base64LittleEndian(trace.angularVelocities),
+    ...encodeReplayChannelsV1({
+      translations: trace.translations,
+      quaternions: trace.rotations,
+      linearVelocities: trace.linearVelocities,
+      angularVelocities: trace.angularVelocities,
+    }),
     events: trace.events.map((event) =>
       eventSource(event, trace.recordProfile.solverStepSeconds)),
   };

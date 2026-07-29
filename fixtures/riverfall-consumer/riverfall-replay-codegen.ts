@@ -2,19 +2,7 @@ import type {
   RiverfallFluidSurfaceTraceV1,
 } from './riverfall-fluid-surface.js';
 import { canonicalRiverfallFluidJsonV1 } from './riverfall-fluid-config.js';
-
-function float32LittleEndianBase64(values: Float32Array): string {
-  const bytes = new Uint8Array(values.length * Float32Array.BYTES_PER_ELEMENT);
-  const view = new DataView(bytes.buffer);
-  for (let index = 0; index < values.length; index += 1) {
-    view.setFloat32(
-      index * Float32Array.BYTES_PER_ELEMENT,
-      values[index]!,
-      true,
-    );
-  }
-  return Buffer.from(bytes).toString('base64');
-}
+import { encodeReplayChannelsV1 } from '../replay-codegen.js';
 
 export function riverfallFluidReplaySourceV1(
   trace: RiverfallFluidSurfaceTraceV1,
@@ -32,10 +20,12 @@ export function riverfallFluidReplaySourceV1(
       lawLabels: trace.provenance.lawLabels,
       capabilityLabels: trace.provenance.capabilityLabels,
     },
-    translationsBase64: float32LittleEndianBase64(trace.translations),
-    quaternionsBase64: float32LittleEndianBase64(trace.rotations),
-    linearVelocitiesBase64: float32LittleEndianBase64(trace.linearVelocities),
-    angularVelocitiesBase64: float32LittleEndianBase64(trace.angularVelocities),
+    ...encodeReplayChannelsV1({
+      translations: trace.translations,
+      quaternions: trace.rotations,
+      linearVelocities: trace.linearVelocities,
+      angularVelocities: trace.angularVelocities,
+    }),
     events: [],
   };
   return [

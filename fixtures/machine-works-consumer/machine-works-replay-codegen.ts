@@ -1,11 +1,10 @@
+import { encodeReplayChannelsV1 } from '../replay-codegen.js';
 import type { MachineWorksEventV1, MachineWorksTraceV1 } from './machine-works-simulation.js';
 
 const REPLAY_ID = 'studio:pose-replay:machine-works';
 const SCENE_ID = 'studio:scene:contrast-machines';
 
-function base64(values: Float32Array): string {
-  return Buffer.from(values.buffer, values.byteOffset, values.byteLength).toString('base64');
-}
+
 
 function requireBodyIds(event: MachineWorksEventV1, expected: readonly string[]): void {
   if (event.bodyIds.length !== expected.length
@@ -88,10 +87,12 @@ export function machineWorksReplaySourceV1(trace: MachineWorksTraceV1): string {
       lawLabels: trace.provenance.lawLabels,
       capabilityLabels: trace.provenance.capabilityLabels,
     },
-    translationsBase64: base64(trace.translations),
-    quaternionsBase64: base64(trace.rotations),
-    linearVelocitiesBase64: base64(trace.linearVelocities),
-    angularVelocitiesBase64: base64(trace.angularVelocities),
+    ...encodeReplayChannelsV1({
+      translations: trace.translations,
+      quaternions: trace.rotations,
+      linearVelocities: trace.linearVelocities,
+      angularVelocities: trace.angularVelocities,
+    }),
     events,
   };
   return [
