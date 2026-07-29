@@ -15,6 +15,12 @@ import {
   WINDMILL_SCENE_LAYOUT_V1,
 } from '../../tools/studio/windmill-layout.js';
 import {
+  WINDMILL_BUILDING_LAYOUT_V1,
+  WINDMILL_FLOUR_BIN_LAYOUT_V1,
+  WINDMILL_FLOUR_HEAP_LAYOUT_V1,
+  WINDMILL_WHEAT_SACK_LAYOUT_V1,
+} from '../../tools/studio/windmill-production-layout.js';
+import {
   WINDMILL_INTENDED_VIEW_PROOF_V1,
 } from '../../tools/studio/windmill-intended-view-proof.js';
 import {
@@ -48,6 +54,7 @@ const ASSETS = [
     id: WINDMILL_RECIPE_IDS_V1.frame,
     label: 'Windmill bearing frame',
     size: WINDMILL_SCENE_LAYOUT_V1.frame.sizeVoxels,
+    grain: WINDMILL_GRAIN,
     bodyType: 'fixed',
     distinctQuarterViews: true,
   },
@@ -55,6 +62,7 @@ const ASSETS = [
     id: WINDMILL_RECIPE_IDS_V1.rotor,
     label: 'Two-sail pitched wind rotor',
     size: WINDMILL_SCENE_LAYOUT_V1.rotor.sizeVoxels,
+    grain: WINDMILL_GRAIN,
     bodyType: 'dynamic',
     distinctQuarterViews: true,
   },
@@ -62,6 +70,7 @@ const ASSETS = [
     id: WINDMILL_RECIPE_IDS_V1.hammer,
     label: 'Gravity trip hammer',
     size: WINDMILL_SCENE_LAYOUT_V1.hammer.sizeVoxels,
+    grain: WINDMILL_GRAIN,
     bodyType: 'dynamic',
     distinctQuarterViews: true,
   },
@@ -69,7 +78,40 @@ const ASSETS = [
     id: WINDMILL_RECIPE_IDS_V1.anvil,
     label: 'Grounded anvil',
     size: WINDMILL_SCENE_LAYOUT_V1.anvil.sizeVoxels,
+    grain: WINDMILL_GRAIN,
     bodyType: 'fixed',
+    distinctQuarterViews: false,
+  },
+  {
+    id: WINDMILL_BUILDING_LAYOUT_V1.recipeId,
+    label: 'Mill building shell',
+    size: WINDMILL_BUILDING_LAYOUT_V1.sizeVoxels,
+    grain: WINDMILL_BUILDING_LAYOUT_V1.grain,
+    bodyType: 'fixed',
+    distinctQuarterViews: true,
+  },
+  {
+    id: WINDMILL_WHEAT_SACK_LAYOUT_V1.recipeId,
+    label: 'Wheat sack',
+    size: WINDMILL_WHEAT_SACK_LAYOUT_V1.sizeVoxels,
+    grain: WINDMILL_WHEAT_SACK_LAYOUT_V1.grain,
+    bodyType: 'kinematic',
+    distinctQuarterViews: false,
+  },
+  {
+    id: WINDMILL_FLOUR_BIN_LAYOUT_V1.recipeId,
+    label: 'Flour bin',
+    size: WINDMILL_FLOUR_BIN_LAYOUT_V1.sizeVoxels,
+    grain: WINDMILL_FLOUR_BIN_LAYOUT_V1.grain,
+    bodyType: 'fixed',
+    distinctQuarterViews: false,
+  },
+  {
+    id: WINDMILL_FLOUR_HEAP_LAYOUT_V1.recipeId,
+    label: 'Flour level',
+    size: WINDMILL_FLOUR_HEAP_LAYOUT_V1.sizeVoxels,
+    grain: WINDMILL_FLOUR_HEAP_LAYOUT_V1.grain,
+    bodyType: 'kinematic',
     distinctQuarterViews: false,
   },
 ] as const;
@@ -249,7 +291,7 @@ for (const asset of ASSETS) {
           pitchDegrees: view.pitchDegrees,
           viewHeight: Math.max(
             0.75,
-            Math.hypot(...asset.size) * WINDMILL_GRAIN * 1.15,
+            Math.hypot(...asset.size) * asset.grain * 1.15,
           ),
         },
       };
@@ -285,7 +327,7 @@ for (const asset of ASSETS) {
             pitchDegrees: view.pitchDegrees,
             viewHeight: Math.max(
               0.75,
-              Math.hypot(...asset.size) * WINDMILL_GRAIN * 1.15,
+              Math.hypot(...asset.size) * asset.grain * 1.15,
             ),
           },
         },

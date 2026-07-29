@@ -8,6 +8,9 @@ import {
   createWindmillPhysicalBook,
   WINDMILL_PHYSICAL_ASSET_SET_V1,
 } from './windmill-physical-assets.js';
+import {
+  createWindmillProductionPhysicalBook,
+} from './windmill-production-physical.js';
 import { WINDMILL_SCENE_ID } from './windmill-layout.js';
 
 /**
@@ -45,7 +48,7 @@ describe('the studio shelf', () => {
       { name: 'Contrast: asymmetric hybrids', count: 5 },
       { name: 'Machine Works', count: 12 },
       { name: 'Riverfall', count: 10 },
-      { name: 'Windmill', count: 4 },
+      { name: 'Windmill', count: 8 },
       { name: 'Walls', count: 2 },
       { name: 'Garden', count: 7 },
       { name: 'Furniture', count: 3 },
@@ -60,17 +63,28 @@ describe('the studio shelf', () => {
     ]);
   });
 
-  it('gives every Windmill entry the one selected compact sidecar book', () => {
+  it('gives every Windmill entry the merged compact-plus-production sidecar book', () => {
     const windmill = createStudioCatalog().sections.find(
       (section) => section.name === 'Windmill',
     );
     expect(windmill).toBeDefined();
-    const shared = createWindmillPhysicalBook();
-    expect(shared).toBe(WINDMILL_PHYSICAL_ASSET_SET_V1.physicalAssetBook);
+    const compact = createWindmillPhysicalBook();
+    const production = createWindmillProductionPhysicalBook();
+    expect(compact).toBe(WINDMILL_PHYSICAL_ASSET_SET_V1.physicalAssetBook);
+    expect(windmill?.models.length).toBe(
+      Object.keys(compact).length + Object.keys(production).length,
+    );
     for (const entry of windmill?.models ?? []) {
       const made = entry.howItsMade();
-      expect(made.physical, entry.id).toBe(shared);
-      expect(made.physical?.[entry.id], entry.id).toBe(shared[entry.id]);
+      // The frozen compact declarations stay the exact shared objects; the
+      // production sidecars ride beside them without replacing anything.
+      for (const [recipeId, sidecar] of Object.entries(compact)) {
+        expect(made.physical?.[recipeId], entry.id).toBe(sidecar);
+      }
+      for (const [recipeId, sidecar] of Object.entries(production)) {
+        expect(made.physical?.[recipeId], entry.id).toBe(sidecar);
+      }
+      expect(made.physical?.[entry.id], entry.id).toBeDefined();
     }
   });
 

@@ -24,16 +24,26 @@ import {
   WINDMILL_SCENE_SUMMARY,
 } from './windmill-scene.js';
 import {
+  WINDMILL_PRODUCTION_ASSETS_V1,
+  WINDMILL_PRODUCTION_PLACEMENT_IDS_V1,
+  WINDMILL_PRODUCTION_TRACK_IDS_V1,
+  WINDMILL_WHEAT_QUEUE_XS_V1,
+  WINDMILL_WHEAT_QUEUE_Z_V1,
+  WINDMILL_WHEAT_SACK_LAYOUT_V1,
+} from './windmill-production-layout.js';
+import {
   WINDMILL_REPLAY_TRACE_BINDING_V1,
 } from './windmill-replay-trace-binding.js';
 
 const ASSET_KEYS = ['frame', 'rotor', 'hammer', 'anvil'] as const;
 
 describe('selected compact windmill scene', () => {
-  it('places exactly the four accountable bodies from the selected candidate', () => {
+  it('places the four accountable bodies from the selected candidate first', () => {
     const scene = createWindmillScene();
     expect(scene.id).toBe(WINDMILL_SCENE_ID);
-    expect(scene.placements).toHaveLength(4);
+    expect(scene.placements).toHaveLength(12);
+    expect(scene.placements.slice(0, 4).map(({ id }) => id))
+      .toEqual(Object.values(WINDMILL_PLACEMENT_IDS_V1));
     for (const assetKey of ASSET_KEYS) {
       const placement = scene.placements.find(
         ({ id }) => id === WINDMILL_PLACEMENT_IDS_V1[assetKey],
@@ -59,6 +69,46 @@ describe('selected compact windmill scene', () => {
     }
     expect(WINDMILL_SCENE_LAYOUT_V1.parameterKey)
       .toBe(WINDMILL_COMPACT_SELECTED_PARAMETER_KEY_V1);
+  });
+
+  it('places the production line at its authored layout datums', () => {
+    const scene = createWindmillScene();
+    const byId = new Map(scene.placements.map(
+      (placement) => [placement.id, placement],
+    ));
+    for (const asset of WINDMILL_PRODUCTION_ASSETS_V1) {
+      if (asset === WINDMILL_WHEAT_SACK_LAYOUT_V1) continue;
+      const placementId = asset.recipeId.includes('mill-building')
+        ? WINDMILL_PRODUCTION_PLACEMENT_IDS_V1.building
+        : asset.recipeId.includes('flour-bin')
+          ? WINDMILL_PRODUCTION_PLACEMENT_IDS_V1.flourBin
+          : WINDMILL_PRODUCTION_PLACEMENT_IDS_V1.flourHeap;
+      expect(byId.get(placementId), placementId).toEqual({
+        id: placementId,
+        model: asset.recipeId,
+        at: asset.sceneAt,
+        grain: asset.grain,
+      });
+    }
+    WINDMILL_PRODUCTION_PLACEMENT_IDS_V1.wheatSacks.forEach(
+      (placementId, index) => {
+        expect(byId.get(placementId), placementId).toEqual({
+          id: placementId,
+          model: WINDMILL_WHEAT_SACK_LAYOUT_V1.recipeId,
+          at: [
+            WINDMILL_WHEAT_QUEUE_XS_V1[index]!,
+            0,
+            WINDMILL_WHEAT_QUEUE_Z_V1,
+          ],
+          grain: WINDMILL_WHEAT_SACK_LAYOUT_V1.grain,
+        });
+      },
+    );
+    // Every appended replay track binds to a placement that exists here.
+    const placementIds = new Set(scene.placements.map(({ id }) => id));
+    for (const trackId of WINDMILL_PRODUCTION_TRACK_IDS_V1) {
+      expect(placementIds.has(trackId), trackId).toBe(true);
+    }
   });
 
   it('derives both visible joint datums from coincident selected ports', () => {
@@ -126,5 +176,22 @@ describe('selected compact windmill scene', () => {
     expect(WINDMILL_SCENE_SUMMARY).toMatch(/not claim CFD/);
     expect(WINDMILL_SCENE_SUMMARY.toLowerCase())
       .not.toMatch(/counterweight|ornament|four[- ]sail/);
+  });
+
+  it('states the production line as presentation keyed to recorded impacts', () => {
+    expect(WINDMILL_SCENE_SUMMARY)
+      .toMatch(/rotor and sails outside its shaft-opening wall/);
+    expect(WINDMILL_SCENE_SUMMARY)
+      .toMatch(/open east and south faces show the working bay/);
+    expect(WINDMILL_SCENE_SUMMARY)
+      .toMatch(/Five wheat sacks queue at the visible infeed/);
+    expect(WINDMILL_SCENE_SUMMARY)
+      .toMatch(/flour level in the outfeed bin rises one step after each/);
+    expect(WINDMILL_SCENE_SUMMARY).toMatch(
+      /authored presentation kinematics keyed to the five recorded hammer-anvil impacts, not simulated milling/,
+    );
+    expect(WINDMILL_SCENE_SUMMARY).toMatch(
+      /fixture still proves wind, rotor, cam, hammer, and anvil dynamics and nothing about grain or flour/,
+    );
   });
 });

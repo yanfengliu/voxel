@@ -19,7 +19,7 @@ A node is one authored decision. An edge points from a node to whatever needs it
 | `experience-need` | What a player, reader, or consumer requires. The only self-justifying kind; every other node must reach one. |
 | `solid` | Authored visible geometry. |
 | `interface` | A required meeting between two solids — a contact pair, an adjacency, a port. |
-| `motion-rule` | A consumer- or solver-owned rule such as a joint, a load law, or a contact policy. |
+| `motion-rule` | A rule that moves things: a consumer- or solver-owned joint, load law, or contact policy, or an authored presentation rule whose honesty boundary says exactly which it is. |
 | `material-source` / `material-sink` | Where mass enters or leaves the system. |
 | `energy-source` / `energy-sink` | Where work enters or leaves the system. |
 
@@ -58,6 +58,8 @@ Windmill's prose was mutually justifying in two places. The cam nose said it exi
 The fix was not to pick a winner. A contact pair exists for the contact, and the contact exists for the motion the scene has to show, so both participants now point at an `interface` node. That is a more honest account than either sentence was alone, and `purpose-graph-live.test.ts` pins the literal prose reading as a rejected cycle so the finding cannot quietly return.
 
 Machine Works projected without restructuring. Its press bridge, output dock, and exposed phase flags became tracked open obligations, which matches what the design record already said about each of them staying outside the solver.
+
+Windmill now declares a second quantity beside energy: it is **open in grain-mass** through a visible material source at the wheat infeed — a finite five-sack magazine, the same shape as the ball-drop rack — with no sink, so spent sacks and the rising flour level accumulate inside the scene. The wheat-to-flour transformation at the anvil is internal authored presentation keyed to the recorded impacts, so the claim is a visible material account, not a mass balance, and the graph's `grain-mass` claim names exactly that one boundary.
 
 Riverfall is the first system to declare two quantities at once, and they differ. It is **closed in water mass** — 288 particles carry fixed mass and recirculate, so nothing is created at the inlet or destroyed at the outflow — and **open in energy**, with work entering through the hidden recirculation pump and the inlet forcing and leaving through XSPH smoothing and dissipative boundary impacts. The pump is the reason those are different claims: it moves particles inside the system rather than across its edge, so it is an energy source and not a material one. A test adds an evaporation sink to the graph and confirms the kernel then rejects the closed water claim.
 

@@ -23,6 +23,10 @@ import {
   WINDMILL_INTENDED_VIEW_PROOF_V1,
 } from '../../tools/studio/windmill-intended-view-proof.js';
 import {
+  WINDMILL_PRODUCTION_TRACK_IDS_V1,
+} from '../../tools/studio/windmill-production-layout.js';
+import {
+  WINDMILL_PLACEMENT_IDS,
   WINDMILL_REPLAY_ID,
   WINDMILL_SCENE_ID,
   WINDMILL_TRACK_IDS,
@@ -43,6 +47,7 @@ const CAPABILITY_LABELS = [
   'two-sail-pitched-wind-rotor',
   'dual-cam-trip-hammer',
   'finite-deterministic-observation',
+  'authored-grain-flour-presentation',
 ] as const;
 
 export async function verifyWindmillSelectedPhysicalProof(
@@ -67,7 +72,7 @@ export async function verifyWindmillSelectedPhysicalProof(
       durationMs: WINDMILL_REPLAY_DURATION_MS,
     },
   });
-  expect(mounted.placementIds).toEqual(WINDMILL_TRACK_IDS);
+  expect(mounted.placementIds).toEqual(WINDMILL_PLACEMENT_IDS);
   expect(mounted.trackIds).toEqual(WINDMILL_TRACK_IDS);
   expect(mounted.privateCanvases).toBe(2);
   expect(mounted.defaultCamera.center[1]).toBe(0);
@@ -82,7 +87,7 @@ export async function verifyWindmillSelectedPhysicalProof(
     mounted.defaultCamera.center[2] - 0.25,
   ]);
   expect(mounted.initial.sceneRender).toMatchObject({
-    instances: 4,
+    instances: 12,
     animatedBatches: 0,
     animatedInstances: 0,
   });
@@ -328,6 +333,66 @@ export async function verifyWindmillSelectedPhysicalProof(
   expect(new Set(assets.map(({ recipeId }) => recipeId))).toEqual(new Set(
     Object.values(WINDMILL_RECIPE_IDS_V1),
   ));
+
+  // The production line: appended authored tracks, their disclosure label,
+  // and the additive accountability ledgers beside the frozen compact ones.
+  expect(generated.productionPresentation).toMatchObject({
+    schema: 'fixture.windmill-production-presentation/1',
+    label: 'authored-grain-flour-presentation',
+    trackIds: [...WINDMILL_PRODUCTION_TRACK_IDS_V1],
+  });
+  expect(generated.productionPresentation.impactTicks).toEqual(
+    generated.contacts
+      .filter(({ kind }) => kind === 'anvil-impact')
+      .map(({ tick }) => tick),
+  );
+  expect(generated.productionPresentation.honestyBoundary)
+    .toMatch(/authored presentation/);
+  expect(generated.productionPresentation.honestyBoundary)
+    .toMatch(/prove\s+nothing about milling, grain, or flour/);
+  expect(purpose.summary)
+    .toMatch(/not simulated milling/);
+  expect(purpose.production.honesty)
+    .toMatch(/keyed to the\s+.*five recorded hammer-anvil impacts/);
+  expect(purpose.production.building.bodyTypes).toEqual(['fixed']);
+  expect(purpose.production.flourBin.bodyTypes).toEqual(['fixed']);
+  expect(purpose.production.firstSack.bodyTypes).toEqual(['kinematic']);
+  expect(purpose.production.flourHeap.bodyTypes).toEqual(['kinematic']);
+  expect(purpose.production.sackPlacementIds).toHaveLength(5);
+  const productionBoxKeys = [
+    ...purpose.production.building.boxKeys,
+    ...purpose.production.firstSack.boxKeys,
+    ...purpose.production.flourBin.boxKeys,
+    ...purpose.production.flourHeap.boxKeys,
+  ];
+  expect(new Set(purpose.production.ledger.map(({ boxKey }) => boxKey)))
+    .toEqual(new Set(productionBoxKeys));
+  for (const entry of purpose.production.ledger) {
+    expect(entry.id, entry.boxKey)
+      .toBe(`windmill:purpose-record:${entry.boxKey}`);
+    for (const field of [
+      'beneficiary',
+      'job',
+      'locationDatum',
+      'removalFailure',
+      'relocationFailure',
+      'smallestAdequateForm',
+      'evidence',
+      'honestyBoundary',
+    ] as const) {
+      expect(entry[field].trim().length, `${entry.boxKey}:${field}`)
+        .toBeGreaterThan(20);
+    }
+  }
+  expect(purpose.production.voidLedger.map(({ voidKey }) => voidKey))
+    .toEqual(['building-shaft-opening', 'building-tie-notch']);
+  expect(purpose.production.systemLedger.map(({ id }) => id)).toEqual([
+    'windmill:system-purpose:mill-building',
+    'windmill:system-purpose:wheat-infeed-magazine',
+    'windmill:system-purpose:flour-outfeed',
+    'windmill:system-purpose:wheat-delivery-rule',
+    'windmill:system-purpose:flour-accumulation-rule',
+  ]);
 
   const root = page.locator('[data-windmill-focused]');
   await root.locator('[data-studio-tab="edit"]').click();

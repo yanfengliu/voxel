@@ -3,6 +3,11 @@ import {
   WINDMILL_PLACEMENT_IDS_V1,
   type WindmillPlacementIdV1,
 } from './windmill-layout.js';
+import {
+  WINDMILL_BUILDING_GRAIN,
+  WINDMILL_PRODUCTION_PLACEMENT_IDS_V1,
+  type WindmillProductionPlacementIdV1,
+} from './windmill-production-layout.js';
 import { createWindmillScene } from './windmill-scene.js';
 import {
   VOXEL_SCENE_SCHEMA_V3,
@@ -28,7 +33,8 @@ export interface WindmillScenePurposeReviewVariantV1 {
 interface SceneRelocationSpecV1 {
   readonly id: `windmill:review:${string}`;
   readonly label: string;
-  readonly placementId: WindmillPlacementIdV1;
+  readonly placementId:
+    WindmillPlacementIdV1 | WindmillProductionPlacementIdV1;
   readonly delta: Vec3;
   readonly purposeIds: readonly string[];
   readonly expectedFailure: string;
@@ -88,6 +94,57 @@ const SPECS: readonly SceneRelocationSpecV1[] = Object.freeze([
     ]),
     expectedFailure:
       'The fixed cap and its direct reaction column move one voxel away from the unchanged terminal hammer toe.',
+  }),
+  Object.freeze({
+    id: 'windmill:review:building-off-swept-clearances',
+    label: 'Review failure: building shifted off its swept clearances',
+    placementId: WINDMILL_PRODUCTION_PLACEMENT_IDS_V1.building,
+    delta: Object.freeze([0, 0, -WINDMILL_BUILDING_GRAIN * 2] as const),
+    purposeIds: Object.freeze([
+      'windmill:system-purpose:mill-building',
+      'windmill:purpose:rotor-bay-separation',
+      'windmill:purpose:shaft-wall-passage',
+    ]),
+    expectedFailure:
+      'The rotor wall advances into the sail sweep band and the roof edge overhangs the sweep, erasing the authored half-voxel daylight gap.',
+  }),
+  Object.freeze({
+    id: 'windmill:review:flour-bin-off-anvil-face',
+    label: 'Review failure: flour bin pulled off the anvil face',
+    placementId: WINDMILL_PRODUCTION_PLACEMENT_IDS_V1.flourBin,
+    delta: Object.freeze([WINDMILL_GRAIN * 2, 0, 0] as const),
+    purposeIds: Object.freeze([
+      'windmill:system-purpose:flour-outfeed',
+      'windmill:purpose:flour-level-rim',
+    ]),
+    expectedFailure:
+      'The bin leaves the anvil east face and the unchanged flour level stands as a bare white slab outside its walls.',
+  }),
+  Object.freeze({
+    id: 'windmill:review:wheat-sack-off-queue-rule',
+    label: 'Review failure: first sack breaks the queue rule',
+    placementId: WINDMILL_PRODUCTION_PLACEMENT_IDS_V1.wheatSacks[0],
+    // +X, into the open working corner: the strayed sack must be visible
+    // from the fixed review cameras, not hidden behind the hammer linkage.
+    delta: Object.freeze([WINDMILL_GRAIN * 2, 0, 0] as const),
+    purposeIds: Object.freeze([
+      'windmill:system-purpose:wheat-infeed-magazine',
+      'windmill:purpose:grain-infeed-mass',
+    ]),
+    expectedFailure:
+      'The first-delivered sack strays off the one-rule queue line into the open working corner, so the magazine reads as scattered props rather than staged input.',
+  }),
+  Object.freeze({
+    id: 'windmill:review:flour-level-outside-bin',
+    label: 'Review failure: flour level escapes the bin cavity',
+    placementId: WINDMILL_PRODUCTION_PLACEMENT_IDS_V1.flourHeap,
+    delta: Object.freeze([WINDMILL_GRAIN * 2, 0, 0] as const),
+    purposeIds: Object.freeze([
+      'windmill:system-purpose:flour-outfeed',
+      'windmill:purpose:flour-output-level',
+    ]),
+    expectedFailure:
+      'The level intersects the bin\'s east rim and pokes outside the container, so it stops reading as contents at a height.',
   }),
 ]);
 

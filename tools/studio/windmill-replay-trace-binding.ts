@@ -58,7 +58,7 @@ function createReplayTraceBindingV1(): WindmillReplayTraceBindingV1 {
     inputHash,
     finalHash,
     honestyBoundary:
-      'The input hash binds the consumer run input and the final hash binds the finite recorded observation and provenance. Playback is evidence from that run, not a Studio solver, a fresh simulation, or proof of any individual box purpose.',
+      'The input hash binds the consumer run input and the final hash binds the finite recorded observation and provenance of the four solver tracks. The six appended wheat/flour tracks are authored presentation kinematics keyed to the recorded impact ticks, outside that hash and outside the solver. Playback is evidence from that run, not a Studio solver, a fresh simulation, simulated milling, or proof of any individual box purpose.',
   });
 }
 

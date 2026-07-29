@@ -10,11 +10,25 @@ import {
   WINDMILL_POSE_REPLAY_ID,
   WINDMILL_SCENE_ID,
 } from '../../tools/studio/windmill-layout.js';
+import {
+  WINDMILL_PRODUCTION_PLACEMENT_IDS_V1,
+  WINDMILL_PRODUCTION_TRACK_IDS_V1,
+} from '../../tools/studio/windmill-production-layout.js';
 
 export const WINDMILL_REPLAY_ID = WINDMILL_POSE_REPLAY_ID;
-export const WINDMILL_TRACK_IDS = Object.freeze(
-  Object.values(WINDMILL_PLACEMENT_IDS_V1),
-);
+/** Replay track order: the four recorded bodies, then the authored props. */
+export const WINDMILL_TRACK_IDS = Object.freeze([
+  ...Object.values(WINDMILL_PLACEMENT_IDS_V1),
+  ...WINDMILL_PRODUCTION_TRACK_IDS_V1,
+]);
+/** Scene placement order: recorded bodies, building, bin, sacks, flour. */
+export const WINDMILL_PLACEMENT_IDS = Object.freeze([
+  ...Object.values(WINDMILL_PLACEMENT_IDS_V1),
+  WINDMILL_PRODUCTION_PLACEMENT_IDS_V1.building,
+  WINDMILL_PRODUCTION_PLACEMENT_IDS_V1.flourBin,
+  ...WINDMILL_PRODUCTION_PLACEMENT_IDS_V1.wheatSacks,
+  WINDMILL_PRODUCTION_PLACEMENT_IDS_V1.flourHeap,
+]);
 export { WINDMILL_SCENE_ID };
 
 export interface WindmillCameraV1 {

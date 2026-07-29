@@ -15,8 +15,9 @@ import {
   type WindmillRecipeIdV1,
 } from './windmill-layout.js';
 import {
-  RIVERFALL_SURFACE_SEAM_MODEL_ID,
-} from './riverfall-surface-grid.js';
+  WINDMILL_PRODUCTION_RECIPE_IDS_V1,
+  type WindmillProductionRecipeIdV1,
+} from './windmill-production-layout.js';
 import type { WindmillVisibleRoleV1 } from './windmill-purpose.js';
 
 export const WINDMILL_MOTION_RULE_IDS_V1 = Object.freeze({
@@ -323,7 +324,7 @@ export const WINDMILL_MATERIAL_PURPOSE_MAP_V1 =
   ))) as Readonly<Record<WindmillVisibleRoleV1, WindmillMaterialPurposeV1>>;
 
 export interface WindmillRecipeContrastV1 {
-  readonly recipeId: WindmillRecipeIdV1;
+  readonly recipeId: WindmillRecipeIdV1 | WindmillProductionRecipeIdV1;
   readonly analyzerNearestRecipeId: string;
   readonly supplementalNeighborRecipeIds: readonly string[];
   readonly axes: readonly Readonly<{
@@ -370,39 +371,112 @@ readonly WindmillRecipeContrastV1[] = Object.freeze([
   }),
   Object.freeze({
     recipeId: WINDMILL_RECIPE_IDS_V1.hammer,
-    analyzerNearestRecipeId: WINDMILL_RECIPE_IDS_V1.rotor,
+    analyzerNearestRecipeId: WINDMILL_PRODUCTION_RECIPE_IDS_V1.building,
     supplementalNeighborRecipeIds: Object.freeze([
+      WINDMILL_RECIPE_IDS_V1.rotor,
       WINDMILL_RECIPE_IDS_V1.anvil,
     ]),
     axes: Object.freeze([
       Object.freeze({
         axis: 'topology-negative-space',
         difference:
-          'An asymmetric follower-toe lever replaces the rotor axial shaft and diametric sail paths.',
+          'A solid asymmetric follower-toe lever chain replaces a hollow post-and-plane shell whose only voids are two authored wall passages.',
       }),
       Object.freeze({
         axis: 'supported-motion',
         difference:
-          'A rear journal constrains a lever handoff; the rotor uses two bearing spans around one shaft.',
+          'A journaled lever swings about a rear bearing; the building shell never moves.',
       }),
     ]),
   }),
   Object.freeze({
     recipeId: WINDMILL_RECIPE_IDS_V1.anvil,
-    analyzerNearestRecipeId: RIVERFALL_SURFACE_SEAM_MODEL_ID,
+    analyzerNearestRecipeId: WINDMILL_PRODUCTION_RECIPE_IDS_V1.wheatSack,
     supplementalNeighborRecipeIds: Object.freeze([
       WINDMILL_RECIPE_IDS_V1.hammer,
     ]),
     axes: Object.freeze([
       Object.freeze({
-        axis: 'topology-silhouette',
+        axis: 'construction-grammar',
         difference:
-          'A grounded cap-on-column T mass replaces one flat two-cell half-depth water seam.',
+          'Two purpose-separated fixed reaction boxes on the machine grain replace a fine-grain burlap body under a one-voxel tie cue.',
+      }),
+      Object.freeze({
+        axis: 'supported-motion',
+        difference:
+          'The anvil is the fixed output participant of a solved contact; the sack is a kinematic prop delivered and tipped by authored tracks.',
+      }),
+    ]),
+  }),
+  Object.freeze({
+    recipeId: WINDMILL_PRODUCTION_RECIPE_IDS_V1.building,
+    analyzerNearestRecipeId: 'studio:contrast:mangrove-portal',
+    supplementalNeighborRecipeIds: Object.freeze([
+      WINDMILL_RECIPE_IDS_V1.frame,
+    ]),
+    axes: Object.freeze([
+      Object.freeze({
+        axis: 'topology-negative-space',
+        difference:
+          'Two rectilinear wall planes with a shaft opening and a tie notch on corner posts replace an organic branching portal massing.',
       }),
       Object.freeze({
         axis: 'construction-grammar',
         difference:
-          'Two purpose-separated reaction-path boxes replace one surface-tile box.',
+          'Axis-aligned one-voxel wall planes and a flat slab roof replace sculpted arch limbs; every opening exists for a named crossing.',
+      }),
+    ]),
+  }),
+  Object.freeze({
+    recipeId: WINDMILL_PRODUCTION_RECIPE_IDS_V1.wheatSack,
+    analyzerNearestRecipeId: WINDMILL_RECIPE_IDS_V1.anvil,
+    supplementalNeighborRecipeIds: Object.freeze([
+      WINDMILL_PRODUCTION_RECIPE_IDS_V1.flourHeap,
+    ]),
+    axes: Object.freeze([
+      Object.freeze({
+        axis: 'scale-proportion',
+        difference:
+          'A fine-grain plump body under a centered one-voxel tie reads as soft goods beside the anvil\'s two stacked machine-grain cubes.',
+      }),
+      Object.freeze({
+        axis: 'supported-motion',
+        difference:
+          'The sack slides, tips over its base edge, and lies spent on authored tracks; the anvil never moves.',
+      }),
+    ]),
+  }),
+  Object.freeze({
+    recipeId: WINDMILL_PRODUCTION_RECIPE_IDS_V1.flourBin,
+    analyzerNearestRecipeId: WINDMILL_PRODUCTION_RECIPE_IDS_V1.flourHeap,
+    supplementalNeighborRecipeIds: Object.freeze([]),
+    axes: Object.freeze([
+      Object.freeze({
+        axis: 'topology-negative-space',
+        difference:
+          'An open-topped four-wall container with a working cavity replaces the solid level slab that rides inside it.',
+      }),
+      Object.freeze({
+        axis: 'material-role-rhythm',
+        difference:
+          'Uniform plank wood frames a rim datum; the level is one unbroken flour white.',
+      }),
+    ]),
+  }),
+  Object.freeze({
+    recipeId: WINDMILL_PRODUCTION_RECIPE_IDS_V1.flourHeap,
+    analyzerNearestRecipeId: WINDMILL_PRODUCTION_RECIPE_IDS_V1.flourBin,
+    supplementalNeighborRecipeIds: Object.freeze([]),
+    axes: Object.freeze([
+      Object.freeze({
+        axis: 'topology-negative-space',
+        difference:
+          'One solid fill slab with no cavity replaces the hollow container it is read against.',
+      }),
+      Object.freeze({
+        axis: 'supported-motion',
+        difference:
+          'The level rises one authored step after each recorded impact; the bin is fixed architecture.',
       }),
     ]),
   }),

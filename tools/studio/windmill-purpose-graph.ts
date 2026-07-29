@@ -12,6 +12,12 @@ import {
   WINDMILL_COMPACT_PURPOSE_NEEDS_V1,
 } from './windmill-compact-purpose-needs.js';
 import {
+  WINDMILL_PRODUCTION_HONESTY_V1,
+  WINDMILL_PRODUCTION_MOTION_RULE_IDS_V1,
+  WINDMILL_PRODUCTION_PURPOSE_LEDGER_V1,
+  WINDMILL_PRODUCTION_VOID_PURPOSES_V1,
+} from './windmill-production-purpose.js';
+import {
   WINDMILL_MOTION_RULE_IDS_V1,
 } from './windmill-system-purpose.js';
 
@@ -36,15 +42,20 @@ const NEED = Object.freeze({
   driven: 'windmill:need:wind-drives-the-hammer',
   grounded: 'windmill:need:visible-support-to-ground',
   datums: 'windmill:need:legible-rotation-datums',
+  production: 'windmill:need:grain-becomes-flour',
+  housed: 'windmill:need:mill-reads-as-a-building',
 } as const);
 
 const INTERFACE = Object.freeze({
   camFollower: 'windmill:interface:cam-follower-contact',
   headAnvil: 'windmill:interface:head-anvil-contact',
+  shaftPassage: 'windmill:interface:shaft-wall-passage',
+  tiePassage: 'windmill:interface:tie-wall-passage',
 } as const);
 
 const SOURCE_WIND = 'windmill:source:world-wind-flow';
 const SINK_DISSIPATION = 'windmill:sink:configured-dissipation';
+const SOURCE_WHEAT = 'windmill:source:wheat-infeed';
 
 const id = (key: string): PurposeNodeIdV1 => key as PurposeNodeIdV1;
 
@@ -210,6 +221,137 @@ function authoredNodes(): readonly PurposeNodeV1[] {
   });
 }
 
+/**
+ * Production solids grouped by shared need id, the same granularity the
+ * compact projection uses: one node per authored decision, with the per-box
+ * ledger records as its exact membership. The builder fails closed when a
+ * ledger record's need id has no declared node or edge here.
+ */
+const PRODUCTION_SOLIDS: Readonly<Record<string, {
+  readonly label: string;
+  readonly job: string;
+  readonly requiredBy: readonly PurposeNodeIdV1[];
+  readonly honestyBoundary: string;
+}>> = Object.freeze({
+  'windmill:purpose:building-roof-bearing': {
+    label: 'building corner posts',
+    job: 'Carry the roof at the four footprint corners so both open sides '
+      + 'read as chosen, not missing.',
+    requiredBy: Object.freeze([id('windmill:purpose:mill-roof-shelter')]),
+    honestyBoundary: 'Visible support only; no load or joinery is solved.',
+  },
+  'windmill:purpose:rotor-bay-separation': {
+    label: 'rotor wall',
+    job: 'Separate the outdoor rotor from the working bay with the one '
+      + 'built plane the shaft must cross.',
+    requiredBy: Object.freeze([NEED.housed]),
+    honestyBoundary: 'A visual boundary; it blocks no wind and bears no '
+      + 'solved load.',
+  },
+  'windmill:purpose:west-enclosure': {
+    label: 'west side wall',
+    job: 'Close one side so the rear-quarter view reads as a building while '
+      + 'the default view stays open.',
+    requiredBy: Object.freeze([NEED.housed]),
+    honestyBoundary: 'A visual boundary only.',
+  },
+  'windmill:purpose:mill-roof-shelter': {
+    label: 'mill roof',
+    job: 'Cover the working bay so the mechanism reads as housed.',
+    requiredBy: Object.freeze([NEED.housed]),
+    honestyBoundary: 'No weather, shadow, or structural claim.',
+  },
+  'windmill:purpose:grain-infeed-mass': {
+    label: 'wheat sack bodies',
+    job: 'Be the visible units of grain the delivery rule feeds to the '
+      + 'anvil, one per recorded impact.',
+    requiredBy: Object.freeze([
+      id(WINDMILL_PRODUCTION_MOTION_RULE_IDS_V1.wheatDelivery),
+      id(SOURCE_WHEAT),
+    ]),
+    honestyBoundary: WINDMILL_PRODUCTION_HONESTY_V1,
+  },
+  'windmill:purpose:sack-orientation-cue': {
+    label: 'sack tie cue',
+    job: 'Mark each sack top so the tipped spent sacks read as the same '
+      + 'objects emptied.',
+    requiredBy: Object.freeze([
+      id(WINDMILL_PRODUCTION_MOTION_RULE_IDS_V1.wheatDelivery),
+    ]),
+    honestyBoundary: 'A color cue only; no rope behavior.',
+  },
+  'windmill:purpose:flour-rest-datum': {
+    label: 'bin floor',
+    job: 'Give the flour level its visible rest face at frame zero.',
+    requiredBy: Object.freeze([id('windmill:purpose:flour-output-level')]),
+    honestyBoundary: 'Authored rest contact, not solved support.',
+  },
+  'windmill:purpose:flour-level-rim': {
+    label: 'bin rim walls',
+    job: 'Give the rising level the rim it is read against and hide the '
+      + 'prop underside as it rises.',
+    requiredBy: Object.freeze([id('windmill:purpose:flour-output-level')]),
+    honestyBoundary: 'Authored containment, not solved contact.',
+  },
+  'windmill:purpose:flour-output-level': {
+    label: 'flour level',
+    job: 'Be the one visible measure of accumulated output across the five '
+      + 'recorded impacts.',
+    requiredBy: Object.freeze([
+      id(WINDMILL_PRODUCTION_MOTION_RULE_IDS_V1.flourAccumulation),
+    ]),
+    honestyBoundary: WINDMILL_PRODUCTION_HONESTY_V1,
+  },
+});
+
+const PRODUCTION_EVIDENCE: PurposeEvidenceV1 = Object.freeze({
+  kind: 'bound',
+  proofId: 'windmill production generation, clearance, and browser gates',
+  establishes: Object.freeze([
+    'The committed replay regenerates these tracks byte-identically from '
+    + 'the recorded impact ticks, every authored solid holds its declared '
+    + 'clearance against the swept mechanism per frame, and the fixed '
+    + 'review cameras bind each removal and relocation to a visible '
+    + 'difference.',
+  ]),
+});
+
+function productionNodes(): readonly PurposeNodeV1[] {
+  const declared = new Set(Object.keys(PRODUCTION_SOLIDS));
+  const referenced = new Set<string>(
+    WINDMILL_PRODUCTION_PURPOSE_LEDGER_V1.map(({ needId }) => needId),
+  );
+  for (const needId of referenced) {
+    if (!declared.has(needId)) {
+      throw new Error(
+        `Cannot project windmill production purpose '${needId}' onto the `
+        + 'graph: add its node and requiredBy edges to PRODUCTION_SOLIDS in '
+        + 'windmill-purpose-graph.ts.',
+      );
+    }
+  }
+  for (const needId of declared) {
+    if (!referenced.has(needId)) {
+      throw new Error(
+        `Windmill production graph node '${needId}' matches no ledger `
+        + 'record; remove it or fix the ledger need id.',
+      );
+    }
+  }
+  return Object.keys(PRODUCTION_SOLIDS).map((key) => {
+    const node = PRODUCTION_SOLIDS[key]!;
+    return purposeNodeV1({
+      id: id(key),
+      kind: 'solid',
+      label: node.label,
+      job: node.job,
+      requiredBy: node.requiredBy,
+      evidence: PRODUCTION_EVIDENCE,
+      honestyBoundary: node.honestyBoundary,
+    });
+  });
+}
+
 const NEEDS: readonly PurposeNodeV1[] = Object.freeze([
   purposeNeedV1({
     id: NEED.driven,
@@ -254,6 +396,30 @@ const NEEDS: readonly PurposeNodeV1[] = Object.freeze([
     honestyBoundary:
       'The rings communicate an ideal revolute datum. They supply no solved '
       + 'bearing contact, load sharing, friction, or axial stop.',
+  }),
+  purposeNeedV1({
+    id: NEED.production,
+    label: 'Grain becomes flour',
+    job: 'A viewer must see wheat enter, the recorded impacts pound it, and '
+      + 'flour accumulate — the whole reason a mill exists.',
+    rootRationale:
+      'A trip hammer that strikes an empty anvil is a mechanism study; the '
+      + 'scene claims a mill, so its input and output must be visible.',
+    evidence: PRODUCTION_EVIDENCE,
+    honestyBoundary: WINDMILL_PRODUCTION_HONESTY_V1,
+  }),
+  purposeNeedV1({
+    id: NEED.housed,
+    label: 'The mill reads as a building',
+    job: 'The mechanism must sit inside a mill building whose interior '
+      + 'stays visible from the default camera.',
+    rootRationale:
+      'A working mill is architecture around a machine; bare machinery in '
+      + 'a field contradicts the scene\'s stated setting.',
+    evidence: PRODUCTION_EVIDENCE,
+    honestyBoundary:
+      'Two walls, posts, and a roof communicate enclosure only; nothing '
+      + 'structural, thermal, or meteorological is claimed.',
   }),
 ]);
 
@@ -328,6 +494,29 @@ const MOTION_RULES: readonly PurposeNodeV1[] = Object.freeze([
   ),
 ]);
 
+const PRODUCTION_RULES: readonly PurposeNodeV1[] = Object.freeze([
+  purposeNodeV1({
+    id: id(WINDMILL_PRODUCTION_MOTION_RULE_IDS_V1.wheatDelivery),
+    kind: 'motion-rule',
+    label: 'Wheat delivery keyed to recorded impacts',
+    job: 'Slide sack k to the anvil-side milling spot before recorded '
+      + 'impact k and set it aside spent afterwards.',
+    requiredBy: Object.freeze([NEED.production]),
+    evidence: PRODUCTION_EVIDENCE,
+    honestyBoundary: WINDMILL_PRODUCTION_HONESTY_V1,
+  }),
+  purposeNodeV1({
+    id: id(WINDMILL_PRODUCTION_MOTION_RULE_IDS_V1.flourAccumulation),
+    kind: 'motion-rule',
+    label: 'Flour accumulation keyed to recorded impacts',
+    job: 'Raise the bin\'s flour level one fixed step shortly after each '
+      + 'recorded impact.',
+    requiredBy: Object.freeze([NEED.production]),
+    evidence: PRODUCTION_EVIDENCE,
+    honestyBoundary: WINDMILL_PRODUCTION_HONESTY_V1,
+  }),
+]);
+
 const INTERFACES: readonly PurposeNodeV1[] = Object.freeze([
   purposeNodeV1({
     id: INTERFACE.camFollower,
@@ -367,6 +556,37 @@ const INTERFACES: readonly PurposeNodeV1[] = Object.freeze([
     },
     honestyBoundary:
       'A declared contact group only. No forging, deformation, or wear.',
+  }),
+  purposeNodeV1({
+    id: INTERFACE.shaftPassage,
+    kind: 'interface',
+    label: 'Shaft-wall passage',
+    job: 'Hold the one authored void where the turning shaft crosses the '
+      + 'rotor wall, so the shaft and the wall each serve the crossing '
+      + 'rather than each other.',
+    requiredBy: Object.freeze([
+      id('windmill:purpose:continuous-rotor-shaft'),
+      id('windmill:purpose:rotor-bay-separation'),
+    ]),
+    evidence: PRODUCTION_EVIDENCE,
+    honestyBoundary:
+      'A clearance void with 0.198 world units around the shaft\'s swept '
+      + 'cylinder; no bearing, seal, or wall loading is claimed.',
+  }),
+  purposeNodeV1({
+    id: INTERFACE.tiePassage,
+    kind: 'interface',
+    label: 'Ground-tie wall passage',
+    job: 'Hold the base notch where the frame\'s rotor-bearing ground tie '
+      + 'runs under the rotor wall.',
+    requiredBy: Object.freeze([
+      id('windmill:purpose:rotor-bearing-ground-tie'),
+      id('windmill:purpose:rotor-bay-separation'),
+    ]),
+    evidence: PRODUCTION_EVIDENCE,
+    honestyBoundary:
+      'A clearance void with an eighth world unit on every tie face; the '
+      + 'wall bears on nothing at the crossing.',
   }),
 ]);
 
@@ -424,16 +644,58 @@ const BOUNDARIES: readonly PurposeNodeV1[] = Object.freeze([
     honestyBoundary:
       'The fixture claims no energy balance and no global conservation.',
   }),
+  purposeBoundaryV1({
+    id: SOURCE_WHEAT,
+    kind: 'material-source',
+    label: 'Wheat infeed',
+    job: 'Supply the finite magazine of five queued sacks the delivery '
+      + 'rule feeds to the anvil, one per recorded impact.',
+    quantity: 'grain-mass',
+    visibility: 'visible',
+    truncates:
+      'The farm, harvest, and cartage that filled the sacks and brought '
+      + 'them to the queue.',
+    requiredBy: Object.freeze([
+      id(WINDMILL_PRODUCTION_MOTION_RULE_IDS_V1.wheatDelivery),
+    ]),
+    evidence: PRODUCTION_EVIDENCE,
+    honestyBoundary:
+      'A visible magazine like the ball-drop rack: sacks pre-exist in the '
+      + 'scene and nothing meters, weighs, or simulates their contents.',
+  }),
 ]);
 
+/**
+ * The void records are projected through the two passage interfaces above;
+ * this guard keeps the ledger and the graph naming the same authored voids.
+ */
+function assertVoidCoverage(): void {
+  const projected = new Set<string>([
+    'windmill:purpose:shaft-wall-passage',
+    'windmill:purpose:tie-wall-passage',
+  ]);
+  for (const record of WINDMILL_PRODUCTION_VOID_PURPOSES_V1) {
+    if (!projected.has(record.needId)) {
+      throw new Error(
+        `Windmill void record '${record.voidKey}' names need `
+        + `'${record.needId}', which has no interface node in the purpose `
+        + 'graph.',
+      );
+    }
+  }
+}
+
 export function createWindmillPurposeGraphV1(): PurposeGraphV1 {
+  assertVoidCoverage();
   return purposeGraphV1(
     WINDMILL_PURPOSE_SYSTEM_ID_V1,
     [
       ...NEEDS,
       ...MOTION_RULES,
+      ...PRODUCTION_RULES,
       ...INTERFACES,
       ...authoredNodes(),
+      ...productionNodes(),
       ...BOUNDARIES,
     ],
     [{
@@ -447,6 +709,19 @@ export function createWindmillPurposeGraphV1(): PurposeGraphV1 {
         + 'internal conservative field, not a boundary, because the lever '
         + 'returns to its starting height each cycle. The fixture therefore '
         + 'claims bounded open-system work input, not energy conservation.',
+    }, {
+      quantity: 'grain-mass',
+      closed: false,
+      sourceIds: Object.freeze([SOURCE_WHEAT]),
+      sinkIds: Object.freeze([]),
+      statement:
+        'Windmill is open in grain-mass with no sink. A finite magazine of '
+        + 'five pre-staged sacks is the visible wheat infeed; spent sacks '
+        + 'and the rising flour level accumulate inside the scene and '
+        + 'nothing leaves. The wheat-to-flour transformation at the anvil '
+        + 'is internal authored presentation keyed to the recorded '
+        + 'impacts, not simulated milling, so the claim is a visible '
+        + 'material account, not a mass balance.',
     }],
   );
 }

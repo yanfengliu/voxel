@@ -30,6 +30,9 @@ import { createStudioParts } from './parts.js';
 import type { PhysicalAssetBookV1 } from './physical-asset.js';
 import { createWindmillPhysicalBook } from './windmill-physical-assets.js';
 import {
+  createWindmillProductionPhysicalBook,
+} from './windmill-production-physical.js';
+import {
   WINDMILL_REPLAY_TRACE_BINDING_V1,
 } from './windmill-replay-trace-binding.js';
 import { WINDMILL_SCENE_ID } from './windmill-layout.js';
@@ -388,11 +391,18 @@ export function createStudioCatalog(): StudioCatalogV1 {
       },
       {
         name: 'Windmill',
-        // All four entries receive the same frozen compact sidecar book.
-        // Collider identity is derived from exact geometry box keys there;
-        // the catalog owns no independent physical proxy or numeric mapping.
+        // Every entry receives one merged sidecar book: the frozen compact
+        // declarations for the four mechanism recipes, plus the fixed and
+        // kinematic production sidecars. Collider identity stays derived
+        // from exact authored box keys in both halves; the catalog owns no
+        // independent physical proxy or numeric mapping.
         models: Object.values(createWindmillRecipeBook()).map((recipe) =>
-          recipeEntry(() => recipe, { physical: createWindmillPhysicalBook })),
+          recipeEntry(() => recipe, {
+            physical: () => ({
+              ...createWindmillPhysicalBook(),
+              ...createWindmillProductionPhysicalBook(),
+            }),
+          })),
       },
       {
         name: 'Walls',

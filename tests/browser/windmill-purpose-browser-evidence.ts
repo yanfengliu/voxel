@@ -46,6 +46,52 @@ interface BrowserSystemPurposeModule {
   };
 }
 
+interface BrowserProductionPurposeModule {
+  readonly WINDMILL_PRODUCTION_HONESTY_V1: string;
+  readonly WINDMILL_PRODUCTION_PURPOSE_LEDGER_V1: readonly {
+    readonly id: string;
+    readonly needId: string;
+    readonly boxKey: string;
+    readonly recipeId: string;
+    readonly beneficiary: string;
+    readonly job: string;
+    readonly locationDatum: string;
+    readonly removalFailure: string;
+    readonly relocationFailure: string;
+    readonly smallestAdequateForm: string;
+    readonly evidence: string;
+    readonly honestyBoundary: string;
+    readonly boxes: readonly { readonly boxKey: string }[];
+  }[];
+  readonly WINDMILL_PRODUCTION_VOID_PURPOSES_V1: readonly {
+    readonly id: string;
+    readonly voidKey: string;
+    readonly recipeId: string;
+    readonly job: string;
+    readonly fillFailure: string;
+    readonly honestyBoundary: string;
+  }[];
+  readonly WINDMILL_PRODUCTION_SYSTEM_PURPOSES_V1: readonly {
+    readonly id: string;
+    readonly kind: string;
+    readonly subjectIds: readonly string[];
+    readonly honestyBoundary: string;
+  }[];
+}
+
+interface BrowserProductionLayoutModule {
+  readonly WINDMILL_PRODUCTION_PLACEMENT_IDS_V1: {
+    readonly building: string;
+    readonly flourBin: string;
+    readonly wheatSacks: readonly string[];
+    readonly flourHeap: string;
+  };
+  readonly WINDMILL_PRODUCTION_ASSETS_V1: readonly {
+    readonly recipeId: string;
+    readonly boxes: readonly { readonly boxKey: string }[];
+  }[];
+}
+
 export async function inspectWindmillPurposeEvidence(page: Page) {
   return page.evaluate(async ({ sceneId, replayId }) => {
     const catalogUrl = new URL('catalog.ts', window.location.href).href;
@@ -55,6 +101,10 @@ export async function inspectWindmillPurposeEvidence(page: Page) {
       new URL('windmill-purpose.ts', window.location.href).href;
     const systemPurposeUrl =
       new URL('windmill-system-purpose.ts', window.location.href).href;
+    const productionPurposeUrl =
+      new URL('windmill-production-purpose.ts', window.location.href).href;
+    const productionLayoutUrl =
+      new URL('windmill-production-layout.ts', window.location.href).href;
     const { createStudioCatalog } =
       await import(catalogUrl) as unknown as BrowserCatalogModule;
     const physicalModule =
@@ -63,6 +113,10 @@ export async function inspectWindmillPurposeEvidence(page: Page) {
       await import(purposeUrl) as unknown as BrowserPurposeModule;
     const systemPurposeModule =
       await import(systemPurposeUrl) as unknown as BrowserSystemPurposeModule;
+    const productionPurposeModule = await import(productionPurposeUrl) as
+      unknown as BrowserProductionPurposeModule;
+    const productionLayoutModule = await import(productionLayoutUrl) as
+      unknown as BrowserProductionLayoutModule;
     const catalog = createStudioCatalog();
     const scene = catalog.scenes?.find(({ id }) => id === sceneId);
     const replay = catalog.scenePoseReplays?.[replayId];
@@ -188,6 +242,34 @@ export async function inspectWindmillPurposeEvidence(page: Page) {
         anvilFaceVoxels: roleCount(/^impact-face$/i),
       };
     };
+    const productionIds =
+      productionLayoutModule.WINDMILL_PRODUCTION_PLACEMENT_IDS_V1;
+    const inspectProduction = (placementId: string) => {
+      const placed = placement(placementId);
+      const entry = shelfEntry(placed.model);
+      const made = entry.howItsMade();
+      const physical = made.physical?.[made.recipe.id];
+      if (physical === undefined) {
+        throw new Error(
+          `Windmill production model '${made.recipe.id}' has no sidecar.`,
+        );
+      }
+      const layout = productionLayoutModule.WINDMILL_PRODUCTION_ASSETS_V1
+        .find((asset) => asset.recipeId === made.recipe.id);
+      if (layout === undefined) {
+        throw new Error(
+          `Windmill production model '${made.recipe.id}' has no layout asset.`,
+        );
+      }
+      return {
+        placement: placed,
+        recipeId: made.recipe.id,
+        label: made.recipe.label,
+        boxKeys: layout.boxes.map(({ boxKey }) => boxKey),
+        bodyTypes: physical.bodies.map(({ type }) => type),
+        colliderCount: physical.colliders.length,
+      };
+    };
     return {
       summary: scene.summary ?? '',
       frame: inspect('windmill-frame'),
@@ -202,6 +284,21 @@ export async function inspectWindmillPurposeEvidence(page: Page) {
       contactEvents: replay.events
         .filter(({ type }) => type === 'contact')
         .map((event) => ({ ...event })),
+      production: {
+        building: inspectProduction(productionIds.building),
+        flourBin: inspectProduction(productionIds.flourBin),
+        firstSack: inspectProduction(productionIds.wheatSacks[0]!),
+        flourHeap: inspectProduction(productionIds.flourHeap),
+        sackPlacementIds: productionIds.wheatSacks.map((id) =>
+          placement(id).id),
+        honesty: productionPurposeModule.WINDMILL_PRODUCTION_HONESTY_V1,
+        ledger:
+          productionPurposeModule.WINDMILL_PRODUCTION_PURPOSE_LEDGER_V1,
+        voidLedger:
+          productionPurposeModule.WINDMILL_PRODUCTION_VOID_PURPOSES_V1,
+        systemLedger:
+          productionPurposeModule.WINDMILL_PRODUCTION_SYSTEM_PURPOSES_V1,
+      },
     };
   }, {
     sceneId: WINDMILL_SCENE_ID,

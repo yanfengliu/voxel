@@ -98,6 +98,13 @@ interface BrowserGeneratedWindmillModule {
     readonly normalImpulse: number;
     readonly penetration: number;
   }[];
+  readonly WINDMILL_PRODUCTION_PRESENTATION: {
+    readonly schema: string;
+    readonly label: string;
+    readonly trackIds: readonly string[];
+    readonly impactTicks: readonly number[];
+    readonly honestyBoundary: string;
+  };
 }
 
 export async function readGeneratedWindmillEvidence(page: Page) {
@@ -179,6 +186,7 @@ export async function readGeneratedWindmillEvidence(page: Page) {
       candidateResult: generated.WINDMILL_COMPACT_CANDIDATE_RESULT,
       evidence,
       contacts: generated.WINDMILL_COMPACT_REPLAY_CONTACTS,
+      productionPresentation: generated.WINDMILL_PRODUCTION_PRESENTATION,
     };
   }, {
     expectedReplayId: WINDMILL_POSE_REPLAY_ID,

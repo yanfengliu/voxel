@@ -8,6 +8,19 @@ import {
   WINDMILL_RECIPE_STEP_PURPOSES_V1,
 } from './windmill-recipes.js';
 import {
+  WINDMILL_PRODUCTION_PURPOSE_BY_BOX_KEY_V1,
+  WINDMILL_PRODUCTION_PURPOSE_LEDGER_V1,
+  WINDMILL_PRODUCTION_VOID_PURPOSES_V1,
+  type WindmillProductionPurposeEntryV1,
+} from './windmill-production-purpose.js';
+import {
+  WINDMILL_PRODUCTION_RECIPES,
+  WINDMILL_PRODUCTION_STEP_PURPOSES_V1,
+} from './windmill-production-recipes.js';
+import {
+  WINDMILL_PRODUCTION_ASSETS_V1,
+} from './windmill-production-layout.js';
+import {
   createWindmillScenePurposeReviewVariantsV1,
   type WindmillScenePurposeReviewVariantV1,
 } from './windmill-scene-purpose-review.js';
@@ -19,14 +32,23 @@ export type {
 
 type Vec3 = readonly [number, number, number];
 
+/**
+ * The minimal shape a per-box record must expose to earn a review variant.
+ * The frozen compact ledger and the additive production ledger both satisfy
+ * it, so one generator covers every exact authored box in the scene.
+ */
+export type WindmillReviewablePurposeV1 =
+  | WindmillPurposeEntryV1
+  | WindmillProductionPurposeEntryV1;
+
 export interface WindmillRecipePurposeReviewVariantV1 {
   readonly artifact: 'recipe';
   readonly id: `windmill:review:${string}`;
   readonly label: string;
   readonly reviewKind: 'relocation' | 'simplification';
-  readonly sourceRecipeId: WindmillPurposeEntryV1['recipeId'];
+  readonly sourceRecipeId: WindmillReviewablePurposeV1['recipeId'];
   readonly boxKeys: readonly string[];
-  readonly purposeIds: readonly WindmillPurposeEntryV1['id'][];
+  readonly purposeIds: readonly `windmill:purpose-record:${string}`[];
   readonly expectedFailure: string;
   readonly recipe: RecipeV1;
 }
@@ -81,16 +103,57 @@ const RELOCATION_SPECS: readonly RelocationSpecV1[] = Object.freeze([
     boxKey: 'anvil-impact-cap',
     delta: Object.freeze([1, 0, 0] as const),
   }),
+  // Bounded representative production relocations: the roof off its posts,
+  // the side wall off its wall line, and the tie cue off the sack neck.
+  Object.freeze({
+    boxKey: 'building-roof',
+    delta: Object.freeze([2, 0, 0] as const),
+  }),
+  Object.freeze({
+    boxKey: 'building-side-wall',
+    delta: Object.freeze([2, 0, 0] as const),
+  }),
+  Object.freeze({
+    boxKey: 'sack-tie',
+    delta: Object.freeze([1, 0, 0] as const),
+  }),
 ]);
 
 function slug(value: string): `windmill:review:${string}` {
   return `windmill:review:${value}`;
 }
 
+const ALL_RECIPES: readonly RecipeV1[] = Object.freeze([
+  ...WINDMILL_RECIPES,
+  ...WINDMILL_PRODUCTION_RECIPES,
+]);
+
+interface StepPurposeIndexEntryV1 {
+  readonly boxKey: string;
+  readonly stepIndex: number;
+}
+
+function stepPurposesForRecipe(
+  recipeId: WindmillReviewablePurposeV1['recipeId'],
+): readonly StepPurposeIndexEntryV1[] {
+  const compact = (WINDMILL_RECIPE_STEP_PURPOSES_V1 as Readonly<
+  Record<string, readonly StepPurposeIndexEntryV1[] | undefined>
+  >)[recipeId];
+  if (compact !== undefined) return compact;
+  const production = (WINDMILL_PRODUCTION_STEP_PURPOSES_V1 as Readonly<
+  Record<string, readonly StepPurposeIndexEntryV1[] | undefined>
+  >)[recipeId];
+  if (production !== undefined) return production;
+  throw new Error(
+    `Cannot build windmill review: recipe '${recipeId}' has no step-purpose `
+    + 'map in either the compact or the production set.',
+  );
+}
+
 function canonicalRecipe(
-  purpose: WindmillPurposeEntryV1,
+  purpose: WindmillReviewablePurposeV1,
 ): RecipeV1 {
-  const recipe = WINDMILL_RECIPES.find(
+  const recipe = ALL_RECIPES.find(
     (entry) => entry.id === purpose.recipeId,
   );
   if (recipe === undefined) {
@@ -101,8 +164,8 @@ function canonicalRecipe(
   return recipe;
 }
 
-function stepIndexFor(purpose: WindmillPurposeEntryV1): number {
-  const entry = WINDMILL_RECIPE_STEP_PURPOSES_V1[purpose.recipeId].find(
+function stepIndexFor(purpose: WindmillReviewablePurposeV1): number {
+  const entry = stepPurposesForRecipe(purpose.recipeId).find(
     (candidate) => candidate.boxKey === purpose.boxKey,
   );
   if (entry === undefined) {
@@ -114,7 +177,7 @@ function stepIndexFor(purpose: WindmillPurposeEntryV1): number {
 }
 
 function reviewRecipe(
-  purpose: WindmillPurposeEntryV1,
+  purpose: WindmillReviewablePurposeV1,
   reviewKind: 'relocation' | 'simplification',
   expectedFailure: string,
   mutate: (recipe: RecipeV1, stepIndex: number) => RecipeV1['steps'],
@@ -187,7 +250,7 @@ function reviewRecipe(
 }
 
 function removalVariant(
-  purpose: WindmillPurposeEntryV1,
+  purpose: WindmillReviewablePurposeV1,
 ): WindmillRecipePurposeReviewVariantV1 {
   return reviewRecipe(
     purpose,
@@ -202,7 +265,8 @@ function removalVariant(
 function relocationVariant(
   spec: RelocationSpecV1,
 ): WindmillRecipePurposeReviewVariantV1 {
-  const purpose = WINDMILL_PURPOSE_BY_BOX_KEY_V1[spec.boxKey];
+  const purpose = WINDMILL_PURPOSE_BY_BOX_KEY_V1[spec.boxKey]
+    ?? WINDMILL_PRODUCTION_PURPOSE_BY_BOX_KEY_V1[spec.boxKey];
   if (purpose === undefined) {
     throw new Error(
       `Cannot build windmill relocation review: selected box '${spec.boxKey}' is absent.`,
@@ -229,11 +293,76 @@ function relocationVariant(
   );
 }
 
+/**
+ * A deliberate void's review is the opposite of a removal: the "simpler"
+ * recipe fills the authored opening, and the declared failure is what the
+ * filled wall would do to the thing that passes through it.
+ */
+function voidFillVariants(): readonly WindmillRecipePurposeReviewVariantV1[] {
+  return WINDMILL_PRODUCTION_VOID_PURPOSES_V1.map((record) => {
+    const canonical = ALL_RECIPES.find(
+      (entry) => entry.id === record.recipeId,
+    );
+    const asset = WINDMILL_PRODUCTION_ASSETS_V1.find(
+      (entry) => entry.recipeId === record.recipeId,
+    );
+    const voidBox = asset?.voids.find(
+      (entry) => entry.voidKey === record.voidKey,
+    );
+    if (canonical === undefined || voidBox === undefined) {
+      throw new Error(
+        `Cannot build windmill void-fill review for '${record.voidKey}': `
+        + 'its recipe or authored void is absent from the production layout.',
+      );
+    }
+    const id = slug(`fill-${record.voidKey}`);
+    const label = `Review failure: fill ${record.voidKey}`;
+    return Object.freeze({
+      artifact: 'recipe' as const,
+      id,
+      label,
+      reviewKind: 'simplification' as const,
+      sourceRecipeId: record.recipeId,
+      boxKeys: Object.freeze([record.voidKey]),
+      purposeIds: Object.freeze([record.id]),
+      expectedFailure: record.fillFailure,
+      recipe: Object.freeze({
+        ...canonical,
+        id,
+        label,
+        summary: record.fillFailure,
+        tags: Object.freeze([
+          ...(canonical.tags ?? []),
+          'purpose-review',
+          'simplification',
+        ]),
+        steps: Object.freeze([
+          ...canonical.steps,
+          Object.freeze({
+            kind: 'part' as const,
+            part: 'box',
+            at: voidBox.at,
+            settings: Object.freeze({
+              sizeX: voidBox.size[0],
+              sizeY: voidBox.size[1],
+              sizeZ: voidBox.size[2],
+              role: 'mill-wall',
+            }),
+            note: `Fills the deliberate void ${record.voidKey}.`,
+          }),
+        ]),
+      }),
+    });
+  });
+}
+
 export function createWindmillPurposeReviewVariantsV1():
 readonly WindmillPurposeReviewVariantV1[] {
   return Object.freeze([
     ...RELOCATION_SPECS.map(relocationVariant),
     ...createWindmillScenePurposeReviewVariantsV1(),
     ...WINDMILL_PURPOSE_LEDGER_V1.map(removalVariant),
+    ...WINDMILL_PRODUCTION_PURPOSE_LEDGER_V1.map(removalVariant),
+    ...voidFillVariants(),
   ]);
 }

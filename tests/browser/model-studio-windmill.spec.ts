@@ -313,7 +313,7 @@ test('lift, release, and impact remain legible from intended and opposite views'
     for (const captured of [primary, adversarial]) {
       expect(captured.bytes).toBeGreaterThan(1_000);
       expect(captured.draw.sceneRender).toMatchObject({
-        instances: 4,
+        instances: 12,
         animatedBatches: 0,
         animatedInstances: 0,
       });
@@ -340,4 +340,68 @@ test('lift, release, and impact remain legible from intended and opposite views'
       expect(difference.maximumChannelDelta).toBeGreaterThan(4);
     }
   }
+});
+
+test('wheat delivery and flour accumulation read from the interior view', async ({
+  page,
+}, testInfo) => {
+  await mount(page);
+  const generated = await readGeneratedWindmillEvidence(page);
+  await page.addStyleTag({
+    content: [
+      '[data-windmill-focused] .viewchip,',
+      '[data-windmill-focused] .toggles,',
+      '[data-windmill-focused] .stagehint,',
+      '[data-windmill-focused] .grid-marks,',
+      '[data-windmill-focused] .highlight-marks { visibility: hidden !important; }',
+    ].join('\n'),
+  });
+  // A working-bay close-up through the open corner: yaw 58 keeps the
+  // southeast roof post at the frame's left edge, so the wheat queue and
+  // milling spot, the hammer over the anvil, and the flour bin all read in
+  // one frame.
+  const interiorCamera: WindmillCameraV1 = {
+    center: [2.5, 0, 1.35],
+    view: { yawDegrees: 58, pitchDegrees: 30, viewHeight: 2.6 },
+  };
+  const impacts = generated.contacts
+    .filter(({ kind }) => kind === 'anvil-impact')
+    .map(({ tick }) => tick
+      * generated.recordProfile.solverStepSeconds * 1_000);
+  expect(impacts).toHaveLength(5);
+  const moments = [
+    { name: 'opening-queue-full', timeMs: 0 },
+    { name: 'third-sack-at-anvil', timeMs: impacts[2]! },
+    { name: 'settled-flour-heaped', timeMs: 11_900 },
+  ] as const;
+  const images: Buffer[] = [];
+  for (const moment of moments) {
+    const captured = await capture(
+      page,
+      testInfo,
+      `production-${moment.name}`,
+      moment.timeMs,
+      interiorCamera,
+    );
+    expect(captured.draw.sceneRender).toMatchObject({ instances: 12 });
+    images.push(captured.image);
+  }
+  for (let index = 1; index < images.length; index += 1) {
+    const difference = await compareWindmillPngs(
+      page,
+      images[index - 1]!,
+      images[index]!,
+    );
+    expect(difference.differingPixels / difference.totalPixels)
+      .toBeGreaterThan(0.001);
+    expect(difference.maximumChannelDelta).toBeGreaterThan(8);
+  }
+  const openingVersusSettled = await compareWindmillPngs(
+    page,
+    images[0]!,
+    images[2]!,
+  );
+  expect(
+    openingVersusSettled.differingPixels / openingVersusSettled.totalPixels,
+  ).toBeGreaterThan(0.005);
 });
