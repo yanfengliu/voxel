@@ -1,3 +1,4 @@
+import { exactMagnitudeV1 } from '../deterministic-math.js';
 import { MACHINE_WORKS_SCENE_LAYOUT_V1 } from '../../tools/studio/machine-works-layout.js';
 import type { PhysicalAssetV1 } from '../../tools/studio/physical-asset.js';
 import {
@@ -100,7 +101,7 @@ function sameSize(
 }
 
 function centerDistance(left: AxisAlignedBoundsV1, right: AxisAlignedBoundsV1): number {
-  return Math.hypot(...left.min.map((value, axis) =>
+  return exactMagnitudeV1(...left.min.map((value, axis) =>
     (value + left.max[axis]!) / 2
       - (right.min[axis]! + right.max[axis]!) / 2));
 }

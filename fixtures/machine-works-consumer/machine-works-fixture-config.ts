@@ -1,3 +1,4 @@
+import { deterministicTanV1 } from '../deterministic-math.js';
 import {
   createMachineWorksCollectionBucketPhysicalAsset,
   createMachineWorksConveyorSlatPhysicalAsset,
@@ -479,7 +480,7 @@ export function machineWorksSupportAlignmentIssuesV1(): readonly string[] {
   const slatWorldLength =
     MACHINE_WORKS_CONVEYOR_V1.slatSizeVoxels[0] * MACHINE_WORKS_CONVEYOR_V1.slatGrain;
   const straightSlatGap = MACHINE_WORKS_CONVEYOR_SLAT_PITCH - slatWorldLength;
-  const turnTangentSpan = 2 * MACHINE_WORKS_CONVEYOR_V1.pitchRadius * Math.tan(
+  const turnTangentSpan = 2 * MACHINE_WORKS_CONVEYOR_V1.pitchRadius * deterministicTanV1(
     MACHINE_WORKS_CONVEYOR_SLAT_PITCH
       / (2 * MACHINE_WORKS_CONVEYOR_V1.pitchRadius),
   );

@@ -1,3 +1,10 @@
+// The belt's prescribed poses land in the committed trace, and ECMA-262
+// leaves Math.sin/Math.cos implementation-approximated - a different engine's
+// last bit would change every slat pose and fail byte-for-byte regeneration.
+import {
+  deterministicCosV1,
+  deterministicSinV1,
+} from './deterministic-trig.js';
 /**
  * Shared authored geometry for the Machine Works conveyor. The fixture owns
  * the drive controller and solver; Studio consumes only these bounded path
@@ -46,8 +53,8 @@ function rotationAroundZ(angle: number): MachineWorksConveyorPoseV1['rotation'] 
   return Object.freeze({
     x: 0,
     y: 0,
-    z: Math.sin(angle / 2),
-    w: Math.cos(angle / 2),
+    z: deterministicSinV1(angle / 2),
+    w: deterministicCosV1(angle / 2),
   });
 }
 
@@ -79,14 +86,14 @@ export function machineWorksConveyorPathMotionV1(
     const theta = (pathDistance - STRAIGHT_LENGTH) / radius;
     return {
       position: Object.freeze({
-        x: MACHINE_WORKS_CONVEYOR_V1.rightAxleX + Math.sin(theta) * radius,
-        y: MACHINE_WORKS_CONVEYOR_V1.axleY + Math.cos(theta) * radius,
+        x: MACHINE_WORKS_CONVEYOR_V1.rightAxleX + deterministicSinV1(theta) * radius,
+        y: MACHINE_WORKS_CONVEYOR_V1.axleY + deterministicCosV1(theta) * radius,
         z: 0,
       }),
       rotation: rotationAroundZ(-theta),
       linearVelocity: Object.freeze({
-        x: Math.cos(theta) * speed,
-        y: -Math.sin(theta) * speed,
+        x: deterministicCosV1(theta) * speed,
+        y: -deterministicSinV1(theta) * speed,
         z: 0,
       }),
       angularVelocity: Object.freeze({ x: 0, y: 0, z: -speed / radius }),
@@ -109,14 +116,14 @@ export function machineWorksConveyorPathMotionV1(
     (pathDistance - STRAIGHT_LENGTH * 2 - HALF_TURN_LENGTH) / radius;
   return {
     position: Object.freeze({
-      x: MACHINE_WORKS_CONVEYOR_V1.leftAxleX - Math.sin(theta) * radius,
-      y: MACHINE_WORKS_CONVEYOR_V1.axleY - Math.cos(theta) * radius,
+      x: MACHINE_WORKS_CONVEYOR_V1.leftAxleX - deterministicSinV1(theta) * radius,
+      y: MACHINE_WORKS_CONVEYOR_V1.axleY - deterministicCosV1(theta) * radius,
       z: 0,
     }),
     rotation: rotationAroundZ(-Math.PI - theta),
     linearVelocity: Object.freeze({
-      x: -Math.cos(theta) * speed,
-      y: Math.sin(theta) * speed,
+      x: -deterministicCosV1(theta) * speed,
+      y: deterministicSinV1(theta) * speed,
       z: 0,
     }),
     angularVelocity: Object.freeze({ x: 0, y: 0, z: -speed / radius }),

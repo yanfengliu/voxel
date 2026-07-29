@@ -59,6 +59,13 @@ const CHAIN_RING_SETTINGS: readonly PartSettingSpecV1[] = [
  * cells of radial thickness is the minimum that stays face-connected all the
  * way round; at one cell the ring breaks into arcs on the diagonals, which is
  * a broken ring rather than a thin one.
+ *
+ * Compared squared, in integers, on purpose. `Math.hypot` is one of the
+ * functions ECMA-262 leaves implementation-approximated, and cells sitting
+ * exactly on either radius are decided by the last bit of its result — so a
+ * different engine could include or drop a cell, change the ring, change its
+ * colliders, and change the whole recorded simulation. Every input here is a
+ * whole number, so squaring keeps the test exact and identical everywhere.
  */
 function ringCell(
   across: number,
@@ -66,8 +73,11 @@ function ringCell(
   outerRadius: number,
   innerRadius: number,
 ): boolean {
-  const distance = Math.hypot(across - outerRadius, up - outerRadius);
-  return distance >= innerRadius && distance <= outerRadius;
+  const dx = across - outerRadius;
+  const dy = up - outerRadius;
+  const squared = dx * dx + dy * dy;
+  return squared >= innerRadius * innerRadius
+    && squared <= outerRadius * outerRadius;
 }
 
 export function chainRingSizeV1(

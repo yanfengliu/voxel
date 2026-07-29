@@ -54,7 +54,11 @@ describe('Machine Works merge evidence geometry', () => {
     );
 
     expect(correction.position).toBe(5);
-    expect(correction.angleRadians).toBeCloseTo(Math.PI / 2, 12);
+    // Quantized to nine decimals on purpose: the angle is hashed into the
+    // committed trace and Math.acos is implementation-approximated, so the
+    // recorded value trades sub-nano precision for cross-engine stability.
+    expect(correction.angleRadians).toBeCloseTo(Math.PI / 2, 8);
+    expect(correction.angleRadians).toBe(1.570796327);
   });
 
   it('normalizes quaternion drift and treats opposite signs as the same orientation', () => {

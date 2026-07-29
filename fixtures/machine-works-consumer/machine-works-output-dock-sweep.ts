@@ -1,3 +1,4 @@
+import { exactMagnitudeV1 } from '../deterministic-math.js';
 import { MACHINE_WORKS_SCENE_LAYOUT_V1 } from '../../tools/studio/machine-works-layout.js';
 import type { PhysicalAssetV1 } from '../../tools/studio/physical-asset.js';
 import {
@@ -84,10 +85,10 @@ function pointToBoundsDistance2d(
   const dy = point[1] < bounds.min[1]
     ? bounds.min[1] - point[1]
     : Math.max(0, point[1] - bounds.max[1]);
-  return Math.hypot(dx, dy);
+  return exactMagnitudeV1(dx, dy);
 }
 function normalizedQuaternion(rotation: QuaternionV1): QuaternionV1 | null {
-  const magnitude = Math.hypot(...rotation);
+  const magnitude = exactMagnitudeV1(...rotation);
   if (!Number.isFinite(magnitude) || magnitude <= Number.EPSILON) return null;
   return [
     rotation[0] / magnitude,
@@ -147,7 +148,7 @@ function sinusoidRange(
   minimumAngle: number,
   maximumAngle: number,
 ): readonly [number, number] {
-  const radius = Math.hypot(cosineCoefficient, sineCoefficient);
+  const radius = exactMagnitudeV1(cosineCoefficient, sineCoefficient);
   if (radius === 0) return [0, 0];
   const period = Math.PI * 2;
   const tolerance = Number.EPSILON * 16

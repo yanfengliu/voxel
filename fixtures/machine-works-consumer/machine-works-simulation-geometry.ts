@@ -1,3 +1,7 @@
+import {
+  quantizeV1,
+  RECORDED_ANGLE_DECIMALS_V1,
+} from '../deterministic-math.js';
 import RAPIER, {
   type Collider,
   type ImpulseJoint,
@@ -56,13 +60,29 @@ function subtractVectors(left: Vector, right: Vector): Vector {
   return { x: left.x - right.x, y: left.y - right.y, z: left.z - right.z };
 }
 
+/**
+ * Squared-sum then `sqrt`, not `Math.hypot`. ECMA-262 leaves `hypot`
+ * implementation-approximated, so its last bit can differ between engines,
+ * while IEEE-754 requires `sqrt` to be correctly rounded and multiplication and
+ * addition are already exact. These magnitudes reach recorded evidence, so a
+ * last-bit difference would stop the committed trace regenerating byte for
+ * byte on another machine. The guard `hypot` offers against overflow does not
+ * apply to world coordinates at this scale.
+ */
 export function magnitude(vector: Vector): number {
-  return Math.hypot(vector.x, vector.y, vector.z);
+  return Math.sqrt(
+    vector.x * vector.x + vector.y * vector.y + vector.z * vector.z,
+  );
 }
 
 function normalizedRotationDot(left: Rotation, right: Rotation): number {
-  const leftMagnitude = Math.hypot(left.x, left.y, left.z, left.w);
-  const rightMagnitude = Math.hypot(right.x, right.y, right.z, right.w);
+  const leftMagnitude = Math.sqrt(
+    left.x * left.x + left.y * left.y + left.z * left.z + left.w * left.w,
+  );
+  const rightMagnitude = Math.sqrt(
+    right.x * right.x + right.y * right.y + right.z * right.z
+    + right.w * right.w,
+  );
   if (!Number.isFinite(leftMagnitude) || leftMagnitude <= 0
     || !Number.isFinite(rightMagnitude) || rightMagnitude <= 0) {
     throw new Error(
@@ -87,8 +107,14 @@ export function measurePoseCorrection(
       + 'is not finite and nonnegative.',
     );
   }
-  const angleRadians = 2 * Math.acos(
-    Math.min(1, Math.abs(normalizedRotationDot(actual.rotation, canonical.rotation))),
+  // Quantized because this angle is hashed into the committed trace and
+  // `Math.acos` is implementation-approximated with no exact equivalent. Nine
+  // decimals is far finer than the 0.03 rad tolerance it is judged against.
+  const angleRadians = quantizeV1(
+    2 * Math.acos(
+      Math.min(1, Math.abs(normalizedRotationDot(actual.rotation, canonical.rotation))),
+    ),
+    RECORDED_ANGLE_DECIMALS_V1,
   );
   if (!Number.isFinite(angleRadians) || angleRadians < 0) {
     throw new Error(
