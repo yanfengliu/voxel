@@ -51,6 +51,9 @@ test('the chain falls under gravity and swings when pushed', async ({ page }) =>
   const opened = await page.evaluate((sceneId) => {
     const harness = window.voxelStudio!;
     harness.openScene(sceneId);
+    // This spec pins the recorded replay. The scene opens in Interact, whose
+    // live solver owns the poses, so hand them back to the replay lane first.
+    harness.setStageMode('adjust');
     harness.setLit(true);
     harness.setEdges(true);
     harness.setDepth(true);

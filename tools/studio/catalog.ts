@@ -41,9 +41,13 @@ import {
 } from './contrast-scenes.js';
 import { createStudioScenes } from './scenes.js';
 import {
+  createBallFloorRecipe,
   createBrickCottageRecipe,
+  createCatchBucketRecipe,
   createChainCrossedLinkRecipe,
   createChainUprightLinkRecipe,
+  createDispenserRailRecipe,
+  createDropBallRecipe,
   createBrickWallRecipe,
   createBedFrameRecipe,
   createBedroomFurnitureSetRecipe,
@@ -440,6 +444,17 @@ export function createStudioCatalog(): StudioCatalogV1 {
         ],
       },
       {
+        // The live drop rig's four pieces: the moving subject, its visible
+        // source, the receiver, and the floor that catches a miss.
+        name: 'Ball drop',
+        models: [
+          recipeEntry(createDropBallRecipe),
+          recipeEntry(createDispenserRailRecipe),
+          recipeEntry(createCatchBucketRecipe),
+          recipeEntry(createBallFloorRecipe),
+        ],
+      },
+      {
         // One ring in two planes. Alternating them is the whole mechanism the
         // Chain link study scene shows, so both belong on the shelf together.
         name: 'Chain',
@@ -521,6 +536,10 @@ export function createStudioCatalog(): StudioCatalogV1 {
     },
     sceneOpeningViews: {
       [WINDMILL_SCENE_ID]: 'occupied-world-bounds',
+      // The drop rig is tall: rail high above bucket. Default framing crops
+      // the rail behind the toolbar, and the rail is the source the scene
+      // exists to show.
+      'studio:scene:ball-drop': 'occupied-world-bounds',
       // A family sheet is one long row, so the default view height frames only
       // its middle. Opening on the occupied bounds is what makes all five
       // specimens visible at once, which is the entire point of the sheet.

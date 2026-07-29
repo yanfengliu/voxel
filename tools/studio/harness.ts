@@ -300,6 +300,31 @@ export interface VoxelStudioHarnessV1 {
   /** Whether a scene is on the stage rather than a single model. */
   sceneMode(): boolean;
   /**
+   * The stage pointer mode. 'adjust' is the editing pointer; 'interact' hands
+   * the left button to the live solver on scenes that declare one. Scenes
+   * without a live profile always report 'adjust'.
+   */
+  stageMode(): 'adjust' | 'interact';
+  /** Switches the stage pointer mode; ignored on scenes with no live profile. */
+  setStageMode(mode: 'adjust' | 'interact'): void;
+  /**
+   * The live solver's current state for the open scene: body, collider and
+   * joint counts, spawn tally, the grabbed placement, and steps taken. All
+   * zeros with running=false when no live world exists.
+   */
+  livePhysics(): {
+    readonly available: boolean;
+    readonly mode: 'adjust' | 'interact';
+    readonly running: boolean;
+    readonly bodies: number;
+    readonly colliders: number;
+    readonly joints: number;
+    readonly spawned: number;
+    readonly grabbed: string | null;
+    readonly stepped: number;
+    readonly positions: Readonly<Record<string, readonly [number, number, number]>>;
+  };
+  /**
    * The scene on the stage right now as plain data — the same shape `openScene`
    * placed and the editor edits — or null when a single model is open. This is
    * how a driver reads back a move, an add, or an undo and asserts on it.
@@ -506,6 +531,31 @@ export interface HarnessHostV1 {
   deleteScene(id: string): SceneV1;
   /** Whether a scene is on the stage rather than a single model. */
   sceneMode(): boolean;
+  /**
+   * The stage pointer mode. 'adjust' is the editing pointer; 'interact' hands
+   * the left button to the live solver on scenes that declare one. Scenes
+   * without a live profile always report 'adjust'.
+   */
+  stageMode(): 'adjust' | 'interact';
+  /** Switches the stage pointer mode; ignored on scenes with no live profile. */
+  setStageMode(mode: 'adjust' | 'interact'): void;
+  /**
+   * The live solver's current state for the open scene: body, collider and
+   * joint counts, spawn tally, the grabbed placement, and steps taken. All
+   * zeros with running=false when no live world exists.
+   */
+  livePhysics(): {
+    readonly available: boolean;
+    readonly mode: 'adjust' | 'interact';
+    readonly running: boolean;
+    readonly bodies: number;
+    readonly colliders: number;
+    readonly joints: number;
+    readonly spawned: number;
+    readonly grabbed: string | null;
+    readonly stepped: number;
+    readonly positions: Readonly<Record<string, readonly [number, number, number]>>;
+  };
   /** The scene on the stage right now, or null in model mode. */
   scene(): SceneV1 | null;
   /** Selects a placement (or clears with null); returns what is now selected. */
@@ -1042,6 +1092,9 @@ export function createStudioHarness(host: HarnessHostV1): VoxelStudioHarnessV1 {
     renameScene: (id, label) => host.renameScene(id, label),
     deleteScene: (id) => host.deleteScene(id),
     sceneMode: () => host.sceneMode(),
+    stageMode: () => host.stageMode(),
+    setStageMode: (mode) => { host.setStageMode(mode); },
+    livePhysics: () => host.livePhysics(),
     sceneState: () => host.scene(),
     selectPlacement(id) {
       if (id !== null) {

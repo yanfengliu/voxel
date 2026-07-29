@@ -1,3 +1,4 @@
+import { createBallDropRecipeBook } from './ball-drop-recipes.js';
 import { createChainRecipeBook } from './chain-recipes.js';
 import { createCottageRecipeBook } from './cottage-recipes.js';
 import { createContrastRecipeBook } from './contrast-recipes.js';
@@ -22,6 +23,7 @@ import type { RecipeBookV1 } from './recipe.js';
  * all, so discovering a recipe never depends on knowing which file it
  * lives in. Tests pin that every recipe here also stands on the shelf.
  */
+export * from './ball-drop-recipes.js';
 export * from './chain-recipes.js';
 export * from './cottage-recipes.js';
 export * from './contrast-recipes.js';
@@ -49,6 +51,7 @@ export function createStudioRecipeBook(): RecipeBookV1 {
     ...createContrastRecipeBook(),
     ...createWallRecipeBook(),
     ...createGardenRecipeBook(),
+    ...createBallDropRecipeBook(),
     ...createChainRecipeBook(),
     ...createCottageRecipeBook(),
     ...createFurnitureRecipeBook(),

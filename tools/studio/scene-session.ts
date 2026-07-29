@@ -217,6 +217,8 @@ export class SceneSession {
   readonly #parts: PartShelfV1;
   readonly #poseReplays: Readonly<Record<string, ScenePoseReplayV1OrV2>>;
   #poseReplay: ScenePoseReplayV1OrV2 | null = null;
+  #liveSnapshot: RenderSnapshotV1 | null = null;
+  #livePoseMode = false;
   #poseSnapshot: RenderSnapshotV1 | null = null;
   #acceptedPoseTimeMs: number | null = null;
   #acceptedPoseSample: ScenePoseReplaySampleStatusV1 | null = null;
@@ -573,8 +575,66 @@ export class SceneSession {
     this.#revision = nextRevision;
     this.#poseReplay = poseReplay;
     this.#poseSnapshot = poseReplay === null ? null : snapshot;
+    this.#liveSnapshot = snapshot;
     this.#acceptedPoseTimeMs = null;
     this.#acceptedPoseSample = null;
+  }
+
+  /**
+   * Hands pose ownership to the Interact lane (true) or back to the replay
+   * lane (false). Turning the replay lane back on forgets its last accepted
+   * time, so the next draw reapplies the replay pose instead of assuming the
+   * stage still shows it.
+   */
+  setLivePoseModeV1(on: boolean): void {
+    this.#assertLive();
+    if (this.#livePoseMode === on) return;
+    this.#livePoseMode = on;
+    if (!on) this.#acceptedPoseTimeMs = null;
+  }
+
+  /**
+   * Presents live solver poses for this scene's placements — the Interact
+   * lane. It reuses the exact delta machinery the recorded replays go through,
+   * so the renderer cannot tell a sandbox pose from a replayed one; the
+   * difference is entirely upstream, where nothing here is recorded or hashed.
+   * A subset map is fine: placements without an entry keep their pose.
+   */
+  acceptLivePosesV1(poses: ValidatedScenePlacementPoseMapV1): void {
+    this.#assertLive();
+    const snapshot = this.#liveSnapshot;
+    if (snapshot === null) {
+      throw new Error(
+        `Scene '${this.#scene.id}' has no accepted snapshot yet, so live poses `
+        + 'have nothing to patch. Accept the scene before stepping a live '
+        + 'world.',
+      );
+    }
+    if (poses.size === 0) return;
+    const nextRevision = this.#revision + 1;
+    // The replay lane may have advanced the runtime since this snapshot was
+    // captured, so the delta bases on the live session revision rather than
+    // the copy's stored one — both lanes serialize on #revision.
+    const delta = buildScenePoseDeltaV1(
+      { ...snapshot, revision: this.#revision },
+      poses,
+      nextRevision,
+    );
+    const result = this.#runtime.acceptDelta(delta);
+    if (result.status !== 'accepted') {
+      throw new Error(
+        `The runtime rejected live scene pose revision ${String(nextRevision)}: `
+        + `${result.status === 'resync-required'
+          ? `resync required, ${result.reason}`
+          : `${result.code} at ${result.path}. ${result.message}`} `
+        + 'Live mode does not auto-resync; reopen the scene.',
+      );
+    }
+    this.#revision = nextRevision;
+    this.#liveSnapshot = { ...snapshot, revision: nextRevision };
+    if (this.#poseSnapshot !== null) {
+      this.#poseSnapshot = { ...this.#poseSnapshot, revision: nextRevision };
+    }
   }
 
   /**
@@ -641,6 +701,10 @@ export class SceneSession {
   }
 
   #acceptPoseAtInternal(nowMs: number, allowResync = true): void {
+    // While Interact owns the poses, the replay lane stands down entirely:
+    // two writers would fight over revisions and overwrite each other's
+    // frames, which is exactly the base-revision-mismatch this gate prevents.
+    if (this.#livePoseMode) return;
     const replay = this.#poseReplay;
     const snapshot = this.#poseSnapshot;
     if (replay === null || snapshot === null) return;

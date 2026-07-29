@@ -72,6 +72,7 @@ import {
 } from './scene-pick.js';
 import { SceneSession, type ScenePoseReplayStatusV1 } from './scene-session.js';
 import { catalogPartsV1, catalogRecipesV1 } from './studio-library.js';
+import { StudioLiveInteract } from './studio-live-interact.js';
 import { createWireframeView } from './wireframe-view.js';
 import { cellSubsetOutlineSegmentsV1, modelWireframeSegmentsV1 } from './wireframe.js';
 import { StudioSession } from './session.js';
@@ -462,8 +463,22 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
     + 'whole world units, so models line up cleanly edge to edge. Off drags it freely.';
   snapToggle.hidden = true;
   const toggles = element('div', 'toggles');
+  // Adjust/Interact appear only for scenes with a live-physics profile. The
+  // controller owns the solver session and its frame loop; the app only routes
+  // pointer rays and applies the poses it publishes.
+  const liveInteract = new StudioLiveInteract({
+    acceptPoses: (poses) => {
+      sceneSession?.acceptLivePosesV1(poses);
+    },
+    setLivePoseMode: (on) => {
+      sceneSession?.setLivePoseModeV1(on);
+    },
+    redraw: () => { drawFrame(lastShownMs); },
+    report: (message) => { showViewError(new Error(message), message); },
+  });
   toggles.append(lookSwitch, depthToggle, lightToggle, sceneAnimationToggle,
-    wireframeToggle, gridToggle, physToggle, snapToggle);
+    wireframeToggle, gridToggle, physToggle, snapToggle,
+    ...liveInteract.buttons);
   const viewError = element('p', 'lib-error view-error');
   viewError.setAttribute('role', 'alert');
   viewError.setAttribute('aria-live', 'assertive');
@@ -952,6 +967,9 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
     renameScene: (id, label) => renameStudioScene(id, label),
     deleteScene: (id) => deleteStudioScene(id),
     sceneMode: () => sceneOpen !== null,
+    stageMode: () => liveInteract.mode(),
+    setStageMode: (mode) => { liveInteract.setMode(mode); },
+    livePhysics: () => liveInteract.state(),
     scene: () => sceneOpen,
     selectScenePlacement(id) { selectPlacement(id); return selectedPlacementId; },
     selectedScenePlacement: () => selectedPlacementId,
@@ -1490,6 +1508,7 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
 
     sceneSession = candidateSession;
     sceneOpen = scene;
+    liveInteract.openScene(scene, sceneRecipes, sceneParts);
     sceneAnnotationFingerprintCache = null;
     sceneAnnotationDocumentCache = null;
     clearViewError();
@@ -1530,6 +1549,7 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
     player.setPlayback('loop', performance.now());
     clearViewError();
     sceneOpen = null;
+    liveInteract.openScene(null, sceneRecipes, sceneParts);
     sceneAnnotationFingerprintCache = null;
     sceneAnnotationDocumentCache = null;
     selectedPlacementId = null;
@@ -2045,7 +2065,7 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
     });
   }
 
-  type StageGesture = 'none' | 'orbit' | 'pan' | 'move' | 'annotate';
+  type StageGesture = 'none' | 'orbit' | 'pan' | 'move' | 'annotate' | 'live';
   let gesture: StageGesture = 'none';
   let moved = false;
   let lastX = 0;
@@ -2153,6 +2173,13 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
       gesture = sceneAnnotationGesture.prepare(event) ? 'annotate' : 'none';
       return;
     }
+    // In Interact mode the left button belongs to the live solver: a hit on a
+    // dynamic body starts a spring grab, and a miss falls back to orbiting so
+    // the camera never dies. A clean click may still spawn on pointer-up.
+    if (liveInteract.handlesPointer()) {
+      gesture = liveInteract.pointerDown(cursorRay(event)) ? 'live' : 'orbit';
+      return;
+    }
     // Replayed transforms are presented observations, while authored placement
     // boxes describe only the trace's static source. Picking or moving those
     // boxes would select stale geometry, so every left drag remains a camera
@@ -2184,7 +2211,9 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
     moved = true;
     lastX = event.clientX;
     lastY = event.clientY;
-    if (gesture === 'orbit') {
+    if (gesture === 'live') {
+      liveInteract.pointerMove(cursorRay(event));
+    } else if (gesture === 'orbit') {
       runViewAction(() => { harness.setViewAngles(dragOrbit(orbit, dx, dy)); });
     } else if (gesture === 'pan') {
       runViewAction(() => {
@@ -2222,6 +2251,12 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
       if (wasDrag) sceneAnnotationGesture.cancel();
       else sceneAnnotationGesture.finish();
       return;
+    }
+    // Interact: a grab always releases here; a clean click that grabbed
+    // nothing asks the spawner (scenes without one ignore it).
+    if (liveInteract.handlesPointer() && (finished === 'live' || !wasDrag)) {
+      liveInteract.pointerUp(cursorRay(event), finished !== 'live' && !wasDrag);
+      if (finished === 'live') return;
     }
     // A finished drag of a scene model syncs the editor list to its new spot.
     if (finished === 'move') { if (wasDrag) refresh(); return; }
@@ -3044,6 +3079,7 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
       if (disposed) return;
       disposed = true;
       cancelAnimationFrame(frameHandle);
+      liveInteract.dispose();
       construction.dispose();
       shelfPanel.dispose();
       sceneNotesPanel.dispose();

@@ -50,6 +50,7 @@ describe('the studio shelf', () => {
       { name: 'Garden', count: 7 },
       { name: 'Furniture', count: 3 },
       { name: 'Bedroom furniture', count: 8 },
+      { name: 'Ball drop', count: 4 },
       { name: 'Chain', count: 2 },
       { name: 'Roof studies', count: 3 },
       { name: 'House', count: 2 },
@@ -73,12 +74,13 @@ describe('the studio shelf', () => {
     }
   });
 
-  it('opts Windmill and every family sheet into occupied-bounds framing', () => {
-    // A family sheet is one long row, so the default view height would frame
-    // only its middle and crop the two end specimens off a board whose whole
-    // job is showing all five at once.
+  it('opts the tall or wide scenes into occupied-bounds framing', () => {
+    // A family sheet is one long row and the drop rig hangs its rail high
+    // above the bucket: default framing would crop exactly the content each
+    // scene exists to show.
     expect(createStudioCatalog().sceneOpeningViews).toEqual({
       [WINDMILL_SCENE_ID]: 'occupied-world-bounds',
+      'studio:scene:ball-drop': 'occupied-world-bounds',
       ...Object.fromEntries(CONTRAST_FAMILY_SCENE_IDS_V1.map(
         (sceneId) => [sceneId, 'occupied-world-bounds'],
       )),

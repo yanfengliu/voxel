@@ -21,6 +21,12 @@ import {
 } from './chain-replay-binding.js';
 import { CHAIN_POSE_REPLAY_ID } from './generated-chain-replay.js';
 import {
+  BALL_DROP_BALL_COUNT_V1,
+  BALL_DROP_BALL_GRAIN_V1,
+  BALL_DROP_BALL_IDS_V1,
+  BALL_DROP_DROP_Y_V1,
+} from './ball-drop-recipes.js';
+import {
   CHAIN_CROSSED_RECIPE_ID,
   CHAIN_UPRIGHT_RECIPE_ID,
 } from './chain-recipes.js';
@@ -174,6 +180,47 @@ function createLighting1000Scene(): SceneSchemaV3 {
       + 'as well as clustered-light throughput.',
     placements: createLighting1000Placements(),
     lights: createLighting1000Lights(),
+  };
+}
+
+/**
+ * The ball-drop rig: click under the rail, a ball falls into the bucket.
+ *
+ * This scene only makes sense in Interact mode, and its authored placements
+ * are honest about that: the rack balls sit on the rail deck as the visible
+ * magazine, and each click releases the next one at the clicked x. The rail is
+ * the material source drawn as a thing; there is no sink, so the bucket
+ * simply accumulates what falls.
+ */
+function createBallDropScene(): SceneV1 {
+  const railY = BALL_DROP_DROP_Y_V1 + 1;
+  return {
+    schemaVersion: VOXEL_SCENE_SCHEMA_V1,
+    id: 'studio:scene:ball-drop',
+    label: 'Ball drop',
+    summary: 'A live physics test rig. In Interact mode each click releases '
+      + 'the next ball from the dispenser rail at the clicked point, and it '
+      + 'falls, bounces, and settles in the bucket - solved at runtime, with '
+      + 'nothing recorded. The rail is the visible source: balls enter the '
+      + 'world under it and nowhere else, and nothing ever leaves.',
+    placements: [
+      // The floor's top lands exactly at y=0, so the bucket sits on it.
+      { id: 'ground', model: 'studio:ball-floor', at: [0, -1.5, 0], grain: 1.5 },
+      { id: 'bucket', model: 'studio:catch-bucket', at: [0, 0, 0], grain: 0.75 },
+      { id: 'rail', model: 'studio:dispenser-rail', at: [0, railY, 0], grain: 0.25 },
+      // The magazine: unspawned balls rest on the rail deck in a visible row,
+      // so what a click releases is already on screen rather than invented.
+      ...BALL_DROP_BALL_IDS_V1.map((id, index) => ({
+        id,
+        model: 'studio:drop-ball',
+        at: [
+          (index - (BALL_DROP_BALL_COUNT_V1 - 1) / 2) * 1.1,
+          railY + 1.05,
+          0,
+        ] as readonly [number, number, number],
+        grain: BALL_DROP_BALL_GRAIN_V1,
+      })),
+    ],
   };
 }
 
@@ -383,6 +430,7 @@ export function createStudioScenes(): readonly SceneV1[] {
         { id: 'classic-back-right', model: 'studio:three-flower-pot', at: [11, 0, -10] },
       ],
     },
+    createBallDropScene(),
     createChainLinkStudyScene(),
     ...createContrastScenes(),
     createRiverfallScene(),
