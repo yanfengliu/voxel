@@ -8,7 +8,10 @@ import {
 } from 'three';
 import { describe, expect, it } from 'vitest';
 
-import { ClusteredPointLightFieldInternal } from '../../src/three/clusteredPointLightFieldInternal.js';
+import {
+  ClusteredPointLightFieldInternal,
+  type ClusteredPointLightInputInternal,
+} from '../../src/three/clusteredPointLightFieldInternal.js';
 import {
   applyOrbit,
   DEFAULT_ORBIT,
@@ -249,6 +252,26 @@ describe('1,000-light showcase', () => {
     const minimumViewHeight = minimumDenseSceneViewHeightV1(scene, [0, 0, 0]);
     expect(minimumViewHeight).toBeGreaterThanOrEqual(40);
     expect(minimumViewHeight).toBeLessThan(50);
+
+    // The sweep below runs 46,464 clustering passes, but a light's resolved
+    // position depends only on the sample time, so these four arrays are the
+    // only distinct inputs. Building them inside the innermost loop rebuilt
+    // them 46,464 times and dominated the runtime; the sweep itself is
+    // unchanged. `updateInternal` takes a readonly array of readonly lights
+    // and never writes to either, so one array is safe to reuse across calls.
+    const SAMPLE_TIMES_MS = [0, 733, 1_777, 3_333] as const;
+    const lightsAtSampleTime: readonly (readonly ClusteredPointLightInputInternal[])[] =
+      SAMPLE_TIMES_MS.map((nowMs) => lights.map((light) => ({
+        id: light.id,
+        position: resolveScenePointLightAtV3(light, nowMs),
+        color: [
+          light.color.r / 255,
+          light.color.g / 255,
+          light.color.b / 255,
+        ] as const,
+        intensity: light.intensity,
+        range: light.range,
+      })));
     try {
       for (const [width, height] of [
         [240, 692],
@@ -275,21 +298,11 @@ describe('1,000-light showcase', () => {
                   width,
                   height,
                 );
-                for (const nowMs of [0, 733, 1_777, 3_333]) {
+                for (const [sample, nowMs] of SAMPLE_TIMES_MS.entries()) {
                   let metrics;
                   try {
                     metrics = field.updateInternal(
-                      lights.map((light) => ({
-                        id: light.id,
-                        position: resolveScenePointLightAtV3(light, nowMs),
-                        color: [
-                          light.color.r / 255,
-                          light.color.g / 255,
-                          light.color.b / 255,
-                        ],
-                        intensity: light.intensity,
-                        range: light.range,
-                      })),
+                      lightsAtSampleTime[sample]!,
                       camera,
                       width,
                       height,
@@ -336,6 +349,10 @@ describe('1,000-light showcase', () => {
     } finally {
       field.disposeInternal();
     }
+    // 46,464 clustering passes over 1,000 lights each is genuinely more than
+    // the 5 s default allows. Measured 2026-07-28 at 8.8 s alone on Windows
+    // i9-13900KF, so 20 s leaves room for parallel-suite load. It ran 15.5 s
+    // before the hoist above and timed out under a full `npm run test`.
   }, 20_000);
 
   it('gives every light one neutral receiver in a single Lambert instance batch', () => {
