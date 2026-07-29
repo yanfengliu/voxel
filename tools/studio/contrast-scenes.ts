@@ -1,7 +1,7 @@
 import {
-  CONTRAST_DOMAINS,
+  CONTRAST_FAMILIES,
   CURATED_CONTRAST_RECIPES,
-  type ContrastDomainV1,
+  type ContrastFamilyV1,
   type CuratedContrastRecipeV1,
 } from './contrast-recipes.js';
 import {
@@ -44,95 +44,119 @@ function widestSpecimenSpanV1(): number {
  */
 const MINIMUM_CLEAR_GAP = 5;
 
-/** One shared pitch, so the four sheets stay comparable with each other. */
-const CELL_SPACING = widestSpecimenSpanV1() + MINIMUM_CLEAR_GAP;
-
-const DOMAIN_PRESENTATION: Readonly<
-Record<ContrastDomainV1, {
-  readonly id: string;
-  readonly label: string;
-  readonly summary: string;
-}>
-> = {
-  infrastructure: {
-    id: 'studio:scene:contrast-infrastructure',
-    label: 'Infrastructure studies',
-    summary: 'Aqueducts, culverts, crossings, transit structures, and survey landmarks form '
-      + 'a contact sheet for comparing voids, spans, stairs, frames, and hybrid grammar, every '
-      + 'specimen facing the same way. All nine are static shapes: the handwheel, floodgate, and '
-      + 'lift carry no motion and no operable mechanism, and their separation makes no claim that '
-      + 'water or traffic moves between them.',
-  },
-  'civic-architectural': {
-    id: 'studio:scene:contrast-civic',
-    label: 'Civic form studies',
-    summary: 'Monuments, arcades, forums, conservatories, pavilions, and one moving compass form '
-      + 'a contact sheet for comparing scale, silhouette, openings, and construction grammar, every '
-      + 'specimen facing the same way. Only the compass moves, and its motion is an authored swing '
-      + 'and lift on a fixed period rather than a solved rotation or a reading of anything. Their '
-      + 'equal-gap placement does not claim that they compose one plaza.',
-  },
-  'mechanical-industrial': {
-    id: 'studio:scene:contrast-mechanical-studies',
-    label: 'Mechanical studies',
-    summary: 'Eight deliberately different industrial specimens form a comparison floor for '
-      + 'silhouette, negative space, construction grammar, and scale, every specimen facing the '
-      + 'same way. Two carry authored motion: the flywheel and the cable drum each rock through a '
-      + 'fixed arc and return, which is a swing rather than a turning shaft, and neither transmits '
-      + 'power to anything. This is a contact sheet, not a claim that the independent specimens '
-      + 'form one working factory.',
-  },
-  'natural-organic': {
-    id: 'studio:scene:contrast-organic',
-    label: 'Organic form studies',
-    summary: 'Seed-shaped trees, roots, coral, tidal structures, and field shelters form a contact '
-      + 'sheet for comparing branching, massing, and negative space, every specimen facing the same '
-      + 'way. The pine carries a small authored sway on a fixed period that exercises the shared '
-      + 'scene-animation control; no wind is simulated and nothing drives it. The separated '
-      + 'specimens do not form one habitat.',
-  },
-};
-
 function placementId(entry: CuratedContrastRecipeV1): string {
   return entry.recipe.id.slice('studio:contrast:'.length);
 }
 
-function domainScene(
-  domain: ContrastDomainV1,
+/** One shared pitch, so every sheet stays comparable with the others. */
+const CELL_SPACING = widestSpecimenSpanV1() + MINIMUM_CLEAR_GAP;
+
+/**
+ * One sheet per construction family, which is the axis these recipes actually
+ * vary along and the one the shelf already groups them by.
+ *
+ * They used to be grouped into four invented domains - infrastructure, civic,
+ * mechanical, organic - and those labels did not survive looking at them. A
+ * sheet titled "Civic form studies" held a pergola, a wireframe cage, an
+ * obelisk and a gear. The family names describe what is actually on screen.
+ */
+const FAMILY_PRESENTATION: Readonly<
+Record<ContrastFamilyV1, {
+  readonly id: string;
+  readonly label: string;
+  readonly compares: string;
+}>
+> = {
+  'arch-void': {
+    id: 'studio:scene:contrast-arch-void',
+    label: 'Arches and voids',
+    compares: 'how each specimen carries a span over an opening',
+  },
+  'tapered-stepped': {
+    id: 'studio:scene:contrast-tapered-stepped',
+    label: 'Tapered and stepped',
+    compares: 'how mass reduces with height, by taper or by discrete step',
+  },
+  'frame-truss': {
+    id: 'studio:scene:contrast-frame-truss',
+    label: 'Frames and trusses',
+    compares: 'how an open framework braces itself with the least material',
+  },
+  'radial-mechanical': {
+    id: 'studio:scene:contrast-radial-mechanical',
+    label: 'Radial mechanics',
+    compares: 'how form organises around a centre or an axis',
+  },
+  'branching-organic': {
+    id: 'studio:scene:contrast-branching-organic',
+    label: 'Branching forms',
+    compares: 'how one stem divides and how the divisions distribute',
+  },
+  'asymmetric-hybrid': {
+    id: 'studio:scene:contrast-asymmetric-hybrid',
+    label: 'Asymmetric hybrids',
+    compares: 'how two family grammars combine without a symmetry to lean on',
+  },
+};
+
+/** The family sheets, in catalog order. */
+export const CONTRAST_FAMILY_SCENE_IDS_V1: readonly string[] = Object.freeze(
+  CONTRAST_FAMILIES.map((family) => FAMILY_PRESENTATION[family].id),
+);
+
+/** True only when a recipe's motion actually moves it. */
+function specimenMoves(entry: CuratedContrastRecipeV1): boolean {
+  const motion = entry.recipe.motion;
+  if (motion.periodMs <= 0) return false;
+  return motion.translation.some((value) => value !== 0)
+    || motion.rotationRadians.some((value) => value !== 0)
+    || motion.scale.some((value) => value !== 0);
+}
+
+/**
+ * What the sheet may say about movement. Most specimens are static shapes, and
+ * the few that move do so on an authored period with nothing driving them, so
+ * the summary states which of the two it is rather than leaving a reader to
+ * assume a mechanism.
+ */
+function motionSentence(entries: readonly CuratedContrastRecipeV1[]): string {
+  const moving = entries.filter(specimenMoves);
+  if (moving.length === 0) {
+    return ' Every specimen here is static: none carries motion of any kind.';
+  }
+  const names = moving.map((entry) => entry.recipe.label).join(' and ');
+  return ` ${names} carries authored motion on a fixed period; nothing drives `
+    + 'it and it transmits nothing. The rest are static.';
+}
+
+function familyScene(
+  family: ContrastFamilyV1,
   entries: readonly CuratedContrastRecipeV1[],
 ): SceneV1 {
-  const presentation = DOMAIN_PRESENTATION[domain];
-  const columns = Math.ceil(Math.sqrt(entries.length));
-  const rows = Math.ceil(entries.length / columns);
+  const presentation = FAMILY_PRESENTATION[family];
   return {
     schemaVersion: VOXEL_SCENE_SCHEMA_V1,
     id: presentation.id,
     label: presentation.label,
-    summary: presentation.summary,
-    // Order is the catalog's contrast-family order, so each row group compares
-    // within a construction family before the reader compares across families.
-    placements: entries.map((entry, index) => {
-      const column = index % columns;
-      const row = Math.floor(index / columns);
-      // A trailing partial row centers on its own item count. Reusing the full
-      // column count would push a short last row to one side, which reads as a
-      // missing specimen rather than a deliberate end of the sheet.
-      const itemsInRow = Math.min(columns, entries.length - row * columns);
-      return {
-        id: placementId(entry),
-        model: entry.recipe.id,
-        at: [
-          (column - (itemsInRow - 1) / 2) * CELL_SPACING,
-          0,
-          (row - (rows - 1) / 2) * CELL_SPACING,
-        ],
-        // Every specimen faces the same way. The board compares silhouette and
-        // massing, and a per-index quarter-turn would compare a different face
-        // of each model, which is the one thing a contact sheet must not do.
-        turns: 0,
-        grain: DISPLAY_GRAIN,
-      };
-    }),
+    summary: `Five promoted ${family} specimens in one row, all facing the same `
+      + `way at one shared spacing, for comparing ${presentation.compares}. A `
+      + 'single row is deliberate: these models are tall enough that a second '
+      + 'row would stand behind the first at any raised camera and hide it. '
+      + 'This is a contact sheet and makes no claim that the specimens belong '
+      + 'together, support each other, or form a place.'
+      + motionSentence(entries),
+    placements: entries.map((entry, index) => ({
+      id: placementId(entry),
+      model: entry.recipe.id,
+      at: [
+        (index - (entries.length - 1) / 2) * CELL_SPACING,
+        0,
+        0,
+      ],
+      // One orientation, because the board compares silhouette and massing.
+      turns: 0,
+      grain: DISPLAY_GRAIN,
+    })),
   };
 }
 
@@ -251,14 +275,14 @@ function machineWorksScene(): SceneV1 {
 }
 
 /**
- * Four domain contact sheets give every promoted contrast recipe one honest
- * comparison context. Machine Works is a fifth, separate process scene so its
+ * One contact sheet per construction family gives every promoted recipe a row
+ * of its nearest neighbours. Machine Works is a separate process scene, so its
  * assembly claim is never padded with unrelated specimens.
  */
 export function createContrastScenes(): readonly SceneV1[] {
-  const domainScenes = CONTRAST_DOMAINS.map((domain) => {
-    const entries = CURATED_CONTRAST_RECIPES.filter((entry) => entry.domain === domain);
-    return domainScene(domain, entries);
-  });
-  return [...domainScenes, machineWorksScene()];
+  const familyScenes = CONTRAST_FAMILIES.map((family) => familyScene(
+    family,
+    CURATED_CONTRAST_RECIPES.filter((entry) => entry.family === family),
+  ));
+  return [...familyScenes, machineWorksScene()];
 }

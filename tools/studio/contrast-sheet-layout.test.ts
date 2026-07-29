@@ -1,10 +1,9 @@
 import { describe, expect, it } from 'vitest';
 
 import {
-  CONTRAST_DOMAINS,
   CONTRAST_FAMILIES,
   CURATED_CONTRAST_RECIPES,
-  type ContrastDomainV1,
+  type ContrastFamilyV1,
 } from './contrast-recipes.js';
 import { createContrastScenes } from './contrast-scenes.js';
 import type { ScenePlacementV1, SceneV1 } from './scene.js';
@@ -17,11 +16,13 @@ import type { ModelMotionV1 } from './model.js';
  * comparing form.
  */
 
-const DOMAIN_SCENE_IDS: Readonly<Record<ContrastDomainV1, string>> = {
-  infrastructure: 'studio:scene:contrast-infrastructure',
-  'civic-architectural': 'studio:scene:contrast-civic',
-  'mechanical-industrial': 'studio:scene:contrast-mechanical-studies',
-  'natural-organic': 'studio:scene:contrast-organic',
+const FAMILY_SCENE_IDS: Readonly<Record<ContrastFamilyV1, string>> = {
+  'arch-void': 'studio:scene:contrast-arch-void',
+  'tapered-stepped': 'studio:scene:contrast-tapered-stepped',
+  'frame-truss': 'studio:scene:contrast-frame-truss',
+  'radial-mechanical': 'studio:scene:contrast-radial-mechanical',
+  'branching-organic': 'studio:scene:contrast-branching-organic',
+  'asymmetric-hybrid': 'studio:scene:contrast-asymmetric-hybrid',
 };
 
 const DISPLAY_GRAIN = 0.65;
@@ -33,8 +34,8 @@ function moves(motion: ModelMotionV1 | undefined): boolean {
     || motion.scale.some((value) => value !== 1);
 }
 
-function sheetFor(domain: ContrastDomainV1): SceneV1 {
-  const id = DOMAIN_SCENE_IDS[domain];
+function sheetFor(family: ContrastFamilyV1): SceneV1 {
+  const id = FAMILY_SCENE_IDS[family];
   const scene = createContrastScenes().find((entry) => entry.id === id);
   if (!scene) throw new Error(`Contact sheet '${id}' is missing.`);
   return scene;
@@ -47,11 +48,11 @@ function spanOf(model: string): number {
 }
 
 describe('every contrast contact sheet', () => {
-  for (const domain of CONTRAST_DOMAINS) {
-    describe(domain, () => {
-      const scene = sheetFor(domain);
+  for (const family of CONTRAST_FAMILIES) {
+    describe(family, () => {
+      const scene = sheetFor(family);
       const entries = CURATED_CONTRAST_RECIPES.filter(
-        (entry) => entry.domain === domain,
+        (entry) => entry.family === family,
       );
 
       it('faces every specimen the same way', () => {
@@ -101,18 +102,27 @@ describe('every contrast contact sheet', () => {
         }
       });
 
-      it('places specimens in contrast-family order', () => {
-        const placedOrder = scene.placements.map((item) => {
-          const entry = entries.find(
+      it('holds exactly the specimens of its own family', () => {
+        const placed = scene.placements.map((item) => {
+          const entry = CURATED_CONTRAST_RECIPES.find(
             (candidate) => candidate.recipe.id === item.model,
           );
-          if (!entry) throw new Error(`'${item.model}' is not in domain '${domain}'.`);
-          return CONTRAST_FAMILIES.indexOf(entry.family);
+          if (!entry) throw new Error(`'${item.model}' is not a promoted recipe.`);
+          return entry.family;
         });
-        const sorted = [...placedOrder].sort((a, b) => a - b);
 
-        expect(placedOrder, 'family groups stay contiguous down the sheet')
-          .toEqual(sorted);
+        expect(new Set(placed), 'a sheet mixes no families').toEqual(
+          new Set([family]),
+        );
+        expect(placed).toHaveLength(entries.length);
+      });
+
+      it('keeps every specimen on one row, so none can hide behind another', () => {
+        // These models are tall enough that a second row would stand behind the
+        // first at any raised camera. One row makes that impossible.
+        expect(new Set(scene.placements.map((item) => item.at[2]))).toEqual(
+          new Set([0]),
+        );
       });
 
       it('claims motion only for specimens that actually move', () => {
@@ -140,32 +150,25 @@ describe('every contrast contact sheet', () => {
 });
 
 describe('the contact sheets as a set', () => {
-  it('share one pitch so the four boards stay comparable', () => {
+  it('share one pitch so every sheet stays comparable', () => {
     const pitches = new Set<number>();
-    for (const domain of CONTRAST_DOMAINS) {
-      const scene = sheetFor(domain);
+    for (const family of CONTRAST_FAMILIES) {
+      const scene = sheetFor(family);
       const xs = [...new Set(scene.placements.map((item) => item.at[0]))]
         .sort((a, b) => a - b);
       for (let index = 1; index < xs.length; index += 1) {
         pitches.add(Number((xs[index]! - xs[index - 1]!).toFixed(6)));
       }
     }
-    // Partial rows are centered, so a half-pitch offset between rows is
-    // expected; every gap must still be a whole or half multiple of one pitch.
-    const smallest = Math.min(...pitches);
-    for (const pitch of pitches) {
-      expect(
-        Number((pitch / smallest).toFixed(6)) % 0.5,
-        `gap ${String(pitch)} is a multiple of the shared pitch`,
-      ).toBe(0);
-    }
+    // One row per sheet at one shared pitch, so every gap is the same number.
+    expect(pitches.size, 'every neighbouring gap is the same').toBe(1);
   });
 
   it('derives its pitch from the widest promoted specimen', () => {
     const widest = Math.max(...CURATED_CONTRAST_RECIPES.map(
       (entry) => Math.max(entry.recipe.size[0], entry.recipe.size[2]) * DISPLAY_GRAIN,
     ));
-    const scene = sheetFor('infrastructure');
+    const scene = sheetFor('arch-void');
     const xs = [...new Set(scene.placements.map((item) => item.at[0]))]
       .sort((a, b) => a - b);
     const pitch = xs[1]! - xs[0]!;

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
+import { CONTRAST_FAMILY_SCENE_IDS_V1 } from './contrast-scenes.js';
 import { createStudioCatalog } from './catalog.js';
 import { createStudioRecipeBook } from './recipes.js';
 import { validateScenePoseReplayV1OrV2 } from './scene-pose-replay.js';
@@ -72,9 +73,15 @@ describe('the studio shelf', () => {
     }
   });
 
-  it('opts only the Windmill scene into occupied-bounds opening framing', () => {
+  it('opts Windmill and every family sheet into occupied-bounds framing', () => {
+    // A family sheet is one long row, so the default view height would frame
+    // only its middle and crop the two end specimens off a board whose whole
+    // job is showing all five at once.
     expect(createStudioCatalog().sceneOpeningViews).toEqual({
       [WINDMILL_SCENE_ID]: 'occupied-world-bounds',
+      ...Object.fromEntries(CONTRAST_FAMILY_SCENE_IDS_V1.map(
+        (sceneId) => [sceneId, 'occupied-world-bounds'],
+      )),
     });
   });
 

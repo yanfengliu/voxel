@@ -92,6 +92,21 @@ export function sceneOpeningViewV1(
       0,
       (min[2] + max[2]) / 2,
     ],
-    viewHeight: fitViewHeight(size),
+    viewHeight: openingViewHeight(size),
   };
+}
+
+/**
+ * `fitViewHeight` caps at a height that suits Studio's default framing, where
+ * an absurd zoom-out would be a mistake. A scene that opts into this policy has
+ * already said it wants its own bounds framed, and a long comparison row is
+ * wider than that cap allows — so the cap is what would crop the two end
+ * specimens off a sheet whose whole job is showing all of them at once. The
+ * floor still applies, because a tiny scene should not fill the screen.
+ */
+function openingViewHeight(
+  size: readonly [number, number, number],
+): number {
+  const diagonal = Math.hypot(size[0], size[1], size[2]);
+  return Math.max(fitViewHeight([0, 0, 0]), diagonal * 1.15);
 }

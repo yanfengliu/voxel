@@ -5,7 +5,10 @@ import {
   MACHINE_WORKS_SUPPORT_ALIGNMENT_RULE,
   machineWorksSupportAlignmentIssuesV1,
 } from '../../fixtures/machine-works-consumer/machine-works-fixture-config.js';
-import { CURATED_CONTRAST_RECIPES } from './contrast-recipes.js';
+import {
+  CONTRAST_FAMILIES,
+  CURATED_CONTRAST_RECIPES,
+} from './contrast-recipes.js';
 import { createContrastScenes } from './contrast-scenes.js';
 import {
   MACHINE_WORKS_CONVEYOR_SLAT_IDS,
@@ -31,36 +34,35 @@ describe('contrast scenes', () => {
   const DISCLAIMS_COMPOSITION =
     /not a claim|does not claim|makes no claim|do not form|does not form/;
 
-  it('keeps four honest domain contact sheets plus one valid process scene', () => {
+  it('keeps one honest sheet per family plus one valid process scene', () => {
     const scenes = createContrastScenes();
-    expect(scenes).toHaveLength(5);
+    expect(scenes).toHaveLength(CONTRAST_FAMILIES.length + 1);
     for (const scene of scenes) expect(validateSceneV1(scene), scene.id).toEqual([]);
 
-    const domainScenes = scenes.filter((scene) => scene.schemaVersion !== 'studio.scene/4');
-    expect(domainScenes).toHaveLength(4);
-    const placed = domainScenes.flatMap((scene) => scene.placements.map(({ model }) => model));
+    const sheets = scenes.filter((scene) => scene.schemaVersion !== 'studio.scene/4');
+    expect(sheets).toHaveLength(CONTRAST_FAMILIES.length);
+
+    // Every promoted recipe appears exactly once, on the sheet for its family.
+    const placed = sheets.flatMap((scene) => scene.placements.map(({ model }) => model));
     const promoted = CURATED_CONTRAST_RECIPES.map(({ recipe }) => recipe.id);
     const promotedPlacements = placed.filter((model) => model.startsWith('studio:contrast:'));
     expect(new Set(promotedPlacements).size).toBe(promotedPlacements.length);
     expect([...promotedPlacements].sort()).toEqual([...promoted].sort());
-    expect(domainScenes.every(({ summary }) => summary?.includes('contact sheet'))).toBe(true);
-    expect(domainScenes.find(({ id }) => id === 'studio:scene:contrast-mechanical-studies')?.summary)
-      .toMatch(/contact sheet, not a claim/);
-    const infrastructure = domainScenes.find(
-      ({ id }) => id === 'studio:scene:contrast-infrastructure',
-    );
-    expect(infrastructure?.label).toBe('Infrastructure studies');
-    expect(infrastructure?.summary).toMatch(/contact sheet/);
-    expect(infrastructure?.summary).toMatch(DISCLAIMS_COMPOSITION);
-    expect(domainScenes.map(({ label }) => label)).toEqual([
-      'Infrastructure studies',
-      'Civic form studies',
-      'Mechanical studies',
-      'Organic form studies',
+
+    expect(sheets.map(({ label }) => label)).toEqual([
+      'Arches and voids',
+      'Tapered and stepped',
+      'Frames and trusses',
+      'Radial mechanics',
+      'Branching forms',
+      'Asymmetric hybrids',
     ]);
-    for (const scene of domainScenes) {
+    for (const scene of sheets) {
       expect(scene.summary, scene.id).toMatch(/contact sheet/);
       expect(scene.summary, scene.id).toMatch(DISCLAIMS_COMPOSITION);
+      // The old domain labels were fiction: a sheet called "Civic form
+      // studies" held a pergola, a wireframe cage, an obelisk and a gear.
+      expect(scene.label, scene.id).not.toMatch(/civic|infrastructure/i);
     }
   });
 
@@ -263,21 +265,25 @@ describe('contrast scenes', () => {
     expect(layout.pressBridge.staticNonColliding).toBe(true);
   });
 
-  it('gives semantic motion to three contact sheets and the consumer replay scene', () => {
-    const motionByRecipe = new Map(CURATED_CONTRAST_RECIPES.map(({ recipe }) => [
-      recipe.id,
-      recipe.motion.periodMs > 0,
-    ]));
-    const movingSceneIds = createContrastScenes()
-      .filter((scene) =>
-        scene.schemaVersion === 'studio.scene/4'
-        || scene.placements.some(({ model }) => motionByRecipe.get(model)))
-      .map(({ id }) => id);
-    expect(movingSceneIds).toEqual([
-      'studio:scene:contrast-civic',
-      'studio:scene:contrast-mechanical-studies',
-      'studio:scene:contrast-organic',
-      'studio:scene:contrast-machines',
-    ]);
+  it('gives motion only to the sheets whose own specimens move', () => {
+    const movingRecipes = new Set(CURATED_CONTRAST_RECIPES
+      .filter(({ recipe }) => recipe.motion.periodMs > 0)
+      .map(({ recipe }) => recipe.id));
+    expect(movingRecipes.size).toBeGreaterThan(0);
+
+    for (const scene of createContrastScenes()) {
+      if (scene.schemaVersion === 'studio.scene/4') continue;
+      const moves = scene.placements.some(({ model }) => movingRecipes.has(model));
+      const summary = scene.summary ?? '';
+
+      // Whichever it is, the sheet has to say so rather than leave a reader to
+      // assume a mechanism that is not there.
+      if (moves) {
+        expect(summary, scene.id).toMatch(/carries authored motion/);
+        expect(summary, scene.id).toMatch(/nothing drives it/);
+      } else {
+        expect(summary, scene.id).toMatch(/Every specimen here is static/);
+      }
+    }
   });
 });

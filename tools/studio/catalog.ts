@@ -36,6 +36,9 @@ import { WINDMILL_SCENE_ID } from './windmill-layout.js';
 import { buildRecipe, type PartShelfV1, type RecipeBookV1, type RecipeV1 } from './recipe.js';
 import type { SceneV1 } from './scene.js';
 import type { ScenePoseReplayV1OrV2 } from './scene-pose-replay.js';
+import {
+  CONTRAST_FAMILY_SCENE_IDS_V1,
+} from './contrast-scenes.js';
 import { createStudioScenes } from './scenes.js';
 import {
   createBrickCottageRecipe,
@@ -518,6 +521,12 @@ export function createStudioCatalog(): StudioCatalogV1 {
     },
     sceneOpeningViews: {
       [WINDMILL_SCENE_ID]: 'occupied-world-bounds',
+      // A family sheet is one long row, so the default view height frames only
+      // its middle. Opening on the occupied bounds is what makes all five
+      // specimens visible at once, which is the entire point of the sheet.
+      ...Object.fromEntries(CONTRAST_FAMILY_SCENE_IDS_V1.map(
+        (sceneId) => [sceneId, 'occupied-world-bounds' as const],
+      )),
     },
   };
 }
