@@ -1,3 +1,4 @@
+import { capturedAt } from './scene-purpose-board.js';
 import {
   purposeBoundaryV1,
   purposeGraphV1,
@@ -43,6 +44,7 @@ const NEED = Object.freeze({
   flowing: 'riverfall:need:water-reads-as-flowing',
   continuous: 'riverfall:need:one-continuous-body',
   loop: 'riverfall:need:seamless-loop',
+  depth: 'riverfall:need:depth-reads-through-surface',
 } as const);
 
 const id = (value: string): PurposeNodeIdV1 => value as PurposeNodeIdV1;
@@ -96,6 +98,25 @@ const NEEDS: readonly PurposeNodeV1[] = Object.freeze([
     honestyBoundary:
       'Continuity of appearance only. No mass, momentum, or volume is carried '
       + 'across reach boundaries by the presentation.',
+  }),
+  purposeNeedV1({
+    id: NEED.depth,
+    label: 'Depth reads through the surface',
+    job:
+      'Let a viewer see that the pond is a volume with a floor and life in '
+      + 'it, not a painted film — while the water stays unmistakably present.',
+    rootRationale:
+      'Opaque water is indistinguishable from blue ground. Transparency is '
+      + 'only honest when there is something below to see, so the need binds '
+      + 'the translucent surface and the plants beneath it together.',
+    evidence: capturedAt(
+      'Kelp and pondweed in the carved bowl are visible through the 0.62 '
+      + 'opacity surface, and the water tint still reads at every camera.',
+      'riverfall default and overhead captures',
+    ),
+    honestyBoundary:
+      'Presentation only: one uniform opacity, no refraction, caustics, '
+      + 'light attenuation with depth, or view-angle response.',
   }),
   purposeNeedV1({
     id: NEED.loop,
@@ -243,6 +264,23 @@ const SOLIDS: readonly PurposeNodeV1[] = Object.freeze([
     honestyBoundary:
       'Appearance of a reach, not a solved free surface with depth or volume.',
   })),
+  purposeNodeV1({
+    id: id('riverfall:solid:pond-plants'),
+    kind: 'solid',
+    label: 'Pond plants',
+    job:
+      'Stand in the carved bowl below the surface film, giving the '
+      + 'translucent water something real to reveal.',
+    requiredBy: Object.freeze([NEED.depth]),
+    evidence: capturedAt(
+      'Three kelp strands and three weed clumps sit fully below the surface '
+      + 'film inside the bowl, overlap-free against every water placement.',
+      'riverfall scene overlap gate and default capture',
+    ),
+    honestyBoundary:
+      'One bounded group under one rule. The kelp sway is authored motion on '
+      + 'a fixed period; no current, growth, or ecosystem is simulated.',
+  }),
   purposeNodeV1({
     id: id('riverfall:solid:bank-trees'),
     kind: 'solid',

@@ -1,3 +1,4 @@
+import { RIVERFALL_WATER_OPACITY_V1 } from './riverfall-surface-grid.js';
 import {
   createRiverfallFlowPlacementsV1,
   RIVERFALL_FLOW_DURATION_MS,
@@ -34,11 +35,32 @@ export const RIVERFALL_FOAM_PLACEMENTS_V1: readonly ScenePlacementV1[] = [];
 
 const STRUCTURE_PLACEMENTS: readonly ScenePlacementV1[] = [
   { id: 'landscape', model: 'studio:riverfall:landscape', at: [0, 0, 0] },
-  { id: 'river-surface', model: 'studio:riverfall:river', at: [0, 11, -16] },
-  { id: 'waterfall-curtain', model: 'studio:riverfall:waterfall', at: [0, 3, 0.5] },
-  { id: 'pond-surface', model: 'studio:riverfall:pond', at: [0, 3, 14] },
-  { id: 'pond-outflow', model: 'studio:riverfall:outflow', at: [0, 3, 29] },
+  { id: 'river-surface', model: 'studio:riverfall:river', at: [0, 11, -16], opacity: RIVERFALL_WATER_OPACITY_V1 },
+  { id: 'waterfall-curtain', model: 'studio:riverfall:waterfall', at: [0, 3, 0.5], opacity: RIVERFALL_WATER_OPACITY_V1 },
+  { id: 'pond-surface', model: 'studio:riverfall:pond', at: [0, 3, 14], opacity: RIVERFALL_WATER_OPACITY_V1 },
+  { id: 'pond-outflow', model: 'studio:riverfall:outflow', at: [0, 3, 29], opacity: RIVERFALL_WATER_OPACITY_V1 },
 ];
+
+/**
+ * The pond bowl's plants: kelp strands tall enough to matter and weed clumps
+ * on the floor, all fully below the surface film. They are why the water is
+ * translucent — depth someone can read, not a colour someone is told.
+ */
+export const RIVERFALL_PLANT_PLACEMENTS_V1: readonly ScenePlacementV1[] = [
+  { id: 'plant-kelp-west', model: 'studio:riverfall:kelp', at: [-8, 1, 12], grain: 0.4, seed: 3 },
+  { id: 'plant-kelp-middle', model: 'studio:riverfall:kelp', at: [-1, 1, 17], grain: 0.45, seed: 5, turns: 1 },
+  { id: 'plant-kelp-east', model: 'studio:riverfall:kelp', at: [7, 1, 13], grain: 0.4, seed: 7, turns: 2 },
+  { id: 'plant-weed-west', model: 'studio:riverfall:pondweed', at: [-5, 1, 20], grain: 0.5, seed: 11 },
+  { id: 'plant-weed-east', model: 'studio:riverfall:pondweed', at: [4, 1, 21], grain: 0.5, seed: 13, turns: 1 },
+  { id: 'plant-weed-fall', model: 'studio:riverfall:pondweed', at: [1, 1, 9], grain: 0.5, seed: 17, turns: 3 },
+];
+
+const PLANT_RELATIONSHIPS: readonly RiverfallRelationshipV1[] =
+  RIVERFALL_PLANT_PLACEMENTS_V1.map(({ id }) => ({
+    from: id,
+    relation: 'marks',
+    to: 'pond-surface',
+  }));
 
 const TREE_RELATIONSHIPS: readonly RiverfallRelationshipV1[] =
   RIVERFALL_TREE_PLACEMENTS_V1.map(({ id }) => ({
@@ -65,6 +87,7 @@ export const RIVERFALL_RELATIONSHIPS_V1: readonly RiverfallRelationshipV1[] = [
   { from: 'river-surface', relation: 'feeds', to: 'waterfall-curtain' },
   { from: 'waterfall-curtain', relation: 'falls-into', to: 'pond-surface' },
   { from: 'pond-surface', relation: 'drains-into', to: 'pond-outflow' },
+  ...PLANT_RELATIONSHIPS,
   ...TREE_RELATIONSHIPS,
   ...FLOW_RELATIONSHIPS,
 ];
@@ -81,6 +104,7 @@ export function createRiverfallScene(): SceneV1 {
       + 'sheet legible; it is not a solved volumetric or free-surface height simulation.',
     placements: [
       ...STRUCTURE_PLACEMENTS,
+      ...RIVERFALL_PLANT_PLACEMENTS_V1,
       ...RIVERFALL_TREE_PLACEMENTS_V1,
       ...createRiverfallFlowPlacementsV1(),
     ],

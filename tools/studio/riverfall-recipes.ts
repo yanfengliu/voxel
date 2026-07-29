@@ -59,7 +59,14 @@ export function createRiverfallLandscapeRecipe(): RecipeV1 {
       { r: 176, g: 151, b: 98 },
     ],
     steps: [
-      box([0, 0, 0], [64, 2, 64], 'bedrock', 'Lays one continuous stone foundation'),
+      box([0, 0, 0], [64, 1, 64], 'bedrock', 'Lays the continuous lower stone foundation'),
+      // The upper foundation leaves a bowl under the pond, so the water there
+      // is a volume with a floor rather than a film on flat ground — the depth
+      // the translucent surface lets a viewer read.
+      box([0, 1, 0], [18, 1, 64], 'bedrock', 'Raises the upper foundation west of the pond bowl'),
+      box([46, 1, 0], [18, 1, 64], 'bedrock', 'Raises the upper foundation east of the pond bowl'),
+      box([18, 1, 0], [28, 1, 36], 'bedrock', 'Raises the upper foundation north of the pond bowl'),
+      box([18, 1, 58], [28, 1, 6], 'bedrock', 'Raises the upper foundation south of the pond bowl'),
       box([0, 2, 0], [27, 10, 33], 'cliff', 'Raises the high left bank and cliff shoulder'),
       box([37, 2, 0], [27, 10, 33], 'cliff', 'Raises the high right bank and cliff shoulder'),
       box([27, 2, 0], [10, 9, 32], 'earth', 'Builds the recessed river bed between the banks'),
@@ -75,7 +82,11 @@ export function createRiverfallLandscapeRecipe(): RecipeV1 {
       box([48, 2, 47], [16, 4, 13], 'earth', 'Extends the right pond bank'),
       box([0, 2, 33], [16, 4, 27], 'earth', 'Connects the left cliff to the pond bank'),
       box([48, 2, 33], [16, 4, 27], 'earth', 'Connects the right cliff to the pond bank'),
-      box([16, 2, 34], [32, 1, 26], 'sand', 'Beds the receiving pond below its surface'),
+      box([16, 2, 34], [2, 1, 26], 'sand', 'Shelves the pond bed along the west bank'),
+      box([46, 2, 34], [2, 1, 26], 'sand', 'Shelves the pond bed along the east bank'),
+      box([18, 2, 34], [28, 1, 2], 'sand', 'Shelves the pond bed under the fall'),
+      box([18, 2, 58], [28, 1, 2], 'sand', 'Shelves the pond bed at the outflow rim'),
+      box([18, 0, 36], [28, 1, 22], 'sand', 'Sands the bowl floor two deep beneath the surface'),
       box([0, 6, 33], [16, 1, 27], 'grass', 'Greens the left pond bank'),
       box([48, 6, 33], [16, 1, 27], 'grass', 'Greens the right pond bank'),
       box([0, 2, 60], [28, 3, 4], 'earth', 'Closes the left side of the pond rim'),
@@ -95,7 +106,7 @@ export function createRiverfallRiverRecipe(): RecipeV1 {
     label: 'River surface',
     seed: 1,
     size: [10, 1, 32],
-    summary: 'An opaque blue underfill beneath the simulated high-channel surface.',
+    summary: 'A translucent blue water body beneath the simulated high-channel surface.',
     tags: ['water', 'river', 'surface'],
     roles: ['empty', 'water'],
     palette: [EMPTY, SURFACE_WATER],
@@ -113,7 +124,7 @@ export function createRiverfallWaterfallRecipe(): RecipeV1 {
     label: 'Waterfall curtain',
     seed: 1,
     size: [10, 9, 1],
-    summary: 'An opaque blue underfill behind the simulated falling-water sheet.',
+    summary: 'A translucent blue water body behind the simulated falling-water sheet.',
     tags: ['water', 'waterfall', 'curtain'],
     roles: ['empty', 'water'],
     palette: [EMPTY, SURFACE_WATER],
@@ -131,7 +142,7 @@ export function createRiverfallPondRecipe(): RecipeV1 {
     label: 'Receiving pond',
     seed: 1,
     size: [32, 1, 26],
-    summary: 'A broad opaque blue underfill beneath the simulated receiving surface.',
+    summary: 'A broad translucent water body over the pond bowl, deep enough that the plants below stay visible through it.',
     tags: ['water', 'pond', 'surface'],
     roles: ['empty', 'water'],
     palette: [EMPTY, SURFACE_WATER],
@@ -149,7 +160,7 @@ export function createRiverfallOutflowRecipe(): RecipeV1 {
     label: 'Pond outflow',
     seed: 1,
     size: [8, 1, 4],
-    summary: 'A narrow opaque blue underfill beneath the simulated pond outlet.',
+    summary: 'A narrow translucent water body beneath the simulated pond outlet.',
     tags: ['water', 'outflow', 'surface'],
     roles: ['empty', 'water'],
     palette: [EMPTY, SURFACE_WATER],
@@ -226,6 +237,69 @@ export function createRiverfallFoamRecipe(): RecipeV1 {
   };
 }
 
+/**
+ * A kelp strand for the pond bowl: a swaying column fully below the surface,
+ * what the translucent water exists to reveal. The sway is authored model
+ * motion on a fixed period; no current drives it.
+ */
+export function createRiverfallKelpRecipe(): RecipeV1 {
+  return {
+    schemaVersion: 'studio.voxel-recipe/1',
+    id: 'studio:riverfall:kelp',
+    label: 'Pond kelp',
+    seed: 1,
+    size: [3, 5, 3],
+    summary: 'A submerged kelp strand, visible only because the water above it '
+      + 'is translucent. Its sway is authored motion; no current is simulated.',
+    tags: ['plant', 'underwater', 'pond'],
+    roles: ['empty', 'frond', 'stem'],
+    palette: [
+      { r: 0, g: 0, b: 0 },
+      { r: 58, g: 122, b: 72 },
+      { r: 44, g: 92, b: 56 },
+    ],
+    steps: [
+      box([1, 0, 1], [1, 5, 1], 'stem', 'Raises the single stem column'),
+      box([0, 2, 1], [1, 2, 1], 'frond', 'Leafs the west side mid-height'),
+      box([2, 3, 1], [1, 2, 1], 'frond', 'Leafs the east side higher up'),
+      box([1, 3, 0], [1, 2, 1], 'frond', 'Leafs the north side higher up'),
+      box([1, 1, 2], [1, 2, 1], 'frond', 'Leafs the south side low'),
+    ],
+    motion: {
+      periodMs: 5_600,
+      phaseRadians: 0,
+      translation: [0, 0, 0],
+      rotationRadians: [0, 0, 0.07],
+      scale: [0, 0, 0],
+    },
+  };
+}
+
+/** A low pondweed clump for the bowl floor, wider than it is tall. */
+export function createRiverfallPondweedRecipe(): RecipeV1 {
+  return {
+    schemaVersion: 'studio.voxel-recipe/1',
+    id: 'studio:riverfall:pondweed',
+    label: 'Pondweed clump',
+    seed: 1,
+    size: [4, 2, 4],
+    summary: 'A low weed clump on the pond floor, visible through the '
+      + 'translucent surface. It is still; nothing stirs the floor.',
+    tags: ['plant', 'underwater', 'pond'],
+    roles: ['empty', 'frond'],
+    palette: [
+      { r: 0, g: 0, b: 0 },
+      { r: 74, g: 134, b: 78 },
+    ],
+    steps: [
+      box([0, 0, 1], [4, 1, 2], 'frond', 'Spreads the clump across the floor'),
+      box([1, 0, 0], [2, 1, 4], 'frond', 'Crosses it the other way'),
+      box([1, 1, 1], [2, 1, 2], 'frond', 'Mounds the centre one higher'),
+    ],
+    motion: { ...STILL },
+  };
+}
+
 export const RIVERFALL_RECIPES = [
   createRiverfallLandscapeRecipe(),
   createRiverfallRiverRecipe(),
@@ -235,6 +309,8 @@ export const RIVERFALL_RECIPES = [
   createRiverfallFluidSurfaceRecipe(),
   createRiverfallFluidSurfaceSeamRecipe(),
   createRiverfallFoamRecipe(),
+  createRiverfallKelpRecipe(),
+  createRiverfallPondweedRecipe(),
 ] as const;
 
 export function createRiverfallRecipeBook(): RecipeBookV1 {

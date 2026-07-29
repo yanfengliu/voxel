@@ -64,6 +64,13 @@ export interface ScenePlacementV1 {
   /** Voxel size for this placement, overriding the model's own grain. */
   readonly grain?: number;
   /**
+   * How solid this placement draws, in (0, 1]. Below one the model renders
+   * translucent — water, glass — and whatever stands behind or inside it
+   * stays visible. Omitted means fully opaque. Zero is refused: an invisible
+   * solid is a lie the picture cannot audit.
+   */
+  readonly opacity?: number;
+  /**
    * Varies this placement from others of the same model: it is folded into the
    * model's own seed before building, so a seed-varying recipe — a tree, a
    * fence — comes out different here. Omitted means the model's own version.
@@ -297,6 +304,16 @@ export function validateSceneV1(value: unknown): readonly GenomeIssueV1[] {
     if (placement.seed !== undefined
       && (typeof placement.seed !== 'number' || !Number.isInteger(placement.seed))) {
       issues.push({ path: `${path}.seed`, message: 'Expected an integer seed, or omit it.' });
+    }
+    if (placement.opacity !== undefined
+      && (!isFiniteNumber(placement.opacity)
+        || placement.opacity <= 0 || placement.opacity > 1)) {
+      issues.push({
+        path: `${path}.opacity`,
+        message: `opacity ${JSON.stringify(placement.opacity)} is outside (0, 1]; a `
+          + 'placement is translucent below one and opaque at one, and zero '
+          + 'would draw nothing while still claiming space.',
+      });
     }
     if (placement.grain !== undefined
       && (!isFiniteNumber(placement.grain) || placement.grain < MIN_VOXEL_SIZE || placement.grain > MAX_VOXEL_SIZE)) {

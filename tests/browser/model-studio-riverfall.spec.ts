@@ -22,14 +22,17 @@ const STUDIO_ROOT = resolve('tools/studio');
 const RIVERFALL_SCENE_ID = 'studio:scene:riverfall';
 const REPLAY_ID = 'studio:pose-replay:riverfall-flow';
 const MAX_DIFF_PIXEL_RATIO = 0.002;
-const EXPECTED_INSTANCE_COUNT = 5 + 10 + RIVERFALL_SURFACE_CELL_COUNT;
+// Five water structures, six pond plants, ten bank trees, and the tile field.
+const EXPECTED_INSTANCE_COUNT = 5 + 6 + 10 + RIVERFALL_SURFACE_CELL_COUNT;
 const EXPECTED_DURATION_MS =
   (RIVERFALL_FLUID_FRAME_COUNT + 1) * RIVERFALL_FLUID_RECORD_STEP_MS;
+// 17 before the pond plants; each kelp and weed placement carries its own
+// seed or grain, so the six plants add six single-instance batches.
 const EXPECTED_RESOURCE_COUNTS = {
-  instanceBatches: 17,
-  materialResources: 17,
-  geometryResources: 17,
-  rendererGeometries: 17,
+  instanceBatches: 23,
+  materialResources: 23,
+  geometryResources: 23,
+  rendererGeometries: 23,
   rendererTextures: 2,
 } as const;
 const RESOURCE_STABILITY_TIMES_MS = [
@@ -111,17 +114,19 @@ test('Riverfall presents one coherent simulated surface from river through outfl
 
   const phaseZero = await page.evaluate(() => window.voxelStudio!.drawAt(0));
   expect(phaseZero.sceneRender).toEqual({
-    drawCalls: 17,
-    triangles: 48_904,
+    drawCalls: 23,
+    triangles: 49_868,
     points: 0,
     lines: 0,
-    instanceBatches: 17,
+    instanceBatches: 23,
     instances: EXPECTED_INSTANCE_COUNT,
-    animatedBatches: 0,
-    animatedInstances: 0,
-    materialResources: 17,
-    geometryResources: 17,
-    rendererGeometries: 17,
+    // The three kelp strands sway on authored model motion; the weed clumps
+    // and everything else stay still.
+    animatedBatches: 3,
+    animatedInstances: 3,
+    materialResources: 23,
+    geometryResources: 23,
+    rendererGeometries: 23,
     rendererTextures: 2,
   });
   expect(phaseZero.scenePoseReplay).toMatchObject({
@@ -325,8 +330,8 @@ test('Riverfall presents one coherent simulated surface from river through outfl
     viewHeight: 104,
   });
   expect(overhead.draw.sceneRender).toMatchObject({
-    drawCalls: 17,
-    triangles: 48_904,
+    drawCalls: 23,
+    triangles: 49_868,
     instances: EXPECTED_INSTANCE_COUNT,
   });
   await expect(canvas).toHaveScreenshot('model-studio-riverfall-overhead.png', {

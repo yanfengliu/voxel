@@ -115,6 +115,8 @@ interface PlacementGroupV1 {
   readonly grain: number;
   /** The placement seed shared by this group; 0 means the model's own version. */
   readonly seed: number;
+  /** The placement opacity shared by this group; 1 means fully opaque. */
+  readonly opacity: number;
   readonly placements: ScenePlacementV1[];
 }
 
@@ -143,12 +145,14 @@ export function buildSceneSnapshot(
     }
     const grain = placement.grain ?? modelVoxelSizeV1(recipe);
     const seed = placement.seed ?? 0;
-    // Placements that share a model, grain, and seed build the same geometry, so
-    // they group and instance together; a different seed builds its own body.
-    const key = `${placement.model}@${String(grain)}@${String(seed)}`;
+    const opacity = placement.opacity ?? 1;
+    // Placements that share a model, grain, seed, and opacity build the same
+    // geometry and material, so they group and instance together; a different
+    // seed builds its own body, and a different opacity needs its own material.
+    const key = `${placement.model}@${String(grain)}@${String(seed)}@${String(opacity)}`;
     const group = groups.get(key);
     if (group) group.placements.push(placement);
-    else groups.set(key, { recipe, grain, seed, placements: [placement] });
+    else groups.set(key, { recipe, grain, seed, opacity, placements: [placement] });
   });
   if (missing.length > 0) throw new SceneBuildError(missing);
 
@@ -189,7 +193,19 @@ export function buildSceneSnapshot(
       revision,
       groups: geometry.groups.map((entry) => ({ ...entry, materialKey })),
     });
-    resources.push({ ...material, key: materialKey, incarnation: 1, revision });
+    // A translucent group carries the model's own material at the placement's
+    // declared opacity. The presenter marks any sub-one opacity transparent,
+    // and opaque geometry draws first, so what stands inside or behind the
+    // water stays visible through it.
+    resources.push({
+      ...material,
+      key: materialKey,
+      incarnation: 1,
+      revision,
+      ...(group.opacity < 1
+        ? { transparent: true, opacity: material.opacity * group.opacity }
+        : {}),
+    });
 
     const count = group.placements.length;
     const matrices = new Float32Array(count * 16);

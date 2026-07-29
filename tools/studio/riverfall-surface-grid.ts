@@ -4,6 +4,14 @@ export const RIVERFALL_SURFACE_SEAM_MODEL_ID =
   'studio:riverfall:surface-seam';
 export const RIVERFALL_SURFACE_BASE_NORMAL_OFFSET = 0.05;
 
+/**
+ * Water draws at this opacity everywhere it appears — the four standing bodies
+ * and every animated surface tile — so the pond reads as one translucent
+ * volume rather than film over paint. High enough that the water is
+ * unmistakably present, low enough that the plants below stay visible.
+ */
+export const RIVERFALL_WATER_OPACITY_V1 = 0.62;
+
 export type RiverfallSurfaceRegionV1 =
   | 'river'
   | 'lip'

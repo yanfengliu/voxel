@@ -132,6 +132,7 @@ function samePlacementInternal(
     && left.at[2] === right.at[2]
     && left.turns === right.turns
     && left.grain === right.grain
+    && left.opacity === right.opacity
     && left.seed === right.seed;
 }
 
@@ -160,6 +161,7 @@ function copySceneV4Internal(scene: SceneSchemaV4): SceneSchemaV4 {
       at: [...placement.at],
       ...(placement.turns === undefined ? {} : { turns: placement.turns }),
       ...(placement.grain === undefined ? {} : { grain: placement.grain }),
+      ...(placement.opacity === undefined ? {} : { opacity: placement.opacity }),
       ...(placement.seed === undefined ? {} : { seed: placement.seed }),
     })),
     ...(scene.lights === undefined

@@ -13,6 +13,7 @@ import {
   type ScenePoseReplayV1,
 } from './scene-pose-replay.js';
 import {
+  RIVERFALL_WATER_OPACITY_V1,
   RIVERFALL_SURFACE_CELLS_V1,
 } from './riverfall-surface-grid.js';
 
@@ -72,6 +73,10 @@ export function createRiverfallFlowPlacementsV1(): readonly ScenePlacementV1[] {
         track.translations[1]! - 0.5,
         track.translations[2]!,
       ],
+      // The moving tiles are the same water as the standing bodies, so they
+      // share the one scene-wide opacity; an opaque tile over translucent
+      // water would read as debris floating on it.
+      opacity: RIVERFALL_WATER_OPACITY_V1,
     };
   });
 }
