@@ -3,7 +3,9 @@ import RAPIER from '@dimforge/rapier3d-compat';
 import {
   CHAIN_REPLAY_PUSH_STEPS,
   CHAIN_REPLAY_SETTLE_STEPS,
+  CHAIN_REPLAY_START_DIP,
 } from '../../tools/studio/chain-replay-binding.js';
+import { CHAIN_RECORDED_START_POSES_V1 } from './chain-start-poses.js';
 import {
   chainLinkPlaneV1,
   CHAIN_INNER_RADIUS_V1,
@@ -224,19 +226,29 @@ export async function runChainSimulationV1(
   for (let index = 0; index < CHAIN_LINK_COUNT_V1; index += 1) {
     if (index === options.omitLink) continue;
     const anchored = index === 0 || index === CHAIN_LINK_COUNT_V1 - 1;
-    const pose = chainCatenaryPoseV1(index);
     // Anchors always sit on the true curve; only the free links start high.
     const dip = anchored ? 1 : (options.startDipScale ?? 1);
+    // Rapier's determinism guarantee requires initial values to come from
+    // cross-platform deterministic operations, and its docs name Math.sin and
+    // Math.cos as ones that are not. The recorded configuration therefore
+    // starts from frozen literals so its committed trace does not depend on one
+    // engine's transcendentals. Other dips are ablations compared with
+    // tolerances rather than hashed, so they may compute their own poses.
+    const frozen = (options.startDipScale ?? 1) === CHAIN_REPLAY_START_DIP
+      ? CHAIN_RECORDED_START_POSES_V1[index]
+      : undefined;
+    const pose = chainCatenaryPoseV1(index);
+    const start = frozen ?? {
+      x: pose.x,
+      y: pose.y * dip,
+      qz: Math.sin((pose.angle * dip) / 2),
+      qw: Math.cos((pose.angle * dip) / 2),
+    };
     const description = (anchored
       ? RAPIER.RigidBodyDesc.fixed()
       : RAPIER.RigidBodyDesc.dynamic())
-      .setTranslation(pose.x, pose.y * dip, 0)
-      .setRotation({
-        x: 0,
-        y: 0,
-        z: Math.sin((pose.angle * dip) / 2),
-        w: Math.cos((pose.angle * dip) / 2),
-      });
+      .setTranslation(start.x, start.y, 0)
+      .setRotation({ x: 0, y: 0, z: start.qz, w: start.qw });
     const body = world.createRigidBody(description);
     for (const box of chainLinkColliderBoxesV1(chainLinkPlaneV1(index))) {
       world.createCollider(
