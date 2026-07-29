@@ -2,19 +2,24 @@ import {
   VOXEL_SCENE_SCHEMA_V1,
   VOXEL_SCENE_SCHEMA_V2,
   VOXEL_SCENE_SCHEMA_V3,
+  VOXEL_SCENE_SCHEMA_V4,
   type ScenePlacementV1,
   type ScenePointLightV3,
   type SceneSchemaV3,
   type SceneV1,
 } from './scene.js';
 import {
-  chainLinkCentreV1,
-  chainLinkPlacementYV1,
   chainLinkPlaneV1,
-  chainSpanV1,
   CHAIN_LINK_COUNT_V1,
   CHAIN_OUTER_RADIUS_V1,
 } from './chain-layout.js';
+import {
+  chainCatenaryPoseV1,
+  CHAIN_GRAIN_V1,
+  CHAIN_REPLAY_DURATION_MS,
+  CHAIN_REPLAY_START_DIP,
+} from './chain-replay-binding.js';
+import { CHAIN_POSE_REPLAY_ID } from './generated-chain-replay.js';
 import {
   CHAIN_CROSSED_RECIPE_ID,
   CHAIN_UPRIGHT_RECIPE_ID,
@@ -183,37 +188,52 @@ function createLighting1000Scene(): SceneSchemaV3 {
  * and says plainly that it is not hanging.
  */
 function createChainLinkStudyScene(): SceneV1 {
-  const wallOffset = CHAIN_OUTER_RADIUS_V1 + 2;
+  // The replay is recorded in the solver's own world units, where a voxel is
+  // CHAIN_GRAIN_V1. The links are therefore placed at that grain so the drawn
+  // ring is the same size as the simulated one, and the piers sit clear of the
+  // end links' swept radius.
+  const anchorX = chainCatenaryPoseV1(CHAIN_LINK_COUNT_V1 - 1).x;
+  const pierX = anchorX + CHAIN_OUTER_RADIUS_V1 * CHAIN_GRAIN_V1 + 1.3;
   return {
-    schemaVersion: VOXEL_SCENE_SCHEMA_V1,
+    schemaVersion: VOXEL_SCENE_SCHEMA_V4,
     id: 'studio:scene:chain-links',
     label: 'Chain link study',
     summary: 'Eleven steel rings, each turned ninety degrees from its '
       + 'neighbours so every link passes through the next one\'s hole. Nothing '
-      + 'joins them: they are held together only by being solid rings that '
-      + 'thread each other. This is a static study laid out straight. A scene '
-      + 'placement cannot tilt a link, so the hanging curve and the swing are '
-      + 'solver work, and neither is shown here.',
+      + 'joins them - the solver world contains no constraint at all - so they '
+      + 'are held together only by being solid rings that thread each other. '
+      + 'The links start held above their resting curve; gravity pulls them '
+      + 'down into a catenary, then a sideways push sets the middle swinging '
+      + 'and it settles back. Voxel presents the recorded poses and simulates '
+      + 'nothing.',
+    poseReplay: {
+      id: CHAIN_POSE_REPLAY_ID,
+      durationMs: CHAIN_REPLAY_DURATION_MS,
+    },
     placements: [
-      // Two courses per pier, because one sandstone wall is ten tall and the
-      // upright links reach fifteen; a pier the chain hangs over the top of
-      // would not read as holding it.
-      ...([['west', -chainSpanV1() / 2 - wallOffset],
-        ['east', chainSpanV1() / 2 + wallOffset]] as const)
-        .flatMap(([side, x]) => [0, 10].map((lift) => ({
-          id: `anchor-${side}-${lift === 0 ? 'lower' : 'upper'}`,
+      ...([['west', -pierX], ['east', pierX]] as const)
+        .flatMap(([side, x]) => [-8, 2].map((lift) => ({
+          id: `anchor-${side}-${lift === -8 ? 'lower' : 'upper'}`,
           model: 'studio:sandstone-wall',
           at: [x, lift, 0] as readonly [number, number, number],
           turns: 1,
         }))),
+      // Authored fallback poses only. The replay drives these placements, and
+      // the frame-zero pose is where each link starts before gravity acts.
       ...Array.from({ length: CHAIN_LINK_COUNT_V1 }, (_, index) => {
-        const [x, , z] = chainLinkCentreV1(index);
+        const pose = chainCatenaryPoseV1(index);
+        const anchored = index === 0 || index === CHAIN_LINK_COUNT_V1 - 1;
         return {
           id: `link-${String(index).padStart(2, '0')}`,
           model: chainLinkPlaneV1(index) === 'xy'
             ? CHAIN_UPRIGHT_RECIPE_ID
             : CHAIN_CROSSED_RECIPE_ID,
-          at: [x, chainLinkPlacementYV1(index), z] as readonly [number, number, number],
+          at: [
+            pose.x,
+            pose.y * (anchored ? 1 : CHAIN_REPLAY_START_DIP),
+            0,
+          ] as readonly [number, number, number],
+          grain: CHAIN_GRAIN_V1,
         };
       }),
     ],

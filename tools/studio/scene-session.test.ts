@@ -219,6 +219,23 @@ function isReplayScene(scene: SceneV1): scene is SceneSchemaV4 {
   return scene.schemaVersion === 'studio.scene/4';
 }
 
+/**
+ * Machine Works by name, not "whichever replay scene comes first". More than
+ * one scene carries a V4 replay now, and these assertions are about this one.
+ */
+function machineWorksReplayScene(scenes: readonly SceneV1[] | undefined): SceneSchemaV4 {
+  const scene = scenes
+    ?.filter(isReplayScene)
+    .find((entry) => entry.id === 'studio:scene:contrast-machines');
+  if (scene === undefined) {
+    throw new Error(
+      'The Studio catalog must provide the Machine Works V4 replay scene '
+      + "'studio:scene:contrast-machines'.",
+    );
+  }
+  return scene;
+}
+
 function camera(): OrthographicCamera {
   const result = new OrthographicCamera(-20, 20, 20, -20, 0.1, 100);
   result.position.set(16, 16, 16);
@@ -571,8 +588,8 @@ describe('SceneSession acceptance', () => {
 
   it('presents the catalog Machine Works consumer replay through sparse scene deltas', () => {
     const catalog = createStudioCatalog();
-    const machineWorks = catalog.scenes?.find(isReplayScene);
-    if (machineWorks === undefined || catalog.recipes === undefined || catalog.parts === undefined
+    const machineWorks = machineWorksReplayScene(catalog.scenes);
+    if (catalog.recipes === undefined || catalog.parts === undefined
       || catalog.scenePoseReplays === undefined) {
       throw new Error('The Studio catalog must provide Machine Works and its replay dependencies.');
     }
@@ -656,8 +673,8 @@ describe('SceneSession acceptance', () => {
 
   it('reports and defensively copies every typed replay event field', () => {
     const catalog = createStudioCatalog();
-    const replayScene = catalog.scenes?.find(isReplayScene);
-    if (replayScene === undefined || catalog.recipes === undefined || catalog.parts === undefined
+    const replayScene = machineWorksReplayScene(catalog.scenes);
+    if (catalog.recipes === undefined || catalog.parts === undefined
       || catalog.scenePoseReplays === undefined) {
       throw new Error('The Studio catalog must provide one complete V4 replay fixture.');
     }
@@ -702,8 +719,8 @@ describe('SceneSession acceptance', () => {
 
   it('owns V4 documents across construction, replacement, inspection, status, and resync', () => {
     const catalog = createStudioCatalog();
-    const catalogScene = catalog.scenes?.find(isReplayScene);
-    if (catalogScene === undefined || catalog.recipes === undefined || catalog.parts === undefined
+    const catalogScene = machineWorksReplayScene(catalog.scenes);
+    if (catalog.recipes === undefined || catalog.parts === undefined
       || catalog.scenePoseReplays === undefined) {
       throw new Error('The Studio catalog must provide one complete V4 replay fixture.');
     }
@@ -779,8 +796,8 @@ describe('SceneSession acceptance', () => {
 
   it('takes private ownership of accepted replay frames, events, and provenance', () => {
     const catalog = createStudioCatalog();
-    const replayScene = catalog.scenes?.find(isReplayScene);
-    if (replayScene === undefined || catalog.recipes === undefined || catalog.parts === undefined
+    const replayScene = machineWorksReplayScene(catalog.scenes);
+    if (catalog.recipes === undefined || catalog.parts === undefined
       || catalog.scenePoseReplays === undefined) {
       throw new Error('The Studio catalog must provide one complete V4 replay fixture.');
     }
@@ -835,8 +852,8 @@ describe('SceneSession acceptance', () => {
 
   it('accepts, owns, reports, and clamps a finite V2 replay', () => {
     const catalog = createStudioCatalog();
-    const replayScene = catalog.scenes?.find(isReplayScene);
-    if (replayScene === undefined || catalog.recipes === undefined || catalog.parts === undefined
+    const replayScene = machineWorksReplayScene(catalog.scenes);
+    if (catalog.recipes === undefined || catalog.parts === undefined
       || catalog.scenePoseReplays === undefined) {
       throw new Error('The Studio catalog must provide one complete V4 replay fixture.');
     }
@@ -889,8 +906,8 @@ describe('SceneSession acceptance', () => {
 
   it('recovers one pose delta resync request with a full snapshot and one retry', () => {
     const catalog = createStudioCatalog();
-    const replayScene = catalog.scenes?.find(isReplayScene);
-    if (replayScene === undefined || catalog.recipes === undefined || catalog.parts === undefined
+    const replayScene = machineWorksReplayScene(catalog.scenes);
+    if (catalog.recipes === undefined || catalog.parts === undefined
       || catalog.scenePoseReplays === undefined) {
       throw new Error('The Studio catalog must provide one complete V4 replay fixture.');
     }
@@ -917,8 +934,8 @@ describe('SceneSession acceptance', () => {
 
   it('stops after one full snapshot when the retried pose delta still requests resync', () => {
     const catalog = createStudioCatalog();
-    const replayScene = catalog.scenes?.find(isReplayScene);
-    if (replayScene === undefined || catalog.recipes === undefined || catalog.parts === undefined
+    const replayScene = machineWorksReplayScene(catalog.scenes);
+    if (catalog.recipes === undefined || catalog.parts === undefined
       || catalog.scenePoseReplays === undefined) {
       throw new Error('The Studio catalog must provide one complete V4 replay fixture.');
     }

@@ -1,6 +1,10 @@
 import RAPIER from '@dimforge/rapier3d-compat';
 
 import {
+  CHAIN_REPLAY_PUSH_STEPS,
+  CHAIN_REPLAY_SETTLE_STEPS,
+} from '../../tools/studio/chain-replay-binding.js';
+import {
   chainLinkPlaneV1,
   CHAIN_INNER_RADIUS_V1,
   CHAIN_LINK_COUNT_V1,
@@ -48,6 +52,22 @@ export interface ChainRunOptionsV1 {
   readonly pushImpulse?: number;
   /** Steps after the push, over which the swing is measured. */
   readonly pushSteps?: number;
+  /**
+   * Shallows the starting curve so gravity has visible work to do. At 1 the
+   * chain begins at equilibrium and barely moves, which proves the solver
+   * agrees with the analytic curve but shows a viewer nothing. Below 1 the
+   * chain starts held up and falls into its drape.
+   */
+  readonly startDipScale?: number;
+  /** Capture a pose per recorded frame, for replay. */
+  readonly recordEveryNthStep?: number;
+}
+
+export interface ChainRecordedFrameV1 {
+  readonly translations: readonly (readonly [number, number, number])[];
+  readonly quaternions: readonly (readonly [number, number, number, number])[];
+  readonly linearVelocities: readonly (readonly [number, number, number])[];
+  readonly angularVelocities: readonly (readonly [number, number, number])[];
 }
 
 export interface ChainPoseV1 {
@@ -79,6 +99,10 @@ export interface ChainRunResultV1 {
   readonly swingRest: number;
   /** True when every link stayed within the world bounds a chain must keep. */
   readonly allLinksHeld: boolean;
+  /** Ordered link indices the recorded frames follow. */
+  readonly recordedLinkIndices: readonly number[];
+  /** One entry per recorded frame, when recording was asked for. */
+  readonly frames: readonly ChainRecordedFrameV1[];
 }
 
 interface CatenaryV1 {
@@ -184,10 +208,12 @@ function neighbourGaps(poses: readonly ChainPoseV1[]): number {
 export async function runChainSimulationV1(
   options: ChainRunOptionsV1 = {},
 ): Promise<ChainRunResultV1> {
-  const settleSteps = options.settleSteps ?? 1_200;
+  const settleSteps = options.settleSteps ?? CHAIN_REPLAY_SETTLE_STEPS;
   const gravityScale = options.gravityScale ?? 1;
   const pushImpulse = options.pushImpulse ?? 0;
-  const pushSteps = options.pushSteps ?? 600;
+  // Long enough for the swing to decay; a short window measures mid-swing
+  // and makes a returning chain look like one that stayed pushed.
+  const pushSteps = options.pushSteps ?? CHAIN_REPLAY_PUSH_STEPS;
 
   await RAPIER.init();
   const world = new RAPIER.World({ x: 0, y: CHAIN_GRAVITY_V1 * gravityScale, z: 0 });
@@ -199,15 +225,17 @@ export async function runChainSimulationV1(
     if (index === options.omitLink) continue;
     const anchored = index === 0 || index === CHAIN_LINK_COUNT_V1 - 1;
     const pose = chainCatenaryPoseV1(index);
+    // Anchors always sit on the true curve; only the free links start high.
+    const dip = anchored ? 1 : (options.startDipScale ?? 1);
     const description = (anchored
       ? RAPIER.RigidBodyDesc.fixed()
       : RAPIER.RigidBodyDesc.dynamic())
-      .setTranslation(pose.x, pose.y, 0)
+      .setTranslation(pose.x, pose.y * dip, 0)
       .setRotation({
         x: 0,
         y: 0,
-        z: Math.sin(pose.angle / 2),
-        w: Math.cos(pose.angle / 2),
+        z: Math.sin((pose.angle * dip) / 2),
+        w: Math.cos((pose.angle * dip) / 2),
       });
     const body = world.createRigidBody(description);
     for (const box of chainLinkColliderBoxesV1(chainLinkPlaneV1(index))) {
@@ -224,7 +252,35 @@ export async function runChainSimulationV1(
     bodies.set(index, body);
   }
 
-  for (let step = 0; step < settleSteps; step += 1) world.step();
+  const recordEvery = options.recordEveryNthStep ?? 0;
+  const ordered = () => [...bodies].sort((a, b) => a[0] - b[0]).map(([, body]) => body);
+  const frames: ChainRecordedFrameV1[] = [];
+  const capture = (): void => {
+    const list = ordered();
+    frames.push({
+      translations: list.map((body) => {
+        const t = body.translation();
+        return [t.x, t.y, t.z] as const;
+      }),
+      quaternions: list.map((body) => {
+        const r = body.rotation();
+        return [r.x, r.y, r.z, r.w] as const;
+      }),
+      linearVelocities: list.map((body) => {
+        const v = body.linvel();
+        return [v.x, v.y, v.z] as const;
+      }),
+      angularVelocities: list.map((body) => {
+        const v = body.angvel();
+        return [v.x, v.y, v.z] as const;
+      }),
+    });
+  };
+  if (recordEvery > 0) capture();
+  for (let step = 0; step < settleSteps; step += 1) {
+    world.step();
+    if (recordEvery > 0 && (step + 1) % recordEvery === 0) capture();
+  }
 
   const settled: ChainPoseV1[] = [];
   for (const [index, body] of [...bodies].sort((a, b) => a[0] - b[0])) {
@@ -243,6 +299,7 @@ export async function runChainSimulationV1(
     middle.applyImpulse({ x: 0, y: 0, z: pushImpulse }, true);
     for (let step = 0; step < pushSteps; step += 1) {
       world.step();
+      if (recordEvery > 0 && (step + 1) % recordEvery === 0) capture();
       swingAmplitude = Math.max(swingAmplitude, Math.abs(middle.translation().z));
     }
     swingRest = Math.abs(middle.translation().z);
@@ -276,6 +333,8 @@ export async function runChainSimulationV1(
     swingAmplitude,
     swingRest,
     allLinksHeld,
+    recordedLinkIndices: [...bodies.keys()].sort((a, b) => a - b),
+    frames,
   };
   world.free();
   return result;

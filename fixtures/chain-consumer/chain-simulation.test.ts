@@ -10,6 +10,9 @@ import {
   CHAIN_LINK_COUNT_V1,
   CHAIN_OUTER_RADIUS_V1,
 } from '../../tools/studio/chain-layout.js';
+import {
+  CHAIN_REPLAY_PUSH_IMPULSE,
+} from '../../tools/studio/chain-replay-binding.js';
 
 /**
  * What the chain actually does when a solver runs it.
@@ -21,7 +24,7 @@ import {
  */
 
 describe('the hanging chain', () => {
-  const settled = runChainSimulationV1({ pushImpulse: 12 });
+  const settled = runChainSimulationV1({ pushImpulse: CHAIN_REPLAY_PUSH_IMPULSE });
 
   it('uses no joints at all', async () => {
     const result = await settled;
@@ -84,17 +87,21 @@ describe('the hanging chain', () => {
 
 describe('the chain ablations', () => {
   it('has nothing to swing it back once gravity is removed', async () => {
-    const withGravity = await runChainSimulationV1({ pushImpulse: 12 });
+    const withGravity = await runChainSimulationV1({ pushImpulse: CHAIN_REPLAY_PUSH_IMPULSE });
     const without = await runChainSimulationV1({
       gravityScale: 0,
-      pushImpulse: 12,
+      pushImpulse: CHAIN_REPLAY_PUSH_IMPULSE,
     });
 
-    // Gravity is the restoring force. With it, the pushed link comes back
-    // toward the hanging plane; without it, nothing pulls it back and it
-    // simply keeps going in the direction it was pushed.
-    expect(withGravity.swingRest).toBeLessThan(withGravity.swingAmplitude * 0.7);
-    expect(without.swingRest).toBeGreaterThan(without.swingAmplitude * 0.9);
+    // Gravity is the restoring force. Compare how much of the swing each run
+    // gives back: with gravity the link returns most of the way, and without
+    // it only link-to-link friction slows it, so it stays where it was pushed.
+    const returned = (run: { swingRest: number; swingAmplitude: number }) =>
+      run.swingRest / run.swingAmplitude;
+
+    expect(returned(withGravity), 'gravity brings it back').toBeLessThan(0.3);
+    expect(returned(without), 'nothing brings it back').toBeGreaterThan(0.7);
+    expect(returned(without)).toBeGreaterThan(returned(withGravity) * 3);
   }, 60_000);
 
   it('settles onto the catenary the analytic curve predicts', async () => {

@@ -1,6 +1,10 @@
 import { addPaletteColor, createEmptyModel, setMotion, setVoxel } from './edit.js';
 import { createHouseholdPhysicalBook } from './household-physical-assets.js';
 import {
+  CHAIN_POSE_REPLAY,
+  CHAIN_POSE_REPLAY_ID,
+} from './generated-chain-replay.js';
+import {
   MACHINE_WORKS_POSE_REPLAY,
   MACHINE_WORKS_POSE_REPLAY_ID,
 } from './generated-machine-works-replay.js';
@@ -507,6 +511,7 @@ export function createStudioCatalog(): StudioCatalogV1 {
     // view opens on something real rather than an empty world.
     scenes: createStudioScenes(),
     scenePoseReplays: {
+      [CHAIN_POSE_REPLAY_ID]: CHAIN_POSE_REPLAY,
       [MACHINE_WORKS_POSE_REPLAY_ID]: MACHINE_WORKS_POSE_REPLAY,
       [RIVERFALL_POSE_REPLAY_ID]: RIVERFALL_POSE_REPLAY,
       [WINDMILL_REPLAY_TRACE_BINDING_V1.replayId]: WINDMILL_POSE_REPLAY,
