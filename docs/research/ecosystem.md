@@ -37,6 +37,24 @@ Its narrow scope fits better than a whole voxel game engine. It has no GitHub re
 
 [Voxel.js](https://voxel.github.io/voxeljs-site/) pioneered modular Three.js voxel games in the browser, but the published [`voxel-engine`](https://www.npmjs.com/package/voxel-engine) release is from the old Three/CommonJS ecosystem and was last published more than a decade ago. Its modular decomposition and meshing references are useful historical design evidence; its runtime dependency graph is not a sound foundation for these strict-ESM, current-Three consumers.
 
+## Physics solver re-check, 2026-07-28
+
+Rapier stays. The re-check found nothing that justifies switching, but it did find two things we are leaving on the table and one credible challenger worth tracking.
+
+**We are behind on Rapier itself.** The fixtures pin `@dimforge/rapier3d-compat` `0.19.3`. Dimforge now ships SIMD-accelerated builds (`rapier3d-simd`), reported as two to five times faster than the 2024 releases and as the fastest browser physics available in mid-2026. Nothing in our use is fast enough to be a problem yet — the chain runs 1,200 steps over 209 colliders in about 60 ms — so this is not urgent. It becomes relevant the moment a many-body scene grows, and it should be measured against the compat build rather than adopted on a benchmark headline, because the compat build exists to avoid a separate WASM-loading step.
+
+**The shape limitation is ours, not the engine's.** [Rapier's documented collider set](https://rapier.rs/docs/user_guides/javascript/colliders/) already includes convex hulls, trimeshes and heightfields. Our `PhysicalAssetV1` validator rejects all three as "future shapes". That matters for the voxel-derived collider direction: the constraint that forced the chain into compound boxes came from our own schema, and boxes turn out to be the right answer for voxel content anyway, but the schema should stop implying the engine cannot do more.
+
+**Jolt is the one to watch.** [Jolt Physics](https://github.com/jrouwe/JoltPhysics.js/) is MIT, mature in C++ (Horizon Forbidden West, Death Stranding 2, and the Godot integration), and its author maintains the official JavaScript port. Early reports put it at roughly twice Rapier's speed on large scenes, and it exposes a `CROSS_PLATFORM_DETERMINISTIC` build option, which matters here because committed pose traces have to regenerate byte-identically. Against that, the JS wrapper is younger than Rapier's, our exact-sidecar adapter is written against Rapier's API, and three fixtures now depend on committed traces that a solver change would invalidate. Revisit if a scene becomes contact-bound, or if cross-platform trace regeneration ever fails on another machine.
+
+These are secondary sources and comparative benchmarks published by third parties. Treat the speed numbers as a reason to measure, not as a measurement.
+
+### On extracting the solver to its own repository
+
+Not yet. Three fixtures — Machine Works, Windmill and the chain — share one 251-line adapter, which is real evidence the solver is its own layer. But all three are fixtures in this repository, and the delivery gate asks for a *consumer* that proves the runtime contract. A fixture proves a boundary; it does not exercise lifecycle, teardown, worker scheduling, or a game's own tick.
+
+Extracting now would freeze the adapter's shape before any game has pushed on it, and a public repository would freeze it in front of an audience. The adapter is small, its seam is named, and moving it later is cheap; publishing a premature API is not. The trigger to revisit is a game consuming it, not a fourth fixture.
+
 ## Taichi and GPU-compute options
 
 There are multiple projects called Taichi.js, which should not be conflated:
