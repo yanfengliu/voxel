@@ -52,6 +52,17 @@ export interface LivePlacementSourceV1 {
   readonly grain: number;
   /** World position of the model centre, matching the replay pose convention. */
   readonly centre: readonly [number, number, number];
+  /**
+   * Starting XYZW orientation, defaulting to identity. A scene whose replay
+   * poses its bodies must seed the live world from those poses: the chain's
+   * links thread only because each lies along its catenary tangent, and
+   * spawning them axis-aligned overlaps ring through ring, which the solver
+   * resolves by blowing the chain apart.
+   */
+  readonly rotation?: readonly [number, number, number, number];
+  /** Starting velocities, defaulting to rest. */
+  readonly linearVelocity?: readonly [number, number, number];
+  readonly angularVelocity?: readonly [number, number, number];
 }
 
 export interface LivePoseV1 {
@@ -143,10 +154,16 @@ export class LivePhysicsSessionV1 {
     kind: 'fixed' | 'dynamic',
   ): void {
     const rapier = this.#rapier;
+    const [rx, ry, rz, rw] = source.rotation ?? [0, 0, 0, 1];
+    const [vx, vy, vz] = source.linearVelocity ?? [0, 0, 0];
+    const [wx, wy, wz] = source.angularVelocity ?? [0, 0, 0];
     const description = (kind === 'fixed'
       ? rapier.RigidBodyDesc.fixed()
       : rapier.RigidBodyDesc.dynamic())
-      .setTranslation(source.centre[0], source.centre[1], source.centre[2]);
+      .setTranslation(source.centre[0], source.centre[1], source.centre[2])
+      .setRotation({ x: rx, y: ry, z: rz, w: rw })
+      .setLinvel(vx, vy, vz)
+      .setAngvel({ x: wx, y: wy, z: wz });
     const body = this.#world.createRigidBody(description);
     const occupancy = modelOccupancyV1(source.model);
     const decomposition = decomposeVoxelsV1(occupancy);

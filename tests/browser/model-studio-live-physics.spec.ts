@@ -70,6 +70,36 @@ test('the chain scene opens in Interact and a mouse drag pulls the chain', async
   await page.waitForFunction(
     () => window.voxelStudio!.livePhysics().stepped > 400,
   );
+  // The chain must actually hold: every link hangs in a bounded band below
+  // its anchors, and neighbours stay within threading reach. The first live
+  // world spawned its rings axis-aligned instead of leaning along the
+  // catenary tangents, so they overlapped, the solver blew them apart, and
+  // the middle of the chain fell out of the world — while this test's
+  // then-weaker assertions stayed green. These bounds make that impossible.
+  const expectChainHeld = async (moment: string): Promise<void> => {
+    const positions = await page.evaluate(
+      () => window.voxelStudio!.livePhysics().positions);
+    const links = Array.from({ length: 11 }, (_, index) =>
+      positions[`link-${String(index).padStart(2, '0')}`]);
+    links.forEach((at, index) => {
+      if (!at) throw new Error(`link-${String(index).padStart(2, '0')} has no live body ${moment}`);
+      expect(at[1], `link ${String(index)} hangs, not falls, ${moment}`)
+        .toBeGreaterThan(-9);
+      expect(at[1], `link ${String(index)} stays below its anchors ${moment}`)
+        .toBeLessThan(1);
+      expect(Math.abs(at[2]), `link ${String(index)} stays near the chain plane ${moment}`)
+        .toBeLessThan(4);
+    });
+    for (let index = 1; index < links.length; index += 1) {
+      const left = links[index - 1]!;
+      const right = links[index]!;
+      expect(
+        Math.hypot(right[0] - left[0], right[1] - left[1], right[2] - left[2]),
+        `links ${String(index - 1)} and ${String(index)} stay threaded ${moment}`,
+      ).toBeLessThan(3);
+    }
+  };
+  await expectChainHeld('after settling');
   const before = await page.evaluate(() =>
     window.voxelStudio!.livePhysics().positions['link-05']);
   if (!before) throw new Error('link-05 has no live body');
@@ -128,25 +158,71 @@ test('the chain scene opens in Interact and a mouse drag pulls the chain', async
   }));
   expect(after.grabbed).toBeNull();
   expect(after.joints).toBe(0);
-  // Released, the chain returns toward its hang rather than staying pulled.
+  // Released, the chain returns toward its hang rather than staying pulled,
+  // and it is still one threaded chain — pulling must not have broken it.
   if (!after.link05) throw new Error('link-05 lost its live position');
   expect(Math.abs(after.link05[2] - before[2]), 'the middle swings back')
     .toBeLessThan(2.5);
+  await expectChainHeld('after release');
   // The authored placement never moved: Interact presents poses, it does not
   // edit the scene — that is the sandbox boundary working.
   expect(after.authored).toEqual(authoredBefore);
 });
 
-test('adjust mode is one click away and returns the editing pointer', async ({ page }) => {
+test('adjust mode is one click away and each mode teaches its pointer', async ({ page }) => {
   await openLiveScene(page, 'studio:scene:chain-links');
+
+  // Interact owns the pointer, and the hint bar says so in as many words.
+  const hint = page.locator('.stagehint');
+  await expect(hint).toContainText('drag a moving part to pull it');
 
   await page.getByRole('button', { name: 'adjust', exact: true }).click();
   expect(await page.evaluate(() => window.voxelStudio!.stageMode()))
     .toBe('adjust');
+  // On a recorded scene Adjust cannot move models; the hint owns that
+  // honestly instead of leaving the mode looking broken.
+  await expect(hint).toContainText("a recorded scene's models cannot be moved");
 
   await page.getByRole('button', { name: 'interact', exact: true }).click();
   expect(await page.evaluate(() => window.voxelStudio!.stageMode()))
     .toBe('interact');
+  await expect(hint).toContainText('drag a moving part to pull it');
+});
+
+test('adjust on an editable live scene moves a model with the mouse', async ({ page }) => {
+  await openLiveScene(page, 'studio:scene:ball-drop');
+  await page.getByRole('button', { name: 'adjust', exact: true }).click();
+  expect(await page.evaluate(() => window.voxelStudio!.stageMode()))
+    .toBe('adjust');
+  const hint = page.locator('.stagehint');
+  await expect(hint).toContainText('drag it to move');
+
+  const canvas = page.locator('.scene-canvas');
+  const box = await canvas.boundingBox();
+  if (!box) throw new Error('the scene canvas has no layout box');
+  const before = await page.evaluate(() =>
+    window.voxelStudio!.sceneState()?.placements
+      .find((p) => p.id === 'bucket')?.at);
+  if (!before) throw new Error('the ball-drop scene has no bucket placement');
+
+  // The bucket fills the middle of the frame; drag it a quarter-screen right.
+  await page.mouse.move(box.x + box.width * 0.5, box.y + box.height * 0.55);
+  await page.mouse.down();
+  await page.mouse.move(box.x + box.width * 0.72, box.y + box.height * 0.55, { steps: 10 });
+  await page.mouse.up();
+
+  const after = await page.evaluate(() => ({
+    selected: window.voxelStudio!.selectedPlacement(),
+    at: window.voxelStudio!.sceneState()?.placements
+      .find((p) => p.id === 'bucket')?.at,
+  }));
+  expect(after.selected).toBe('bucket');
+  if (!after.at) throw new Error('the bucket placement vanished after the drag');
+  const moved = Math.hypot(
+    after.at[0] - before[0],
+    after.at[2] - before[2],
+  );
+  expect(moved, 'the drag moved the bucket across the ground').toBeGreaterThan(1);
 });
 
 test('clicking under the rail drops balls that settle in the bucket', async ({ page }) => {
@@ -154,6 +230,8 @@ test('clicking under the rail drops balls that settle in the bucket', async ({ p
 
   expect(await page.evaluate(() => window.voxelStudio!.stageMode()))
     .toBe('interact');
+  await expect(page.locator('.stagehint'))
+    .toContainText('click under the rail to drop a ball');
 
   const canvas = page.locator('.scene-canvas');
   const box = await canvas.boundingBox();

@@ -72,6 +72,7 @@ import {
 } from './scene-pick.js';
 import { SceneSession, type ScenePoseReplayStatusV1 } from './scene-session.js';
 import { catalogPartsV1, catalogRecipesV1 } from './studio-library.js';
+import { LIVE_PHYSICS_PROFILES_V1 } from './live-physics-profiles.js';
 import { StudioLiveInteract } from './studio-live-interact.js';
 import { createWireframeView } from './wireframe-view.js';
 import { cellSubsetOutlineSegmentsV1, modelWireframeSegmentsV1 } from './wireframe.js';
@@ -395,7 +396,11 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
   const sceneStageHint = 'click a model to select · drag it to move · '
     + 'middle-drag to turn · right-drag or WASD to move view · scroll to zoom';
   const replaySceneStageHint = 'drag to turn · right-drag or WASD to move view · scroll to zoom · '
-    + 'play or scrub the consumer replay';
+    + 'play or scrub the consumer replay · a recorded scene\'s models cannot be moved';
+  const interactStageHint = 'drag a moving part to pull it, release to let go · '
+    + 'nothing is recorded · middle-drag to turn · right-drag or WASD to move view · scroll to zoom';
+  const interactSpawnStageHint =
+    `click under the rail to drop a ball · ${interactStageHint}`;
   const sceneAnnotationStageHint = 'annotation armed · click once to capture this view and phase · '
     + 'middle-drag to turn · right-drag or WASD to move view · Escape to cancel';
   const sceneAnnotationDraftStageHint = 'annotation captured · + marks the exact spot · '
@@ -475,6 +480,11 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
     },
     redraw: () => { drawFrame(lastShownMs); },
     report: (message) => { showViewError(new Error(message), message); },
+    // The hint bar teaches what the left button does, and Interact changes
+    // exactly that, so every mode flip re-teaches it.
+    modeChanged: () => {
+      if (sceneOpen !== null) syncSceneStageHint(sceneOpen);
+    },
   });
   toggles.append(lookSwitch, depthToggle, lightToggle, sceneAnimationToggle,
     wireframeToggle, gridToggle, physToggle, snapToggle,
@@ -1508,7 +1518,17 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
 
     sceneSession = candidateSession;
     sceneOpen = scene;
-    liveInteract.openScene(scene, sceneRecipes, sceneParts);
+    // A replay scene hands Interact its resolved recorded poses, so the live
+    // world starts where the recording starts; the session just validated
+    // this exact catalog replay while accepting the scene.
+    liveInteract.openScene(
+      scene,
+      sceneRecipes,
+      sceneParts,
+      scene.schemaVersion === VOXEL_SCENE_SCHEMA_V4
+        ? catalog.scenePoseReplays?.[scene.poseReplay.id] ?? null
+        : null,
+    );
     sceneAnnotationFingerprintCache = null;
     sceneAnnotationDocumentCache = null;
     clearViewError();
@@ -1687,7 +1707,13 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
     const replayReadOnly = isConsumerReplayScene(scene);
     const lightCount = scene.lights?.length ?? 0;
     const hasMotion = sceneSession?.hasMotion() === true;
-    const normalHint = replayReadOnly ? replaySceneStageHint : sceneStageHint;
+    // In Interact the left button belongs to the live solver, so the hint
+    // teaches the solver's affordances instead of selection or scrubbing.
+    const normalHint = liveInteract.handlesPointer()
+      ? (LIVE_PHYSICS_PROFILES_V1[scene.id]?.spawn === undefined
+        ? interactStageHint
+        : interactSpawnStageHint)
+      : replayReadOnly ? replaySceneStageHint : sceneStageHint;
     const lightingHint = sceneLightingStageHint(
       sceneAnnotationModeOn ? sceneAnnotationStageHint : normalHint,
       lightCount,

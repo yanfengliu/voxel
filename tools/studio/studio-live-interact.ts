@@ -8,6 +8,13 @@ import {
 import { LIVE_PHYSICS_PROFILES_V1 } from './live-physics-profiles.js';
 import type { ValidatedScenePlacementPoseMapV1 } from './scene-pose-delta.js';
 import type { RayV1 } from './scene-pick.js';
+import {
+  sampleValidatedScenePoseReplayV1OrV2,
+} from './scene-pose-replay-sampling.js';
+import type {
+  SampledScenePosePlacementV1,
+  ScenePoseReplayV1OrV2,
+} from './scene-pose-replay.js';
 import type { SceneV1 } from './scene.js';
 
 /**
@@ -34,6 +41,11 @@ export interface StudioLiveInteractHooksV1 {
   readonly redraw: () => void;
   /** Reports a user-visible live-mode failure. */
   readonly report: (message: string) => void;
+  /**
+   * The pointer's meaning changed — a mode switch, a scene open, or the live
+   * world coming up — so anything teaching what the pointer does can catch up.
+   */
+  readonly modeChanged?: () => void;
 }
 
 export interface StudioLiveInteractStateV1 {
@@ -59,8 +71,20 @@ function livePlacementSourcesV1(
   profile: LivePhysicsProfileV1,
   recipes: RecipeBookV1,
   parts: PartShelfV1,
+  poseReplay: ScenePoseReplayV1OrV2 | null,
 ): readonly LivePlacementSourceV1[] {
   const planned = new Set(profile.bodies.map((plan) => plan.placementId));
+  // On a replay scene the recorded opening poses are the truth about where
+  // the bodies stand and how they lie — the chain's links thread only when
+  // each lies tilted along its catenary tangent, which a placement cannot
+  // express. The live world therefore starts exactly where the recording
+  // started, and the sandbox re-lives the recorded story from its opening.
+  const opening = new Map<string, SampledScenePosePlacementV1>(
+    poseReplay === null
+      ? []
+      : sampleValidatedScenePoseReplayV1OrV2(poseReplay, 0)
+        .placements.map((pose) => [pose.placementId, pose]),
+  );
   return scene.placements
     .filter((placement) => planned.has(placement.id))
     .map((placement) => {
@@ -76,15 +100,21 @@ function livePlacementSourcesV1(
       // Scene geometry pivots at the model centre and placements anchor the
       // base at `at.y`, so the body centre sits half the model height above.
       const halfHeight = (model.size[1] * grain) / 2;
+      const recorded = opening.get(placement.id);
       return {
         placementId: placement.id,
         model,
         grain,
-        centre: [
+        centre: recorded?.translation ?? [
           placement.at[0],
           placement.at[1] + halfHeight,
           placement.at[2],
         ] as const,
+        ...(recorded === undefined ? {} : {
+          rotation: recorded.quaternion,
+          linearVelocity: recorded.linearVelocity,
+          angularVelocity: recorded.angularVelocity,
+        }),
       };
     });
 }
@@ -171,12 +201,14 @@ export class StudioLiveInteract {
   /**
    * Adopts the newly opened scene. Returns immediately; the solver world
    * builds in the background and the stage keeps drawing authored poses until
-   * the first live frame lands.
+   * the first live frame lands. A replay scene passes its resolved replay so
+   * the live bodies start at the recording's opening poses.
    */
   openScene(
     scene: SceneV1 | null,
     recipes: RecipeBookV1,
     parts: PartShelfV1,
+    poseReplay: ScenePoseReplayV1OrV2 | null = null,
   ): void {
     this.#closeSession();
     this.#profile = scene === null
@@ -186,13 +218,15 @@ export class StudioLiveInteract {
     // asked for Adjust to be the opt-in, not the other way around.
     this.#mode = this.#profile === null ? 'adjust' : 'interact';
     this.#reflectButtons();
+    this.#hooks.modeChanged?.();
     if (scene === null || this.#profile === null) return;
     const opening = this.#opening + 1;
     this.#opening = opening;
     const profile = this.#profile;
     void (async () => {
       try {
-        const sources = livePlacementSourcesV1(scene, profile, recipes, parts);
+        const sources =
+          livePlacementSourcesV1(scene, profile, recipes, parts, poseReplay);
         const session = await LivePhysicsSessionV1.create(profile, sources);
         if (this.#disposed || this.#opening !== opening
           || this.#profile !== profile) {
@@ -204,6 +238,7 @@ export class StudioLiveInteract {
           this.#hooks.setLivePoseMode(true);
           this.#startLoop();
         }
+        this.#hooks.modeChanged?.();
       } catch (error) {
         this.#hooks.report(
           `Interact mode could not start its live world: `
@@ -231,6 +266,7 @@ export class StudioLiveInteract {
       this.#startLoop();
     }
     this.#reflectButtons();
+    this.#hooks.modeChanged?.();
   }
 
   #stopLoop(): void {
