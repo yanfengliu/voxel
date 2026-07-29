@@ -19,7 +19,10 @@ import { validateSceneV1, type ScenePlacementV1, type SceneV1 } from './scene.js
  * and material are exactly the ones the studio shows for that model on its own,
  * re-keyed and re-instanced. That keeps a model in a scene identical to the
  * model by itself, which is the whole point of a scene being an arrangement of
- * finished models.
+ * finished models. Two stated exceptions, both about water: a translucent
+ * placement never draws study edges, and a recipe declared 'top-film' meshes
+ * as only its up-facing skin — in both cases the full look would paint tile
+ * seams through what a scene presents as one continuous liquid.
  */
 
 const SCENE_WORLD_ID = 'world:maker-scene';
@@ -170,11 +173,19 @@ export function buildSceneSnapshot(
       : { ...group.recipe, seed: mixSeed(group.recipe.seed, group.seed) };
     let model = buildRecipe(seeded, parts, recipes).model;
     if (modelVoxelSizeV1(model) !== group.grain) model = setVoxelSize(model, group.grain);
+    // Translucent water never draws study edges: outlines exist to separate
+    // faces on flat colour, and through a see-through liquid they read as
+    // seams cutting one body into tiles. The solid world keeps the toggle.
+    // A recipe declared 'top-film' meshes as just its up-facing skin here,
+    // because a scene is where the body the film rides on actually exists.
     const built = buildSnapshot(model, {
       revision: 1,
-      ...(look.edges === undefined ? {} : { edges: look.edges }),
+      ...(group.opacity < 1
+        ? { edges: false }
+        : look.edges === undefined ? {} : { edges: look.edges }),
       ...(look.lit === undefined ? {} : { lit: look.lit }),
       ...(look.wireframe === undefined ? {} : { wireframe: look.wireframe }),
+      ...(group.recipe.surface === undefined ? {} : { surface: group.recipe.surface }),
     });
     const geometry = built.resources.find((resource) => resource.kind === 'geometry');
     const material = built.resources.find((resource) => resource.kind === 'material');

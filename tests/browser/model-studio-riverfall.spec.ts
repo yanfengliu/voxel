@@ -115,7 +115,7 @@ test('Riverfall presents one coherent simulated surface from river through outfl
   const phaseZero = await page.evaluate(() => window.voxelStudio!.drawAt(0));
   expect(phaseZero.sceneRender).toEqual({
     drawCalls: 23,
-    triangles: 49_868,
+    triangles: 42_204,
     points: 0,
     lines: 0,
     instanceBatches: 23,
@@ -280,7 +280,10 @@ test('Riverfall presents one coherent simulated surface from river through outfl
       studio.drawAt(0);
     }
   });
-  expect(motionPixels.masked).toBeGreaterThan(10_000);
+  // The film water blends one to three translucent layers instead of the old
+  // boxy four, so fewer pixels read as saturated blue in every phase; the
+  // mask floor only guards that the sample stays large, not how blue it is.
+  expect(motionPixels.masked).toBeGreaterThan(5_000);
   expect(
     motionPixels.ratio,
     `Riverfall visibly changed ${String(motionPixels.changed)} of ${
@@ -331,7 +334,7 @@ test('Riverfall presents one coherent simulated surface from river through outfl
   });
   expect(overhead.draw.sceneRender).toMatchObject({
     drawCalls: 23,
-    triangles: 49_868,
+    triangles: 42_204,
     instances: EXPECTED_INSTANCE_COUNT,
   });
   await expect(canvas).toHaveScreenshot('model-studio-riverfall-overhead.png', {

@@ -1,5 +1,10 @@
 import type { RenderSnapshotV1 } from '../../src/core/index.js';
-import { addFaceOutlines, DensePaletteChunk, meshVisibleFaces } from '../../src/meshing/index.js';
+import {
+  addFaceOutlines,
+  DensePaletteChunk,
+  meshVisibleFaces,
+  type VisibleFaceMesh,
+} from '../../src/meshing/index.js';
 
 import { modelVoxelSizeV1, validateModelV1, type StudioModelV1 } from './model.js';
 
@@ -74,6 +79,14 @@ export interface BuildOptionsV1 {
    * visible surface, so this wins over both. Defaults to off (solid).
    */
   readonly wireframe?: boolean;
+  /**
+   * 'top-film' keeps only the faces that look up in model space. A film is
+   * the moving skin of a continuous body: its sides and underside are always
+   * inside that body, so drawing them would put walls inside one liquid. The
+   * mesh stays centred on the whole model's middle, so the film sits exactly
+   * where the full body's top surface would be. Omitted keeps every face.
+   */
+  readonly surface?: 'top-film';
 }
 
 export class ModelBuildError extends Error {
@@ -218,10 +231,12 @@ export function buildSnapshot(
 
   // The engine's own mesher, not a copy of it. A studio that meshed models its
   // own way would be inspecting its own approximation of what the game draws.
-  const bare = meshVisibleFaces(
+  const whole = meshVisibleFaces(
     new DensePaletteChunk({ origin: { x: 0, y: 0, z: 0 }, size: { x: sx, y: sy, z: sz }, voxels }),
     { positionSpace: 'source-local' },
   );
+  const filmed = options.surface === 'top-film';
+  const bare = filmed ? keepUpwardFaces(whole) : whole;
 
   // Nothing filled means nothing to draw. An empty model is an ordinary
   // thing -- the New button starts one, and every recipe's construction
@@ -278,7 +293,9 @@ export function buildSnapshot(
   // axis by however much empty space sits on one side, and it swings by
   // exactly that. Measuring the rendered centroid of a pure spin is what caught
   // that: 39 px of drift where zero was the whole claim.
-  const raw = boundsOf(mesh.positions, sx, sy, sz);
+  // A film centres on the whole body it was cut from, not on its own flat
+  // bounds — centring on the film alone would sink it to the body's midline.
+  const raw = boundsOf((filmed ? whole : mesh).positions, sx, sy, sz);
   const middle = options.centerOn ?? {
     x: (raw.min.x + raw.max.x) / 2,
     y: (raw.min.y + raw.max.y) / 2,
@@ -374,6 +391,51 @@ export function buildSnapshot(
         },
       },
     ],
+  };
+}
+
+/**
+ * The faces of a meshed model that look up in model space, quad for quad.
+ * The mesher emits four vertices per face with one shared flat normal, so a
+ * face keeps or goes whole, and the two triangles per kept face are rebuilt
+ * in the mesher's own winding. Everything else about the mesh is untouched.
+ */
+function keepUpwardFaces(mesh: VisibleFaceMesh): VisibleFaceMesh {
+  const kept: number[] = [];
+  for (let face = 0; face < mesh.faceCount; face += 1) {
+    if ((mesh.normals[face * 12 + 1] ?? 0) > 0.5) kept.push(face);
+  }
+  if (kept.length === mesh.faceCount) return mesh;
+  const positions = new Float32Array(kept.length * 12);
+  const normals = new Float32Array(kept.length * 12);
+  const paletteIndices = new Uint16Array(kept.length * 4);
+  const indices = new Uint32Array(kept.length * 6);
+  let minX = Infinity; let minY = Infinity; let minZ = Infinity;
+  let maxX = -Infinity; let maxY = -Infinity; let maxZ = -Infinity;
+  kept.forEach((face, slot) => {
+    positions.set(mesh.positions.subarray(face * 12, face * 12 + 12), slot * 12);
+    normals.set(mesh.normals.subarray(face * 12, face * 12 + 12), slot * 12);
+    paletteIndices.set(mesh.paletteIndices.subarray(face * 4, face * 4 + 4), slot * 4);
+    const base = slot * 4;
+    indices.set([base, base + 1, base + 2, base, base + 2, base + 3], slot * 6);
+    for (let corner = 0; corner < 4; corner += 1) {
+      const x = positions[(base + corner) * 3] ?? 0;
+      const y = positions[(base + corner) * 3 + 1] ?? 0;
+      const z = positions[(base + corner) * 3 + 2] ?? 0;
+      minX = Math.min(minX, x); minY = Math.min(minY, y); minZ = Math.min(minZ, z);
+      maxX = Math.max(maxX, x); maxY = Math.max(maxY, y); maxZ = Math.max(maxZ, z);
+    }
+  });
+  return {
+    positions,
+    normals,
+    paletteIndices,
+    indices,
+    voxelCount: mesh.voxelCount,
+    faceCount: kept.length,
+    bounds: kept.length === 0
+      ? null
+      : { min: [minX, minY, minZ], max: [maxX, maxY, maxZ] },
   };
 }
 

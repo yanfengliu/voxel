@@ -30,7 +30,11 @@ export interface RiverfallSurfaceCellV1 {
   readonly baseTranslation: Vec3;
   /** Unit direction in which the reconstructed surface may move. */
   readonly normal: Vec3;
-  /** Fixed XYZW orientation from the tile's local axes into world axes. */
+  /**
+   * Base XYZW orientation from the tile's local axes into world axes. The
+   * replay leans each pose off this base by the reconstructed field's local
+   * slope, bounded by the presentation's declared tilt cap.
+   */
   readonly quaternion: readonly [number, number, number, number];
   /** Exact world-space footprint dimensions before normal excursion. */
   readonly worldSize: Vec3;
@@ -104,10 +108,11 @@ function lipCells(): RiverfallSurfaceCellV1[] {
 }
 
 /**
- * Exact, non-overlapping tiling of every opaque Riverfall water footprint.
+ * Exact, non-overlapping tiling of every Riverfall water footprint.
  *
  * The authored cells tile each water opening exactly. Replay centers move only
- * along the local normal, so every posed footprint remains bank-contained.
+ * along the local normal, and poses lean off the base orientation only within
+ * the declared tilt cap, so every posed footprint remains bank-contained.
  */
 export const RIVERFALL_SURFACE_CELLS_V1: readonly RiverfallSurfaceCellV1[] =
   Object.freeze([

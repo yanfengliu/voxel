@@ -178,8 +178,11 @@ export function createRiverfallFluidSurfaceRecipe(): RecipeV1 {
     label: 'Fluid surface tile',
     seed: 1,
     size: [2, 1, 2],
-    summary: 'A shared blue tile displaced by the local fluid presentation field.',
+    summary: 'A shared blue film tile displaced by the local fluid presentation field. '
+      + 'A scene draws only its top skin: its sides and underside ride inside the '
+      + 'same-colour underfill, so drawing them would tile one liquid into cubes.',
     tags: ['water', 'fluid', 'surface-cell'],
+    surface: 'top-film',
     roles: ['empty', 'water'],
     palette: [EMPTY, SURFACE_WATER],
     steps: [
@@ -196,8 +199,10 @@ export function createRiverfallFluidSurfaceSeamRecipe(): RecipeV1 {
     label: 'Fluid surface seam',
     seed: 1,
     size: [2, 1, 1],
-    summary: 'A half-depth blue tile that closes the waterfall lip without overhang.',
+    summary: 'A half-depth blue film tile that closes the waterfall lip without '
+      + 'overhang, drawn as its top skin like every other surface cell.',
     tags: ['water', 'fluid', 'surface-cell', 'seam'],
+    surface: 'top-film',
     roles: ['empty', 'water'],
     palette: [EMPTY, SURFACE_WATER],
     steps: [

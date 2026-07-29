@@ -65,7 +65,7 @@ export interface RiverfallFluidConfigV1 {
   readonly presentation: {
     readonly schemaVersion: 'studio.riverfall-fluid-surface-presentation/1';
     readonly reconstruction:
-      'visible-particle-compact-kernel-advected-wave-field/2';
+      'visible-particle-compact-kernel-advected-wave-field/3';
     readonly surfaceModelId: typeof RIVERFALL_SURFACE_MODEL_ID;
     readonly seamModelId: typeof RIVERFALL_SURFACE_SEAM_MODEL_ID;
     readonly cellCount: number;
@@ -100,6 +100,20 @@ export interface RiverfallFluidConfigV1 {
       readonly localOccupancy: number;
     };
     readonly normalExcursion: readonly [number, number];
+    /**
+     * Each cell leans so its normal follows the reconstructed height field's
+     * local slope toward its same-plane neighbours. This is what lets a light
+     * shade a passing wave: a film that only translates keeps one normal and
+     * reads as still. The slope is exaggerated by the declared gain — the
+     * reconstructed field is deliberately smooth, and the true 2-degree lean
+     * would vanish under flat shading — and hard-capped so no footprint can
+     * lean past legibility into overhang.
+     */
+    readonly surfaceTilt: {
+      readonly rule: 'same-plane-neighbour-slope-least-squares/1';
+      readonly gain: number;
+      readonly maxRadians: number;
+    };
   };
   readonly domain: RiverfallFluidDomainV1;
   readonly recording: {
@@ -258,7 +272,7 @@ export function createRiverfallFluidConfigV1(
     presentation: {
       schemaVersion: 'studio.riverfall-fluid-surface-presentation/1',
       reconstruction:
-        'visible-particle-compact-kernel-advected-wave-field/2',
+        'visible-particle-compact-kernel-advected-wave-field/3',
       surfaceModelId: RIVERFALL_SURFACE_MODEL_ID,
       seamModelId: RIVERFALL_SURFACE_SEAM_MODEL_ID,
       cellCount: RIVERFALL_SURFACE_CELL_COUNT,
@@ -293,6 +307,11 @@ export function createRiverfallFluidConfigV1(
         localOccupancy: 0.08,
       },
       normalExcursion: [0.03, 0.44],
+      surfaceTilt: {
+        rule: 'same-plane-neighbour-slope-least-squares/1',
+        gain: 8,
+        maxRadians: 0.35,
+      },
     },
     domain: RIVERFALL_FLUID_DOMAIN_V1,
     recording: {

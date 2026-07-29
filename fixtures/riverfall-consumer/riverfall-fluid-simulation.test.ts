@@ -418,9 +418,25 @@ describe('Riverfall deterministic 2D PBF', () => {
         const quaternion = Array.from(surface.rotations.subarray(
           rotationOffset,
           rotationOffset + 4,
-        ));
+        )) as [number, number, number, number];
         expect(Math.hypot(...quaternion)).toBeCloseTo(1, 5);
-        expect(quaternion).toEqual(cell.quaternion.map(Math.fround));
+        // The pose may lean off the authored orientation only by the declared
+        // slope tilt: bounded by the cap, and never a spin about the normal.
+        const [qx, qy, qz, qw] = quaternion;
+        const [bx, by, bz, bw] = cell.quaternion;
+        const leanX = qw * -bx + bw * qx + qy * -bz - qz * -by;
+        const leanY = qw * -by + bw * qy + qz * -bx - qx * -bz;
+        const leanZ = qw * -bz + bw * qz + qx * -by - qy * -bx;
+        const leanW = Math.abs(qw * bw - qx * -bx - qy * -by - qz * -bz);
+        const leanAngle = 2 * Math.atan2(Math.hypot(leanX, leanY, leanZ), leanW);
+        expect(leanAngle).toBeLessThanOrEqual(
+          surface.config.presentation.surfaceTilt.maxRadians + 1e-3,
+        );
+        expect(Math.abs(
+          leanX * cell.normal[0]
+          + leanY * cell.normal[1]
+          + leanZ * cell.normal[2],
+        )).toBeLessThan(1e-3);
       }
       expect(minimumExcursion, cell.id).toBeGreaterThanOrEqual(
         surface.config.presentation.normalExcursion[0] - 1e-6,
@@ -430,8 +446,14 @@ describe('Riverfall deterministic 2D PBF', () => {
       );
       expect(maximumExcursion - minimumExcursion, cell.id).toBeGreaterThan(1e-4);
     }
+    // The waves lean the cells, so the recorded angular velocities are the
+    // honest finite differences of those leans: finite, bounded, and nonzero
+    // somewhere — an all-zero field would claim the tilts never move.
     expect(Array.from(surface.angularVelocities).every(
-      (velocity) => velocity === 0,
+      (velocity) => Number.isFinite(velocity) && Math.abs(velocity) < 40,
+    )).toBe(true);
+    expect(Array.from(surface.angularVelocities).some(
+      (velocity) => velocity !== 0,
     )).toBe(true);
     for (let cell = 0; cell < surface.placementIds.length; cell += 1) {
       const firstVector = cell * 3;

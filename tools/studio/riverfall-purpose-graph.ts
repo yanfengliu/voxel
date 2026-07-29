@@ -377,15 +377,18 @@ const PRESENTATION_SPECS: readonly PresentationSpecV1[] = [
     key: 'normal-displacement',
     label: 'Normal displacement',
     job:
-      'Move tile centres along the local surface normal so the sheet has '
-      + 'visible relief without leaving its banks.',
+      'Move tile centres along the local surface normal, and lean each tile '
+      + 'by the field\'s local slope, so a passing wave both lifts and shades '
+      + 'without the sheet leaving its banks. The lean is what a light needs: '
+      + 'a film that only translates keeps one normal and reads as still.',
     requiredBy: Object.freeze([id('riverfall:presentation:surface-tile-grid')]),
     evidence: {
       kind: 'bound',
-      proofId: 'riverfall bank-containment and displacement bound tests',
+      proofId: 'riverfall bank-containment and tilt-cap bound tests',
       establishes: Object.freeze([
-        'Fixed-orientation tile centres move only along the local normal and '
-        + 'their footprints stay bank-contained.',
+        'Tile centres move only along the local normal, poses lean off the '
+        + 'base orientation only within the declared tilt cap with no spin '
+        + 'about the normal, and their footprints stay bank-contained.',
       ]),
     },
   },

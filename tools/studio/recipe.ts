@@ -162,6 +162,16 @@ export interface RecipeV1 {
   readonly summary?: string;
   /** Free tags for search, e.g. ['furniture', 'seating']. Optional. */
   readonly tags?: readonly string[];
+  /**
+   * How a scene draws this model's placements. 'top-film' keeps only the
+   * up-facing surfaces: the model is a moving skin over a continuous body of
+   * the same material, so its sides and underside always press against that
+   * body, and drawing them would paint interior walls inside one liquid.
+   * Omitted means the full closed surface, right for every solid thing.
+   * Opened alone on the stage, the model still shows its full voxel body —
+   * the film applies where the body it rides on exists, which is a scene.
+   */
+  readonly surface?: 'top-film';
   /** One name per palette slot; `roles[0]` is always 'empty'. Parts paint
    * names, the palette gives the names colours: shared bones, per-game skin. */
   readonly roles: readonly string[];
@@ -253,6 +263,12 @@ export function validateRecipeV1(value: unknown): readonly GenomeIssueV1[] {
   if (recipe.tags !== undefined
     && (!Array.isArray(recipe.tags) || !recipe.tags.every((tag) => typeof tag === 'string'))) {
     issues.push({ path: '$.tags', message: 'Expected an array of strings, or omit it.' });
+  }
+  if (recipe.surface !== undefined && recipe.surface !== 'top-film') {
+    issues.push({
+      path: '$.surface',
+      message: `Expected 'top-film', or omit it for the full closed surface; got ${JSON.stringify(recipe.surface)}.`,
+    });
   }
 
   const paletteLength = Array.isArray(recipe.palette) ? recipe.palette.length : 0;

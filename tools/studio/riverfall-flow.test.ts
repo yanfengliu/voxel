@@ -80,7 +80,7 @@ describe('Riverfall generated fluid replay', () => {
     expect(RIVERFALL_FLUID_SURFACE_PRESENTATION).toEqual({
       schemaVersion: 'studio.riverfall-fluid-surface-presentation/1',
       reconstruction:
-        'visible-particle-compact-kernel-advected-wave-field/2',
+        'visible-particle-compact-kernel-advected-wave-field/3',
       surfaceModelId: 'studio:riverfall:surface-cell',
       seamModelId: 'studio:riverfall:surface-seam',
       cellCount: 321,
@@ -115,6 +115,11 @@ describe('Riverfall generated fluid replay', () => {
         localOccupancy: 0.08,
       },
       normalExcursion: [0.03, 0.44],
+      surfaceTilt: {
+        rule: 'same-plane-neighbour-slope-least-squares/1',
+        gain: 8,
+        maxRadians: 0.35,
+      },
     });
     expect(RIVERFALL_FLUID_SURFACE_SUPPORT).toMatchObject({
       metric: 'world-euclidean/1',
@@ -293,18 +298,43 @@ describe('Riverfall generated fluid replay', () => {
     ).toBeLessThanOrEqual(0.08);
   });
 
-  it('keeps every posed footprint bank-contained with a fixed orientation', () => {
+  it('keeps every posed footprint bank-contained within the declared tilt cap', () => {
+    // A cell may lean so a passing wave shades under the light, but only by
+    // the declared slope-derived tilt: the angle between the posed normal and
+    // the authored one stays inside maxRadians, so no footprint can lean past
+    // legibility into overhang, and the tilt axis stays in the cell's plane —
+    // the cell never spins about its own normal.
+    const cap = RIVERFALL_FLUID_SURFACE_PRESENTATION.surfaceTilt.maxRadians;
+    let maximumTilt = 0;
+    let tiltedSamples = 0;
     RIVERFALL_POSE_REPLAY.tracks.forEach((track, index) => {
       const cell = RIVERFALL_SURFACE_CELLS_V1[index]!;
+      const [bx, by, bz, bw] = cell.quaternion;
       for (let frame = 0; frame < RIVERFALL_FLOW_FRAME_COUNT; frame += 1) {
         const offset = frame * 4;
-        expect(Array.from(track.quaternions.subarray(offset, offset + 4)))
-          .toEqual(cell.quaternion.map(Math.fround));
+        const [qx, qy, qz, qw] = Array.from(
+          track.quaternions.subarray(offset, offset + 4),
+        ) as [number, number, number, number];
+        // lean = posed ⊗ conjugate(base): the world-frame rotation applied on
+        // top of the authored orientation.
+        const lx = qw * -bx + bw * qx + qy * -bz - qz * -by;
+        const ly = qw * -by + bw * qy + qz * -bx - qx * -bz;
+        const lz = qw * -bz + bw * qz + qx * -by - qy * -bx;
+        const lw = Math.abs(qw * bw - qx * -bx - qy * -by - qz * -bz);
+        const angle = 2 * Math.atan2(Math.hypot(lx, ly, lz), lw);
+        maximumTilt = Math.max(maximumTilt, angle);
+        if (angle > 0.01) tiltedSamples += 1;
+        // The lean axis is perpendicular to the cell normal: no spin about it.
+        const alongNormal = lx * cell.normal[0]
+          + ly * cell.normal[1] + lz * cell.normal[2];
+        expect(Math.abs(alongNormal)).toBeLessThan(1e-3);
       }
-      expect(Array.from(track.angularVelocities).every(
-        (velocity) => velocity === 0,
-      )).toBe(true);
     });
+    expect(maximumTilt).toBeLessThanOrEqual(cap + 1e-3);
+    expect(
+      tiltedSamples,
+      'the wave visibly leans some cells; an everywhere-flat field would hide the motion',
+    ).toBeGreaterThan(RIVERFALL_FLUID_SURFACE_CELL_COUNT);
   });
 
   it('closes through frame zero without a reset pop or high-speed bridge', () => {

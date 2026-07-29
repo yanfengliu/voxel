@@ -28,7 +28,11 @@ describe('Riverfall fluid canonical input', () => {
     expect(encoded).toContain('"fallToPondRestitution":0.08');
     expect(encoded).toContain('"numericMode":"float32-state/fixed-order-jacobi"');
     expect(encoded).toContain(
-      '"reconstruction":"visible-particle-compact-kernel-advected-wave-field/2"',
+      '"reconstruction":"visible-particle-compact-kernel-advected-wave-field/3"',
+    );
+    expect(encoded).toContain(
+      '"surfaceTilt":{"gain":8,"maxRadians":0.35,'
+      + '"rule":"same-plane-neighbour-slope-least-squares/1"}',
     );
     expect(encoded).toContain('"surfaceModelId":"studio:riverfall:surface-cell"');
     expect(encoded).toContain('"seamModelId":"studio:riverfall:surface-seam"');

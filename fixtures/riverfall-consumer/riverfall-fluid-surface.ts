@@ -16,6 +16,7 @@ import {
 } from './riverfall-fluid-config.js';
 import {
   closeRiverfallSurfaceSignalLoopV1,
+  writeRiverfallSurfaceAngularVelocitiesV1,
   writeRiverfallSurfaceVelocitiesV1,
 } from './riverfall-fluid-surface-loop.js';
 
@@ -260,6 +261,149 @@ function surfaceNeighbors(
   ));
 }
 
+type Vec3 = readonly [number, number, number];
+type Quaternion = readonly [number, number, number, number];
+
+interface SurfaceTiltFrameV1 {
+  /** Unit in-plane axes completing the cell normal's frame. */
+  readonly axisA: Vec3;
+  readonly axisB: Vec3;
+  /** Same-plane neighbours as (index, in-plane offset along A/B) pairs. */
+  readonly neighbours: readonly {
+    readonly cell: number;
+    readonly alongA: number;
+    readonly alongB: number;
+  }[];
+}
+
+function scaled(vector: Vec3, factor: number): Vec3 {
+  return [vector[0] * factor, vector[1] * factor, vector[2] * factor];
+}
+
+/**
+ * Each cell's tilt frame: an orthonormal in-plane basis plus the same-plane
+ * neighbours whose excursion differences define the local slope. Neighbours
+ * with a different authored normal — the fold from the lip onto the fall —
+ * are excluded, because a slope across a fold is not a slope of either plane.
+ */
+function surfaceTiltFrames(
+  cells: readonly RiverfallSurfaceCellV1[],
+): readonly SurfaceTiltFrameV1[] {
+  const neighbours = surfaceNeighbors(cells);
+  return cells.map((cell, cellIndex) => {
+    const n = cell.normal;
+    // The world x axis is never parallel to an authored surface normal, so
+    // projecting it into the plane always yields a usable first axis.
+    const xDotN = n[0];
+    const rawA: Vec3 = [1 - xDotN * n[0], -xDotN * n[1], -xDotN * n[2]];
+    const aLength = Math.hypot(...rawA);
+    const axisA = scaled(rawA, 1 / aLength);
+    const axisB: Vec3 = [
+      n[1] * axisA[2] - n[2] * axisA[1],
+      n[2] * axisA[0] - n[0] * axisA[2],
+      n[0] * axisA[1] - n[1] * axisA[0],
+    ];
+    return {
+      axisA,
+      axisB,
+      neighbours: neighbours[cellIndex]!.flatMap((candidateIndex) => {
+        const candidate = cells[candidateIndex]!;
+        const sameNormal = candidate.normal[0] * n[0]
+          + candidate.normal[1] * n[1]
+          + candidate.normal[2] * n[2] > 0.999;
+        if (!sameNormal) return [];
+        const offset: Vec3 = [
+          candidate.baseTranslation[0] - cell.baseTranslation[0],
+          candidate.baseTranslation[1] - cell.baseTranslation[1],
+          candidate.baseTranslation[2] - cell.baseTranslation[2],
+        ];
+        return [{
+          cell: candidateIndex,
+          alongA: offset[0] * axisA[0] + offset[1] * axisA[1] + offset[2] * axisA[2],
+          alongB: offset[0] * axisB[0] + offset[1] * axisB[1] + offset[2] * axisB[2],
+        }];
+      }),
+    };
+  });
+}
+
+/**
+ * The pose quaternion for one cell at one frame: the authored orientation,
+ * leaned so the film's normal follows the local slope of the excursion field
+ * scaled by the declared gain and clamped to the declared cap. The lean is
+ * built from vectors — a least-squares in-plane gradient, a tilted normal,
+ * and the half-vector rotation between the two — so the only transcendentals
+ * are the square roots and the one tangent of the constant cap.
+ */
+function tiltedCellQuaternion(
+  cell: RiverfallSurfaceCellV1,
+  frame: SurfaceTiltFrameV1,
+  excursionOf: (cellIndex: number) => number,
+  ownIndex: number,
+  gain: number,
+  maxTangent: number,
+): Quaternion {
+  let sumAA = 0;
+  let sumAB = 0;
+  let sumBB = 0;
+  let sumAe = 0;
+  let sumBe = 0;
+  const own = excursionOf(ownIndex);
+  for (const neighbour of frame.neighbours) {
+    const delta = excursionOf(neighbour.cell) - own;
+    sumAA += neighbour.alongA * neighbour.alongA;
+    sumAB += neighbour.alongA * neighbour.alongB;
+    sumBB += neighbour.alongB * neighbour.alongB;
+    sumAe += neighbour.alongA * delta;
+    sumBe += neighbour.alongB * delta;
+  }
+  const determinant = sumAA * sumBB - sumAB * sumAB;
+  let gradientA = 0;
+  let gradientB = 0;
+  if (determinant > 1e-9) {
+    gradientA = (sumBB * sumAe - sumAB * sumBe) / determinant;
+    gradientB = (sumAA * sumBe - sumAB * sumAe) / determinant;
+  } else if (sumAA > 1e-9) {
+    gradientA = sumAe / sumAA;
+  } else if (sumBB > 1e-9) {
+    gradientB = sumBe / sumBB;
+  }
+  let leanA = gradientA * gain;
+  let leanB = gradientB * gain;
+  const leanLength = Math.hypot(leanA, leanB);
+  if (leanLength > maxTangent) {
+    leanA *= maxTangent / leanLength;
+    leanB *= maxTangent / leanLength;
+  }
+  if (leanLength < 1e-12) return cell.quaternion;
+  const n = cell.normal;
+  const rawTilted: Vec3 = [
+    n[0] - leanA * frame.axisA[0] - leanB * frame.axisB[0],
+    n[1] - leanA * frame.axisA[1] - leanB * frame.axisB[1],
+    n[2] - leanA * frame.axisA[2] - leanB * frame.axisB[2],
+  ];
+  const tilted = scaled(rawTilted, 1 / Math.hypot(...rawTilted));
+  const halfRaw: Vec3 = [
+    n[0] + tilted[0],
+    n[1] + tilted[1],
+    n[2] + tilted[2],
+  ];
+  const half = scaled(halfRaw, 1 / Math.hypot(...halfRaw));
+  const lean: Quaternion = [
+    n[1] * half[2] - n[2] * half[1],
+    n[2] * half[0] - n[0] * half[2],
+    n[0] * half[1] - n[1] * half[0],
+    n[0] * half[0] + n[1] * half[1] + n[2] * half[2],
+  ];
+  const base = cell.quaternion;
+  return [
+    lean[3] * base[0] + base[3] * lean[0] + lean[1] * base[2] - lean[2] * base[1],
+    lean[3] * base[1] + base[3] * lean[1] + lean[2] * base[0] - lean[0] * base[2],
+    lean[3] * base[2] + base[3] * lean[2] + lean[0] * base[1] - lean[1] * base[0],
+    lean[3] * base[3] - lean[0] * base[0] - lean[1] * base[1] - lean[2] * base[2],
+  ];
+}
+
 function smoothSurfaceSignals(
   rawSignals: Float32Array,
   frameCount: number,
@@ -384,14 +528,20 @@ export function reconstructRiverfallFluidSurfaceV1(
   const rotations = new Float32Array(surfaceFrameCount * cells.length * 4);
   const linearVelocities = new Float32Array(vectorCount);
   const angularVelocities = new Float32Array(vectorCount);
+  const [minimumExcursion, maximumExcursion] =
+    trace.config.presentation.normalExcursion;
+  const excursions = new Float64Array(surfaceFrameCount * cells.length);
+  for (let sample = 0; sample < excursions.length; sample += 1) {
+    excursions[sample] = minimumExcursion
+      + signals[sample]! * (maximumExcursion - minimumExcursion);
+  }
+  const tiltFrames = surfaceTiltFrames(cells);
+  const tilt = trace.config.presentation.surfaceTilt;
+  const maxTiltTangent = Math.tan(tilt.maxRadians);
   for (let frame = 0; frame < surfaceFrameCount; frame += 1) {
     for (let cellIndex = 0; cellIndex < cells.length; cellIndex += 1) {
       const cell = cells[cellIndex]!;
-      const signal = signals[frame * cells.length + cellIndex]!;
-      const [minimumExcursion, maximumExcursion] =
-        trace.config.presentation.normalExcursion;
-      const excursion = minimumExcursion
-        + signal * (maximumExcursion - minimumExcursion);
+      const excursion = excursions[frame * cells.length + cellIndex]!;
       const vectorOffset = (frame * cells.length + cellIndex) * 3;
       translations[vectorOffset] = Math.fround(
         cell.baseTranslation[0] + cell.normal[0] * excursion,
@@ -403,7 +553,14 @@ export function reconstructRiverfallFluidSurfaceV1(
         cell.baseTranslation[2] + cell.normal[2] * excursion,
       );
       rotations.set(
-        cell.quaternion,
+        tiltedCellQuaternion(
+          cell,
+          tiltFrames[cellIndex]!,
+          (other) => excursions[frame * cells.length + other]!,
+          cellIndex,
+          tilt.gain,
+          maxTiltTangent,
+        ),
         (frame * cells.length + cellIndex) * 4,
       );
     }
@@ -411,6 +568,13 @@ export function reconstructRiverfallFluidSurfaceV1(
   writeRiverfallSurfaceVelocitiesV1(
     translations,
     linearVelocities,
+    surfaceFrameCount,
+    cells.length,
+    trace.fixedStepMs,
+  );
+  writeRiverfallSurfaceAngularVelocitiesV1(
+    rotations,
+    angularVelocities,
     surfaceFrameCount,
     cells.length,
     trace.fixedStepMs,
