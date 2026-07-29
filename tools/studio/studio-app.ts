@@ -2350,7 +2350,10 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
     runViewAction(() => { harness.setViewAngles(zoomOrbit(orbit, Math.sign(event.deltaY))); });
   }, { passive: false });
   canvasWrap.addEventListener('dblclick', (event) => {
-    if (sceneOpen !== null && sceneNotesPanel.editorOpen) {
+    // Re-centring frames one model: the default orbit and the world origin say
+    // nothing about a scene, so snapping there discards the view its owner
+    // built. No scene stage hint offers the gesture, in any kind of scene.
+    if (sceneOpen !== null) {
       event.preventDefault();
       return;
     }
@@ -2366,7 +2369,6 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
     const matchingOpenIntent = openedIntent !== null
       && event.detail === 2
       && sameClickPosition
-      && sceneOpen === null
       && session.model.id === openedIntent.modelId
       && pendingMoment?.timeMs === openedIntent.timeMs
       && pendingMoment.u === openedIntent.u

@@ -25,6 +25,7 @@ type HorizontalAxis = 0 | 2;
 
 const STUDIO_ROOT = resolve('tools/studio');
 const MACHINE_WORKS_SCENE_ID = 'studio:scene:contrast-machines';
+const EDITABLE_SCENE_ID = 'studio:scene:village';
 const DENSE_LIGHT_SCENE_ID = 'studio:scene:lighting-1000';
 
 let server: ViteDevServer | undefined;
@@ -75,6 +76,14 @@ async function viewCenter(page: Page): Promise<ViewCenter> {
   return page.evaluate(() => window.voxelStudio!.viewCenter());
 }
 
+/** Where the camera stands and what it frames, as one comparable value. */
+async function stageView(page: Page): Promise<unknown> {
+  return page.evaluate(() => ({
+    center: window.voxelStudio!.viewCenter(),
+    view: window.voxelStudio!.viewState(),
+  }));
+}
+
 async function privateViewCenter(
   page: Page,
   which: keyof NavigationTestMounts,
@@ -86,7 +95,7 @@ async function privateViewCenter(
   }, which);
 }
 
-test('held WASD moves continuously in camera-relative directions, stops on release, and double-click recentres a replay', async ({ page }) => {
+test('held WASD moves continuously in camera-relative directions, stops on release, and double-click leaves a scene view alone', async ({ page }) => {
   await openStudio(page);
   const errors: string[] = [];
   page.on('pageerror', (error) => errors.push(error.message));
@@ -100,6 +109,10 @@ test('held WASD moves continuously in camera-relative directions, stops on relea
     harness.drawAt(0);
     return structuredClone(harness.sceneState());
   }, MACHINE_WORKS_SCENE_ID);
+  // A scene that silently failed to open would leave the model stage on screen,
+  // where the model-only gestures below are all legal — so state the premise.
+  expect(originalScene?.id).toBe(MACHINE_WORKS_SCENE_ID);
+  expect(await page.evaluate(() => window.voxelStudio!.sceneMode())).toBe(true);
   const stage = page.locator('.canvas-wrap');
   await stage.focus();
   expect(await page.evaluate(() =>
@@ -158,9 +171,29 @@ test('held WASD moves continuously in camera-relative directions, stops on relea
     const stopped = await viewCenter(page);
     await settleFrames(page, 3);
     expect(await viewCenter(page)).toEqual(stopped);
-    await stage.dblclick();
-    await expect.poll(() => viewCenter(page)).toEqual([0, 0, 0]);
+    expect(await page.evaluate(() =>
+      window.voxelStudio!.setViewCenter([0, 0, 0]))).toEqual([0, 0, 0]);
   }
+
+  // Double-click re-centring frames one model, so it must leave a scene's
+  // camera exactly where its owner put it — here in a read-only replay scene,
+  // and in an editable scene in the test below.
+  await page.evaluate(() => {
+    window.voxelStudio!.setViewAngles({ yawDegrees: 35, pitchDegrees: 22 });
+    window.voxelStudio!.setViewCenter([2, 0, -3]);
+  });
+  const beforeDoubleClick = await stageView(page);
+  expect(await page.evaluate(() => window.voxelStudio!.sceneMode())).toBe(true);
+  await stage.dblclick();
+  await settleFrames(page, 3);
+  expect(await page.evaluate(() => window.voxelStudio!.sceneMode())).toBe(true);
+  expect(await stageView(page)).toEqual(beforeDoubleClick);
+  expect(await page.evaluate(() => window.voxelStudio!.selectedPlacement())).toBeNull();
+  expect(await page.evaluate(() =>
+    window.voxelStudio!.setViewCenter([0, 0, 0]))).toEqual([0, 0, 0]);
+  await page.evaluate(() => {
+    window.voxelStudio!.setViewAngles({ yawDegrees: 0, pitchDegrees: 30 });
+  });
 
   const playbackStart = await viewCenter(page);
   await page.evaluate(() => {
@@ -186,6 +219,37 @@ test('held WASD moves continuously in camera-relative directions, stops on relea
   }));
   expect(finalState.scene).toEqual(originalScene);
   expect(finalState.selected).toBeNull();
+  await expect(page.locator('.view-error')).toBeHidden();
+  expect(errors).toEqual([]);
+});
+
+test('a double-click in an editable scene selects a model and leaves the camera alone', async ({ page }) => {
+  await openStudio(page);
+  const errors: string[] = [];
+  page.on('pageerror', (error) => errors.push(error.message));
+
+  await page.evaluate((sceneId) => {
+    const harness = window.voxelStudio!;
+    harness.openScene(sceneId);
+    harness.setSceneAnimation(false);
+    // This view puts a placed model under the middle of the stage, which is
+    // where Playwright's double-click lands.
+    harness.setViewAngles({ yawDegrees: 35, pitchDegrees: 22 });
+    harness.setViewCenter([2, 0, -3]);
+    harness.drawAt(0);
+  }, EDITABLE_SCENE_ID);
+  expect(await page.evaluate(() => window.voxelStudio!.sceneMode())).toBe(true);
+  expect(await page.evaluate(() => window.voxelStudio!.selectedPlacement())).toBeNull();
+
+  const before = await stageView(page);
+  await page.locator('.canvas-wrap').dblclick();
+  await settleFrames(page, 3);
+  // The pair still selects, exactly as a single click would; only the camera
+  // is spared. Both halves matter: an inert stage would also leave the view
+  // unchanged, and that is not the behaviour being pinned.
+  expect(await page.evaluate(() => window.voxelStudio!.selectedPlacement())).not.toBeNull();
+  expect(await stageView(page)).toEqual(before);
+  expect(await page.evaluate(() => window.voxelStudio!.sceneMode())).toBe(true);
   await expect(page.locator('.view-error')).toBeHidden();
   expect(errors).toEqual([]);
 });
