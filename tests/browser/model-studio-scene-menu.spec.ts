@@ -162,7 +162,7 @@ test('scene menu renames and deletes while keeping open-scene state coherent', a
   await expect(page.getByRole('button', { name: 'Banquet', exact: true })).toBeFocused();
   await page.keyboard.press('Control+z');
   await expect(page.getByRole('heading', { name: 'Dinner party' })).toBeVisible();
-  await page.getByRole('button', { name: 'Cottage row', exact: true }).click();
+  await page.getByRole('button', { name: 'Wall and roof studies', exact: true }).click();
   await page.getByRole('button', { name: 'Dinner party', exact: true }).click();
   expect(await page.evaluate(() =>
     window.voxelStudio!.sceneState()?.placements.find((placement) => placement.id === 'table')?.at[0],

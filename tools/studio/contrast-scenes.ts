@@ -24,8 +24,28 @@ import {
   MACHINE_WORKS_PRESS_BRIDGE_RECIPE_ID,
 } from './machine-works-purpose.js';
 
-const CELL_SPACING = 22;
 const DISPLAY_GRAIN = 0.65;
+
+/**
+ * The widest ground span any promoted specimen occupies once the board's
+ * display grain is applied. Derived from the live recipes so a wider promotion
+ * widens the board instead of quietly closing the gap between neighbours.
+ */
+function widestSpecimenSpanV1(): number {
+  return Math.max(...CURATED_CONTRAST_RECIPES.map(
+    (entry) => Math.max(entry.recipe.size[0], entry.recipe.size[2]) * DISPLAY_GRAIN,
+  ));
+}
+
+/**
+ * Clear ground the board keeps between the two widest neighbours. Five units at
+ * this grain is about a third of the widest specimen, which is enough that no
+ * pair reads as one joined structure from the default camera.
+ */
+const MINIMUM_CLEAR_GAP = 5;
+
+/** One shared pitch, so the four sheets stay comparable with each other. */
+const CELL_SPACING = widestSpecimenSpanV1() + MINIMUM_CLEAR_GAP;
 
 const DOMAIN_PRESENTATION: Readonly<
 Record<ContrastDomainV1, {
@@ -37,30 +57,39 @@ Record<ContrastDomainV1, {
   infrastructure: {
     id: 'studio:scene:contrast-infrastructure',
     label: 'Infrastructure studies',
-    summary: 'Aqueducts, flood controls, crossings, transit structures, and survey landmarks form '
-      + 'a contact sheet for voids, spans, stairs, frames, wheels, and hybrids. The separated models '
-      + 'are comparisons, not a claim that water or traffic flows between them.',
+    summary: 'Aqueducts, culverts, crossings, transit structures, and survey landmarks form '
+      + 'a contact sheet for comparing voids, spans, stairs, frames, and hybrid grammar, every '
+      + 'specimen facing the same way. All nine are static shapes: the handwheel, floodgate, and '
+      + 'lift carry no motion and no operable mechanism, and their separation makes no claim that '
+      + 'water or traffic moves between them.',
   },
   'civic-architectural': {
     id: 'studio:scene:contrast-civic',
     label: 'Civic form studies',
-    summary: 'Monuments, arcades, forums, conservatories, pavilions, and kinetic public art form '
-      + 'a contact sheet for comparing scale, silhouette, openings, and construction grammar. '
-      + 'Their equal-gap placement does not claim that they compose one plaza.',
+    summary: 'Monuments, arcades, forums, conservatories, pavilions, and one moving compass form '
+      + 'a contact sheet for comparing scale, silhouette, openings, and construction grammar, every '
+      + 'specimen facing the same way. Only the compass moves, and its motion is an authored swing '
+      + 'and lift on a fixed period rather than a solved rotation or a reading of anything. Their '
+      + 'equal-gap placement does not claim that they compose one plaza.',
   },
   'mechanical-industrial': {
     id: 'studio:scene:contrast-mechanical-studies',
     label: 'Mechanical studies',
-    summary: 'Eight deliberately different industrial specimens form a comparison floor for silhouette, '
-      + 'negative space, construction grammar, scale, and semantic model animation. This is a contact '
-      + 'sheet, not a claim that the independent specimens form one working factory.',
+    summary: 'Eight deliberately different industrial specimens form a comparison floor for '
+      + 'silhouette, negative space, construction grammar, and scale, every specimen facing the '
+      + 'same way. Two carry authored motion: the flywheel and the cable drum each rock through a '
+      + 'fixed arc and return, which is a swing rather than a turning shaft, and neither transmits '
+      + 'power to anything. This is a contact sheet, not a claim that the independent specimens '
+      + 'form one working factory.',
   },
   'natural-organic': {
     id: 'studio:scene:contrast-organic',
     label: 'Organic form studies',
     summary: 'Seed-shaped trees, roots, coral, tidal structures, and field shelters form a contact '
-      + 'sheet for comparing branching, massing, and negative space. The wind-driven pine exercises '
-      + 'the shared scene-animation control, but the separated specimens do not form one habitat.',
+      + 'sheet for comparing branching, massing, and negative space, every specimen facing the same '
+      + 'way. The pine carries a small authored sway on a fixed period that exercises the shared '
+      + 'scene-animation control; no wind is simulated and nothing drives it. The separated '
+      + 'specimens do not form one habitat.',
   },
 };
 
@@ -80,18 +109,27 @@ function domainScene(
     id: presentation.id,
     label: presentation.label,
     summary: presentation.summary,
+    // Order is the catalog's contrast-family order, so each row group compares
+    // within a construction family before the reader compares across families.
     placements: entries.map((entry, index) => {
       const column = index % columns;
       const row = Math.floor(index / columns);
+      // A trailing partial row centers on its own item count. Reusing the full
+      // column count would push a short last row to one side, which reads as a
+      // missing specimen rather than a deliberate end of the sheet.
+      const itemsInRow = Math.min(columns, entries.length - row * columns);
       return {
         id: placementId(entry),
         model: entry.recipe.id,
         at: [
-          (column - (columns - 1) / 2) * CELL_SPACING,
+          (column - (itemsInRow - 1) / 2) * CELL_SPACING,
           0,
           (row - (rows - 1) / 2) * CELL_SPACING,
         ],
-        turns: index % 4,
+        // Every specimen faces the same way. The board compares silhouette and
+        // massing, and a per-index quarter-turn would compare a different face
+        // of each model, which is the one thing a contact sheet must not do.
+        turns: 0,
         grain: DISPLAY_GRAIN,
       };
     }),

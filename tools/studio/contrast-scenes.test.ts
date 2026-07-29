@@ -27,6 +27,10 @@ import {
 import { validateSceneV1 } from './scene.js';
 
 describe('contrast scenes', () => {
+  /** However it is phrased, each sheet must deny that its specimens compose one place. */
+  const DISCLAIMS_COMPOSITION =
+    /not a claim|does not claim|makes no claim|do not form|does not form/;
+
   it('keeps four honest domain contact sheets plus one valid process scene', () => {
     const scenes = createContrastScenes();
     expect(scenes).toHaveLength(5);
@@ -46,7 +50,8 @@ describe('contrast scenes', () => {
       ({ id }) => id === 'studio:scene:contrast-infrastructure',
     );
     expect(infrastructure?.label).toBe('Infrastructure studies');
-    expect(infrastructure?.summary).toMatch(/contact sheet.*not a claim/);
+    expect(infrastructure?.summary).toMatch(/contact sheet/);
+    expect(infrastructure?.summary).toMatch(DISCLAIMS_COMPOSITION);
     expect(domainScenes.map(({ label }) => label)).toEqual([
       'Infrastructure studies',
       'Civic form studies',
@@ -55,7 +60,7 @@ describe('contrast scenes', () => {
     ]);
     for (const scene of domainScenes) {
       expect(scene.summary, scene.id).toMatch(/contact sheet/);
-      expect(scene.summary, scene.id).toMatch(/not a claim|does not claim|do not form/);
+      expect(scene.summary, scene.id).toMatch(DISCLAIMS_COMPOSITION);
     }
   });
 

@@ -9,6 +9,7 @@ import {
 } from './scene.js';
 import { createContrastScenes } from './contrast-scenes.js';
 import { createRiverfallScene } from './riverfall-scene.js';
+import { createWindmillScene } from './windmill-scene.js';
 
 const LIGHTING_1000_COLUMNS = 40;
 const LIGHTING_1000_ROWS = 25;
@@ -178,9 +179,11 @@ export function createStudioScenes(): readonly SceneV1[] {
       summary: 'A table and four chairs, placed as separate recipes rather than one '
         + 'combined model. Each chair turns to face the table.',
       placements: [
+        // A chair's backrest is at its own low z, so an unturned chair faces
+        // +z. Each placement therefore turns to point back at the table.
         { id: 'table', model: 'studio:table', at: [0, 0, 0] },
-        { id: 'chair-n', model: 'studio:chair', at: [0, 0, 8], turns: 0 },
-        { id: 'chair-s', model: 'studio:chair', at: [0, 0, -8], turns: 2 },
+        { id: 'chair-n', model: 'studio:chair', at: [0, 0, 8], turns: 2 },
+        { id: 'chair-s', model: 'studio:chair', at: [0, 0, -8], turns: 0 },
         { id: 'chair-e', model: 'studio:chair', at: [10, 0, 0], turns: 3 },
         { id: 'chair-w', model: 'studio:chair', at: [-10, 0, 0], turns: 1 },
       ],
@@ -188,14 +191,20 @@ export function createStudioScenes(): readonly SceneV1[] {
     {
       schemaVersion: VOXEL_SCENE_SCHEMA_V1,
       id: 'studio:scene:village',
-      label: 'Cottage row',
-      summary: 'Two cottages and a scatter of flower pots — different models, each at '
-        + 'its own grain, standing together in one world.',
+      label: 'Wall and roof studies',
+      summary: 'One reusable roof slice capping two different wall recipes, set '
+        + 'side by side at equal spacing so brick and sandstone can be compared '
+        + 'under the same silhouette. The planter between them is a scale '
+        + 'reference. This is a comparison board, not a street: each model is a '
+        + 'wall four voxels deep with no door and no interior.',
       placements: [
-        { id: 'cottage-brick', model: 'studio:brick-cottage', at: [-18, 0, 0] },
-        { id: 'cottage-sand', model: 'studio:sandstone-cottage', at: [16, 0, 2], turns: 2 },
-        { id: 'pot-front', model: 'studio:three-flower-pot', at: [-1, 0, 15] },
-        { id: 'pot-back', model: 'studio:three-flower-pot', at: [2, 0, -15] },
+        // Equal spacing and a shared z keep the only visible difference the
+        // wall recipe itself, which is what this board compares.
+        { id: 'wall-brick', model: 'studio:brick-cottage', at: [-12, 0, 0] },
+        { id: 'wall-sandstone', model: 'studio:sandstone-cottage', at: [12, 0, 0] },
+        // One planter, centered, is the smallest form that gives both slices a
+        // human-scale reference; a second would only repeat the same reading.
+        { id: 'scale-planter', model: 'studio:three-flower-pot', at: [0, 0, 8] },
       ],
     },
     {
@@ -203,7 +212,7 @@ export function createStudioScenes(): readonly SceneV1[] {
       id: 'studio:scene:house',
       label: 'Furnished house',
       summary: 'A house with an open front so the room inside is in full view — a made '
-        + 'bed, a nightstand with its lamp, a table and chairs, and a plant, all on one '
+        + 'bed, a nightstand with its lamp, and a table with two chairs, all on one '
         + 'floor under a pitched roof. The shell and roof are recipes; the furniture is '
         + 'the shelf\'s own, reused whole.',
       placements: [
@@ -283,6 +292,7 @@ export function createStudioScenes(): readonly SceneV1[] {
     },
     ...createContrastScenes(),
     createRiverfallScene(),
+    createWindmillScene(),
     {
       schemaVersion: VOXEL_SCENE_SCHEMA_V2,
       id: 'studio:scene:lighting-lab',
