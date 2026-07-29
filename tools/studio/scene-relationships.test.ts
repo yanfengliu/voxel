@@ -4,6 +4,11 @@ import { buildRecipe } from './recipe.js';
 import { createStudioParts } from './parts.js';
 import { createStudioRecipeBook } from './recipes.js';
 import { createStudioScenes } from './scenes.js';
+import {
+  createRiverfallScene,
+  RIVERFALL_RELATIONSHIPS_V1,
+  RIVERFALL_TREE_PLACEMENTS_V1,
+} from './riverfall-scene.js';
 import { voxelIndex, type StudioModelV1 } from './model.js';
 import type { ScenePlacementV1, SceneV1 } from './scene.js';
 
@@ -176,6 +181,170 @@ describe('the furnished house summary', () => {
 
     expect(chairs).toHaveLength(2);
     expect(summaryOf(scene)).toContain('two chairs');
+  });
+});
+
+describe('the flower-pot garden', () => {
+  const scene = sceneById('studio:scene:garden');
+
+  it('faces every pot the same way', () => {
+    for (const pot of scene.placements) {
+      expect(
+        pot.turns ?? 0,
+        `${pot.id} is turned, so the board would compare a different side of it`,
+      ).toBe(0);
+    }
+  });
+
+  it('says it is comparing palette and silhouette', () => {
+    expect(summaryOf(scene)).toContain('compare');
+  });
+});
+
+describe('the family home back fence', () => {
+  const scene = sceneById('studio:scene:home');
+  const book = createStudioRecipeBook();
+  const parts = createStudioParts();
+
+  function widthOf(model: string): number {
+    const recipe = book[model];
+    if (!recipe) throw new Error(`Model '${model}' is not in the studio book.`);
+    return buildRecipe(recipe, parts, book).model.size[0];
+  }
+
+  it('closes without a gap', () => {
+    const runs = scene.placements
+      .filter((entry) => entry.model === 'studio:fence')
+      .sort((a, b) => a.at[0] - b.at[0]);
+    expect(runs.length).toBeGreaterThan(1);
+
+    const width = widthOf('studio:fence');
+    for (let index = 1; index < runs.length; index += 1) {
+      const left = runs[index - 1]!;
+      const right = runs[index]!;
+      expect(
+        right.at[0] - left.at[0],
+        `${left.id} and ${right.id} leave a hole in the boundary`,
+      ).toBeLessThanOrEqual(width);
+      expect(left.at[2], 'every run sits on one boundary line').toBe(right.at[2]);
+    }
+  });
+
+  it('spans the full width of the shell it bounds', () => {
+    const runs = scene.placements.filter((entry) => entry.model === 'studio:fence');
+    const width = widthOf('studio:fence');
+    const shellWidth = widthOf('studio:home-shell');
+    const left = Math.min(...runs.map((run) => run.at[0])) - width / 2;
+    const right = Math.max(...runs.map((run) => run.at[0])) + width / 2;
+
+    expect(right - left, 'a boundary narrower than the house bounds nothing')
+      .toBeGreaterThanOrEqual(shellWidth);
+  });
+
+  it('keeps the back tree off the fence line', () => {
+    const runs = scene.placements.filter((entry) => entry.model === 'studio:fence');
+    const fenceZ = runs[0]?.at[2] ?? 0;
+    const tree = placement(scene, 'tree-back');
+    const treeDepth = widthOf('studio:tree');
+
+    expect(
+      Math.abs(tree.at[2] - fenceZ),
+      'the tree would grow through the boundary',
+    ).toBeGreaterThan(treeDepth / 2);
+  });
+});
+
+describe('the riverfall scenery', () => {
+  const scene = createRiverfallScene();
+
+  // The landscape also 'frames' the waterfall, but it is the terrain that
+  // contains the whole scene, so a nearest-surface test says nothing about it.
+  const treeIds = new Set(RIVERFALL_TREE_PLACEMENTS_V1.map((tree) => tree.id));
+
+  it('puts every tree nearer the surface it claims to frame', () => {
+    const framing = RIVERFALL_RELATIONSHIPS_V1.filter(
+      (relation) => relation.relation === 'frames' && treeIds.has(relation.from),
+    );
+    expect(framing).toHaveLength(RIVERFALL_TREE_PLACEMENTS_V1.length);
+
+    const river = placement(scene, 'river-surface');
+    const pond = placement(scene, 'pond-surface');
+
+    for (const relation of framing) {
+      const tree = placement(scene, relation.from);
+      const claimed = relation.to === 'pond-surface' ? pond : river;
+      const other = relation.to === 'pond-surface' ? river : pond;
+      const distance = (target: ScenePlacementV1) => Math.hypot(
+        tree.at[0] - target.at[0],
+        tree.at[1] - target.at[1],
+        tree.at[2] - target.at[2],
+      );
+
+      expect(
+        distance(claimed),
+        `${relation.from} claims to frame ${relation.to} but stands nearer the other surface`,
+      ).toBeLessThan(distance(other));
+    }
+  });
+
+  it('frames each surface from both banks', () => {
+    for (const surface of ['river-surface', 'pond-surface']) {
+      const trees = RIVERFALL_RELATIONSHIPS_V1
+        .filter((relation) => relation.relation === 'frames'
+          && relation.to === surface && treeIds.has(relation.from))
+        .map((relation) => placement(scene, relation.from));
+
+      expect(trees.some((tree) => tree.at[0] < 0), `${surface} has a left bank`)
+        .toBe(true);
+      expect(trees.some((tree) => tree.at[0] > 0), `${surface} has a right bank`)
+        .toBe(true);
+    }
+  });
+});
+
+describe('the lighting rigs', () => {
+  const book = createStudioRecipeBook();
+  const parts = createStudioParts();
+
+  function halfSpanOf(model: string, grain: number): number {
+    const recipe = book[model];
+    if (!recipe) throw new Error(`Model '${model}' is not in the studio book.`);
+    const built = buildRecipe(recipe, parts, book).model;
+    const size = built.voxelSize ?? 1;
+    return Math.max(...built.size) * grain * size / 2;
+  }
+
+  /**
+   * A fixture in a lighting scene exists to catch light. One that no light
+   * reaches is doing nothing, which is what a subtraction pass should find.
+   */
+  for (const id of ['studio:scene:lighting-lab', 'studio:scene:lighting-1000']) {
+    it(`reaches every placement in ${id} with at least one light`, () => {
+      const scene = sceneById(id);
+      const lights = scene.lights ?? [];
+      expect(lights.length).toBeGreaterThan(0);
+
+      for (const item of scene.placements) {
+        const reach = halfSpanOf(item.model, item.grain ?? 1);
+        const lit = lights.some((light) => {
+          const distance = Math.hypot(
+            light.at[0] - item.at[0],
+            light.at[1] - item.at[1],
+            light.at[2] - item.at[2],
+          );
+          return light.range === 0 || distance - reach < light.range;
+        });
+        expect(lit, `${item.id} sits outside every light's range`).toBe(true);
+      }
+    });
+  }
+
+  it('gives the 1,000-light rig exactly one receiver per light', () => {
+    const scene = sceneById('studio:scene:lighting-1000');
+
+    expect(scene.placements).toHaveLength((scene.lights ?? []).length);
+    expect(new Set(scene.placements.map((item) => item.model)).size)
+      .toBe(1);
   });
 });
 

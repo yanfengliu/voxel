@@ -232,7 +232,9 @@ export function createStudioScenes(): readonly SceneV1[] {
       label: 'Family home',
       summary: 'A whole family home with its front and roof off so every room is '
         + 'in view: a living room with a fireplace and chimney, a kitchen, a bedroom, '
-        + 'and a bathroom, each furnished for the family that lives here.',
+        + 'and a bathroom, each furnished for the family that lives here. Outside it '
+        + 'sit a garage with its car, a tree in each yard, and a fence closing the '
+        + 'full width of the back boundary.',
       placements: [
         { id: 'shell', model: 'studio:home-shell', at: [0, 0, 0] },
         // Living room — back-left. Fireplace and TV on the far wall, sofa facing.
@@ -262,10 +264,18 @@ export function createStudioScenes(): readonly SceneV1[] {
         // seed-varying foliage and pickets make them different from each other.
         { id: 'tree-front', model: 'studio:tree', at: [-31, 0, 6], seed: 3 },
         // The backyard, behind the house (−z): a tree, a fenced boundary, and a
-        // flowerbed.
-        { id: 'tree-back', model: 'studio:tree', at: [12, 0, -31], seed: 7 },
-        { id: 'fence-a', model: 'studio:fence', at: [-9, 0, -34], seed: 2 },
-        { id: 'fence-b', model: 'studio:fence', at: [5, 0, -34], seed: 5 },
+        // flowerbed. The fence is twelve units per run, so four contiguous runs
+        // centred at ±6 and ±18 span 48 units and close the full 43-unit width
+        // of the shell. Two runs used to sit at −9 and 5, which left a two-unit
+        // hole in the middle and stopped 10 units short of each corner, so the
+        // boundary read as debris rather than as the edge of the property.
+        { id: 'fence-a', model: 'studio:fence', at: [-18, 0, -34], seed: 2 },
+        { id: 'fence-b', model: 'studio:fence', at: [-6, 0, -34], seed: 5 },
+        { id: 'fence-c', model: 'studio:fence', at: [6, 0, -34], seed: 11 },
+        { id: 'fence-d', model: 'studio:fence', at: [18, 0, -34], seed: 13 },
+        // Clear of the fence line in z, so the boundary reads as one unbroken
+        // run rather than a hedge the tree grows through.
+        { id: 'tree-back', model: 'studio:tree', at: [16, 0, -28], seed: 7 },
         { id: 'garden', model: 'studio:three-flower-pot', at: [-9, 0, -29] },
       ],
     },
@@ -278,15 +288,18 @@ export function createStudioScenes(): readonly SceneV1[] {
         + 'palette and silhouette variations easy to compare.',
       placements: [
         // Three compact rows keep every colorway legible from the default
-        // front-left camera while repeating each model as an instance.
+        // front-left camera while repeating each model as an instance. Every
+        // pot faces the same way: the scene exists to compare palette and
+        // silhouette, and a per-pot quarter-turn would compare a different
+        // side of each one, which is exactly what a comparison must not do.
         { id: 'classic-front-left', model: 'studio:three-flower-pot', at: [-11, 0, 10] },
-        { id: 'tulip-front-center', model: 'studio:tulip-pot', at: [0, 0, 10], turns: 1 },
-        { id: 'violet-front-right', model: 'studio:violet-flower-pot', at: [11, 0, 10], turns: 2 },
-        { id: 'violet-middle-left', model: 'studio:violet-flower-pot', at: [-11, 0, 0], turns: 3 },
+        { id: 'tulip-front-center', model: 'studio:tulip-pot', at: [0, 0, 10] },
+        { id: 'violet-front-right', model: 'studio:violet-flower-pot', at: [11, 0, 10] },
+        { id: 'violet-middle-left', model: 'studio:violet-flower-pot', at: [-11, 0, 0] },
         { id: 'classic-middle-center', model: 'studio:three-flower-pot', at: [0, 0, 0] },
-        { id: 'tulip-middle-right', model: 'studio:tulip-pot', at: [11, 0, 0], turns: 1 },
-        { id: 'tulip-back-left', model: 'studio:tulip-pot', at: [-11, 0, -10], turns: 2 },
-        { id: 'violet-back-center', model: 'studio:violet-flower-pot', at: [0, 0, -10], turns: 3 },
+        { id: 'tulip-middle-right', model: 'studio:tulip-pot', at: [11, 0, 0] },
+        { id: 'tulip-back-left', model: 'studio:tulip-pot', at: [-11, 0, -10] },
+        { id: 'violet-back-center', model: 'studio:violet-flower-pot', at: [0, 0, -10] },
         { id: 'classic-back-right', model: 'studio:three-flower-pot', at: [11, 0, -10] },
       ],
     },
