@@ -136,11 +136,23 @@ keys rather than mutable step-array indexes. Its minimum generic data is:
 - shapes today limited to box, sphere, capsule, and cylinder, with compound
   shapes expressed as several colliders on one body; bounded convex hulls and
   static heightfields or meshes remain named future shapes the validator
-  rejects until they arrive;
+  rejects until they arrive. The convex restriction is a solver narrow-phase
+  requirement, not a limit on voxel content — see "Voxel-derived colliders"
+  below;
 - constraints with stable key, kind, two body-local anchor frames, axes,
   limits, motor, and optional break threshold;
 - named attachment ports, each a body-local frame, so a higher-level recipe can
   connect reusable assets without knowing their internal geometry.
+
+## Voxel-derived colliders
+
+Accepted design direction on 2026-07-28; not implemented. Every model in this repository is a voxel grid, and no cell is more privileged than another, so collider authoring should not require a human to pick which parts of a model get an accurate shape.
+
+Non-convexity is not a problem for voxel content. Any occupied set is exactly the union of axis-aligned boxes, and every box is convex, so a voxel model needs no hull approximation and loses no fidelity — an interlocked ring, a hollow shell, and a torus all decompose exactly. What the convex restriction actually costs is collider count, not accuracy, and count is bounded by merging runs of occupied cells into maximal boxes the same way the renderer already merges faces.
+
+The consequence for the sidecar is that hand-picked primitives should become the exception rather than the interface. A body should be able to declare that its colliders are derived from its own occupied cells under a named merge rule and a declared budget, with hand-authored primitives reserved for deliberate simplifications that the author states as such. Until that exists, the validator's shape list stands and any voxel-faithful body must be written as explicit compound boxes.
+
+The open questions are the merge rule's determinism across mirrored and nested occurrences, the collider budget at which a many-body contact island stops solving in real time, and whether a derived decomposition stays stable enough between revisions to keep replay traces comparable. None is answered yet, and no fixture has measured them.
 
 Visual recipe nesting means reuse and placement only. It does not infer a
 physical connection. A chair's legs, seat, and back can compile to multiple
@@ -173,6 +185,8 @@ order-dependent intersections.
 
 Physics is a separate authoritative subsystem, not a Voxel renderer feature. “Separate” means a consumer-owned module or worker behind a versioned snapshot or trace adapter; it does not require a separate repository, process, or generalized engine abstraction before two consumers prove the same contract.
 
+The seam is named as of 2026-07-28, and no code moves yet. Machine Works and Windmill now share one extracted exact-sidecar Rapier adapter at `fixtures/physical-asset-rapier-adapter.ts`, which is the first evidence that the solver is its own layer rather than a fixture detail. Both consumers are fixtures, not games, so the extraction trigger in the delivery sequence below has not actually fired: it asks for a consumer that proves the runtime contract, and a fixture proves a boundary instead. The adapter therefore stays in `fixtures/` until a game consumes it. Naming the seam early is worth it anyway, because it settles which layer owns what — the solver owns gravity, contact, joints, and whether a thing falls or holds; the renderer owns light, materials, and how a surface reflects, transmits, or absorbs; neither may reach into the other. Light in particular is a Voxel responsibility and not a physics one, and the current material model is far from it.
+
 Do not build a general rigid-body engine in-house. Use a mature engine behind a narrow adapter for broad phase, narrow phase, contact constraints, friction, joints, sleeping, queries, and continuous collision detection; keep game rules, body creation order, units, fixed-step scheduling, and publication policy in the consumer.
 
 Do not build a rigid-body solver from scratch. Rapier's browser JS/WASM surface is selected for the delivered fixture proof and remains the leading candidate for production consumer adoption because its documented APIs cover [rigid bodies and continuous collision detection][rapier-bodies], [colliders][rapier-colliders], [fixed, revolute, and prismatic joints][rapier-joints], [overlap and shape-cast queries][rapier-queries], and [deterministic WASM execution under controlled inputs and ordering][rapier-determinism].
@@ -196,6 +210,18 @@ Keep that implementation as a bounded fixture while the requirement remains a st
 If a second consumer needs the same fluid semantics, define a consumer-owned fluid provider with explicit domain, units, fixed timestep and substeps, material and boundary parameters, initial state, deterministic input ordering, output snapshots, diagnostics, provenance, and disposal. Time-box mature library candidates against browser and worker support, CPU fallback, licensing, serialization, deterministic replay requirements, collider coupling, and measured scene budgets. Import a candidate only if it meets those constraints; otherwise extract the smallest proven solver module, not a universal physics engine.
 
 [NVIDIA PhysX 5](https://nvidia-omniverse.github.io/PhysX/physx/5.2.1/docs/ParticleSystem.html) documents a mature position-based particle-fluid path, but its particle-system implementation requires CUDA and a CUDA context, so it is not a portable WebGL2 browser dependency for this repository. It remains a useful reference and an option for a native GPU consumer, not a reason to put fluid solving in Voxel.
+
+## Declared system boundary
+
+Accepted design direction on 2026-07-28. A bounded scene cannot simulate a universe, so mass and energy have to come from somewhere and disappear into somewhere. Declaring those points is the compromise that lets everything inside behave physically without pretending the simulation is complete.
+
+Three fixtures were already doing this without a shared name for it. Riverfall runs an external recirculation pump. Windmill applies a fixed 10 m/s world flow. Machine Works actuates from a precharged local buffer whose charging it explicitly does not simulate. Each is a point where the system opens, and each is why those fixtures may claim bounded work input but not conservation.
+
+A source or a sink declares the quantity that crosses, whether it is visible or invisible in the scene, and what it truncates — the upstream or downstream process deliberately left unsimulated. Visibility is presentation only; the accounting is identical either way. A conservation claim then states, for one quantity, whether the system is closed and which boundaries it crosses.
+
+This turns the rule in the next section from prose into arithmetic. A system that claims a quantity is closed while declaring a source for it is contradicting itself, because a source is exactly where a system opens; a system that calls a quantity open while naming no boundary has said nothing checkable. Gravity is not a boundary — it is a conservative internal field, and treating it as a source would overstate what crosses the edge.
+
+The model, the checker, and the projections of Machine Works and Windmill are implemented in [the purpose graph](purpose-graph.md). No fixture yet meters a declared boundary numerically, so the current checks are structural: they catch a contradicted or unstated boundary, not an unbalanced one.
 
 ## How physical-law claims are enforced
 
