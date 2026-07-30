@@ -923,3 +923,58 @@ summary.component-line:hover { border-color: var(--muted); }
   font-size: 10.5px;
   color: var(--muted);
 }
+
+/* ---- physics playground panel ---- */
+/* A compact instrument strip under the stage: transport, cases, and the
+   monospace readout. It appears only while a playground scene is open. */
+/* Every stage child is an absolute layer over the canvas, so the panel is
+   one too: an instrument card pinned to the stage's left, under the toggle
+   row, translucent so the world stays visible behind it. */
+/* `display: flex` would otherwise beat the UA's `[hidden] { display: none }`,
+   leaving ghost playground buttons on every non-playground scene. */
+.playground-panel[hidden] { display: none; }
+.playground-panel {
+  position: absolute;
+  bottom: 40px;
+  left: 12px;
+  width: min(330px, 42%);
+  max-height: 58%;
+  overflow-y: auto;
+  z-index: 4;
+  padding: 8px 10px;
+  border: 1px solid var(--line, #2a2f3a);
+  border-radius: 8px;
+  background: rgba(13, 17, 20, 0.86);
+  backdrop-filter: blur(2px);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.playground-panel h3 {
+  margin: 0;
+  font-size: 12px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  opacity: 0.75;
+}
+.playground-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+.playground-row select {
+  font: inherit;
+  padding: 2px 6px;
+  max-width: 100%;
+}
+.playground-readout {
+  margin: 0;
+  padding: 6px 8px;
+  font-size: 11px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  border-radius: 6px;
+  background: rgba(128, 128, 128, 0.08);
+  overflow-x: auto;
+}

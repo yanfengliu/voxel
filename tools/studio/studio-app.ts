@@ -74,6 +74,11 @@ import {
 import { SceneSession, type ScenePoseReplayStatusV1 } from './scene-session.js';
 import { catalogPartsV1, catalogRecipesV1 } from './studio-library.js';
 import { LIVE_PHYSICS_PROFILES_V1 } from './live-physics-profiles.js';
+import { physicsPlaygroundProfileForV1 } from './physics-playground-profiles.js';
+import {
+  createStudioPlaygroundPanel,
+  type StudioPlaygroundPanelV1,
+} from './studio-playground-panel.js';
 import { StudioLiveInteract } from './studio-live-interact.js';
 import { createWireframeView } from './wireframe-view.js';
 import { cellSubsetOutlineSegmentsV1, modelWireframeSegmentsV1 } from './wireframe.js';
@@ -361,6 +366,9 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
   // annotate the model, and a pinned note still reads over everything.
   const physicalView = createPhysicalOverlayView();
   let physicalOn = false;
+  // The playground's debug layer: the selected live body's collider boxes,
+  // contact whiskers, and velocity, drawn in world space over the scene.
+  const playgroundView = createPhysicalOverlayView();
   // The wireframe stands in for the solid model when the surface is hidden, so
   // it sits just over the canvas, under the collider outlines and note rings.
   const wireframeView = createWireframeView();
@@ -383,7 +391,7 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
   // occluded by the solid model) while the wireframe, collider, part-highlight,
   // and note layers go after it (over the model, where they belong).
   canvasWrap.append(
-    gridView.element, canvas, sceneCanvas, wireframeView.element, physicalView.element, highlightView.element, marks,
+    gridView.element, canvas, sceneCanvas, wireframeView.element, physicalView.element, playgroundView.element, highlightView.element, marks,
   );
   const viewChip = element('span', 'viewchip');
   viewChip.title = "Sides are the model's own, like a person facing you: "
@@ -472,10 +480,15 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
   // Adjust/Interact appear only for scenes with a live-physics profile. The
   // controller owns the solver session and its frame loop; the app only routes
   // pointer rays and applies the poses it publishes.
+  let playgroundPanel: StudioPlaygroundPanelV1 | null = null;
   const liveInteract = new StudioLiveInteract({
     acceptPoses: (poses) => {
       sceneSession?.acceptLivePosesV1(poses);
     },
+    // Playground scenes get their profile from the panel's current ramp
+    // angle; other scenes fall through to the static registry.
+    resolveProfile: (sceneId) =>
+      physicsPlaygroundProfileForV1(sceneId, playgroundPanel?.rampAngleDegrees()),
     setLivePoseMode: (on) => {
       sceneSession?.setLivePoseModeV1(on);
     },
@@ -490,6 +503,22 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
   toggles.append(lookSwitch, depthToggle, lightToggle, sceneAnimationToggle,
     wireframeToggle, gridToggle, physToggle, snapToggle,
     ...liveInteract.buttons);
+  playgroundPanel = createStudioPlaygroundPanel({
+    interact: liveInteract,
+    openSceneById: (sceneId) => {
+      const target = sceneWorkspace.find(sceneId);
+      if (target === undefined) {
+        showViewError(
+          new Error(`No scene '${sceneId}' exists to switch to.`),
+          'The playground station switch failed.',
+        );
+        return;
+      }
+      runViewAction(() => { openSceneMode(target); });
+    },
+    overlay: playgroundView,
+    redraw: () => { drawFrame(lastShownMs); },
+  });
   const viewError = element('p', 'lib-error view-error');
   viewError.setAttribute('role', 'alert');
   viewError.setAttribute('aria-live', 'assertive');
@@ -980,6 +1009,10 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
     highlightedPart: () => highlightedPartIndex,
     scenes: () => sceneWorkspace.scenes(),
     openScene: (scene) => { openSceneMode(scene); },
+    playgroundHost: {
+      interact: () => liveInteract,
+      panel: () => playgroundPanel,
+    },
     renameScene: (id, label) => renameStudioScene(id, label),
     deleteScene: (id) => deleteStudioScene(id),
     sceneMode: () => sceneOpen !== null,
@@ -1311,6 +1344,9 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
       playerBar.showSceneTime(timeMs);
       syncSceneStatus(sceneOpen);
       drawSceneOverlays();
+      // World space, like the ground grid: origin middle, unit scale.
+      playgroundView.draw(camera, { x: 0, y: 0, z: 0 }, viewW, viewH,
+        viewSignature(), 1);
       if (sceneTransport.finishAtEnd(timeMs)) playerBar.syncPlayButton();
       return;
     }
@@ -1531,6 +1567,11 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
 
     sceneSession = candidateSession;
     sceneOpen = scene;
+    // The panel adopts the scene BEFORE the live world builds: opening a
+    // scene resets the panel's ramp angle to the station default, and the
+    // profile resolver reads that angle — this order keeps the built world
+    // and the angle readout telling the same story on every (re)open.
+    playgroundPanel?.sceneOpened(scene);
     // A replay scene hands Interact its resolved recorded poses, so the live
     // world starts where the recording starts; the session just validated
     // this exact catalog replay while accepting the scene.
@@ -1593,6 +1634,7 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
     marks.replaceChildren();
     highlightView.setSegments([]);
     highlightView.setVisible(false);
+    playgroundPanel?.sceneOpened(null);
     canvas.style.display = 'block';
     sceneCanvas.style.display = 'none';
     rejectedAutoResize = null;
@@ -3086,6 +3128,7 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
     );
     studioShell.regions.shelf.append(shelfPanel.heading, shelfPanel.body);
     studioShell.regions.stage.append(canvasWrap, viewChip, toggles, viewError, stageHint);
+    studioShell.regions.stage.append(playgroundPanel.root);
     studioShell.regions.player.append(playerBar.transport, playerBar.timelineWrap, playerBar.timeLabel);
     // The library and inspector columns are draggable, so a panel can be given
     // the room it needs. The grid is the shell root, the regions' shared parent.
@@ -3181,6 +3224,8 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
       disposed = true;
       cancelAnimationFrame(frameHandle);
       liveInteract.dispose();
+      playgroundPanel.dispose();
+      playgroundView.dispose();
       construction.dispose();
       shelfPanel.dispose();
       sceneNotesPanel.dispose();

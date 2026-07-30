@@ -31,6 +31,7 @@ import {
   CHAIN_UPRIGHT_RECIPE_ID,
 } from './chain-recipes.js';
 import { createContrastScenes } from './contrast-scenes.js';
+import { createPhysicsPlaygroundScenes } from './physics-playground-scenes.js';
 import { createRiverfallScene } from './riverfall-scene.js';
 import { createWindmillScene } from './windmill-scene.js';
 
@@ -432,6 +433,7 @@ export function createStudioScenes(): readonly SceneV1[] {
     },
     createBallDropScene(),
     createChainLinkStudyScene(),
+    ...createPhysicsPlaygroundScenes(),
     ...createContrastScenes(),
     createRiverfallScene(),
     createWindmillScene(),

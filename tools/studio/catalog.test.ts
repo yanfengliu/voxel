@@ -55,6 +55,7 @@ describe('the studio shelf', () => {
       { name: 'Bedroom furniture', count: 8 },
       { name: 'Ball drop', count: 4 },
       { name: 'Chain', count: 2 },
+      { name: 'Physics playground', count: 28 },
       { name: 'Roof studies', count: 3 },
       { name: 'House', count: 2 },
       { name: 'Home', count: 3 },

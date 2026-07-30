@@ -56,6 +56,11 @@ import {
   type HarnessSweepSummaryV1,
   type PlayerReportV1,
 } from './studio-harness-reports.js';
+import {
+  createPlaygroundHarness,
+  type PlaygroundHarnessHostV1,
+  type VoxelStudioPlaygroundHarnessV1,
+} from './studio-harness-playground.js';
 import type { StudioShelfItemKindV1, StudioShelfMoveV1 } from './studio-shelf-order.js';
 import type { StudioSceneLightingMetricsV1 } from './scene-lighting.js';
 import type {
@@ -337,6 +342,12 @@ export interface VoxelStudioHarnessV1 {
     readonly positions: Readonly<Record<string, readonly [number, number, number]>>;
   };
   /**
+   * The physics playground's transport, cases, spawn, and inspector — the
+   * panel's own capabilities as callable plain-data methods. Methods that
+   * need a live playground scene throw a named error without one.
+   */
+  readonly playground: VoxelStudioPlaygroundHarnessV1;
+  /**
    * The scene on the stage right now as plain data — the same shape `openScene`
    * placed and the editor edits — or null when a single model is open. This is
    * how a driver reads back a move, an add, or an undo and asserts on it.
@@ -556,6 +567,8 @@ export interface HarnessHostV1 {
   stageMode(): 'adjust' | 'interact';
   /** Switches the stage pointer mode; ignored on scenes with no live profile. */
   setStageMode(mode: 'adjust' | 'interact'): void;
+  /** The playground harness's window into the panel and live session. */
+  readonly playgroundHost: PlaygroundHarnessHostV1;
   /**
    * The live solver's current state for the open scene: body, collider and
    * joint counts, spawn tally, the grabbed placement, and steps taken. All
@@ -1113,6 +1126,7 @@ export function createStudioHarness(host: HarnessHostV1): VoxelStudioHarnessV1 {
     stageMode: () => host.stageMode(),
     setStageMode: (mode) => { host.setStageMode(mode); },
     livePhysics: () => host.livePhysics(),
+    playground: createPlaygroundHarness(host.playgroundHost),
     sceneState: () => host.scene(),
     selectPlacement(id) {
       if (id !== null) {

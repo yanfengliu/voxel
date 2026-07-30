@@ -4,6 +4,9 @@ import { createWindmillPurposeGraphV1 } from './windmill-purpose-graph.js';
 import { createBallDropPurposeGraphV1 } from './scene-purpose-ball-drop.js';
 import { createChainPurposeGraphV1 } from './scene-purpose-chain.js';
 import {
+  createPhysicsPlaygroundPurposeGraphsV1,
+} from './scene-purpose-physics-playground.js';
+import {
   createContrastBoardPurposeGraphsV1,
   createGardenPurposeGraphV1,
   createLighting1000PurposeGraphV1,
@@ -40,6 +43,7 @@ Readonly<Record<string, PurposeGraphV1>> {
     createGardenPurposeGraphV1(),
     createBallDropPurposeGraphV1(),
     createChainPurposeGraphV1(),
+    ...createPhysicsPlaygroundPurposeGraphsV1(),
     ...createContrastBoardPurposeGraphsV1(),
     createLightingLabPurposeGraphV1(),
     createLighting1000PurposeGraphV1(),
