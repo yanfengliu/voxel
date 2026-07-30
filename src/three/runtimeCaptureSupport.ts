@@ -55,7 +55,12 @@ export function capturePresentedResourceEntriesInternal(
 
 /** The runtime state the capture port reads. All of it is committed state. */
 export interface RuntimeCapturePortSourceInternal {
-  readonly captureOwnership: 'runtime' | 'host';
+  /**
+   * Read lazily: the coordinator is built in a field initializer, before the
+   * constructor body has resolved the host kind, so an eagerly captured value
+   * would call every runtime — embedded ones included — runtime-owned.
+   */
+  captureOwnership(): 'runtime' | 'host';
   /** Lazy: the runtime binds its renderer after field initialization. */
   renderer(): RendererLike;
   runtimeStatus: RevisionCaptureRuntimePortInternal['runtimeStatus'];
@@ -121,7 +126,7 @@ export function createRuntimeCapturePortInternal(
   source: RuntimeCapturePortSourceInternal,
 ): RevisionCaptureRuntimePortInternal {
   return {
-    captureOwnership: source.captureOwnership,
+    get captureOwnership(): 'runtime' | 'host' { return source.captureOwnership(); },
     runtimeStatus: () => source.runtimeStatus(),
     presentationReadiness: (target) => source.presentationReadiness(target),
     awaitPresented: (target, signal) => source.awaitPresented(target, signal),

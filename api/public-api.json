@@ -380,7 +380,7 @@
       ]
     },
     "dist/three/runtimeTypes.d.ts": {
-      "sha256": "d61581ea8374b94051e2b57471df844fc3b711f876a850660618295adc8074e1",
+      "sha256": "19b51d56b14e200648300029336f083f80fc7847dd68fa7af187f895ec67e7ed",
       "reachableFrom": [
         "./three"
       ]

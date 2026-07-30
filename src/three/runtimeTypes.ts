@@ -75,8 +75,13 @@ export interface ThreeVoxelWorkerStagingBudgetsV1 {
 /**
  * Enables the worker-meshed voxel pipeline. Chunked worlds whose descriptor
  * carries a `chunkProfile` are meshed off the main thread and presented one
- * whole revision at a time; worlds without one keep using the synchronous
- * path, so enabling this never silently changes an unprofiled world.
+ * whole revision at a time.
+ *
+ * One runtime keeps one presentation owner, so this is a choice about the
+ * runtime rather than a per-world upgrade: with workers enabled, a snapshot or
+ * delta whose descriptor carries no `chunkProfile` is rejected with
+ * `three.voxel-profile-required` instead of falling back to the synchronous
+ * path. Give an unprofiled world its own runtime, or give this one a profile.
  *
  * Every budget has a typed default. Omit them unless a measurement says
  * otherwise.

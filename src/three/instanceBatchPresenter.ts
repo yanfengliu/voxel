@@ -155,11 +155,20 @@ function writeBatchSlots(
     mesh.instanceMatrix.needsUpdate = true;
     if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
   } else if (matrixWrites > 0) {
+    // Ranges are element offsets, so each attribute is measured in its own
+    // components: a matrix carries sixteen per instance, while Three stores
+    // instanceColor as three-component RGB. Reading itemSize off the
+    // attribute keeps a sparse colour upload pointed at the slots that
+    // changed instead of walking past them into unrelated components.
+    const colorItemSize = mesh.instanceColor?.itemSize ?? 0;
     for (const range of ranges) {
       const rangeCount = Math.min(range.count, count - range.start);
       if (rangeCount <= 0) continue;
       mesh.instanceMatrix.addUpdateRange(range.start * 16, rangeCount * 16);
-      mesh.instanceColor?.addUpdateRange(range.start * 4, rangeCount * 4);
+      mesh.instanceColor?.addUpdateRange(
+        range.start * colorItemSize,
+        rangeCount * colorItemSize,
+      );
     }
     mesh.instanceMatrix.needsUpdate = true;
     if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;

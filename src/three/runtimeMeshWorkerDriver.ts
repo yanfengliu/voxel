@@ -137,12 +137,14 @@ function assertSinkInternal(sink: unknown): asserts sink is RuntimeMeshWorkerSin
   if (typeof sink !== 'object' || sink === null) {
     throw new TypeError('Runtime mesh worker sink must be an object.');
   }
-  if (
-    !('receiveInternal' in sink) || typeof sink.receiveInternal !== 'function'
-    || !('workerCrashedInternal' in sink) || typeof sink.workerCrashedInternal !== 'function'
-    || !('pumpInternal' in sink) || typeof sink.pumpInternal !== 'function'
-  ) {
-    throw new TypeError('Runtime mesh worker sink is invalid.');
+  const missing = (['receiveInternal', 'workerCrashedInternal', 'pumpInternal'] as const)
+    .filter((name) => !(name in sink) || typeof (sink as Record<string, unknown>)[name] !== 'function');
+  if (missing.length > 0) {
+    throw new TypeError(
+      `A runtime mesh worker sink must supply ${missing.join(', ')} as ${
+        missing.length === 1 ? 'a function' : 'functions'
+      }; ${missing.length === 1 ? 'it is' : 'they are'} missing or not callable.`,
+    );
   }
 }
 

@@ -96,8 +96,12 @@ function assertExactManifest(
   positiveFinite('manifest.viewport.pixelRatio', manifest.viewport.pixelRatio);
   nonnegativeSafeInteger('manifest.deviceGeneration', manifest.deviceGeneration);
   nonnegativeSafeInteger('manifest.cameraGeneration', manifest.cameraGeneration);
-  if (!['perspective', 'orthographic', 'generic'].includes(manifest.camera.projectionKind)) {
-    throw new Error('manifest.camera.projectionKind is invalid.');
+  const projectionKinds = ['perspective', 'orthographic', 'generic'];
+  if (!projectionKinds.includes(manifest.camera.projectionKind)) {
+    throw new Error(
+      `manifest.camera.projectionKind must be one of ${projectionKinds.join(', ')}; received `
+      + `'${manifest.camera.projectionKind}'.`,
+    );
   }
   frozenMatrix('manifest.camera.projectionMatrix', manifest.camera.projectionMatrix);
   frozenMatrix(

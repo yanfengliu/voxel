@@ -99,7 +99,10 @@ export function normalizeCaptureOptionsInternal(
 
 function resourceEntry(value: ThreeCaptureResourceEntryV1): ThreeCaptureResourceEntryV1 {
   if (!RESOURCE_LANE_ORDINAL_INTERNAL.has(value.lane)) {
-    throw new TypeError('Capture resource lane is invalid.');
+    throw new TypeError(
+      `Capture resource lane must be one of ${[...RESOURCE_LANE_ORDINAL_INTERNAL.keys()].join(', ')}; `
+      + `received '${value.lane}'.`,
+    );
   }
   if (
     typeof value.key !== 'string'

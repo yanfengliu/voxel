@@ -590,6 +590,7 @@ export class ThreeRenderRuntime {
       deviceGeneration: () => this.deviceGeneration,
       isRunningAttempt: (generation) => this.isRunningAttempt(generation),
       hasRuntimeEndedAfterCallbacks: () => this.hasRuntimeEndedAfterCallbacks(),
+      isFrameUnavailableAfterCallbacks: () => this.isFrameUnavailableAfterCallbacks(),
       renderCurrent: () => { this.renderCurrent(); },
       transitionToFailed: (phase, reason) => { this.transitionToFailed(phase, reason); },
       frames: () => this.frames,
@@ -620,7 +621,7 @@ export class ThreeRenderRuntime {
   /** Exposes only committed presented state to the capture coordinator. */
   private captureRuntimePortInternal(): RevisionCaptureRuntimePortInternal {
     return createRuntimeCapturePortInternal({
-      captureOwnership: this.hostKind === 'embedded' ? 'host' : 'runtime',
+      captureOwnership: () => (this.hostKind === 'embedded' ? 'host' : 'runtime'),
       renderer: () => this.renderer,
       runtimeStatus: () => this.runtimeStatus(),
       presentationReadiness: (target) => this.world.presentationReadiness(target),

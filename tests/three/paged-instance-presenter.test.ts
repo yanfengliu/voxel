@@ -175,7 +175,13 @@ describe('paged instance presenter integration', () => {
     expect(fixture.presenter.presentationMatrixWritesInternal).toBe(601);
     expect(fixture.presenter.presentationColorWritesInternal).toBe(601);
     expect(mesh.instanceMatrix.updateRanges).toEqual([{ start: 257 * 16, count: 16 }]);
-    expect(mesh.instanceColor?.updateRanges).toEqual([{ start: 257 * 4, count: 4 }]);
+    // Colour ranges must be measured in the attribute's own components —
+    // Three stores instanceColor as three-component RGB, so a stride of four
+    // uploaded the wrong floats and left the changed slot stale on the GPU.
+    const colorItemSize = mesh.instanceColor?.itemSize;
+    expect(colorItemSize).toBe(3);
+    expect(mesh.instanceColor?.updateRanges)
+      .toEqual([{ start: 257 * colorItemSize!, count: colorItemSize }]);
     const actual = new Matrix4();
     mesh.getMatrixAt(257, actual);
     expect(actual.elements[12]).toBe(9_000);

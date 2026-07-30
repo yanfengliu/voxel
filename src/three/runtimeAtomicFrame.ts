@@ -66,6 +66,8 @@ export interface RuntimeAtomicFrameOpsInternal {
   deviceGeneration(): number;
   isRunningAttempt(generation: number): boolean;
   hasRuntimeEndedAfterCallbacks(): boolean;
+  /** Lost or restoring: the runtime lives, but this frame reaches no canvas. */
+  isFrameUnavailableAfterCallbacks(): boolean;
   renderCurrent(): void;
   transitionToFailed(phase: ThreeRuntimeFailurePhaseV1, reason: unknown): void;
   frames(): number;
@@ -533,6 +535,11 @@ export class RuntimeAtomicFrameCoordinatorInternal {
       return undefined;
     }
     if (this.ops.hasRuntimeEndedAfterCallbacks()) return undefined;
+    // A waiter callback can lose the context synchronously. The canonical
+    // commit stands, but this frame is no longer on any canvas: publishing it
+    // would hand back a manifest whose frame picking and capture immediately
+    // refuse, so the frame ends quietly the same way a disposed one does.
+    if (this.ops.isFrameUnavailableAfterCallbacks()) return undefined;
     this.ops.commitPresentedPointers(context, manifest, committedRenderInfo);
     return manifest;
   }

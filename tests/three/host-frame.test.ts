@@ -160,6 +160,29 @@ function createEmbeddedHost() {
 }
 
 describe('ThreeRenderRuntime embedded host frames', () => {
+  /**
+   * The capture coordinator is built in a field initializer, which runs before
+   * the constructor resolves the host kind — so an eagerly read ownership made
+   * every runtime runtime-owned, and an embedded runtime would redraw and read
+   * back the host's own shared canvas instead of handing the frame to its host.
+   */
+  it('leaves capture to the host it borrowed the renderer from', () => {
+    const { renderer, scene, camera, runtime } = createEmbeddedHost();
+    expect(runtime.acceptSnapshot(citySnapshot(1, 3)).status).toBe('accepted');
+    const proposal = prepared(runtime.prepareFrame({ nowMs: 20, deltaMs: 20, frameIndex: 1 }));
+    renderer.render(scene, camera);
+    runtime.commitFrame(proposal.ticket);
+    renderer.render.mockClear();
+    renderer.domElement.toDataURL.mockClear();
+
+    const result = runtime.captureWithManifest();
+
+    expect(result.status).toBe('host-capture-owned');
+    // The runtime neither redrew the host's canvas nor read pixels off it.
+    expect(renderer.render).not.toHaveBeenCalled();
+    expect(renderer.domElement.toDataURL).not.toHaveBeenCalled();
+  });
+
   it('lets a City-shaped host draw exactly once and returns an immutable presented manifest', () => {
     const { renderer, scene, camera, runtime } = createEmbeddedHost();
     const before = hostState(renderer, scene, camera);
