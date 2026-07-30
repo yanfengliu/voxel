@@ -579,6 +579,63 @@ describe('RenderWorld.acceptDelta', () => {
     expect(committed).toBeUndefined();
   });
 
+  /**
+   * Batch lanes take ownership through paged plans rather than the resource
+   * and chunk path, and those plans are built after the operation loop has run
+   * every caller accessor — so closing the window for resources and chunks
+   * alone left it open here. Both batch shapes are pinned: the poisoned
+   * element must be named and canonical state must not move.
+   */
+  it.each([
+    ['put-batch', 'operations[0].batch.matrices[12]'],
+    ['patch-batch-instances', 'operations[0].upserts.matrices[12]'],
+  ])('refuses a %s whose later getter poisons its matrices', (shape, path) => {
+    const world = new RenderWorld();
+    expect(world.acceptSnapshot(validSnapshot(1)).status).toBe('accepted');
+    const before = world.acceptedSnapshot();
+    const source = validSnapshot(1).batches[0]!;
+    const matrices = new Float32Array(source.matrices);
+    const first = shape === 'put-batch'
+      ? { op: 'put-batch', batch: { ...source, key: 'batch:probe', revision: 2, incarnation: 1, matrices } }
+      : {
+          op: 'patch-batch-instances',
+          key: source.key,
+          incarnation: source.incarnation,
+          revision: 2,
+          removeInstanceKeys: [],
+          upserts: {
+            instanceKeys: [source.instanceKeys[0]!],
+            matrices: matrices.slice(0, 16),
+            ...(source.colors ? { colors: source.colors.slice(0, 4) } : {}),
+          },
+        };
+    // Independently valid, so only the poisoning can reject this transaction.
+    const spare = validSnapshot(1).resources.find((resource) => resource.kind === 'geometry')!;
+    const second = Object.defineProperty(
+      { resource: { ...spare, key: 'geometry:spare', revision: 2 } },
+      'op',
+      {
+        enumerable: true,
+        get() {
+          const target = shape === 'put-batch' ? matrices : (first as { upserts: { matrices: Float32Array } }).upserts.matrices;
+          target[12] = Number.NaN;
+          return 'put-resource';
+        },
+      },
+    );
+
+    const result = world.acceptDelta(
+      delta(1, 2, [first, second] as unknown as readonly RenderOperationV1[]),
+    );
+    expect(result, JSON.stringify(result)).toMatchObject({
+      status: 'rejected',
+      code: 'number.non-finite',
+      path,
+    });
+    expect(world.acceptedRevision).toBe(1);
+    expect(world.acceptedSnapshot()).toEqual(before);
+  });
+
   it('enforces validation work before traversing the operation payload', () => {
     const world = new RenderWorld();
     const snapshot = validSnapshot(1);

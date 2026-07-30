@@ -533,6 +533,37 @@ function ownParsedTargets(
   }
 }
 
+/**
+ * Revalidates each parsed batch payload, put and patch alike, and replaces it
+ * with owned arrays. Paged plans copy from these arrays after the operation
+ * loop has run every caller accessor, so without this pass a later getter can
+ * rewrite an upsert matrix that already passed validation and have the plan
+ * page the rewritten value into canonical state.
+ */
+function revalidateParsedBatchTargets(
+  batches: Map<string, ParsedBatchTarget>,
+  limits: RenderLimitsV1,
+  maxInputTypedArrayBytes: number,
+): void {
+  const budget = new SnapshotByteBudgetInternal(maxInputTypedArrayBytes, undefined, true);
+  for (const [targetKey, target] of batches) {
+    if (target.kind === 'remove') continue;
+    const source = target.kind === 'patch' ? target.upserts : target.value!;
+    const owned = unwrap(validateAndCopyInstanceBatchV1Internal(
+      source,
+      target.kind === 'patch' ? `${target.path}.upserts` : `${target.path}.batch`,
+      limits,
+      budget,
+    ));
+    batches.set(
+      targetKey,
+      target.kind === 'patch'
+        ? { ...target, upserts: owned }
+        : { ...target, value: owned },
+    );
+  }
+}
+
 function preflightTombstones(
   state: CanonicalRenderStateV1,
   resources: ReadonlyMap<string, ParsedTarget<RenderResourceV1>>,
@@ -762,6 +793,17 @@ function applyOperations(
     readonly prepared: PreparedPagedInstanceBatchPatchInternal;
   }>();
   work.charge(batchTargets.size * 4);
+  // Batch lanes take ownership through paged plans rather than
+  // ownParsedTargets, and those plans are built from here down -- after every
+  // caller accessor in the operation loop has already run. Revalidate the
+  // getter-free parsed payloads first, for the same reason and in the same
+  // shape as ownParsedTargets: a plan must page the content that was checked,
+  // not content a later getter rewrote afterwards.
+  revalidateParsedBatchTargets(
+    batchTargets,
+    state.descriptorViewInternal().limits,
+    transactionLimits.maxInputTypedArrayBytes,
+  );
   for (const target of targetsByKey(batchTargets.values(), work)) {
     const live = batches.get(target.key);
     if (target.kind === 'remove') {
