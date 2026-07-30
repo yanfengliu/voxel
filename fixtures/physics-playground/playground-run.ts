@@ -75,6 +75,9 @@ function applyAction(world: PlaygroundWorldV1, action: PlaygroundActionV1): void
     case 'impulse':
       world.impulse(action.placementId, action.impulse);
       return;
+    case 'detach-joint':
+      world.detachJoint(action.jointId);
+      return;
     default: {
       const never: never = action;
       throw new Error(`Unknown playground action: ${JSON.stringify(never)}`);
@@ -93,6 +96,7 @@ export async function runPlaygroundScenarioV1(
   const now = options.now ?? (() => performance.now());
   await initPlaygroundRapierV1();
   const world = PlaygroundWorldV1.create(station, {
+    ...(scenario.omit !== undefined ? { omit: scenario.omit } : {}),
     ...(scenario.angleDegrees !== undefined
       ? { rampAngleDegrees: scenario.angleDegrees }
       : station.defaultRampAngleDegrees !== undefined

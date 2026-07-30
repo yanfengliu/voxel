@@ -291,3 +291,74 @@ test('a launcher case fires and the debug overlay draws', async ({ page }) => {
 
   expect(errors).toEqual([]);
 });
+
+test('the trebuchet holds cocked, fires downrange, and reset re-cocks it', async ({ page }) => {
+  const errors: string[] = [];
+  page.on('pageerror', (error) => errors.push(error.message));
+  page.on('console', (message) => {
+    if (message.type() === 'error') errors.push(message.text());
+  });
+
+  const response = await page.goto(studioOrigin, { waitUntil: 'load' });
+  expect(response?.ok()).toBe(true);
+  await openPlayground(page, 'studio:scene:physics-trebuchet');
+
+  // Cocked and holding: the ball waits in the pouch behind the machine,
+  // and the live world carries all four declared joints.
+  const opening = await page.evaluate(() => ({
+    joints: window.voxelStudio!.livePhysics().joints,
+    ball: window.voxelStudio!.playground.bodies()
+      .find((body) => body.placementId === 'ball'),
+  }));
+  expect(opening.joints).toBe(4);
+  expect(opening.ball?.translation[2] ?? 0).toBeGreaterThan(4);
+  await page.waitForFunction(
+    () => window.voxelStudio!.playground.state().stepped > 120,
+    undefined,
+    { timeout: 30_000 },
+  );
+  const held = await page.evaluate(() => window.voxelStudio!.playground
+    .bodies().find((body) => body.placementId === 'ball'));
+  expect(Math.abs((held?.translation[2] ?? 0) - (opening.ball?.translation[2] ?? 9)))
+    .toBeLessThan(0.3);
+
+  // Fire: the lashing detaches, the whip carries the ball up and over,
+  // and it crosses far downrange in the firing plane.
+  expect(await page.evaluate(() =>
+    window.voxelStudio!.playground.fireCase('fire'))).toBe(true);
+  await page.waitForFunction(
+    () => {
+      const row = window.voxelStudio!.playground.bodies()
+        .find((body) => body.placementId === 'ball');
+      return row !== undefined && row.translation[2] < -4;
+    },
+    undefined,
+    { timeout: 60_000 },
+  );
+  const flight = await page.evaluate(() => ({
+    joints: window.voxelStudio!.livePhysics().joints,
+    ball: window.voxelStudio!.playground.bodies()
+      .find((body) => body.placementId === 'ball'),
+  }));
+  expect(flight.joints).toBe(3);
+  expect(Math.abs(flight.ball?.translation[0] ?? 9)).toBeLessThan(1.5);
+
+  // Reset rebuilds the cocked machine: the lashing is back and the ball
+  // waits in the pouch again.
+  await page.evaluate(() => { window.voxelStudio!.playground.reset(); });
+  await page.waitForFunction(
+    () => {
+      const state = window.voxelStudio!.playground.state();
+      if (!state.available || state.stepped >= 400) return false;
+      const row = window.voxelStudio!.playground.bodies()
+        .find((body) => body.placementId === 'ball');
+      return row !== undefined && row.translation[2] > 4;
+    },
+    undefined,
+    { timeout: 30_000 },
+  );
+  expect(await page.evaluate(() => window.voxelStudio!.livePhysics().joints))
+    .toBe(4);
+
+  expect(errors).toEqual([]);
+});

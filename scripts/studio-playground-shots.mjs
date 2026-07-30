@@ -94,6 +94,46 @@ await open('studio:scene:physics-field-medium');
 await page.waitForFunction(() => window.voxelStudio.playground.state().stepped > 120);
 await shot('field-medium-drop');
 
+// Trebuchet: cocked and holding, the whip mid-fire, the landed machine
+// at rest, an adversarial low-side view of the bearings, and the overlay
+// on the arm while cocked.
+await open('studio:scene:physics-trebuchet');
+await page.waitForFunction(() => window.voxelStudio.playground.state().stepped > 200);
+// The landing tiles stretch the auto-fit far out; pull in on the machine.
+await page.evaluate(() => {
+  window.voxelStudio.setViewAngles({ yawDegrees: 35, pitchDegrees: 22, viewHeight: 16 });
+});
+await shot('trebuchet-cocked');
+await page.evaluate(() => {
+  window.voxelStudio.playground.selectBody('arm');
+  window.voxelStudio.playground.setOverlay(true);
+});
+await shot('trebuchet-cocked-overlay-arm');
+await page.evaluate(() => { window.voxelStudio.playground.setOverlay(false); });
+await page.evaluate(() => {
+  window.voxelStudio.setViewAngles({ yawDegrees: 265, pitchDegrees: 6, viewHeight: 14 });
+});
+await shot('trebuchet-cocked-low-side');
+await page.evaluate(() => {
+  window.voxelStudio.setViewAngles({ yawDegrees: 55, pitchDegrees: 24, viewHeight: 22 });
+});
+await page.evaluate(() => window.voxelStudio.playground.fireCase('fire'));
+await page.waitForTimeout(650);
+await shot('trebuchet-midwhip');
+await page.evaluate(() => {
+  window.voxelStudio.setViewAngles({ yawDegrees: 75, pitchDegrees: 35, viewHeight: 44 });
+});
+await page.waitForTimeout(2600);
+await shot('trebuchet-landed');
+// Pin the landed ball: overlay lines mark its collider on the far tile.
+await page.evaluate(() => {
+  window.voxelStudio.playground.selectBody('ball');
+  window.voxelStudio.playground.setOverlay(true);
+  window.voxelStudio.setViewAngles({ yawDegrees: 90, pitchDegrees: 40, viewHeight: 34 });
+});
+await shot('trebuchet-ball-landed-overlay');
+await page.evaluate(() => { window.voxelStudio.playground.setOverlay(false); });
+
 await browser.close();
 await server.close();
 console.log('done');

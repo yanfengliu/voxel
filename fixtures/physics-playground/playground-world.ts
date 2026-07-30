@@ -1,6 +1,7 @@
 import RAPIER from '@dimforge/rapier3d-compat';
 
 import {
+  playgroundJointSpecsV1,
   playgroundBodySpecsV1,
   type PlaygroundBodySpecV1,
   type PlaygroundBuildOptionsV1,
@@ -61,6 +62,11 @@ export class PlaygroundWorldV1 {
   readonly specs: ReadonlyMap<string, PlaygroundBodySpecV1>;
   #world: RAPIER.World | null;
   #bodies = new Map<string, LiveBody>();
+  #joints = new Map<string, {
+    readonly joint: RAPIER.ImpulseJoint;
+    readonly a: string;
+    readonly b: string;
+  }>();
   #tick = 0;
 
   private constructor(
@@ -83,6 +89,25 @@ export class PlaygroundWorldV1 {
     for (const spec of specs.values()) {
       if (spec.spawnOnly) continue;
       built.#createBody(spec, undefined);
+    }
+    for (const plan of playgroundJointSpecsV1(station, specs)) {
+      const a = built.#bodies.get(plan.a);
+      const b = built.#bodies.get(plan.b);
+      if (!a || !b) continue;
+      const anchorA = { x: plan.anchorA[0], y: plan.anchorA[1], z: plan.anchorA[2] };
+      const anchorB = { x: plan.anchorB[0], y: plan.anchorB[1], z: plan.anchorB[2] };
+      const data = plan.kind === 'revolute'
+        ? RAPIER.JointData.revolute(anchorA, anchorB, {
+          x: plan.axis![0], y: plan.axis![1], z: plan.axis![2],
+        })
+        : plan.kind === 'spherical'
+          ? RAPIER.JointData.spherical(anchorA, anchorB)
+          : RAPIER.JointData.rope(plan.lengthMeters!, anchorA, anchorB);
+      built.#joints.set(plan.id, {
+        joint: world.createImpulseJoint(data, a.body, b.body, true),
+        a: plan.a,
+        b: plan.b,
+      });
     }
     return built;
   }
@@ -176,8 +201,33 @@ export class PlaygroundWorldV1 {
         + 'it was never spawned or was already removed.',
       );
     }
+    // Rapier removes a body's joints with it; forget them so a later
+    // detach reports the honest state instead of touching freed memory.
+    for (const [id, entry] of this.#joints) {
+      if (entry.a === placementId || entry.b === placementId) {
+        this.#joints.delete(id);
+      }
+    }
     this.#requireWorld().removeRigidBody(live.body);
     this.#bodies.delete(placementId);
+  }
+
+  /** Releases a joint — the trigger action. Both bodies stay. */
+  detachJoint(jointId: string): void {
+    const entry = this.#joints.get(jointId);
+    if (!entry) {
+      throw new Error(
+        `Detach names joint '${jointId}', but no live joint carries that `
+        + 'id — it was never created, already detached, or lost a body. '
+        + 'Declared joints detach at most once per run.',
+      );
+    }
+    this.#requireWorld().removeImpulseJoint(entry.joint, true);
+    this.#joints.delete(jointId);
+  }
+
+  jointCount(): number {
+    return this.#joints.size;
   }
 
   impulse(placementId: string, impulse: readonly [number, number, number]): void {
@@ -286,6 +336,9 @@ export class PlaygroundWorldV1 {
       this.#world.free();
       this.#world = null;
       this.#bodies.clear();
+      // Rapier drops the joints with the world; forget them too, so a
+      // disposed world never reports live constraints it no longer has.
+      this.#joints.clear();
     }
   }
 }

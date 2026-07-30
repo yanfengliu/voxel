@@ -21,6 +21,14 @@ import {
  * Floor penetration is measured exactly: each body's lowest world point is
  * the minimum over its rotated collider-box corners (or sphere bottom), so
  * a tilted beam is judged by its actual geometry, not a bounding guess.
+ *
+ * Ratchet note: this file passed 500 lines when the trebuchet added swept
+ * rotation and windowed peak speed. Both belong beside the other verdicts
+ * because they share the frame-walking and message conventions, and the
+ * exhaustive switch is what forces a new check to be implemented rather
+ * than silently ignored. The recorded extraction plan is to split the
+ * verdict vocabulary from the evaluator (`-check-kinds.ts` beside
+ * `-checks.ts`) the first time a station needs a check family of its own.
  */
 
 export interface PlaygroundBodySnapshotV1 {
@@ -435,9 +443,11 @@ function evaluateCheck(
       return pass('Every recorded value is finite.');
     }
     case 'all-asleep-or-slow': {
+      const only = ref.placementIds;
       for (const body of last.bodies) {
         const spec = specs.get(body.placementId);
         if (spec?.kind !== 'dynamic') continue;
+        if (only !== undefined && !only.includes(body.placementId)) continue;
         const bodySpeed = speed(body);
         if (!body.sleeping && bodySpeed > ref.maxSpeed) {
           return fail(
@@ -448,7 +458,83 @@ function evaluateCheck(
         }
       }
       return pass(
-        `Every dynamic body is asleep or under ${String(ref.maxSpeed)} m/s.`,
+        `${ref.placementIds === undefined
+          ? 'Every dynamic body'
+          : ref.placementIds.map((id) => `'${id}'`).join(', ')} is asleep or `
+        + `under ${String(ref.maxSpeed)} m/s.`,
+      );
+    }
+    case 'peak-speed-at-least': {
+      let peak = 0;
+      for (const frame of frames) {
+        if (ref.throughTick !== undefined && frame.tick > ref.throughTick) break;
+        const body = frame.bodies.find(
+          (row) => row.placementId === ref.placementId);
+        if (body) peak = Math.max(peak, speed(body));
+      }
+      const window = ref.throughTick === undefined
+        ? 'across the sampled frames'
+        : `across sampled frames through tick ${String(ref.throughTick)}`;
+      if (peak < ref.minSpeed) {
+        return fail(
+          `'${ref.placementId}' peaked at ${peak.toFixed(2)} m/s ${window}; `
+          + `the scenario expects at least ${String(ref.minSpeed)} m/s.`,
+        );
+      }
+      return pass(
+        `'${ref.placementId}' peaked at ${peak.toFixed(2)} m/s ${window}, `
+        + `at least the expected ${String(ref.minSpeed)} m/s.`,
+      );
+    }
+    case 'rotated-at-least':
+    case 'rotated-at-most': {
+      firstAppearance(frames, ref.placementId, ref.check);
+      // Total swept angle, accumulated frame to frame. Measuring the
+      // attitude difference against the start instead — 2·acos(|dot|) —
+      // silently folds at 180 degrees: a body parked at 350 degrees reads
+      // as 0, and the no-sling arm's true 234-degree swing read as 179.
+      // Summing per-frame deltas has no ceiling and cannot alias a
+      // resting body into a passing 'barely moved' verdict.
+      //
+      // The per-frame delta is itself an under-read when a body turns
+      // more than 180 degrees between two sampled frames; the sampling
+      // stride is the honest bound, and the message says 'swept'.
+      let degrees = 0;
+      let previous: readonly [number, number, number, number] | null = null;
+      for (const frame of frames) {
+        const body = frame.bodies.find(
+          (row) => row.placementId === ref.placementId);
+        if (!body) continue;
+        if (previous !== null) {
+          const dot = Math.min(1, Math.abs(
+            previous[0] * body.quaternion[0]
+            + previous[1] * body.quaternion[1]
+            + previous[2] * body.quaternion[2]
+            + previous[3] * body.quaternion[3],
+          ));
+          degrees += (2 * Math.acos(dot) * 180) / Math.PI;
+        }
+        previous = body.quaternion;
+      }
+      if (ref.check === 'rotated-at-least' && degrees < ref.minDegrees) {
+        return fail(
+          `'${ref.placementId}' swept ${degrees.toFixed(1)}°, under the `
+          + `expected ${String(ref.minDegrees)}° — the mechanism never `
+          + 'swung.',
+        );
+      }
+      if (ref.check === 'rotated-at-most' && degrees > ref.maxDegrees) {
+        return fail(
+          `'${ref.placementId}' swept ${degrees.toFixed(1)}°, over the `
+          + `${String(ref.maxDegrees)}° limit — it moved without its `
+          + 'declared power source.',
+        );
+      }
+      return pass(
+        `'${ref.placementId}' swept ${degrees.toFixed(1)}°, `
+        + (ref.check === 'rotated-at-least'
+          ? `at least the expected ${String(ref.minDegrees)}°.`
+          : `within the ${String(ref.maxDegrees)}° limit.`),
       );
     }
     default: {

@@ -4,6 +4,7 @@ import {
   type PlaygroundMaterialIdV1,
 } from './physics-playground-materials.js';
 import { createPlaygroundFieldStationsV1 } from './physics-playground-fields.js';
+import { createTrebuchetStationV1 } from './physics-playground-trebuchet.js';
 import {
   PLAYGROUND_FLOOR_TOP_V1,
   type PlaygroundAlignV1,
@@ -945,6 +946,7 @@ export function createPhysicsPlaygroundStationsV1(): readonly PlaygroundStationV
     launcherStation(),
     structuresStation(),
     rollingStation(),
+    createTrebuchetStationV1(),
     ...createPlaygroundFieldStationsV1(),
   ]);
 }

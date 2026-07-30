@@ -2,7 +2,10 @@ import type {
   LivePhysicsBodyPlanV1,
   LivePhysicsProfileV1,
 } from './live-physics.js';
-import { playgroundBodySpecsV1 } from './physics-playground-bodies.js';
+import {
+  playgroundBodySpecsV1,
+  playgroundJointSpecsV1,
+} from './physics-playground-bodies.js';
 import {
   createPhysicsPlaygroundStationsV1,
   physicsPlaygroundStationV1,
@@ -59,6 +62,18 @@ export function createPhysicsPlaygroundProfileV1(
     sceneId: station.sceneId,
     bodies,
     poses,
+    joints: playgroundJointSpecsV1(station, specs).map((joint) => ({
+      id: joint.id,
+      kind: joint.kind,
+      a: joint.a,
+      b: joint.b,
+      anchorA: joint.anchorA,
+      anchorB: joint.anchorB,
+      ...(joint.axis ? { axis: joint.axis } : {}),
+      ...(joint.lengthMeters !== undefined
+        ? { lengthMeters: joint.lengthMeters }
+        : {}),
+    })),
   };
 }
 

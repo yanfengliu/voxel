@@ -1,4 +1,5 @@
 import type { RecipeBookV1, RecipeV1, RecipeStepV1 } from './recipe.js';
+import { createTrebuchetRecipesV1 } from './physics-playground-trebuchet.js';
 import {
   PLAYGROUND_MATERIALS_V1,
   type PlaygroundMaterialIdV1,
@@ -30,7 +31,7 @@ const STILL = {
   scale: [0, 0, 0] as const,
 };
 
-function materialPalette(material: PlaygroundMaterialIdV1): {
+export function materialPalette(material: PlaygroundMaterialIdV1): {
   readonly roles: readonly string[];
   readonly palette: { r: number; g: number; b: number }[];
 } {
@@ -41,7 +42,7 @@ function materialPalette(material: PlaygroundMaterialIdV1): {
   };
 }
 
-function boxStep(
+export function boxStep(
   at: readonly [number, number, number],
   size: readonly [number, number, number],
   role: string,
@@ -56,7 +57,7 @@ function boxStep(
   };
 }
 
-function playgroundRecipe(options: {
+export function playgroundRecipe(options: {
   readonly id: string;
   readonly label: string;
   readonly summary: string;
@@ -269,7 +270,7 @@ export function createPlaygroundBeamRecipe(): RecipeV1 {
 }
 
 /** Squared-integer sphere membership, the same rule the drop ball uses. */
-function sphereCells(diameter: number): number[] {
+export function sphereCells(diameter: number): number[] {
   const radius = (diameter - 1) / 2;
   const cells: number[] = [];
   for (let z = 0; z < diameter; z += 1) {
@@ -524,6 +525,7 @@ export function createPlaygroundTowerBlockRecipe(): RecipeV1 {
 
 export function createPhysicsPlaygroundRecipeBook(): RecipeBookV1 {
   const recipes = [
+    ...createTrebuchetRecipesV1(),
     createPlaygroundFloorRecipe(),
     createPlaygroundApronRecipe(),
     createPlaygroundBermRecipe(),

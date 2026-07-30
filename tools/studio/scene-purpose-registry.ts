@@ -6,6 +6,7 @@ import { createChainPurposeGraphV1 } from './scene-purpose-chain.js';
 import {
   createPhysicsPlaygroundPurposeGraphsV1,
 } from './scene-purpose-physics-playground.js';
+import { createTrebuchetPurposeGraphV1 } from './scene-purpose-trebuchet.js';
 import {
   createContrastBoardPurposeGraphsV1,
   createGardenPurposeGraphV1,
@@ -44,6 +45,7 @@ Readonly<Record<string, PurposeGraphV1>> {
     createBallDropPurposeGraphV1(),
     createChainPurposeGraphV1(),
     ...createPhysicsPlaygroundPurposeGraphsV1(),
+    createTrebuchetPurposeGraphV1(),
     ...createContrastBoardPurposeGraphsV1(),
     createLightingLabPurposeGraphV1(),
     createLighting1000PurposeGraphV1(),

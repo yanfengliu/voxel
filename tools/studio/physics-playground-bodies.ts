@@ -8,6 +8,7 @@ import {
 } from './physics-playground-materials.js';
 import { createPhysicsPlaygroundRecipeBook } from './physics-playground-recipes.js';
 import type {
+  PlaygroundJointV1,
   PlaygroundBodyDefV1,
   PlaygroundSlopeV1,
   PlaygroundStationV1,
@@ -62,6 +63,8 @@ export interface PlaygroundBodySpecV1 {
 export interface PlaygroundBuildOptionsV1 {
   /** Ramp angle in degrees for stations with a 'ramp-angle' slope. */
   readonly rampAngleDegrees?: number;
+  /** Bodies excluded from this build — scenario subtraction evidence. */
+  readonly omit?: readonly string[];
 }
 
 type Vec3 = readonly [number, number, number];
@@ -269,6 +272,13 @@ function bodySpec(
       rotation = quatAboutY((body.turns * Math.PI) / 2);
     }
   }
+  if (body.poseOverride) {
+    // The machine stations pose flat-authored parts — a cocked arm, a
+    // plumb counterweight — with explicit numbers computed from the same
+    // constants that drew them.
+    centre = body.poseOverride.centre;
+    rotation = body.poseOverride.quaternion;
+  }
 
   const largestExtent = Math.max(model.size[0], model.size[1], model.size[2]);
   return {
@@ -308,6 +318,16 @@ export function playgroundBodySpecsV1(
     frames.set(slope.slopeId, slopeFrame(slope, options.rampAngleDegrees));
   }
   const specs = new Map<string, PlaygroundBodySpecV1>();
+  const omitted = new Set(options.omit ?? []);
+  for (const name of omitted) {
+    if (!station.bodies.some((body) => body.placementId === name)) {
+      throw new Error(
+        `The omit list names '${name}', but station '${station.sceneId}' `
+        + 'declares no such body — subtraction evidence must remove a real '
+        + "part, so fix the scenario's omit list.",
+      );
+    }
+  }
   for (const body of station.bodies) {
     if (specs.has(body.placementId)) {
       throw new Error(
@@ -316,7 +336,72 @@ export function playgroundBodySpecsV1(
         + 'and must be unique within a station.',
       );
     }
+    if (omitted.has(body.placementId)) continue;
     specs.set(body.placementId, bodySpec(body, frames));
   }
   return specs;
+}
+
+/**
+ * The station's joints, validated against its bodies. A joint whose end
+ * was omitted from this build is dropped with the omitted body; a joint
+ * naming a body the station never declared, joining a body to itself, a
+ * revolute without an axis, or a rope without a length is an authoring
+ * error and throws. Joints require build-time bodies — a spawn-only end
+ * would dangle until its case fires, which no current machine needs.
+ */
+export function playgroundJointSpecsV1(
+  station: PlaygroundStationV1,
+  specs: ReadonlyMap<string, PlaygroundBodySpecV1>,
+): readonly PlaygroundJointV1[] {
+  const joints: PlaygroundJointV1[] = [];
+  const seen = new Set<string>();
+  for (const joint of station.joints ?? []) {
+    if (seen.has(joint.id)) {
+      throw new Error(
+        `Station '${station.sceneId}' declares joint '${joint.id}' twice; `
+        + 'joint ids are identities and must be unique.',
+      );
+    }
+    seen.add(joint.id);
+    if (joint.a === joint.b) {
+      throw new Error(
+        `Joint '${joint.id}' joins '${joint.a}' to itself; a joint needs `
+        + 'two distinct bodies.',
+      );
+    }
+    for (const end of [joint.a, joint.b]) {
+      const declared = station.bodies.find(
+        (body) => body.placementId === end);
+      if (declared === undefined) {
+        throw new Error(
+          `Joint '${joint.id}' names '${end}', but station `
+          + `'${station.sceneId}' declares no such body. Joints must join `
+          + 'declared placements.',
+        );
+      }
+      if (declared.spawnOnly) {
+        throw new Error(
+          `Joint '${joint.id}' names spawn-only body '${end}'. Joints `
+          + 'require build-time bodies; make the body ordinary or drop '
+          + 'the joint.',
+        );
+      }
+    }
+    if (joint.kind === 'revolute' && joint.axis === undefined) {
+      throw new Error(
+        `Revolute joint '${joint.id}' declares no axis; a hinge needs its `
+        + "rotation axis in body a's local frame.",
+      );
+    }
+    if (joint.kind === 'rope' && joint.lengthMeters === undefined) {
+      throw new Error(
+        `Rope joint '${joint.id}' declares no lengthMeters; a rope needs `
+        + 'its maximum anchor separation.',
+      );
+    }
+    if (!specs.has(joint.a) || !specs.has(joint.b)) continue;
+    joints.push(joint);
+  }
+  return joints;
 }

@@ -21,6 +21,15 @@ import type { StudioModelV1 } from './model.js';
  *   `decomposeVoxelsV1`, so the shape being pushed is exactly the shape being
  *   drawn. Spawned balls are the one stated exception: a ball must roll, and
  *   a voxel ball is a stack of boxes, so its collider is its bounding sphere.
+ *
+ * Ratchet note: this file was already past 500 lines and the trebuchet added
+ * about 70 more for joints — creation, `jointIds`, `detachJoint`, and
+ * forgetting a removed body's constraints. They live here because a joint
+ * is meaningless without the bodies it joins and the disposal path that
+ * outlives them; splitting them out would put a lifecycle across two files.
+ * The recorded extraction plan is to lift the session's body/collider
+ * construction into `live-physics-bodies.ts` — the largest self-contained
+ * block — the first time this file grows again.
  */
 
 export interface LivePhysicsBodyPlanV1 {
@@ -80,6 +89,21 @@ export interface LivePhysicsProfileV1 {
     readonly centre: readonly [number, number, number];
     readonly rotation?: readonly [number, number, number, number];
   }>>;
+  /** Constraints between planned bodies; anchors are body-local meters. */
+  readonly joints?: readonly LivePhysicsJointPlanV1[];
+}
+
+export interface LivePhysicsJointPlanV1 {
+  readonly id: string;
+  readonly kind: 'revolute' | 'spherical' | 'rope';
+  readonly a: string;
+  readonly b: string;
+  readonly anchorA: readonly [number, number, number];
+  readonly anchorB: readonly [number, number, number];
+  /** Hinge axis in a's local frame; revolute only. */
+  readonly axis?: readonly [number, number, number];
+  /** Maximum anchor separation in meters; rope only. */
+  readonly lengthMeters?: number;
 }
 
 export interface LivePlacementSourceV1 {
@@ -175,6 +199,11 @@ export class LivePhysicsSessionV1 {
   readonly #rapier: RapierModule;
   readonly #world: RapierWorld;
   readonly #bodies = new Map<string, LiveBodyInternal>();
+  readonly #joints = new Map<string, {
+    readonly joint: RAPIER_TYPES.ImpulseJoint;
+    readonly a: string;
+    readonly b: string;
+  }>();
   readonly #profile: LivePhysicsProfileV1;
   readonly #spawnQueue: string[];
   /** Spawn-only plans waiting for `spawnPlanned`, with their sources. */
@@ -216,6 +245,31 @@ export class LivePhysicsSessionV1 {
       } else {
         this.#createVoxelBody(source, plan);
       }
+    }
+    for (const plan of profile.joints ?? []) {
+      const a = this.#bodies.get(plan.a);
+      const b = this.#bodies.get(plan.b);
+      if (!a || !b) {
+        throw new Error(
+          `Joint '${plan.id}' joins '${plan.a}' and '${plan.b}', but the `
+          + 'built world is missing one of them — joints need build-time '
+          + 'bodies, never spawn-only ones.',
+        );
+      }
+      const anchorA = { x: plan.anchorA[0], y: plan.anchorA[1], z: plan.anchorA[2] };
+      const anchorB = { x: plan.anchorB[0], y: plan.anchorB[1], z: plan.anchorB[2] };
+      const data = plan.kind === 'revolute'
+        ? rapier.JointData.revolute(anchorA, anchorB, {
+          x: plan.axis?.[0] ?? 0, y: plan.axis?.[1] ?? 0, z: plan.axis?.[2] ?? 1,
+        })
+        : plan.kind === 'spherical'
+          ? rapier.JointData.spherical(anchorA, anchorB)
+          : rapier.JointData.rope(plan.lengthMeters ?? 0, anchorA, anchorB);
+      this.#joints.set(plan.id, {
+        joint: this.#world.createImpulseJoint(data, a.body, b.body, true),
+        a: plan.a,
+        b: plan.b,
+      });
     }
   }
 
@@ -452,8 +506,35 @@ export class LivePhysicsSessionV1 {
       );
     }
     if (this.#grab?.placementId === placementId) this.#grab = null;
+    // Rapier removes a body's joints with it; forget them so a later
+    // detach reports the honest state instead of touching freed memory.
+    for (const [id, entry] of this.#joints) {
+      if (entry.a === placementId || entry.b === placementId) {
+        this.#joints.delete(id);
+      }
+    }
     this.#world.removeRigidBody(live.body);
     this.#bodies.delete(placementId);
+  }
+
+  /** Live joint ids, so a caller can ask before detaching. */
+  jointIds(): readonly string[] {
+    return [...this.#joints.keys()];
+  }
+
+  /** Releases a declared joint — the trigger action. Both bodies stay. */
+  detachJoint(jointId: string): void {
+    this.#assertLive();
+    const entry = this.#joints.get(jointId);
+    if (entry === undefined) {
+      throw new Error(
+        `Detach names joint '${jointId}', but no live joint carries that `
+        + 'id — it was never created, already detached, or lost a body. '
+        + 'Rebuild the world to restore declared joints.',
+      );
+    }
+    this.#world.removeImpulseJoint(entry.joint, true);
+    this.#joints.delete(jointId);
   }
 
   /** Pauses or resumes the solver clock; the grab spring pauses with it. */
@@ -695,6 +776,9 @@ export class LivePhysicsSessionV1 {
     this.#disposed = true;
     this.#grab = null;
     this.#bodies.clear();
+    // Rapier drops the joints with the world; forget them too, so a
+    // disposed world never reports live constraints it no longer has.
+    this.#joints.clear();
     this.#world.free();
   }
 

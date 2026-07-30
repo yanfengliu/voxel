@@ -137,7 +137,9 @@ describe('station definitions', () => {
                   return action.placementId;
                 }
                 if (action.kind === 'remove') world.remove(action.placementId);
-                else world.impulse(action.placementId, action.impulse);
+                else if (action.kind === 'impulse') {
+                  world.impulse(action.placementId, action.impulse);
+                } else world.detachJoint(action.jointId);
                 return null;
               })
               .filter((id) => id !== null);
@@ -173,6 +175,13 @@ describe('station definitions', () => {
       }
       for (const testCase of entry.cases) {
         for (const action of testCase.actions) {
+          if (action.kind === 'detach-joint') {
+            expect(
+              (entry.joints ?? []).some((joint) => joint.id === action.jointId),
+              `case ${testCase.id} detaches missing joint ${action.jointId}`,
+            ).toBe(true);
+            continue;
+          }
           expect(
             ids.has(action.placementId),
             `case ${testCase.id} names missing body ${action.placementId}`,

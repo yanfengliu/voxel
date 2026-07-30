@@ -280,8 +280,19 @@ export function createStudioPlaygroundPanel(
           }
         } else if (action.kind === 'remove') {
           live.removeBody(action.placementId);
-        } else {
+        } else if (action.kind === 'impulse') {
           live.applyImpulse(action.placementId, action.impulse);
+        } else if (live.jointIds().includes(action.jointId)) {
+          live.detachJoint(action.jointId);
+        } else {
+          // Same rule as an already-spawned placement: report the honest
+          // outcome instead of returning success for a case that did
+          // nothing. Firing the trebuchet twice hits exactly this.
+          fired = false;
+          controlNotice = `Case '${testCase.label}' already fired: joint `
+            + `'${action.jointId}' is already released, and a declared `
+            + 'joint detaches at most once per run. Reset the station to '
+            + 'fire it again.';
         }
       }
       sync();
