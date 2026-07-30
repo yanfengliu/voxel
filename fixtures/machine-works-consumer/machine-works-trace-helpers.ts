@@ -49,11 +49,16 @@ export function carriageTipPose(tick: number, start: RapierPoseV1): RapierPoseV1
   const cosine = Math.cos(angle / 2);
   const pivotX = start.position.x
     + MACHINE_WORKS_LAYOUT.carriageTipPivotLocalX;
-  const centerFromPivot = -MACHINE_WORKS_LAYOUT.carriageTipPivotLocalX;
+  const pivotY = start.position.y
+    + MACHINE_WORKS_LAYOUT.carriageTipPivotLocalY;
+  const centerFromPivotX = -MACHINE_WORKS_LAYOUT.carriageTipPivotLocalX;
+  const centerFromPivotY = -MACHINE_WORKS_LAYOUT.carriageTipPivotLocalY;
   return {
     position: {
-      x: pivotX + Math.cos(angle) * centerFromPivot,
-      y: start.position.y + Math.sin(angle) * centerFromPivot,
+      x: pivotX
+        + Math.cos(angle) * centerFromPivotX - Math.sin(angle) * centerFromPivotY,
+      y: pivotY
+        + Math.sin(angle) * centerFromPivotX + Math.cos(angle) * centerFromPivotY,
       z: start.position.z,
     },
     rotation: {

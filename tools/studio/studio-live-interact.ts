@@ -46,6 +46,12 @@ export interface StudioLiveInteractHooksV1 {
    * world coming up — so anything teaching what the pointer does can catch up.
    */
   readonly modeChanged?: () => void;
+  /**
+   * Supplies the live profile for a scene, beating the static registry. The
+   * playground uses this so its ramp angle is data a rebuild re-reads,
+   * instead of state someone mutates.
+   */
+  readonly resolveProfile?: (sceneId: string) => LivePhysicsProfileV1 | null;
 }
 
 export interface StudioLiveInteractStateV1 {
@@ -101,20 +107,26 @@ function livePlacementSourcesV1(
       // base at `at.y`, so the body centre sits half the model height above.
       const halfHeight = (model.size[1] * grain) / 2;
       const recorded = opening.get(placement.id);
+      // A profile pose override beats the authored anchor the same way a
+      // recorded opening does: a ramp's live body is pitched, which a
+      // placement cannot author.
+      const overridden = profile.poses?.[placement.id];
       return {
         placementId: placement.id,
         model,
         grain,
-        centre: recorded?.translation ?? [
+        centre: recorded?.translation ?? overridden?.centre ?? [
           placement.at[0],
           placement.at[1] + halfHeight,
           placement.at[2],
         ] as const,
-        ...(recorded === undefined ? {} : {
+        ...(recorded !== undefined ? {
           rotation: recorded.quaternion,
           linearVelocity: recorded.linearVelocity,
           angularVelocity: recorded.angularVelocity,
-        }),
+        } : overridden?.rotation !== undefined ? {
+          rotation: overridden.rotation,
+        } : {}),
       };
     });
 }
@@ -126,9 +138,17 @@ export class StudioLiveInteract {
   #mode: StudioStageModeV1 = 'adjust';
   #profile: LivePhysicsProfileV1 | null = null;
   #session: LivePhysicsSessionV1 | null = null;
+  #lastOpen: {
+    readonly scene: SceneV1;
+    readonly recipes: RecipeBookV1;
+    readonly parts: PartShelfV1;
+    readonly poseReplay: ScenePoseReplayV1OrV2 | null;
+  } | null = null;
   #opening = 0;
   #frameHandle: number | null = null;
   #lastFrameMs: number | null = null;
+  #stepCostMs = 0;
+  #frameElapsedMs = 0;
   #grabbing = false;
   #disposed = false;
 
@@ -211,9 +231,14 @@ export class StudioLiveInteract {
     poseReplay: ScenePoseReplayV1OrV2 | null = null,
   ): void {
     this.#closeSession();
+    this.#lastOpen = scene === null
+      ? null
+      : { scene, recipes, parts, poseReplay };
     this.#profile = scene === null
       ? null
-      : LIVE_PHYSICS_PROFILES_V1[scene.id] ?? null;
+      : this.#hooks.resolveProfile?.(scene.id)
+        ?? LIVE_PHYSICS_PROFILES_V1[scene.id]
+        ?? null;
     // A live scene exists to be poked, so Interact is its default; the user
     // asked for Adjust to be the opt-in, not the other way around.
     this.#mode = this.#profile === null ? 'adjust' : 'interact';
@@ -246,6 +271,26 @@ export class StudioLiveInteract {
         );
       }
     })();
+  }
+
+  /** The live session, for the playground's transport and inspector. */
+  session(): LivePhysicsSessionV1 | null {
+    return this.#session;
+  }
+
+  /** Last frame's solver cost and frame spacing, for the readout. */
+  timing(): { readonly stepMs: number; readonly frameMs: number } {
+    return { stepMs: this.#stepCostMs, frameMs: this.#frameElapsedMs };
+  }
+
+  /**
+   * Tears the live world down and rebuilds it from the open scene — the
+   * playground's reset. A no-op when no live scene is open.
+   */
+  rebuild(): void {
+    const last = this.#lastOpen;
+    if (last === null) return;
+    this.openScene(last.scene, last.recipes, last.parts, last.poseReplay);
   }
 
   setMode(mode: StudioStageModeV1): void {
@@ -327,8 +372,11 @@ export class StudioLiveInteract {
         ? 0
         : nowMs - this.#lastFrameMs;
       this.#lastFrameMs = nowMs;
+      this.#frameElapsedMs = elapsed;
       try {
+        const before = performance.now();
         session.step(elapsed);
+        this.#stepCostMs = performance.now() - before;
         this.#hooks.acceptPoses(session.poses());
         this.#hooks.redraw();
       } catch (error) {

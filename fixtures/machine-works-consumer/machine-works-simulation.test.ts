@@ -601,15 +601,19 @@ describe('Machine Works consumer physics fixture', () => {
       (baseAtHandoff[1] - handoff[1]) - (baseBeforeHandoff[1] - beforeHandoff[1]),
       (baseAtHandoff[2] - handoff[2]) - (baseBeforeHandoff[2] - beforeHandoff[2]),
     )).toBeLessThan(0.01);
+    // The body center swings about the trunnion-line pivot (local +X, +Y).
+    const tipAngle = MACHINE_WORKS_LAYOUT.carriageTipRadians;
     expect(tipped).toEqual(expect.arrayContaining([
       expect.closeTo(
-        handoff[0] + MACHINE_WORKS_LAYOUT.carriageTipPivotLocalX,
+        handoff[0] + MACHINE_WORKS_LAYOUT.carriageTipPivotLocalX
+          + Math.cos(tipAngle) * -MACHINE_WORKS_LAYOUT.carriageTipPivotLocalX
+          - Math.sin(tipAngle) * -MACHINE_WORKS_LAYOUT.carriageTipPivotLocalY,
         3,
       ),
       expect.closeTo(
-          handoff[1]
-          + Math.sin(MACHINE_WORKS_LAYOUT.carriageTipRadians)
-            * -MACHINE_WORKS_LAYOUT.carriageTipPivotLocalX,
+        handoff[1] + MACHINE_WORKS_LAYOUT.carriageTipPivotLocalY
+          + Math.sin(tipAngle) * -MACHINE_WORKS_LAYOUT.carriageTipPivotLocalX
+          + Math.cos(tipAngle) * -MACHINE_WORKS_LAYOUT.carriageTipPivotLocalY,
         3,
       ),
       expect.closeTo(handoff[2], 3),

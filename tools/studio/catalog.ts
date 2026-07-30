@@ -51,6 +51,7 @@ import {
   createChainUprightLinkRecipe,
   createDispenserRailRecipe,
   createDropBallRecipe,
+  createPhysicsPlaygroundRecipeBook,
   createBrickWallRecipe,
   createBedFrameRecipe,
   createBedroomFurnitureSetRecipe,
@@ -476,6 +477,14 @@ export function createStudioCatalog(): StudioCatalogV1 {
           recipeEntry(createChainUprightLinkRecipe),
           recipeEntry(createChainCrossedLinkRecipe),
         ],
+      },
+      {
+        // The playground's stations are built from these; every recipe is a
+        // deliberately plain diagnostic shape, because decoration would be
+        // an uncontrolled variable in a physics comparison.
+        name: 'Physics playground',
+        models: Object.values(createPhysicsPlaygroundRecipeBook())
+          .map((recipe) => recipeEntry(() => structuredClone(recipe))),
       },
       {
         // These are deliberately shallow composition studies, not houses.

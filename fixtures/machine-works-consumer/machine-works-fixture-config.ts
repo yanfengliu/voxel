@@ -135,6 +135,12 @@ export const MACHINE_WORKS_LAYOUT = Object.freeze({
     + MACHINE_WORKS_SCENE_LAYOUT_V1.cap.sizeVoxels[1]
       * MACHINE_WORKS_SCENE_LAYOUT_V1.cap.grain / 2,
   carriageTipPivotLocalX: 2.8,
+  /**
+   * The trunnion line sits half a carriage voxel above the body origin; the
+   * prescribed tip must rotate about that line, not the origin height, or
+   * the recorded axle orbits its own bearings.
+   */
+  carriageTipPivotLocalY: 0.2,
   carriageTipRadians: -Math.PI / 2,
 });
 
@@ -475,6 +481,18 @@ export function machineWorksSupportAlignmentIssuesV1(): readonly string[] {
       `carrier targets [${topRunTargets.join(', ')}] do not all lie on top belt run `
       + `x=[${String(MACHINE_WORKS_CONVEYOR_V1.leftAxleX)}, `
       + `${String(MACHINE_WORKS_CONVEYOR_V1.rightAxleX)}]`,
+    );
+  }
+  const tipPivotPort = scaledPortPosition(
+    MACHINE_WORKS_ASSETS.carriage, 'tip-pivot-axis', MACHINE_WORKS_GRAINS.carriage,
+  );
+  if (Math.abs(tipPivotPort[0] - MACHINE_WORKS_LAYOUT.carriageTipPivotLocalX) > maximum
+    || Math.abs(tipPivotPort[1] - MACHINE_WORKS_LAYOUT.carriageTipPivotLocalY) > maximum) {
+    issues.push(
+      `authored tip pivot offsets (${String(MACHINE_WORKS_LAYOUT.carriageTipPivotLocalX)}, `
+      + `${String(MACHINE_WORKS_LAYOUT.carriageTipPivotLocalY)}) do not match the carrier `
+      + `tip-pivot-axis port at (${tipPivotPort[0].toFixed(3)}, ${tipPivotPort[1].toFixed(3)}); `
+      + 'the prescribed rotation would orbit the trunnion inside its bearings',
     );
   }
   const pivotX = MACHINE_WORKS_LAYOUT.tipStationX
@@ -969,6 +987,7 @@ export function machineWorksInputDescriptionV1(): Readonly<Record<string, unknow
       headActuation: MACHINE_WORKS_HEAD_ACTUATION_RULE,
       tip: {
         pivotLocalX: MACHINE_WORKS_LAYOUT.carriageTipPivotLocalX,
+        pivotLocalY: MACHINE_WORKS_LAYOUT.carriageTipPivotLocalY,
         range: [MACHINE_WORKS_TICKS.released, MACHINE_WORKS_TICKS.tipComplete],
         easing: 'smoothstep',
         fromRadians: 0,

@@ -9,6 +9,7 @@ import {
   BALL_DROP_BALL_RADIUS_V1,
 } from './ball-drop-recipes.js';
 import type { LivePhysicsProfileV1 } from './live-physics.js';
+import { createPhysicsPlaygroundProfilesV1 } from './physics-playground-profiles.js';
 
 /**
  * Which scenes support Interact mode, and what each placement is in the live
@@ -48,6 +49,10 @@ Readonly<Record<string, LivePhysicsProfileV1>> = Object.freeze({
       radius: BALL_DROP_BALL_RADIUS_V1,
     },
   },
+  // The playground's profiles are generated from its station definitions at
+  // each station's default ramp angle; the studio's profile resolver
+  // regenerates one live when the panel changes the angle.
+  ...createPhysicsPlaygroundProfilesV1(),
 });
 
 /** True when the chain link is a plane the profile expects to exist. */

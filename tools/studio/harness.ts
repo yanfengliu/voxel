@@ -56,6 +56,11 @@ import {
   type HarnessSweepSummaryV1,
   type PlayerReportV1,
 } from './studio-harness-reports.js';
+import {
+  createPlaygroundHarness,
+  type PlaygroundHarnessHostV1,
+  type VoxelStudioPlaygroundHarnessV1,
+} from './studio-harness-playground.js';
 import type { StudioShelfItemKindV1, StudioShelfMoveV1 } from './studio-shelf-order.js';
 import type { StudioSceneLightingMetricsV1 } from './scene-lighting.js';
 import type {
@@ -300,6 +305,18 @@ export interface VoxelStudioHarnessV1 {
   /** Whether a scene is on the stage rather than a single model. */
   sceneMode(): boolean;
   /**
+   * The open scene's surface-conflict report: placements occupying the same
+   * space, and recorded surfaces sharing a still surface's plane facing the
+   * same way. The studio computes it off the open/edit path, so right after a
+   * change the status reads 'checking' until the fresh report lands; the
+   * conflicts are the same plain-words lines the Examine pane shows. Null in
+   * model mode.
+   */
+  sceneSurfaceConflicts(): {
+    readonly status: 'checking' | 'ready';
+    readonly conflicts: readonly string[];
+  } | null;
+  /**
    * The stage pointer mode. 'adjust' is the editing pointer; 'interact' hands
    * the left button to the live solver on scenes that declare one. Scenes
    * without a live profile always report 'adjust'.
@@ -324,6 +341,12 @@ export interface VoxelStudioHarnessV1 {
     readonly stepped: number;
     readonly positions: Readonly<Record<string, readonly [number, number, number]>>;
   };
+  /**
+   * The physics playground's transport, cases, spawn, and inspector — the
+   * panel's own capabilities as callable plain-data methods. Methods that
+   * need a live playground scene throw a named error without one.
+   */
+  readonly playground: VoxelStudioPlaygroundHarnessV1;
   /**
    * The scene on the stage right now as plain data — the same shape `openScene`
    * placed and the editor edits — or null when a single model is open. This is
@@ -531,6 +554,11 @@ export interface HarnessHostV1 {
   deleteScene(id: string): SceneV1;
   /** Whether a scene is on the stage rather than a single model. */
   sceneMode(): boolean;
+  /** The open scene's surface-conflict report; null in model mode. */
+  sceneSurfaceConflicts(): {
+    readonly status: 'checking' | 'ready';
+    readonly conflicts: readonly string[];
+  } | null;
   /**
    * The stage pointer mode. 'adjust' is the editing pointer; 'interact' hands
    * the left button to the live solver on scenes that declare one. Scenes
@@ -539,6 +567,8 @@ export interface HarnessHostV1 {
   stageMode(): 'adjust' | 'interact';
   /** Switches the stage pointer mode; ignored on scenes with no live profile. */
   setStageMode(mode: 'adjust' | 'interact'): void;
+  /** The playground harness's window into the panel and live session. */
+  readonly playgroundHost: PlaygroundHarnessHostV1;
   /**
    * The live solver's current state for the open scene: body, collider and
    * joint counts, spawn tally, the grabbed placement, and steps taken. All
@@ -1092,9 +1122,11 @@ export function createStudioHarness(host: HarnessHostV1): VoxelStudioHarnessV1 {
     renameScene: (id, label) => host.renameScene(id, label),
     deleteScene: (id) => host.deleteScene(id),
     sceneMode: () => host.sceneMode(),
+    sceneSurfaceConflicts: () => host.sceneSurfaceConflicts(),
     stageMode: () => host.stageMode(),
     setStageMode: (mode) => { host.setStageMode(mode); },
     livePhysics: () => host.livePhysics(),
+    playground: createPlaygroundHarness(host.playgroundHost),
     sceneState: () => host.scene(),
     selectPlacement(id) {
       if (id !== null) {

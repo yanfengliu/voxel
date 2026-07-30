@@ -99,33 +99,70 @@ describe('scene surface fights', () => {
     expect(topFight!.firstTimeMs).toBe(0);
   });
 
-  it('keeps flush resting contact allowed: opposite-facing planes never fight', () => {
+  it('keeps flush resting contact allowed: touch is not co-existence', () => {
     const replay = replayFor([authoredCenter[0], authoredCenter[1] + height, authoredCenter[2]]);
     const report = sceneSurfaceFightsV1(probeScene, replay, recipes, parts);
     expect(report.fights, JSON.stringify(report.fights)).toEqual([]);
+    expect(report.overlaps, JSON.stringify(report.overlaps)).toEqual([]);
     expect(report.unchecked).toEqual([]);
   });
 
-  it('reports a tilted recorded pose as unchecked instead of silently passing it', () => {
+  it('reports a moving body inside a still body even when nothing flickers', () => {
+    // Shifted off every quarter-unit lattice on all three axes, so no face
+    // planes coincide — the bodies simply co-exist, which real objects never do.
+    const replay = replayFor([
+      authoredCenter[0] + sideStep - 0.13,
+      authoredCenter[1] + 0.11,
+      authoredCenter[2] + 0.07,
+    ]);
+    const report = sceneSurfaceFightsV1(probeScene, replay, recipes, parts);
+    expect(report.fights, JSON.stringify(report.fights)).toEqual([]);
+    expect(report.overlaps, JSON.stringify(report.overlaps)).toHaveLength(1);
+    expect(report.overlaps[0]).toMatchObject({ moving: 'moving', still: 'still' });
+    expect(report.overlaps[0]!.deepest).toBeGreaterThan(0.05);
+    expect(report.overlaps[0]!.firstTimeMs).toBe(0);
+  });
+
+  it('judges a tilted pose for space even though its faces cannot hold a plane', () => {
     const replay = replayFor(
       [authoredCenter[0] + sideStep, authoredCenter[1], authoredCenter[2]],
       true,
     );
     const report = sceneSurfaceFightsV1(probeScene, replay, recipes, parts);
+    // No plane can be shared by a tilted face, and the report says why the
+    // plane check skipped the pose — but the body half-inside the still one
+    // is still found by the exact box test.
     expect(report.fights).toEqual([]);
     expect(report.unchecked).toHaveLength(1);
     expect(report.unchecked[0]).toMatchObject({ placementId: 'moving' });
     expect(report.unchecked[0]!.sampledTimes).toBeGreaterThan(0);
+    expect(report.unchecked[0]!.reason).toContain('space is still checked');
+    expect(report.overlaps, JSON.stringify(report.overlaps)).toHaveLength(1);
+    expect(report.overlaps[0]).toMatchObject({ moving: 'moving', still: 'still' });
+    expect(report.overlaps[0]!.deepest).toBeGreaterThan(0.05);
+  });
+
+  it('a tilted pose standing clear of everything reports nothing', () => {
+    const replay = replayFor(
+      [authoredCenter[0] + 3 * (maxX - minX), authoredCenter[1], authoredCenter[2]],
+      true,
+    );
+    const report = sceneSurfaceFightsV1(probeScene, replay, recipes, parts);
+    expect(report.fights).toEqual([]);
+    expect(report.overlaps, JSON.stringify(report.overlaps)).toEqual([]);
+    expect(report.unchecked).toHaveLength(1);
   });
 
   for (const scene of createStudioScenes()) {
     if (!('poseReplay' in scene)) continue;
     const replay = catalog.scenePoseReplays?.[scene.poseReplay.id];
-    it(`${scene.id} recorded poses share no same-facing plane with still scenery`, () => {
+    it(`${scene.id} recorded poses share no space or same-facing plane with still scenery`, { timeout: 60_000 }, () => {
       expect(replay, `Scene '${scene.id}' must resolve pose replay '${scene.poseReplay.id}'.`)
         .toBeDefined();
       const report = sceneSurfaceFightsV1(scene, replay!, recipes, parts);
+
       expect(report.fights, JSON.stringify(report.fights, null, 2)).toEqual([]);
+      expect(report.overlaps, JSON.stringify(report.overlaps, null, 2)).toEqual([]);
     });
   }
 });
