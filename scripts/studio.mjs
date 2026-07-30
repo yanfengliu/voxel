@@ -1,5 +1,5 @@
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
-import { dirname, join, relative, resolve as resolvePath } from 'node:path';
+import { basename, dirname, join, relative, resolve as resolvePath } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { chromium } from '@playwright/test';
@@ -187,8 +187,8 @@ const COMMANDS = {
       if (raw.schemaVersion === 'studio.request/2') {
         throw new Error(
           `The Studio contact-sheet command cannot render '${sourcePath}' because it is a `
-          + 'studio.request/2 scene request. Inspect its JSON, then open request.scene.id from '
-          + "Studio's Scenes list; this command accepts model files or studio.request/1 model requests.",
+          + `studio.request/2 scene request; render its pinned views with npm run studio:request -- ${sourcePath}. `
+          + 'This command accepts model files or studio.request/1 model requests.',
         );
       }
       model = raw.schemaVersion === 'studio.request/1' ? (raw.model ?? raw.genome) : raw;
@@ -296,6 +296,197 @@ const COMMANDS = {
       return;
     }
     console.log(`${LOG_PREFIX} a game mounted the studio with its own shelf, parts, and recipes`);
+  },
+
+  /**
+   * Renders every pinned view of a saved scene request exactly as its owner
+   * saw it, so processing a request starts from the owner's own evidence
+   * rather than a hand-rebuilt view.
+   *
+   * The restore path is the studio's own: the stage is resized to the captured
+   * viewport, each pin is re-added to the open scene, and showSceneAnnotation
+   * presents it — an API that refuses to show anything but the captured
+   * camera, look, phase, replay evidence, and stage size. A picture this
+   * command writes is therefore the pinned picture, not an approximation, and
+   * a scene that has drifted since the capture fails with the studio's own
+   * reason instead of rendering something the owner never saw.
+   */
+  async request() {
+    const sourcePath = process.argv[3];
+    if (!sourcePath) {
+      throw new Error(
+        'The request command needs a saved request file, e.g. '
+        + 'npm run studio:request -- tools/studio/requests/<file>.json',
+      );
+    }
+    const raw = JSON.parse(await readFile(resolvePath(PROJECT_ROOT, sourcePath), 'utf8'));
+    if (raw.schemaVersion === 'studio.request/1') {
+      throw new Error(
+        `'${sourcePath}' is a studio.request/1 model request; render its model with `
+        + `npm run studio:sheet -- ${sourcePath}`,
+      );
+    }
+    if (raw.schemaVersion !== 'studio.request/2') {
+      throw new Error(
+        `'${sourcePath}' is not a saved Studio request: expected schemaVersion `
+        + `'studio.request/1' or 'studio.request/2', found '${String(raw.schemaVersion)}'.`,
+      );
+    }
+    const outDir = join(OUTPUT_DIR, 'requests', basename(sourcePath).replace(/\.json$/, ''));
+    await mkdir(outDir, { recursive: true });
+
+    /**
+     * Grows or shrinks the browser window until the stage floors to the
+     * captured size. The studio's own resize observer follows the DOM, so
+     * driving the window is the same path a person's window drag takes.
+     */
+    const fitStage = async (page, viewport) => {
+      const wrap = page.locator('.canvas-wrap');
+      for (let attempt = 0; attempt < 5; attempt += 1) {
+        const box = await wrap.boundingBox();
+        if (!box) throw new Error('the scene stage has no box to measure');
+        const width = Math.floor(box.width);
+        const height = Math.floor(box.height);
+        if (width === viewport.width && height === viewport.height) return;
+        const current = page.viewportSize() ?? { width: 900, height: 700 };
+        await page.setViewportSize({
+          width: Math.max(320, current.width + viewport.width - width),
+          height: Math.max(240, current.height + viewport.height - height),
+        });
+      }
+      const box = await wrap.boundingBox();
+      throw new Error(
+        `the stage settled at ${String(Math.floor(box?.width ?? 0))}x`
+        + `${String(Math.floor(box?.height ?? 0))} instead of the captured `
+        + `${String(viewport.width)}x${String(viewport.height)}; the studio layout may not `
+        + 'reach that size in this browser window',
+      );
+    };
+
+    const lines = [
+      `# ${basename(sourcePath)}`,
+      '',
+      `Scene: ${raw.scene.id} — ${raw.scene.label}`,
+      `Words: ${raw.words === '' ? '(none)' : raw.words}`,
+      '',
+    ];
+    const failures = [];
+    await withStudio(async (page) => {
+      await page.evaluate((sceneId) => {
+        const studio = window.voxelStudio;
+        if (!studio) throw new Error('the studio harness is unavailable');
+        studio.openScene(sceneId);
+      }, raw.scene.id);
+
+      for (const pin of raw.pins) {
+        const label = `pin ${String(pin.id)}`;
+        try {
+          await fitStage(page, pin.viewport);
+          // The pin is re-added so the studio draws its own numbered marker at
+          // the exact spot; a fresh headless browser keeps this out of the
+          // owner's real annotation store.
+          await page.evaluate((pinData) => {
+            const studio = window.voxelStudio;
+            if (!studio) throw new Error('the studio harness is unavailable');
+            const added = studio.addSceneAnnotation({
+              text: pinData.text,
+              sceneFingerprint: pinData.sceneFingerprint,
+              spot: pinData.spot,
+              timeMs: pinData.timeMs,
+              orbit: pinData.orbit,
+              panCenter: pinData.panCenter,
+              depth: pinData.depth,
+              lit: pinData.lit,
+              edges: pinData.edges,
+              selectedPlacementId: pinData.selectedPlacementId,
+              viewport: pinData.viewport,
+              ...(pinData.replay === undefined ? {} : { replay: pinData.replay }),
+            });
+            studio.showSceneAnnotation(added.id);
+          }, pin);
+          await page.evaluate(() => new Promise((settle) => {
+            requestAnimationFrame(() => { settle(undefined); });
+          }));
+
+          const wrap = page.locator('.canvas-wrap');
+          const viewFile = join(outDir, `pin-${String(pin.id)}.png`);
+          await wrap.screenshot({ path: viewFile });
+          const box = await wrap.boundingBox();
+          const closeupWidth = Math.min(640, Math.floor(box.width));
+          const closeupHeight = Math.min(420, Math.floor(box.height));
+          const clampedX = Math.min(
+            Math.max(box.x + pin.spot.u * box.width - closeupWidth / 2, box.x),
+            box.x + box.width - closeupWidth,
+          );
+          const clampedY = Math.min(
+            Math.max(box.y + pin.spot.v * box.height - closeupHeight / 2, box.y),
+            box.y + box.height - closeupHeight,
+          );
+          const closeupFile = join(outDir, `pin-${String(pin.id)}-closeup.png`);
+          await page.screenshot({
+            path: closeupFile,
+            clip: { x: clampedX, y: clampedY, width: closeupWidth, height: closeupHeight },
+          });
+
+          console.log(`${LOG_PREFIX} ${label}: "${pin.text}"`);
+          console.log(`${LOG_PREFIX}   restored and verified at `
+            + `${String(pin.viewport.width)}x${String(pin.viewport.height)}; wrote `
+            + `${relative(PROJECT_ROOT, viewFile)} and ${relative(PROJECT_ROOT, closeupFile)}`);
+          lines.push(
+            `## Pin ${String(pin.id)}`,
+            '',
+            `> ${pin.text}`,
+            '',
+            `- View: pin-${String(pin.id)}.png (marker at the pinned spot)`,
+            `- Closeup: pin-${String(pin.id)}-closeup.png around u=${pin.spot.u.toFixed(3)}, `
+            + `v=${pin.spot.v.toFixed(3)}`,
+            '- The studio verified the restored camera, look, phase, replay evidence, and stage size.',
+            '',
+          );
+        } catch (error) {
+          const reason = error instanceof Error ? error.message : String(error);
+          failures.push(`${label}: ${reason}`);
+          console.error(`${LOG_PREFIX} ${label} could not be restored: ${reason}`);
+          lines.push(`## Pin ${String(pin.id)}`, '', `> ${pin.text}`, '', `Not restored: ${reason}`, '');
+        }
+      }
+
+      // A words-only request still captured the view its owner was looking at
+      // when sending; restore it best-effort so the words have a picture.
+      if (raw.pins.length === 0) {
+        const capture = raw.capture;
+        await page.evaluate((snapshot) => {
+          const studio = window.voxelStudio;
+          if (!studio) throw new Error('the studio harness is unavailable');
+          studio.setEdges(snapshot.edges);
+          studio.setLit(snapshot.lit);
+          studio.setDepth(snapshot.depth);
+          studio.selectPlacement(snapshot.selectedPlacementId);
+          studio.setViewAngles(snapshot.orbit);
+          studio.setViewCenter(snapshot.center);
+          studio.drawAt(snapshot.timeMs);
+        }, capture);
+        const captureFile = join(outDir, 'sending-view.png');
+        await page.locator('.canvas-wrap').screenshot({ path: captureFile });
+        console.log(`${LOG_PREFIX} no pins; wrote the sending view to `
+          + `${relative(PROJECT_ROOT, captureFile)}`);
+        lines.push(
+          '## Sending view',
+          '',
+          '- sending-view.png restores the camera and look active when the request was sent '
+          + '(unverified: only pins carry the studio-checked capture contract).',
+          '',
+        );
+      }
+    });
+
+    await writeFile(join(outDir, 'summary.md'), `${lines.join('\n')}\n`);
+    console.log(`${LOG_PREFIX} wrote ${relative(PROJECT_ROOT, join(outDir, 'summary.md'))}`);
+    if (failures.length > 0) {
+      console.error(`${LOG_PREFIX} ${String(failures.length)} of `
+        + `${String(raw.pins.length)} pins could not be restored`);
+      process.exitCode = 1;
+    }
   },
 
   /**

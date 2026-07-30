@@ -184,7 +184,8 @@ export function createStudioNotesPanel(deps: StudioNotesDepsV1): StudioNotesPane
       if (result.ok) {
         requestStatus.dataset.tone = 'ok';
         requestStatus.textContent = `Saved locally as ${result.file}. No agent was started or notified; `
-          + 'ask one to process that file when you are ready. Your pinned notes remain in this Studio session.';
+          + `ask one to process that file when you are ready — npm run studio:sheet -- ${result.file} `
+          + 'shows them this exact model. Your pinned notes remain in this Studio session.';
         requestBox.value = '';
       } else {
         requestStatus.dataset.tone = 'bad';

@@ -465,7 +465,9 @@ export function createStudioSceneNotesPanel(
           return;
         }
         setStatus(
-          `Saved locally as ${result.file}. No agent was started or notified; ask one to process that file when ready.`,
+          `Saved locally as ${result.file}. No agent was started or notified; ask one to process it `
+            + `when ready — npm run studio:request -- ${result.file} shows them every pinned view `
+            + 'exactly as you captured it.',
           'ok',
         );
       })
