@@ -22,7 +22,10 @@ import { validateSceneV1, type ScenePlacementV1, type SceneV1 } from './scene.js
  * finished models. Two stated exceptions, both about water: a translucent
  * placement never draws study edges, and a recipe declared 'top-film' meshes
  * as only its up-facing skin — in both cases the full look would paint tile
- * seams through what a scene presents as one continuous liquid.
+ * seams through what a scene presents as one continuous liquid. The third
+ * water device lives past this builder, in the scene session's runtime
+ * decoration: every translucent material is marked single-layer so all of a
+ * scene's water blends exactly once per pixel behind a depth-only prepass.
  */
 
 const SCENE_WORLD_ID = 'world:maker-scene';

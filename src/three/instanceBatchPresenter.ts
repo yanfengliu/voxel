@@ -37,9 +37,17 @@ import type {
   InstanceBatchResolvers,
   InstanceBatchUpdateRangeInternal,
 } from './presentationTypes.js';
+import { createSingleLayerDepthPrepassInternal } from './singleLayerTransparencyInternal.js';
 
 interface BatchEntry {
   readonly mesh: InstancedMesh;
+  /**
+   * Depth-only twin drawn before the transparent colour passes when the
+   * batch's materials are marked single-layer, so each pixel of a marked film
+   * blends exactly once. It shares the mesh's geometry and instance buffers;
+   * only `count` is stored per mesh and mirrored here on every slot write.
+   */
+  readonly prepass: InstancedMesh | null;
   readonly geometry: BufferGeometry;
   readonly materialSignature: string;
   readonly capacity: number;
@@ -306,6 +314,15 @@ export class InstanceBatchPresenter {
         const fullUpload = !isPagedInstanceBatchPresentationInternal(batch)
           || coversWholeBatch(ranges, count);
         this.recordWrites(writeBatchSlots(existing.mesh, batch, ranges, fullUpload));
+        if (existing.prepass) {
+          existing.prepass.count = existing.mesh.count;
+          // Three creates instanceColor lazily on the first colour write, so
+          // a batch that grew from empty gains it on the mesh mid-life; the
+          // twin must share it or the two passes compile different programs
+          // (instancing colour is a program-cache input) and their depths
+          // may drift apart.
+          existing.prepass.instanceColor = existing.mesh.instanceColor;
+        }
         existing.animatedIndices = animatedInstanceIndicesInternal(
           batch,
           ranges,
@@ -323,9 +340,15 @@ export class InstanceBatchPresenter {
       mesh.instanceMatrix.setUsage(DynamicDrawUsage);
       const ranges = fullInstanceBatchRangeInternal(batch);
       this.recordWrites(writeBatchSlots(mesh, batch, ranges, true));
+      // Derived before anything joins the scene graph: a refused prepass (the
+      // mixed marked/unmarked materials error) must leave nothing behind that
+      // the entry map — every disposal path's only index — cannot reach.
+      const prepass = createSingleLayerDepthPrepassInternal(mesh, material, batch.key);
       this.root.add(mesh);
+      if (prepass) this.root.add(prepass);
       this.entries.set(batch.key, {
         mesh,
+        prepass,
         geometry,
         materialSignature,
         capacity,
@@ -406,6 +429,12 @@ export class InstanceBatchPresenter {
   }
 
   private removeEntry(entry: BatchEntry): void {
+    // The prepass twin goes with its mesh; their shared instance buffers are
+    // released once and the second dispose finds nothing left to remove.
+    if (entry.prepass) {
+      this.root.remove(entry.prepass);
+      entry.prepass.dispose();
+    }
     this.root.remove(entry.mesh);
     entry.mesh.dispose();
   }

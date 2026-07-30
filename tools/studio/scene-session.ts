@@ -11,6 +11,7 @@ import {
   THREE_MATERIAL_DECORATOR_INTERNAL,
   type ThreeMaterialDecoratorOptionsInternal,
 } from '../../src/three/materialDecoratorInternal.js';
+import { markSingleLayerTransparencyInternal } from '../../src/three/singleLayerTransparencyInternal.js';
 import { replaceRuntimeBorrowedCameraInternal } from '../../src/three/runtimeBorrowedCameraSwapInternal.js';
 
 import { buildSceneSnapshot } from './scene-build.js';
@@ -285,6 +286,17 @@ export class SceneSession {
             }),
         [THREE_MATERIAL_DECORATOR_INTERNAL]: (material) => {
           this.#lighting.decorateRuntimeMaterial(material);
+          // Every translucent scene placement is film water today, and film
+          // water must blend once per pixel or its tiles double-darken where
+          // they overlap and open hairlines where they part. The depth twin
+          // inherits whatever compile hooks the material carries when the
+          // twin is derived, so this runs in the same decoration pass as the
+          // lighting install but does not depend on coming after it.
+          // Wireframe's opacity-0 surface stays ordinary: it draws nothing a
+          // prepass could serve.
+          if (material.transparent && material.opacity > 0 && material.opacity < 1) {
+            markSingleLayerTransparencyInternal(material);
+          }
         },
       } satisfies ThreeRenderRuntimeOptions & ThreeMaterialDecoratorOptionsInternal;
       runtime = new ThreeRenderRuntime(runtimeOptions);
