@@ -208,6 +208,24 @@ test('scene menu renames and deletes while keeping open-scene state coherent', a
   await expect(restoredDining).toBeVisible();
 });
 
+test('the scene transport time label reads cleanly, with a real interpunct', async ({ page }) => {
+  await page.goto(studioOrigin, { waitUntil: 'load' });
+  await page.waitForFunction(() => typeof window.voxelStudio === 'object');
+  await page.evaluate(() => { window.voxelStudio!.openScene('studio:scene:dining'); });
+  // The label is written whether or not the transport is on screen — a still
+  // scene keeps it hidden — and the encoding is what this pins, so read its
+  // text rather than requiring visibility.
+  const label = page.locator('.time-label');
+  await expect(label).toHaveCount(1);
+  const text = await label.textContent();
+  // One of the three legal scene readouts, spelled with '·' — a double-encoded
+  // 'Â·' shipped here once, so the exact bytes are pinned.
+  expect(text).toMatch(
+    /^(\d+ ms elapsed · \d+ ms scrub window|still · one scene frame|\d+ ms of \d+ ms · one shot)$/,
+  );
+  expect(text).not.toContain('Â');
+});
+
 test('deleting the last scene shown behind model mode retires its renderer contents', async ({ page }) => {
   await page.goto(studioOrigin, { waitUntil: 'load' });
   await page.waitForFunction(() => typeof window.voxelStudio === 'object');

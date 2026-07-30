@@ -153,6 +153,114 @@ describe('scene surface fights', () => {
     expect(report.unchecked).toHaveLength(1);
   });
 
+  /**
+   * The owner's rule includes recorded poses on both sides of a pair: a trace
+   * that drives two placements through each other, or lays two recorded faces
+   * on one plane facing the same way, is as broken as a placement parked
+   * inside the scenery. These pin the moving-vs-moving lane both ways —
+   * findings where the rule is broken, silence where contact is flush.
+   */
+  const pairScene: SceneV1 = {
+    schemaVersion: 'studio.scene/1',
+    id: 'studio:scene:moving-pair-probe',
+    label: 'Moving pair probe',
+    placements: [
+      { id: 'still', model: RECEIVER, at: [0, 0, 0], grain: GRAIN },
+      { id: 'mover-a', model: RECEIVER, at: [30, 0, 0], grain: GRAIN },
+      { id: 'mover-b', model: RECEIVER, at: [60, 0, 0], grain: GRAIN },
+    ],
+  };
+  /** A pose base far from the still body, so only the pair is judged. */
+  const pairBase: readonly [number, number, number] = [10, authoredCenter[1], 0];
+
+  const pairReplayFor = (
+    tracks: readonly {
+      readonly id: string;
+      readonly translation: readonly [number, number, number];
+      readonly tilt?: boolean;
+    }[],
+  ): ScenePoseReplayV1 => {
+    const half = Math.sin(Math.PI / 36);
+    return {
+      schemaVersion: STUDIO_SCENE_POSE_REPLAY_SCHEMA_V1,
+      sceneId: pairScene.id,
+      frameCount: 2,
+      provenance: {
+        solver: { name: 'test-recorder', version: '1.0.0' },
+        fixedTimestepMs: 100,
+        gravity: [0, -9.81, 0],
+        inputHash: `sha256:${'a'.repeat(64)}`,
+        finalHash: `sha256:${'b'.repeat(64)}`,
+        lawLabels: ['authored-hold'],
+        capabilityLabels: ['moving-pair-probe'],
+      },
+      tracks: tracks.map((track) => {
+        const quaternion = track.tilt
+          ? [0, 0, half, Math.cos(Math.PI / 36)] as const
+          : [0, 0, 0, 1] as const;
+        return {
+          placementId: track.id,
+          translations: new Float32Array([...track.translation, ...track.translation]),
+          quaternions: new Float32Array([...quaternion, ...quaternion]),
+          linearVelocities: new Float32Array(6),
+          angularVelocities: new Float32Array(6),
+        };
+      }),
+      events: [],
+    };
+  };
+
+  it('reports two recorded bodies co-existing in the same space', () => {
+    const replay = pairReplayFor([
+      { id: 'mover-a', translation: pairBase },
+      // Off every quarter-unit lattice on all three axes: pure co-existence.
+      { id: 'mover-b', translation: [pairBase[0] + sideStep - 0.13, pairBase[1] + 0.11, pairBase[2] + 0.07] },
+    ]);
+    const report = sceneSurfaceFightsV1(pairScene, replay, recipes, parts);
+    expect(report.overlaps, JSON.stringify(report.overlaps)).toEqual([]);
+    expect(report.movingOverlaps, JSON.stringify(report.movingOverlaps)).toHaveLength(1);
+    expect(report.movingOverlaps[0]).toMatchObject({ a: 'mover-a', b: 'mover-b' });
+    expect(report.movingOverlaps[0]!.deepest).toBeGreaterThan(0.05);
+    expect(report.movingOverlaps[0]!.firstTimeMs).toBe(0);
+  });
+
+  it('reports two recorded same-facing surfaces holding one plane', () => {
+    const replay = pairReplayFor([
+      { id: 'mover-a', translation: pairBase },
+      { id: 'mover-b', translation: [pairBase[0] + sideStep, pairBase[1], pairBase[2]] },
+    ]);
+    const report = sceneSurfaceFightsV1(pairScene, replay, recipes, parts);
+    const pairTopPlane = pairBase[1] + height / 2;
+    const topFight = report.movingFights.find((fight) =>
+      fight.a === 'mover-a' && fight.b === 'mover-b'
+      && fight.axis === 'y' && fight.facing === 1
+      && Math.abs(fight.plane - pairTopPlane) < 1e-6);
+    expect(topFight, JSON.stringify(report.movingFights)).toBeDefined();
+    expect(topFight!.facePairs).toBeGreaterThan(0);
+  });
+
+  it('keeps flush contact between two recorded bodies allowed', () => {
+    const replay = pairReplayFor([
+      { id: 'mover-a', translation: pairBase },
+      { id: 'mover-b', translation: [pairBase[0], pairBase[1] + height, pairBase[2]] },
+    ]);
+    const report = sceneSurfaceFightsV1(pairScene, replay, recipes, parts);
+    expect(report.movingOverlaps, JSON.stringify(report.movingOverlaps)).toEqual([]);
+    expect(report.movingFights, JSON.stringify(report.movingFights)).toEqual([]);
+  });
+
+  it('announces a tilted-tilted recorded pair as unchecked instead of staying silent', () => {
+    const replay = pairReplayFor([
+      { id: 'mover-a', translation: pairBase, tilt: true },
+      { id: 'mover-b', translation: [pairBase[0] + sideStep - 0.13, pairBase[1] + 0.11, pairBase[2]], tilt: true },
+    ]);
+    const report = sceneSurfaceFightsV1(pairScene, replay, recipes, parts);
+    const pairEntry = report.unchecked.find((entry) => entry.placementId === 'mover-a & mover-b');
+    expect(pairEntry, JSON.stringify(report.unchecked)).toBeDefined();
+    expect(pairEntry!.sampledTimes).toBeGreaterThan(0);
+    expect(pairEntry!.reason).toContain('tilted-tilted');
+  });
+
   for (const scene of createStudioScenes()) {
     if (!('poseReplay' in scene)) continue;
     const replay = catalog.scenePoseReplays?.[scene.poseReplay.id];

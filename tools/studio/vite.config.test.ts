@@ -210,6 +210,46 @@ describe('Studio request-saving middleware', () => {
     expect(saved.map(({ words }) => words)).toEqual(['First durable request.', 'Second durable request.']);
   });
 
+  /**
+   * A saved request is a durable note an agent later acts on, and a
+   * cross-site simple POST lands its write even though its response is
+   * opaque — so any page the owner has open could otherwise plant work.
+   */
+  it('refuses a cross-site POST and saves nothing', async () => {
+    const folder = await requestFolder();
+    const legacy = {
+      schemaVersion: 'studio.request/1',
+      words: 'Planted from another site.',
+      notes: [],
+      model: {},
+    };
+    await withRequestServer(folder, async (url) => {
+      const bySite = await fetch(url, {
+        method: 'POST',
+        headers: { 'sec-fetch-site': 'cross-site' },
+        body: JSON.stringify(legacy),
+      });
+      expect(bySite.status).toBe(403);
+      expect(((await bySite.json()) as { error: string }).error).toContain('same-origin only');
+
+      const byOrigin = await fetch(url, {
+        method: 'POST',
+        headers: { origin: 'https://elsewhere.example' },
+        body: JSON.stringify(legacy),
+      });
+      expect(byOrigin.status).toBe(403);
+
+      // The studio's own page still saves.
+      const sameOrigin = await fetch(url, {
+        method: 'POST',
+        headers: { 'sec-fetch-site': 'same-origin' },
+        body: JSON.stringify(legacy),
+      });
+      expect(sameOrigin.status).toBe(200);
+    });
+    expect(await readdir(folder)).toHaveLength(1);
+  });
+
   it('keeps the request/1 save behavior backward compatible', async () => {
     const folder = await requestFolder();
     const legacy = {

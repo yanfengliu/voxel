@@ -39,6 +39,8 @@ export interface StudioEditorPanelV1 {
   flashVoxel(voxel: { readonly x: number; readonly y: number; readonly z: number }): void;
   /** Attaches the Open/New/Copy behaviour to the top bar's own buttons. */
   wireTopBar(buttons: StudioEditorTopBarV1): void;
+  /** Cancels the pending flash timer so a torn-down panel leaves nothing armed. */
+  dispose(): void;
 }
 
 export function createStudioEditorPanel(deps: StudioEditorDepsV1): StudioEditorPanelV1 {
@@ -190,13 +192,34 @@ export function createStudioEditorPanel(deps: StudioEditorDepsV1): StudioEditorP
     }
   }
 
+  let flashTimer: number | null = null;
+  let flashedCell: HTMLElement | null = null;
+  function clearFlash(): void {
+    if (flashTimer !== null) {
+      window.clearTimeout(flashTimer);
+      flashTimer = null;
+    }
+    if (flashedCell !== null) {
+      flashedCell.classList.remove('flash');
+      flashedCell = null;
+    }
+  }
+
   function flashVoxel(voxel: { readonly x: number; readonly y: number; readonly z: number }): void {
     const [sx, , sz] = harness.model().size;
     const index = (sz - 1 - voxel.z) * sx + voxel.x;
     const cell = grid.children.item(index);
     if (cell instanceof HTMLElement) {
+      // A superseded flash hands off cleanly: the old cell's mark comes off
+      // now instead of whenever its orphaned timer would have fired.
+      clearFlash();
       cell.classList.add('flash');
-      window.setTimeout(() => { cell.classList.remove('flash'); }, 1600);
+      flashedCell = cell;
+      flashTimer = window.setTimeout(() => {
+        flashTimer = null;
+        flashedCell = null;
+        cell.classList.remove('flash');
+      }, 1600);
       cell.scrollIntoView({ block: 'nearest' });
     }
   }
@@ -276,5 +299,5 @@ export function createStudioEditorPanel(deps: StudioEditorDepsV1): StudioEditorP
     modelButtons, modelText, modelStatus,
   );
 
-  return { pane, rebuild, showLayer, flashVoxel, wireTopBar };
+  return { pane, rebuild, showLayer, flashVoxel, wireTopBar, dispose: clearFlash };
 }

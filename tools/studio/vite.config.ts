@@ -18,6 +18,13 @@ import { normalizeStudioSceneRequestV2 } from './requests.js';
  * never reads a path, a name, or anything else location-shaped from the
  * request body. That is the whole defence against a request writing anywhere
  * but the requests folder, and it only works if it stays absolute.
+ *
+ * Saving is also same-origin only. A saved request is a durable note an agent
+ * later reads and acts on, so a page the owner merely has open elsewhere must
+ * not be able to plant one: a browser sends `sec-fetch-site` on every fetch it
+ * makes, and a cross-site simple POST needs no preflight to have its write
+ * land even when its response is opaque. Both that header and a foreign
+ * `origin` are refused.
  */
 
 const REQUEST_BYTE_CAP = 1_000_000;
@@ -33,6 +40,34 @@ export type StudioRequestsHandler = (
   response: ServerResponse,
   next: () => void,
 ) => void;
+
+/**
+ * Why this POST is not the studio's own page asking, or null when it is.
+ * `sec-fetch-site` is set by the browser and cannot be forged by page script;
+ * `origin` is checked too so a client that omits the newer header still has
+ * its cross-site writes refused. A request carrying neither is a non-browser
+ * caller (curl, a test, a script the owner ran), which is allowed.
+ */
+function foreignRequestReason(request: IncomingMessage): string | null {
+  const site = request.headers['sec-fetch-site'];
+  if (typeof site === 'string' && site !== 'same-origin' && site !== 'none') {
+    return `This request came from another site (sec-fetch-site: ${site}).`;
+  }
+  const origin = request.headers.origin;
+  if (typeof origin === 'string' && origin.length > 0) {
+    const host = request.headers.host;
+    let originHost: string;
+    try {
+      originHost = new URL(origin).host;
+    } catch {
+      return `This request carries an unreadable origin ('${origin}').`;
+    }
+    if (typeof host !== 'string' || originHost !== host) {
+      return `This request came from origin '${origin}', not this studio ('${String(host)}').`;
+    }
+  }
+  return null;
+}
 
 function fileAlreadyExists(error: unknown): boolean {
   return typeof error === 'object'
@@ -50,6 +85,16 @@ export function createStudioRequestsHandler(
   return (request, response, next) => {
     if (request.method !== 'POST') {
       next();
+      return;
+    }
+    const foreign = foreignRequestReason(request);
+    if (foreign !== null) {
+      response.statusCode = 403;
+      response.setHeader('content-type', 'application/json');
+      response.end(JSON.stringify({
+        error: `${foreign} Saving a request is same-origin only: it writes a durable note an `
+          + 'agent later acts on. Send it from the studio page itself.',
+      }));
       return;
     }
     const chunks: Buffer[] = [];
@@ -92,6 +137,11 @@ export function createStudioRequestsHandler(
         }));
         return;
       }
+      // A request/1 body is stored exactly as sent: older studio builds and
+      // hand-written envelopes still save, which vite.config.test.ts pins.
+      // Same-origin is what makes that safe — the only writer is this
+      // studio's own page — so the origin check above carries the weight
+      // here, not a schema the legacy envelope never promised to match.
       let durable = parsed;
       if (schema === 'studio.request/2') {
         try {

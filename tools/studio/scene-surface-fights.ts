@@ -11,9 +11,12 @@ import {
 import { validateSceneV1, type SceneV1 } from './scene.js';
 
 /**
- * Judges replay-driven placements against the still scenery around them, the
+ * Judges replay-driven placements against the still scenery around them — the
  * lane sceneOverlapsV1 deliberately leaves alone because recorded poses come
- * from the trace, not from `at`. Two findings come out:
+ * from the trace, not from `at` — and, at the same sampled instants, against
+ * each other, because the owner's rule includes recorded poses on both sides:
+ * two placements a trace drives through each other are as broken as one
+ * parked inside the scenery. Two findings come out of each lane:
  *
  * - A volume overlap: a recorded body entering a still body's space beyond
  *   the numerical contact slop. Real objects have volumes and two things
@@ -108,10 +111,44 @@ export interface SceneVolumeOverlapV1 {
   readonly sampledTimes: number;
 }
 
+export interface SceneMovingPairOverlapV1 {
+  /** The lexicographically first of the two replay-driven placements. */
+  readonly a: string;
+  readonly b: string;
+  /** Voxel pairs sharing space beyond the contact slop, over all samples. */
+  readonly cellPairs: number;
+  /** The deepest entry seen, in world units. */
+  readonly deepest: number;
+  readonly firstTimeMs: number;
+  readonly sampledTimes: number;
+}
+
+export interface SceneMovingPairFightV1 {
+  /** The lexicographically first of the two replay-driven placements. */
+  readonly a: string;
+  readonly b: string;
+  readonly axis: 'x' | 'y' | 'z';
+  readonly facing: 1 | -1;
+  readonly plane: number;
+  readonly facePairs: number;
+  readonly firstTimeMs: number;
+  readonly sampledTimes: number;
+}
+
 export interface SceneSurfaceFightReportV1 {
   readonly fights: readonly SceneSurfaceFightV1[];
   /** Recorded bodies co-existing with still bodies — real objects never do. */
   readonly overlaps: readonly SceneVolumeOverlapV1[];
+  /**
+   * Two recorded bodies co-existing at the same sampled instant. The owner's
+   * rule includes recorded poses, so a trace that drives two placements
+   * through each other is as broken as a placement inside the scenery; the
+   * Machine Works merge stays legal because its authored budgets keep every
+   * approach inside the contact slop.
+   */
+  readonly movingOverlaps: readonly SceneMovingPairOverlapV1[];
+  /** Two recorded same-facing faces holding one plane at the same instant. */
+  readonly movingFights: readonly SceneMovingPairFightV1[];
   readonly unchecked: readonly SceneSurfaceUncheckedV1[];
 }
 
@@ -471,7 +508,9 @@ export function sceneSurfaceFightsV1(
   recipes: RecipeBookV1,
   parts: PartShelfV1,
 ): SceneSurfaceFightReportV1 {
-  if (validateSceneV1(scene).length > 0) return { fights: [], overlaps: [], unchecked: [] };
+  if (validateSceneV1(scene).length > 0) {
+    return { fights: [], overlaps: [], movingOverlaps: [], movingFights: [], unchecked: [] };
+  }
   const movingIds = new Set(replay.tracks.map(({ placementId }) => placementId));
   const stillIds = new Set(
     scene.placements.map(({ id }) => id).filter((id) => !movingIds.has(id)),
@@ -492,10 +531,40 @@ export function sceneSurfaceFightsV1(
     cellPairs: number; deepest: number; firstTimeMs: number; sampledTimes: Set<number>;
   }>();
   const unchecked = new Map<string, { reason: string; sampledTimes: number }>();
+  const movingOverlaps = new Map<string, {
+    a: string; b: string;
+    cellPairs: number; deepest: number; firstTimeMs: number; sampledTimes: Set<number>;
+  }>();
+  const movingFights = new Map<string, {
+    a: string; b: string; axis: Axis; facing: 1 | -1; plane: number;
+    facePairs: number; firstTimeMs: number; sampledTimes: Set<number>;
+  }>();
 
   for (const frame of sampleFrames(replay.frameCount)) {
     const timeMs = frame * stepMs;
     const sample = sampleValidatedScenePoseReplayV1OrV2(replay, timeMs);
+    // This frame's recorded geometry, collected while the still lane streams,
+    // so the moving-vs-moving lane judges the same sampled instant.
+    const frameCells = new Map<string, StillVoxel[]>();
+    let frameMaxSize = 0;
+    const frameBoxLists = new Map<string, StillVoxel[]>();
+    const frameFaces = new Map<string, (FaceRect & { axis: Axis; facing: 1 | -1 })[]>();
+    const frameTilted: {
+      id: string;
+      half: number;
+      columns: readonly (readonly [number, number, number])[];
+      centers: (readonly [number, number, number])[];
+    }[] = [];
+    const indexBox = (box: StillVoxel): void => {
+      const key = unitCellKey(box.x, box.y, box.z);
+      const bucket = frameCells.get(key);
+      if (bucket) bucket.push(box);
+      else frameCells.set(key, [box]);
+      if (box.size > frameMaxSize) frameMaxSize = box.size;
+      const list = frameBoxLists.get(box.placementId);
+      if (list) list.push(box);
+      else frameBoxLists.set(box.placementId, [box]);
+    };
     for (const pose of sample.placements) {
       const placement = placementsById.get(pose.placementId);
       if (!placement) continue;
@@ -526,6 +595,8 @@ export function sceneSurfaceFightsV1(
           half * (Math.abs(columns[0]![1]) + Math.abs(columns[1]![1]) + Math.abs(columns[2]![1])),
           half * (Math.abs(columns[0]![2]) + Math.abs(columns[1]![2]) + Math.abs(columns[2]![2])),
         ] as const;
+        const tiltedCenters: (readonly [number, number, number])[] = [];
+        frameTilted.push({ id: pose.placementId, half, columns, centers: tiltedCenters });
         for (let z = 0; z < sz; z += 1) {
           for (let y = 0; y < sy; y += 1) {
             for (let x = 0; x < sx; x += 1) {
@@ -541,6 +612,7 @@ export function sceneSurfaceFightsV1(
                 pose.translation[1] + spun[1],
                 pose.translation[2] + spun[2],
               ];
+              tiltedCenters.push(center);
               const aabbLow = [
                 center[0] - reach[0], center[1] - reach[1], center[2] - reach[2],
               ] as const;
@@ -586,6 +658,9 @@ export function sceneSurfaceFightsV1(
               pose.translation[2] + Math.min(a[2], b[2]),
             ] as const;
             if (!built.topFilm) {
+              indexBox({
+                x: low[0], y: low[1], z: low[2], size: grain, placementId: pose.placementId,
+              });
               const high = [low[0] + grain, low[1] + grain, low[2] + grain] as const;
               for (const still of stillCellCandidates(stillCells, low, high)) {
                 const dx = Math.min(high[0], still.x + still.size) - Math.max(low[0], still.x);
@@ -621,6 +696,13 @@ export function sceneSurfaceFightsV1(
               const u1 = u0 + grain;
               const v0 = low[vAxis];
               const v1 = v0 + grain;
+              const movingRect = {
+                plane, u0, u1, v0, v1, placementId: pose.placementId, axis, facing,
+              };
+              const movingFaceKey = faceBucketKey(axis, facing, planeBucket(plane));
+              const movingBucket = frameFaces.get(movingFaceKey);
+              if (movingBucket) movingBucket.push(movingRect);
+              else frameFaces.set(movingFaceKey, [movingRect]);
               const bucket = planeBucket(plane);
               for (let probe = bucket - 1; probe <= bucket + 1; probe += 1) {
                 for (const still of stillFaces.get(faceBucketKey(axis, facing, probe)) ?? []) {
@@ -648,6 +730,110 @@ export function sceneSurfaceFightsV1(
         }
       }
     }
+
+    // The moving-vs-moving lane: this frame's recorded bodies against each
+    // other. Pairs are keyed with the lexicographically smaller id first so
+    // (a, b) and (b, a) aggregate as one finding.
+    const frameIndex: StillVoxelIndex = { byCell: frameCells, maxSize: frameMaxSize };
+    const recordMovingOverlap = (first: string, second: string, depth: number): void => {
+      const [a, b] = first < second ? [first, second] : [second, first];
+      const key = `${a}|${b}`;
+      const overlap = movingOverlaps.get(key) ?? {
+        a, b, cellPairs: 0, deepest: 0, firstTimeMs: timeMs, sampledTimes: new Set<number>(),
+      };
+      overlap.cellPairs += 1;
+      overlap.deepest = Math.max(overlap.deepest, depth);
+      overlap.sampledTimes.add(frame);
+      movingOverlaps.set(key, overlap);
+    };
+    for (const [placementId, boxes] of frameBoxLists) {
+      for (const box of boxes) {
+        const low = [box.x, box.y, box.z] as const;
+        const high = [box.x + box.size, box.y + box.size, box.z + box.size] as const;
+        for (const other of stillCellCandidates(frameIndex, low, high)) {
+          // The strict order also skips the box's own placement.
+          if (other.placementId <= placementId) continue;
+          const dx = Math.min(high[0], other.x + other.size) - Math.max(low[0], other.x);
+          const dy = Math.min(high[1], other.y + other.size) - Math.max(low[1], other.y);
+          const dz = Math.min(high[2], other.z + other.size) - Math.max(low[2], other.z);
+          const depth = Math.min(dx, dy, dz);
+          if (depth <= CONTACT_SLOP) continue;
+          recordMovingOverlap(placementId, other.placementId, depth);
+        }
+      }
+    }
+    for (const tilted of frameTilted) {
+      const reach = [
+        tilted.half * (Math.abs(tilted.columns[0]![0]) + Math.abs(tilted.columns[1]![0]) + Math.abs(tilted.columns[2]![0])),
+        tilted.half * (Math.abs(tilted.columns[0]![1]) + Math.abs(tilted.columns[1]![1]) + Math.abs(tilted.columns[2]![1])),
+        tilted.half * (Math.abs(tilted.columns[0]![2]) + Math.abs(tilted.columns[1]![2]) + Math.abs(tilted.columns[2]![2])),
+      ] as const;
+      for (const center of tilted.centers) {
+        const low = [center[0] - reach[0], center[1] - reach[1], center[2] - reach[2]] as const;
+        const high = [center[0] + reach[0], center[1] + reach[1], center[2] + reach[2]] as const;
+        for (const other of stillCellCandidates(frameIndex, low, high)) {
+          if (other.placementId === tilted.id) continue;
+          const depth = tiltedBoxEntryDepth(center, tilted.half, tilted.columns, other);
+          if (depth <= CONTACT_SLOP) continue;
+          recordMovingOverlap(tilted.id, other.placementId, depth);
+        }
+      }
+    }
+    for (let first = 0; first < frameTilted.length; first += 1) {
+      for (let second = first + 1; second < frameTilted.length; second += 1) {
+        const a = frameTilted[first]!;
+        const b = frameTilted[second]!;
+        if (a.id === b.id) continue;
+        const pairId = a.id < b.id ? `${a.id} & ${b.id}` : `${b.id} & ${a.id}`;
+        const entry = unchecked.get(pairId) ?? {
+          reason: 'both recorded poses are tilted off the world axes at the same sampled '
+            + 'instant, and the pairwise tilted-tilted space test is not implemented; '
+            + 'each body is still judged exactly against still scenery and against '
+            + 'axis-aligned recorded bodies',
+          sampledTimes: 0,
+        };
+        entry.sampledTimes += 1;
+        unchecked.set(pairId, entry);
+      }
+    }
+    const judgeMovingFacePair = (
+      a: FaceRect & { axis: Axis; facing: 1 | -1 },
+      b: FaceRect & { axis: Axis; facing: 1 | -1 },
+    ): void => {
+      if (a.placementId === b.placementId) return;
+      if (Math.abs(a.plane - b.plane) > PLANE_EPSILON) return;
+      if (Math.min(a.u1, b.u1) - Math.max(a.u0, b.u0) <= PLANE_EPSILON) return;
+      if (Math.min(a.v1, b.v1) - Math.max(a.v0, b.v0) <= PLANE_EPSILON) return;
+      const [lo, hi] = a.placementId < b.placementId ? [a, b] : [b, a];
+      const key = `${lo.placementId}|${hi.placementId}|${String(a.axis)}|${String(a.facing)}|${String(planeBucket(a.plane))}`;
+      const fight = movingFights.get(key) ?? {
+        a: lo.placementId,
+        b: hi.placementId,
+        axis: a.axis,
+        facing: a.facing,
+        plane: a.plane,
+        facePairs: 0,
+        firstTimeMs: timeMs,
+        sampledTimes: new Set<number>(),
+      };
+      fight.facePairs += 1;
+      fight.sampledTimes.add(frame);
+      movingFights.set(key, fight);
+    };
+    for (const [bucketKey, rects] of frameFaces) {
+      for (let first = 0; first < rects.length; first += 1) {
+        for (let second = first + 1; second < rects.length; second += 1) {
+          judgeMovingFacePair(rects[first]!, rects[second]!);
+        }
+      }
+      // Planes within epsilon can straddle a bucket boundary; compare against
+      // the next bucket once so no cross-bucket pair is counted twice.
+      const parts = bucketKey.split(':');
+      const neighborKey = `${parts[0]!}:${parts[1]!}:${String(Number(parts[2]!) + 1)}`;
+      for (const neighbor of frameFaces.get(neighborKey) ?? []) {
+        for (const rect of rects) judgeMovingFacePair(rect, neighbor);
+      }
+    }
   }
 
   return {
@@ -672,6 +858,28 @@ export function sceneSurfaceFightsV1(
         deepest: overlap.deepest,
         firstTimeMs: overlap.firstTimeMs,
         sampledTimes: overlap.sampledTimes.size,
+      })),
+    movingOverlaps: [...movingOverlaps.values()]
+      .sort((a, b) => (a.a === b.a ? a.b.localeCompare(b.b) : a.a.localeCompare(b.a)))
+      .map((overlap) => ({
+        a: overlap.a,
+        b: overlap.b,
+        cellPairs: overlap.cellPairs,
+        deepest: overlap.deepest,
+        firstTimeMs: overlap.firstTimeMs,
+        sampledTimes: overlap.sampledTimes.size,
+      })),
+    movingFights: [...movingFights.values()]
+      .sort((a, b) => (a.a === b.a ? a.b.localeCompare(b.b) : a.a.localeCompare(b.a)))
+      .map((fight) => ({
+        a: fight.a,
+        b: fight.b,
+        axis: AXIS_NAMES[fight.axis],
+        facing: fight.facing,
+        plane: fight.plane,
+        facePairs: fight.facePairs,
+        firstTimeMs: fight.firstTimeMs,
+        sampledTimes: fight.sampledTimes.size,
       })),
     unchecked: [...unchecked.entries()].map(([placementId, entry]) => ({
       placementId,

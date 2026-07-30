@@ -358,7 +358,11 @@ export function connectModelStudioShellV2(
   }
   const instanceId = root.dataset.studioShellInstance ?? '';
   if (!V2_INSTANCE_ID.test(instanceId)) {
-    throw new Error('The V2 Model Studio shell has an invalid instanceId.');
+    throw new Error(
+      `The V2 Model Studio shell needs a data-studio-shell-instance of lowercase letters and `
+      + `digits in hyphen-separated groups, starting with a letter (for example 'studio-1'); `
+      + `received '${instanceId}'.`,
+    );
   }
   const rootTree = root.getRootNode();
   const matchingInstances = 'querySelectorAll' in rootTree

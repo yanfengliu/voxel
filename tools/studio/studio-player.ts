@@ -107,8 +107,8 @@ export function createStudioPlayerBar(deps: StudioPlayerBarDepsV1): StudioPlayer
         ? Math.min(period, Math.max(0, timeMs))
         : ((timeMs % period) + period) % period;
     timeLabel.textContent = period > 0
-      ? `${String(Math.round(timeMs))} ms elapsed Â· ${String(period)} ms scrub window`
-      : 'still Â· one scene frame';
+      ? `${String(Math.round(timeMs))} ms elapsed · ${String(period)} ms scrub window`
+      : 'still · one scene frame';
     if (period > 0 && player.playback === 'once') {
       timeLabel.textContent = `${String(Math.round(shown))} ms of ${String(period)} ms · one shot`;
     }

@@ -41,6 +41,64 @@ describe('the studio scenes', () => {
     });
   }
 
+  /**
+   * Regression: the former cell hash keyed each target cube by its low corner
+   * and probed only downward, so a pair meeting across a unit-cell wall on
+   * mutually offset grids was reported clean in one argument order — the
+   * shallow sink the check exists to catch. These arrangements make the only
+   * overlapping cube pair straddle a wall, and pin both placement orders.
+   */
+  const crossCell = (
+    id: string,
+    first: readonly [number, number, number],
+    second: readonly [number, number, number],
+    grain: number,
+  ) => sceneOverlapsV1({
+    schemaVersion: 'studio.scene/1',
+    id: `studio:scene:${id}`,
+    label: 'Cross-cell overlap regression',
+    placements: [
+      { id: 'lower', model: 'studio:lighting-receiver', at: first, grain },
+      { id: 'upper', model: 'studio:lighting-receiver', at: second, grain },
+    ],
+  }, recipes, parts);
+
+  it('catches a shallow overlap that crosses a unit-cell wall, in both placement orders', () => {
+    // Centres 0.4 and 1.8 put the sole overlapping cube pair astride x = 1
+    // with a 0.10-unit overlap — thinner than the 0.25 grain, so no aligned
+    // pair exists to rescue the old scan.
+    const forward = crossCell('cross-cell-forward', [0.4, 0, 0], [1.8, 0, 0], 0.25);
+    expect(forward).toEqual([{ a: 'lower', b: 'upper', cells: expect.any(Number) as number }]);
+    expect(forward[0]!.cells).toBeGreaterThan(0);
+    const reversed = crossCell('cross-cell-reversed', [1.8, 0, 0], [0.4, 0, 0], 0.25);
+    expect(reversed).toHaveLength(1);
+    expect(reversed[0]!.cells).toBeGreaterThan(0);
+  });
+
+  it('catches a cross-wall overlap at grain 1, where a whole cube face sinks in', () => {
+    // At grain 1 the receiver spans 6 units; centres 0.4 and 6.2 overlap
+    // 0.2 units astride x = 3 with no cell-aligned pair.
+    const overlaps = crossCell('cross-cell-grain-1', [0.4, 0, 0], [6.2, 0, 0], 1);
+    expect(overlaps).toHaveLength(1);
+    expect(overlaps[0]!.cells).toBeGreaterThan(0);
+  });
+
+  it('still finds overlaps when a giant grain bypasses the cell hash', () => {
+    // Grain 8 cubes span more unit cells than the hash enumerates, so the
+    // oversized path must scan them directly against the fine-grained side.
+    const overlaps = sceneOverlapsV1({
+      schemaVersion: 'studio.scene/1',
+      id: 'studio:scene:oversized-grain',
+      label: 'Oversized grain overlap',
+      placements: [
+        { id: 'giant', model: 'studio:lighting-receiver', at: [0, 0, 0], grain: 8 },
+        { id: 'fine', model: 'studio:lighting-receiver', at: [1, 0, 0], grain: 0.25 },
+      ],
+    }, recipes, parts);
+    expect(overlaps).toHaveLength(1);
+    expect(overlaps[0]!.cells).toBeGreaterThan(0);
+  });
+
   it('reports overlapping pairs in scene order while skipping touching and distant receivers', () => {
     const overlaps = sceneOverlapsV1({
       schemaVersion: 'studio.scene/1',

@@ -1,4 +1,4 @@
-import { buildRecipe, type PartShelfV1, type RecipeBookV1 } from './recipe.js';
+import { buildRecipe, mixSeed, type PartShelfV1, type RecipeBookV1 } from './recipe.js';
 import { modelVoxelSizeV1 } from './model.js';
 import {
   LivePhysicsSessionV1,
@@ -101,7 +101,11 @@ function livePlacementSourcesV1(
           + `model '${placement.model}' is not in the recipe book.`,
         );
       }
-      const model = buildRecipe(recipe, parts, recipes).model;
+      // Fold the placement seed exactly as the render lane does, so the shape
+      // being pushed is the seed-varied shape being drawn — not the default.
+      const seed = placement.seed ?? 0;
+      const seeded = seed === 0 ? recipe : { ...recipe, seed: mixSeed(recipe.seed, seed) };
+      const model = buildRecipe(seeded, parts, recipes).model;
       const grain = placement.grain ?? modelVoxelSizeV1(model);
       // Scene geometry pivots at the model centre and placements anchor the
       // base at `at.y`, so the body centre sits half the model height above.

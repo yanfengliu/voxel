@@ -15,9 +15,10 @@ import type { SceneV1 } from './scene.js';
  * never lie on a still surface's plane facing the same way. Still placements
  * are judged by sceneOverlapsV1 exactly as the pinned scene tests judge them
  * (replay-driven placements excluded, since their authored spots are not
- * their presented poses); recorded poses are judged against still scenery by
- * sceneSurfaceFightsV1 at its sampled replay times, for both co-existence and
- * visibility fights.
+ * their presented poses); recorded poses are judged by sceneSurfaceFightsV1 at
+ * its sampled replay times against still scenery and against each other, for
+ * both co-existence and visibility fights — the rule includes recorded poses
+ * on both sides of a pair.
  */
 export function sceneSurfaceConflictsV1(
   scene: SceneV1,
@@ -50,6 +51,21 @@ export function sceneSurfaceConflictsV1(
         : 'a side-facing';
       lines.push(
         `${fight.moving} (moving) and ${fight.still} share ${facing} surface on the `
+        + `${fight.axis} = ${String(Number(fight.plane.toFixed(3)))} plane and fight for visibility`,
+      );
+    }
+    for (const overlap of report.movingOverlaps) {
+      lines.push(
+        `${overlap.a} (moving) and ${overlap.b} (moving) co-exist in the same space `
+        + `(at least ${String(Number(overlap.deepest.toFixed(3)))} world units deep)`,
+      );
+    }
+    for (const fight of report.movingFights) {
+      const facing = fight.axis === 'y'
+        ? (fight.facing === 1 ? 'an upward-facing' : 'a downward-facing')
+        : 'a side-facing';
+      lines.push(
+        `${fight.a} (moving) and ${fight.b} (moving) share ${facing} surface on the `
         + `${fight.axis} = ${String(Number(fight.plane.toFixed(3)))} plane and fight for visibility`,
       );
     }

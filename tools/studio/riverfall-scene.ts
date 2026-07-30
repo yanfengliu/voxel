@@ -45,10 +45,16 @@ const STRUCTURE_PLACEMENTS: readonly ScenePlacementV1[] = [
  * The pond bowl's plants: kelp strands tall enough to matter and weed clumps
  * on the floor, all fully below the surface film. They are why the water is
  * translucent — depth someone can read, not a colour someone is told.
+ *
+ * The kelp model is five rows tall and every strand roots at y = 1, so a
+ * strand's top sits at 1 + 5 × grain. The film's underside is y = 3: grain
+ * 0.4 is the tallest legal kelp — exactly flush against the film, the one
+ * legal coincidence — and anything larger pokes through it, which is how the
+ * middle strand at 0.45 came to share cells with the pond surface.
  */
 export const RIVERFALL_PLANT_PLACEMENTS_V1: readonly ScenePlacementV1[] = [
   { id: 'plant-kelp-west', model: 'studio:riverfall:kelp', at: [-8, 1, 12], grain: 0.4, seed: 3 },
-  { id: 'plant-kelp-middle', model: 'studio:riverfall:kelp', at: [-1, 1, 17], grain: 0.45, seed: 5, turns: 1 },
+  { id: 'plant-kelp-middle', model: 'studio:riverfall:kelp', at: [-1, 1, 17], grain: 0.4, seed: 5, turns: 1 },
   { id: 'plant-kelp-east', model: 'studio:riverfall:kelp', at: [7, 1, 13], grain: 0.4, seed: 7, turns: 2 },
   { id: 'plant-weed-west', model: 'studio:riverfall:pondweed', at: [-5, 1, 20], grain: 0.5, seed: 11 },
   { id: 'plant-weed-east', model: 'studio:riverfall:pondweed', at: [4, 1, 21], grain: 0.5, seed: 13, turns: 1 },

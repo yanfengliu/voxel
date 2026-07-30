@@ -435,16 +435,21 @@ test('the studio announces surface conflicts for every scene it opens or edits',
   await page.goto(studioOrigin, { waitUntil: 'load' });
   await page.waitForFunction(() => typeof window.voxelStudio === 'object');
 
-  // The machine scene once announced its known debts here; the re-layout
-  // moved the statics and re-recorded the trace, so the flagship recorded
-  // scene now exercises the announcer's quiet path on open. The edit flow
-  // below still proves announcements appear the moment a conflict exists.
+  // The re-layout cleared this scene's still-lane debts, and the
+  // moving-vs-moving lane added on 2026-07-30 then found the one thing no gate
+  // had looked at: the product dents the collection bucket as it lands. It is
+  // pinned exactly rather than tolerated, here and in
+  // scene-conflict-report.test.ts, so the announcer is shown speaking that one
+  // line on screen and nothing else.
   await page.evaluate(() => { window.voxelStudio!.openScene('studio:scene:contrast-machines'); });
   await page.waitForFunction(() =>
     window.voxelStudio!.sceneSurfaceConflicts()?.status === 'ready');
   const machine = await page.evaluate(() => window.voxelStudio!.sceneSurfaceConflicts());
-  expect(machine?.conflicts).toEqual([]);
-  await expect(page.locator('.scene-conflicts')).toBeHidden();
+  expect(machine?.conflicts).toEqual([
+    'collection-bucket (moving) and product-core (moving) co-exist in the same space '
+    + '(at least 0.023 world units deep)',
+  ]);
+  await expect(page.locator('.scene-conflicts')).toBeVisible();
 
   // A clean editable scene stays quiet; committing a placement into another's
   // space makes the report speak immediately, and undo silences it again.

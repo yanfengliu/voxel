@@ -134,34 +134,98 @@ function boundsOverlap(a: VoxelBounds, b: VoxelBounds): boolean {
     && a.minZ < b.maxZ && b.minZ < a.maxZ;
 }
 
-/** How many of A's voxels overlap any of B's, via a unit-cell hash of B's low corners. */
+/**
+ * Cubes spanning at least this many unit cells on an axis skip the cell hash
+ * and are tested directly: a grain can legally be enormous (`MAX_VOXEL_SIZE`),
+ * and enumerating every cell such a cube touches would explode, while models
+ * built from giant voxels carry few of them, so a direct scan stays cheap.
+ */
+const OVERSIZED_CELL_SPAN = 4;
+
+/** The inclusive range of unit-cell indices the span [low, low + size) touches. */
+function touchedCells(low: number, size: number): { readonly first: number; readonly last: number } {
+  // Cells are [c, c+1); an exact-integer top edge stays in the cell below it.
+  return { first: Math.floor(low), last: Math.ceil(low + size) - 1 };
+}
+
+function isOversized(
+  xs: { readonly first: number; readonly last: number },
+  ys: { readonly first: number; readonly last: number },
+  zs: { readonly first: number; readonly last: number },
+): boolean {
+  return xs.last - xs.first >= OVERSIZED_CELL_SPAN
+    || ys.last - ys.first >= OVERSIZED_CELL_SPAN
+    || zs.last - zs.first >= OVERSIZED_CELL_SPAN;
+}
+
+/**
+ * How many of A's voxels overlap any of B's. Every B cube is hashed into every
+ * unit cell it touches, and every A cube probes every unit cell it touches:
+ * two cubes overlapping with positive volume always share a touched cell, so
+ * the hash cannot miss a pair — including cubes meeting across a cell wall or
+ * sitting on mutually offset grids, which the previous low-corner,
+ * downward-scan hash missed. Giant cubes bypass the hash via the oversized
+ * lists and are tested directly.
+ */
 function sharedVoxels(a: readonly VoxelBox[], b: readonly VoxelBox[]): number {
   const byCell = new Map<string, VoxelBox[]>();
+  const oversized: VoxelBox[] = [];
   for (const box of b) {
-    const key = `${String(Math.floor(box.x))},${String(Math.floor(box.y))},${String(Math.floor(box.z))}`;
-    const bucket = byCell.get(key);
-    if (bucket) bucket.push(box);
-    else byCell.set(key, [box]);
-  }
-  let shared = 0;
-  for (const box of a) {
-    // A cube spanning [x, x+size] can only meet B cubes whose low corner falls in
-    // the neighbouring unit cells, so only those are tested.
-    const spanLo = -Math.ceil(box.size);
-    let hit = false;
-    for (let dx = spanLo; dx <= 0 && !hit; dx += 1) {
-      for (let dy = spanLo; dy <= 0 && !hit; dy += 1) {
-        for (let dz = spanLo; dz <= 0 && !hit; dz += 1) {
-          const key = `${String(Math.floor(box.x) + dx)},${String(Math.floor(box.y) + dy)},${String(Math.floor(box.z) + dz)}`;
-          for (const other of byCell.get(key) ?? []) {
-            if (cubesOverlap(box, other)) { hit = true; break; }
-          }
+    const xs = touchedCells(box.x, box.size);
+    const ys = touchedCells(box.y, box.size);
+    const zs = touchedCells(box.z, box.size);
+    if (isOversized(xs, ys, zs)) {
+      oversized.push(box);
+      continue;
+    }
+    for (let x = xs.first; x <= xs.last; x += 1) {
+      for (let y = ys.first; y <= ys.last; y += 1) {
+        for (let z = zs.first; z <= zs.last; z += 1) {
+          const key = `${String(x)},${String(y)},${String(z)}`;
+          const bucket = byCell.get(key);
+          if (bucket) bucket.push(box);
+          else byCell.set(key, [box]);
         }
       }
     }
-    if (hit) shared += 1;
+  }
+  let shared = 0;
+  for (const box of a) {
+    if (overlapsAny(box, byCell, oversized, b)) shared += 1;
   }
   return shared;
+}
+
+function overlapsAny(
+  box: VoxelBox,
+  byCell: ReadonlyMap<string, readonly VoxelBox[]>,
+  oversized: readonly VoxelBox[],
+  all: readonly VoxelBox[],
+): boolean {
+  for (const other of oversized) {
+    if (cubesOverlap(box, other)) return true;
+  }
+  const xs = touchedCells(box.x, box.size);
+  const ys = touchedCells(box.y, box.size);
+  const zs = touchedCells(box.z, box.size);
+  if (isOversized(xs, ys, zs)) {
+    // An oversized probe scans the whole hashed side directly, for the same
+    // bounded-enumeration reason oversized hashed cubes skip the cell map.
+    for (const other of all) {
+      if (cubesOverlap(box, other)) return true;
+    }
+    return false;
+  }
+  for (let x = xs.first; x <= xs.last; x += 1) {
+    for (let y = ys.first; y <= ys.last; y += 1) {
+      for (let z = zs.first; z <= zs.last; z += 1) {
+        for (const other of byCell.get(`${String(x)},${String(y)},${String(z)}`) ?? []) {
+          if (cubesOverlap(box, other)) return true;
+        }
+      }
+    }
+  }
+  return false;
 }
 
 /**

@@ -1799,6 +1799,7 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
   // together.
   const sceneConflictReports = new WeakMap<SceneV1, readonly string[]>();
   let sceneConflictToken = 0;
+  let sceneConflictTimer: number | null = null;
   function sceneReplayOf(scene: SceneV1): ScenePoseReplayV1OrV2 | null {
     return scene.schemaVersion === VOXEL_SCENE_SCHEMA_V4
       ? catalog.scenePoseReplays?.[scene.poseReplay.id] ?? null
@@ -1828,8 +1829,9 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
     sceneConflictLine.dataset.tone = 'idle';
     sceneConflictLine.textContent = 'Checking surfaces…';
     const token = ++sceneConflictToken;
-    setTimeout(() => {
-      if (token !== sceneConflictToken || sceneOpen !== scene) return;
+    sceneConflictTimer = window.setTimeout(() => {
+      sceneConflictTimer = null;
+      if (disposed || token !== sceneConflictToken || sceneOpen !== scene) return;
       let lines: readonly string[];
       try {
         lines = sceneSurfaceConflictsV1(scene, sceneReplayOf(scene), sceneRecipes, sceneParts);
@@ -3223,6 +3225,11 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
       if (disposed) return;
       disposed = true;
       cancelAnimationFrame(frameHandle);
+      if (sceneConflictTimer !== null) {
+        window.clearTimeout(sceneConflictTimer);
+        sceneConflictTimer = null;
+      }
+      editor.dispose();
       liveInteract.dispose();
       playgroundPanel.dispose();
       playgroundView.dispose();
