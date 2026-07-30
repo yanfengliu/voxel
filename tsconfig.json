@@ -29,6 +29,7 @@
     "tests",
     "tools",
     "fixtures/machine-works-consumer",
+    "fixtures/physics-playground",
     "fixtures/riverfall-consumer",
     "eslint.config.js",
     "playwright.config.ts",
