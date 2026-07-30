@@ -337,17 +337,32 @@ const COMMANDS = {
 
     /**
      * Grows or shrinks the browser window until the stage floors to the
-     * captured size. The studio's own resize observer follows the DOM, so
-     * driving the window is the same path a person's window drag takes.
+     * captured size, the same path a person's window drag takes. The studio
+     * follows the stage box from its frame loop, so after the window fits the
+     * follow is made synchronous through the studio's own resizeStage — the
+     * function the frame loop itself calls — rather than racing that loop:
+     * measured here, showSceneAnnotation could still see the pre-drag size a
+     * frame later and refuse the pin. The window really is at the captured
+     * size, so the follower agrees with the nudge instead of fighting it.
      */
     const fitStage = async (page, viewport) => {
       const wrap = page.locator('.canvas-wrap');
+      const settle = async () => {
+        await page.evaluate((size) => {
+          const studio = window.voxelStudio;
+          if (!studio) throw new Error('the studio harness is unavailable');
+          studio.resizeStage(size.width, size.height);
+        }, viewport);
+      };
       for (let attempt = 0; attempt < 5; attempt += 1) {
         const box = await wrap.boundingBox();
         if (!box) throw new Error('the scene stage has no box to measure');
         const width = Math.floor(box.width);
         const height = Math.floor(box.height);
-        if (width === viewport.width && height === viewport.height) return;
+        if (width === viewport.width && height === viewport.height) {
+          await settle();
+          return;
+        }
         const current = page.viewportSize() ?? { width: 900, height: 700 };
         await page.setViewportSize({
           width: Math.max(320, current.width + viewport.width - width),
