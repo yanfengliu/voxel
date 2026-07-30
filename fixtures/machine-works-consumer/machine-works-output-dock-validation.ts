@@ -6,7 +6,7 @@ import {
   createMachineWorksTransferCarriagePhysicalAsset,
 } from '../../tools/studio/machine-works-physical-assets.js';
 import { MACHINE_WORKS_CONVEYOR_V1 } from '../../tools/studio/machine-works-conveyor.js';
-import { MACHINE_WORKS_SCENE_LAYOUT_V1 } from '../../tools/studio/machine-works-layout.js';
+import { MACHINE_WORKS_PROCESS_LAYOUT_V1 } from '../../tools/studio/machine-works-layout.js';
 import type { PhysicalAssetV1 } from '../../tools/studio/physical-asset.js';
 import { machineWorksOutputDockSweepMeasurementV1 } from './machine-works-output-dock-sweep.js';
 import {
@@ -246,8 +246,8 @@ function canonicalAlignmentIssues(
   maximumError: number,
 ): readonly string[] {
   const issues: string[] = [];
-  const carriageGrain = MACHINE_WORKS_SCENE_LAYOUT_V1.carriage.grain;
-  const dockGrain = MACHINE_WORKS_SCENE_LAYOUT_V1.outputDock.grain;
+  const carriageGrain = MACHINE_WORKS_PROCESS_LAYOUT_V1.carriage.grain;
+  const dockGrain = MACHINE_WORKS_PROCESS_LAYOUT_V1.outputDock.grain;
   for (const [carriagePort, dockPort] of [
     ['tip-pivot-axis', 'pivot-axis'],
     ['near-trunnion', 'near-bearing-bore'],
@@ -320,9 +320,9 @@ export function machineWorksOutputDockEnvironmentIssuesV1(
   maximumError: number,
 ): readonly string[] {
   const issues: string[] = [];
-  const dockGrain = MACHINE_WORKS_SCENE_LAYOUT_V1.outputDock.grain;
-  const foundationGrain = MACHINE_WORKS_SCENE_LAYOUT_V1.foundation.grain;
-  const bucketGrain = MACHINE_WORKS_SCENE_LAYOUT_V1.bucket.grain;
+  const dockGrain = MACHINE_WORKS_PROCESS_LAYOUT_V1.outputDock.grain;
+  const foundationGrain = MACHINE_WORKS_PROCESS_LAYOUT_V1.foundation.grain;
+  const bucketGrain = MACHINE_WORKS_PROCESS_LAYOUT_V1.bucket.grain;
   const dockSolids = physicalAssetAxisAlignedSolidBounds(dock, dockGrain, dockCenter);
   const foundationSolids = physicalAssetAxisAlignedSolidBounds(
     foundation, foundationGrain, foundationCenter,
@@ -385,7 +385,7 @@ export function machineWorksOutputDockEnvironmentIssuesV1(
     minimumBeltClearance = Math.min(minimumBeltClearance, clearance);
   }
   const requiredBeltClearance =
-    MACHINE_WORKS_SCENE_LAYOUT_V1.outputDock.minimumBeltAxialClearance;
+    MACHINE_WORKS_PROCESS_LAYOUT_V1.outputDock.minimumBeltAxialClearance;
   if (minimumBeltClearance < requiredBeltClearance - maximumError) {
     issues.push(
       `output dock leaves ${minimumBeltClearance.toFixed(3)} world units outside the `
@@ -406,12 +406,12 @@ export function machineWorksOutputDockCanonicalIssuesV1(
   const bucket = createMachineWorksCollectionBucketPhysicalAsset();
   const carriageCenter: SupportPointV1 = [
     MACHINE_WORKS_CONVEYOR_V1.rightAxleX,
-    sceneCenter(MACHINE_WORKS_SCENE_LAYOUT_V1.carriage)[1],
+    sceneCenter(MACHINE_WORKS_PROCESS_LAYOUT_V1.carriage)[1],
     0,
   ];
-  const dockCenter = sceneCenter(MACHINE_WORKS_SCENE_LAYOUT_V1.outputDock);
-  const foundationCenter = sceneCenter(MACHINE_WORKS_SCENE_LAYOUT_V1.foundation);
-  const bucketCenter = sceneCenter(MACHINE_WORKS_SCENE_LAYOUT_V1.bucket);
+  const dockCenter = sceneCenter(MACHINE_WORKS_PROCESS_LAYOUT_V1.outputDock);
+  const foundationCenter = sceneCenter(MACHINE_WORKS_PROCESS_LAYOUT_V1.foundation);
+  const bucketCenter = sceneCenter(MACHINE_WORKS_PROCESS_LAYOUT_V1.bucket);
   return [
     ...canonicalAlignmentIssues(
       carriage, dock, carriageCenter, dockCenter, maximumError,
@@ -421,10 +421,10 @@ export function machineWorksOutputDockCanonicalIssuesV1(
       dock,
       foundation,
       bucket,
-      carriageGrain: MACHINE_WORKS_SCENE_LAYOUT_V1.carriage.grain,
-      dockGrain: MACHINE_WORKS_SCENE_LAYOUT_V1.outputDock.grain,
-      foundationGrain: MACHINE_WORKS_SCENE_LAYOUT_V1.foundation.grain,
-      bucketGrain: MACHINE_WORKS_SCENE_LAYOUT_V1.bucket.grain,
+      carriageGrain: MACHINE_WORKS_PROCESS_LAYOUT_V1.carriage.grain,
+      dockGrain: MACHINE_WORKS_PROCESS_LAYOUT_V1.outputDock.grain,
+      foundationGrain: MACHINE_WORKS_PROCESS_LAYOUT_V1.foundation.grain,
+      bucketGrain: MACHINE_WORKS_PROCESS_LAYOUT_V1.bucket.grain,
       carriageCenter,
       dockCenter,
       foundationCenter,

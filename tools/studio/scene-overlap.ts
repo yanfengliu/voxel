@@ -28,12 +28,16 @@ export interface SceneOverlapV1 {
   readonly cells: number;
 }
 
-interface VoxelBox {
+export interface PlacedVoxelBoxV1 {
   readonly x: number;
   readonly y: number;
   readonly z: number;
   readonly size: number;
+  /** The voxel's model-grid index, so a caller can look up grid neighbours. */
+  readonly index: { readonly x: number; readonly y: number; readonly z: number };
 }
+
+type VoxelBox = PlacedVoxelBoxV1;
 
 interface VoxelBounds {
   readonly minX: number;
@@ -51,8 +55,16 @@ interface FilledPlacement {
   readonly bounds: VoxelBounds;
 }
 
-/** A placement's filled voxels as world cubes, matching how buildSceneSnapshot places it. */
-function placementVoxels(placement: ScenePlacementV1, model: StudioModelV1, grain: number): VoxelBox[] {
+/**
+ * A placement's filled voxels as world cubes, matching how buildSceneSnapshot
+ * places it. Exported so companion checks (scene-surface-fights) judge the
+ * same placed geometry this check does, instead of re-deriving it.
+ */
+export function placementVoxelsV1(
+  placement: ScenePlacementV1,
+  model: StudioModelV1,
+  grain: number,
+): PlacedVoxelBoxV1[] {
   const [sx, sy, sz] = model.size;
   const middle = modelCenterV1(model);
   // The lowest filled row, so the base can be lifted to sit on the floor.
@@ -82,6 +94,7 @@ function placementVoxels(placement: ScenePlacementV1, model: StudioModelV1, grai
           y: ay + (y - baseRow) * grain,
           z: az + cornerZ,
           size: grain,
+          index: { x, y, z },
         });
       }
     }
@@ -179,7 +192,7 @@ export function sceneOverlapsV1(
       entry = { model, grain };
       byModel.set(key, entry);
     }
-    const voxels = placementVoxels(placement, entry.model, entry.grain);
+    const voxels = placementVoxelsV1(placement, entry.model, entry.grain);
     const bounds = voxelBounds(voxels);
     if (bounds) filled.push({ id: placement.id, order, voxels, bounds });
   }

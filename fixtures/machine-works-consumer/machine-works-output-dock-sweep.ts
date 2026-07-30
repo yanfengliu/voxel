@@ -1,5 +1,5 @@
 import { exactMagnitudeV1 } from '../deterministic-math.js';
-import { MACHINE_WORKS_SCENE_LAYOUT_V1 } from '../../tools/studio/machine-works-layout.js';
+import { MACHINE_WORKS_PROCESS_LAYOUT_V1 } from '../../tools/studio/machine-works-layout.js';
 import type { PhysicalAssetV1 } from '../../tools/studio/physical-asset.js';
 import {
   physicalAssetAxisAlignedSolidBounds,
@@ -293,7 +293,7 @@ export function machineWorksOutputDockSweepMeasurementV1(
   const i = input;
   const issues: string[] = [];
   const rotation = normalizedQuaternion(i.carriageRotation);
-  const requiredClearance = MACHINE_WORKS_SCENE_LAYOUT_V1.outputDock.minimumSweptClearance;
+  const requiredClearance = MACHINE_WORKS_PROCESS_LAYOUT_V1.outputDock.minimumSweptClearance;
   if (rotation === null) {
     return unsupportedSweepMeasurement(
       ['carrier output handoff rotation must be a finite nonzero quaternion'],

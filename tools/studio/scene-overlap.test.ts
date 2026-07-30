@@ -11,8 +11,8 @@ import { catalogPartsV1, catalogRecipesV1 } from './studio-library.js';
  * world cells, which is what z-fights on screen. Pose-replay tracks can carry
  * arbitrary rotations that authored quarter-turn placements cannot express,
  * so their authored fallback transforms are not judged as presented poses;
- * replay validation, fixture geometry checks, and browser phase captures cover
- * those externally solved placements instead.
+ * scene-surface-fights.test.ts judges those at their recorded poses instead,
+ * where the owner twice saw a moving surface flicker against still scenery.
  */
 describe('the studio scenes', () => {
   const catalog = createStudioCatalog();

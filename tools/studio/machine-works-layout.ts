@@ -1,15 +1,38 @@
 /**
  * Authored world layout shared by the Machine Works scene and its consumer
- * fixture. These are presentation positions, not a simulation API: the
- * consumer still derives and validates physical body and port coordinates
- * from the exact sidecars before it advances Rapier.
+ * fixture, in two frames. MACHINE_WORKS_PROCESS_LAYOUT_V1 is the recorded
+ * process's own frame: the consumer fixture simulates and validates there, so
+ * the committed trace and its hashes never depend on how the scene presents.
+ * MACHINE_WORKS_SCENE_LAYOUT_V1 is what the scene draws: the same layout with
+ * the still machinery settled just below the recorded process.
  */
 import {
   MACHINE_WORKS_CONVEYOR_V1,
   machineWorksDrumSceneFloorV1,
 } from './machine-works-conveyor.js';
 
-export const MACHINE_WORKS_SCENE_LAYOUT_V1 = Object.freeze({
+/**
+ * How far the drawn still machinery sits below the recorded process, in world
+ * units.
+ *
+ * The recorded conveyor slats top out at exactly y = 9, and the foundation's
+ * bridge-pad tops used to land on that same plane — two same-facing surfaces
+ * on one plane, so the picture flickered between them at both tower feet (the
+ * owner's pinned request 2026-07-30T00-21-35-915Z-002, "I see these weird
+ * surfaces where different models compete for visibility again"). The drawn
+ * foundation and press bridge settle by this amount together, so every
+ * still-on-still landing stays exactly flush
+ * while no still face can share a plane with the recorded process: 0.02 is
+ * off every recorded grain lattice (0.25, 0.3, 0.4, 0.5), two hundred times
+ * the float32 depth-collapse distance the surface-fight check guards (1e-4),
+ * and under a pixel at the scene's viewing sizes. The output dock cannot
+ * settle — its bearing bores hold the recorded carrier's trunnion axis — so
+ * it keeps the process height and stands the settle above the drawn guards.
+ * sceneSurfaceFightsV1 pins that no coincidence comes back.
+ */
+export const MACHINE_WORKS_STILL_SETTLE_V1 = 0.02;
+
+export const MACHINE_WORKS_PROCESS_LAYOUT_V1 = Object.freeze({
   foundation: Object.freeze({
     at: Object.freeze([-2.9, 0, 0] as const),
     grain: 1.8,
@@ -169,5 +192,34 @@ export const MACHINE_WORKS_SCENE_LAYOUT_V1 = Object.freeze({
     at: Object.freeze([8.2, 17.8, 0] as const),
     grain: 0.3,
     sizeVoxels: Object.freeze([11, 5, 11] as const),
+  }),
+});
+
+/**
+ * What the scene draws: the process layout with the still foundation and
+ * press bridge settled together just below the recorded process, so their
+ * exact flush landing on each other survives while no still face shares a
+ * rendered plane with a recorded one. The output dock stays at the process
+ * height because its bearing bores hold the recorded carrier's trunnion axis;
+ * it stands the settle above the drawn guards. Replay-driven placements keep
+ * their process positions — the recorded tracks pose them anyway.
+ */
+export const MACHINE_WORKS_SCENE_LAYOUT_V1 = Object.freeze({
+  ...MACHINE_WORKS_PROCESS_LAYOUT_V1,
+  foundation: Object.freeze({
+    ...MACHINE_WORKS_PROCESS_LAYOUT_V1.foundation,
+    at: Object.freeze([
+      MACHINE_WORKS_PROCESS_LAYOUT_V1.foundation.at[0],
+      MACHINE_WORKS_PROCESS_LAYOUT_V1.foundation.at[1] - MACHINE_WORKS_STILL_SETTLE_V1,
+      MACHINE_WORKS_PROCESS_LAYOUT_V1.foundation.at[2],
+    ] as const),
+  }),
+  pressBridge: Object.freeze({
+    ...MACHINE_WORKS_PROCESS_LAYOUT_V1.pressBridge,
+    at: Object.freeze([
+      MACHINE_WORKS_PROCESS_LAYOUT_V1.pressBridge.at[0],
+      MACHINE_WORKS_PROCESS_LAYOUT_V1.pressBridge.at[1] - MACHINE_WORKS_STILL_SETTLE_V1,
+      MACHINE_WORKS_PROCESS_LAYOUT_V1.pressBridge.at[2],
+    ] as const),
   }),
 });

@@ -1,5 +1,5 @@
 import { exactMagnitudeV1 } from '../deterministic-math.js';
-import { MACHINE_WORKS_SCENE_LAYOUT_V1 } from '../../tools/studio/machine-works-layout.js';
+import { MACHINE_WORKS_PROCESS_LAYOUT_V1 } from '../../tools/studio/machine-works-layout.js';
 import type { PhysicalAssetV1 } from '../../tools/studio/physical-asset.js';
 import {
   physicalAssetAxisAlignedSolidBounds,
@@ -202,7 +202,7 @@ export function machineWorksServiceRouteIssuesV1(
     'studio:machine-works:press-bridge',
     BRIDGE_BOXES,
     BRIDGE_ORIGIN,
-    MACHINE_WORKS_SCENE_LAYOUT_V1.pressBridge.grain,
+    MACHINE_WORKS_PROCESS_LAYOUT_V1.pressBridge.grain,
     maximumError,
     issues,
   );
@@ -211,7 +211,7 @@ export function machineWorksServiceRouteIssuesV1(
     'studio:machine-works:insertion-head',
     HEAD_BOXES,
     HEAD_ORIGIN,
-    MACHINE_WORKS_SCENE_LAYOUT_V1.coreHead.grain,
+    MACHINE_WORKS_PROCESS_LAYOUT_V1.coreHead.grain,
     maximumError,
     issues,
   );

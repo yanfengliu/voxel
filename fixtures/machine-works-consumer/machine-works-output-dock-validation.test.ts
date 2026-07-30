@@ -7,7 +7,7 @@ import {
   createMachineWorksTransferCarriagePhysicalAsset,
 } from '../../tools/studio/machine-works-physical-assets.js';
 import { MACHINE_WORKS_CONVEYOR_V1 } from '../../tools/studio/machine-works-conveyor.js';
-import { MACHINE_WORKS_SCENE_LAYOUT_V1 } from '../../tools/studio/machine-works-layout.js';
+import { MACHINE_WORKS_PROCESS_LAYOUT_V1 } from '../../tools/studio/machine-works-layout.js';
 import type {
   PhysicalAssetV1,
   PhysicalColliderV1,
@@ -38,12 +38,12 @@ function sceneCenter(
 
 const CARRIAGE_CENTER: SupportPointV1 = [
   MACHINE_WORKS_CONVEYOR_V1.rightAxleX,
-  sceneCenter(MACHINE_WORKS_SCENE_LAYOUT_V1.carriage)[1],
+  sceneCenter(MACHINE_WORKS_PROCESS_LAYOUT_V1.carriage)[1],
   0,
 ];
-const DOCK_CENTER = sceneCenter(MACHINE_WORKS_SCENE_LAYOUT_V1.outputDock);
-const FOUNDATION_CENTER = sceneCenter(MACHINE_WORKS_SCENE_LAYOUT_V1.foundation);
-const BUCKET_CENTER = sceneCenter(MACHINE_WORKS_SCENE_LAYOUT_V1.bucket);
+const DOCK_CENTER = sceneCenter(MACHINE_WORKS_PROCESS_LAYOUT_V1.outputDock);
+const FOUNDATION_CENTER = sceneCenter(MACHINE_WORKS_PROCESS_LAYOUT_V1.foundation);
+const BUCKET_CENTER = sceneCenter(MACHINE_WORKS_PROCESS_LAYOUT_V1.bucket);
 
 function worldBox(
   asset: PhysicalAssetV1,
@@ -93,7 +93,7 @@ function withExtraDockBox(
   atVoxels: SupportPointV1,
   sizeVoxels: SupportPointV1,
 ): PhysicalAssetV1 {
-  const grain = MACHINE_WORKS_SCENE_LAYOUT_V1.outputDock.grain;
+  const grain = MACHINE_WORKS_PROCESS_LAYOUT_V1.outputDock.grain;
   return withWorldBox(
     dock,
     DOCK_CENTER,
@@ -183,13 +183,13 @@ function sweep(
     foundation: overrides.foundation ?? createMachineWorksRailFoundationPhysicalAsset(),
     bucket: overrides.bucket ?? createMachineWorksCollectionBucketPhysicalAsset(),
     carriageGrain: overrides.carriageGrain
-      ?? MACHINE_WORKS_SCENE_LAYOUT_V1.carriage.grain,
+      ?? MACHINE_WORKS_PROCESS_LAYOUT_V1.carriage.grain,
     dockGrain: overrides.dockGrain
-      ?? MACHINE_WORKS_SCENE_LAYOUT_V1.outputDock.grain,
+      ?? MACHINE_WORKS_PROCESS_LAYOUT_V1.outputDock.grain,
     foundationGrain: overrides.foundationGrain
-      ?? MACHINE_WORKS_SCENE_LAYOUT_V1.foundation.grain,
+      ?? MACHINE_WORKS_PROCESS_LAYOUT_V1.foundation.grain,
     bucketGrain: overrides.bucketGrain
-      ?? MACHINE_WORKS_SCENE_LAYOUT_V1.bucket.grain,
+      ?? MACHINE_WORKS_PROCESS_LAYOUT_V1.bucket.grain,
     carriageCenter: overrides.carriageCenter ?? CARRIAGE_CENTER,
     dockCenter: DOCK_CENTER,
     foundationCenter: FOUNDATION_CENTER,
@@ -301,14 +301,14 @@ describe('Machine Works output-dock geometry', () => {
     const blockedFoundation = withWorldBox(
       createMachineWorksRailFoundationPhysicalAsset(),
       FOUNDATION_CENTER,
-      MACHINE_WORKS_SCENE_LAYOUT_V1.foundation.grain,
+      MACHINE_WORKS_PROCESS_LAYOUT_V1.foundation.grain,
       obstacleAt,
       obstacleSize,
     );
     const blockedBucket = withWorldBox(
       createMachineWorksCollectionBucketPhysicalAsset(),
       BUCKET_CENTER,
-      MACHINE_WORKS_SCENE_LAYOUT_V1.bucket.grain,
+      MACHINE_WORKS_PROCESS_LAYOUT_V1.bucket.grain,
       obstacleAt,
       obstacleSize,
     );

@@ -31,7 +31,7 @@ import {
   machineWorksExposedCogMotionV1,
   machineWorksSlatMotionV1,
 } from '../../tools/studio/machine-works-conveyor.js';
-import { MACHINE_WORKS_SCENE_LAYOUT_V1 } from '../../tools/studio/machine-works-layout.js';
+import { MACHINE_WORKS_PROCESS_LAYOUT_V1 } from '../../tools/studio/machine-works-layout.js';
 
 function translation(
   trace: MachineWorksTraceV1,
@@ -344,8 +344,8 @@ describe('Machine Works consumer physics fixture', () => {
       throw new Error('The Machine Works trace must contain solver contact evidence.');
     }
     expect(contact.point.every(Number.isFinite)).toBe(true);
-    const bucketHalfWidth = MACHINE_WORKS_SCENE_LAYOUT_V1.bucket.sizeVoxels[0]
-      * MACHINE_WORKS_SCENE_LAYOUT_V1.bucket.grain / 2;
+    const bucketHalfWidth = MACHINE_WORKS_PROCESS_LAYOUT_V1.bucket.sizeVoxels[0]
+      * MACHINE_WORKS_PROCESS_LAYOUT_V1.bucket.grain / 2;
     expect(contact.point[0]).toBeGreaterThanOrEqual(
       MACHINE_WORKS_LAYOUT.bucketCenterX - bucketHalfWidth,
     );
@@ -353,9 +353,9 @@ describe('Machine Works consumer physics fixture', () => {
       MACHINE_WORKS_LAYOUT.bucketCenterX + bucketHalfWidth,
     );
     expect(contact.point[1]).toBeGreaterThanOrEqual(0);
-    const bucketTop = MACHINE_WORKS_SCENE_LAYOUT_V1.bucket.at[1]
-      + MACHINE_WORKS_SCENE_LAYOUT_V1.bucket.sizeVoxels[1]
-        * MACHINE_WORKS_SCENE_LAYOUT_V1.bucket.grain;
+    const bucketTop = MACHINE_WORKS_PROCESS_LAYOUT_V1.bucket.at[1]
+      + MACHINE_WORKS_PROCESS_LAYOUT_V1.bucket.sizeVoxels[1]
+        * MACHINE_WORKS_PROCESS_LAYOUT_V1.bucket.grain;
     expect(contact.point[1]).toBeLessThanOrEqual(
       bucketTop + MACHINE_WORKS_COLLECTION_RULE.containmentMargin,
     );
@@ -543,7 +543,7 @@ describe('Machine Works consumer physics fixture', () => {
     expect(trace.outputDockEvidence).toMatchObject({
       tick: released,
       tipRadians: MACHINE_WORKS_LAYOUT.carriageTipRadians,
-      requiredClearance: MACHINE_WORKS_SCENE_LAYOUT_V1.outputDock.minimumSweptClearance,
+      requiredClearance: MACHINE_WORKS_PROCESS_LAYOUT_V1.outputDock.minimumSweptClearance,
       limitingFoundationCarrierSolid: 6,
       limitingFoundationSolid: 22,
       limitingBucketCarrierSolid: 3,
