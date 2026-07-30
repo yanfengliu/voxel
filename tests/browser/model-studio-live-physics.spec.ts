@@ -132,21 +132,23 @@ test('the chain scene opens in Interact and a mouse drag pulls the chain', async
   if (!grabStart) throw new Error('the grabbed link has no live position');
 
   await page.mouse.move(box.x + box.width * 0.72, box.y + box.height * 0.72, { steps: 12 });
-  await page.waitForTimeout(500);
+  // Poll for the spring to drag the link rather than assuming a fixed wall
+  // clock is long enough: on a loaded shared runner it is not, and the
+  // distance assertion below would fail for lack of time rather than motion.
+  await expect.poll(() => page.evaluate(({ id, from }) => {
+    const at = window.voxelStudio!.livePhysics().positions[id];
+    if (!at) return -1;
+    return Math.hypot(at[0] - from[0], at[1] - from[1], at[2] - from[2]);
+  }, { id: grabbed, from: grabStart }), {
+    message: 'the spring drags the grabbed link a visible distance',
+    timeout: 10_000,
+  }).toBeGreaterThan(0.5);
   const during = await page.evaluate((id) => ({
     grabbed: window.voxelStudio!.livePhysics().grabbed,
     at: window.voxelStudio!.livePhysics().positions[id],
   }), grabbed);
   expect(during.grabbed).toBe(grabbed);
   if (!during.at) throw new Error('the grabbed link lost its live position');
-  const pulled = Math.hypot(
-    during.at[0] - grabStart[0],
-    during.at[1] - grabStart[1],
-    during.at[2] - grabStart[2],
-  );
-  expect(pulled, 'the spring drags the grabbed link a visible distance')
-    .toBeGreaterThan(0.5);
-
   await page.mouse.up();
   await page.waitForTimeout(900);
   const after = await page.evaluate(() => ({

@@ -23,9 +23,17 @@ const UPDATE = process.env.UPDATE_RIVERFALL_FLUID_REPLAY === '1';
 const OUTPUT_EXISTS = existsSync(fileURLToPath(OUTPUT_URL));
 
 describe('Riverfall committed fluid replay', () => {
-  it.skipIf(!OUTPUT_EXISTS && !UPDATE)(
+  it(
     'is byte-for-byte generated from the deterministic fluid trace',
     () => {
+      // A missing generated file fails here rather than skipping: a pin that
+      // turns itself off reports green for the exact loss it exists to catch.
+      // Its three sibling generation suites fail the same way.
+      expect(
+        OUTPUT_EXISTS || UPDATE,
+        `${fileURLToPath(OUTPUT_URL)} is missing, so this determinism pin has nothing to `
+        + 'compare against. Regenerate it with UPDATE_RIVERFALL_FLUID_REPLAY=1.',
+      ).toBe(true);
       const generated = riverfallFluidReplaySourceV1(
         reconstructRiverfallFluidSurfaceV1(
           simulateRiverfallFluidEvidenceV1(),

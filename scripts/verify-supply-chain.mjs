@@ -1,6 +1,6 @@
 import { spawn } from 'node:child_process';
 import assert from 'node:assert/strict';
-import { readFile, stat } from 'node:fs/promises';
+import { readdir, readFile, stat } from 'node:fs/promises';
 import { delimiter, dirname, join, resolve as resolvePath } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -28,6 +28,30 @@ const ALLOWED_LICENSES = new Set([
   'ISC',
   '0BSD',
   'CC0-1.0',
+]);
+
+/**
+ * Build-time-only packages whose licenses sit outside the allowlist, each
+ * recorded deliberately rather than tolerated by a looser rule. Nothing here
+ * is redistributed: the packed tarball carries only `dist`, and the package
+ * ships no runtime dependencies at all, so these terms bind this repository's
+ * own build and never a consumer's shipped artifact. Each entry must name the
+ * package's exact declared license, so a version that relicenses fails the
+ * gate instead of inheriting an old exception.
+ */
+const DEV_ONLY_LICENSE_EXCEPTIONS = new Map([
+  ['lightningcss', {
+    license: 'MPL-2.0',
+    reason: 'Vite CSS transform, build-time only; MPL obligations attach to its own sources.',
+  }],
+  ['lightningcss-win32-x64-msvc', {
+    license: 'MPL-2.0',
+    reason: 'Platform binary for lightningcss, installed only on Windows build machines.',
+  }],
+  ['minimatch', {
+    license: 'BlueOak-1.0.0',
+    reason: 'Glob matching inside dev tooling; BlueOak is permissive but not on the list above.',
+  }],
 ]);
 
 /**
@@ -193,6 +217,58 @@ async function readLicense(name) {
   }
 }
 
+/**
+ * Every package actually installed under node_modules, nested copies
+ * included. Walking the tree rather than the manifest's direct devDependencies
+ * is what makes the allowlist below mean what it says: a copyleft package that
+ * arrives as somebody else's transitive dependency is exactly the case a
+ * direct-only sweep cannot see.
+ */
+async function installedPackageNames(directory, found = new Map()) {
+  let entries;
+  try {
+    entries = await readdir(directory, { withFileTypes: true });
+  } catch {
+    return found;
+  }
+  for (const entry of entries) {
+    if (!entry.isDirectory() || entry.name === '.bin') continue;
+    const path = join(directory, entry.name);
+    if (entry.name.startsWith('@')) {
+      await installedPackageNames(path, found);
+      continue;
+    }
+    try {
+      const manifest = JSON.parse(await readFile(join(path, 'package.json'), 'utf8'));
+      const name = typeof manifest.name === 'string' ? manifest.name : entry.name;
+      if (!found.has(name)) {
+        found.set(name, typeof manifest.license === 'string' ? manifest.license : null);
+      }
+    } catch {
+      continue;
+    }
+    await installedPackageNames(join(path, 'node_modules'), found);
+  }
+  return found;
+}
+
+/**
+ * Whether a declared license clears the allowlist. SPDX `OR` expressions are
+ * a choice, so one permitted branch is enough; `AND` requires every term.
+ */
+function licenseAllowed(declared) {
+  if (declared === null) return false;
+  const expression = declared.replace(/[()]/g, '').trim();
+  if (ALLOWED_LICENSES.has(expression)) return true;
+  if (/\bAND\b/i.test(expression)) {
+    return expression.split(/\s+AND\s+/i).every((term) => licenseAllowed(term.trim()));
+  }
+  if (/\bOR\b/i.test(expression)) {
+    return expression.split(/\s+OR\s+/i).some((term) => licenseAllowed(term.trim()));
+  }
+  return false;
+}
+
 async function main() {
   const manifest = JSON.parse(await readFile(join(PROJECT_ROOT, 'package.json'), 'utf8'));
   const failures = [];
@@ -216,14 +292,51 @@ async function main() {
     }
   }
 
+  // Direct devDependencies are checked by name first, so a missing install
+  // is reported as such instead of silently vanishing from the tree walk.
   const licenses = [];
   for (const name of Object.keys(manifest.devDependencies ?? {})) {
     const license = await readLicense(name);
     licenses.push({ name, license: license ?? 'UNKNOWN' });
     if (license === null) {
-      failures.push(`${name} declares no license; its redistribution terms are unknown.`);
-    } else if (!ALLOWED_LICENSES.has(license)) {
-      failures.push(`${name} is licensed ${license}, which is not on the allowed list.`);
+      failures.push(
+        `${name} is a direct devDependency but declares no license in its installed `
+        + 'package.json; its redistribution terms are unknown. Run npm ci if it is simply '
+        + 'not installed.',
+      );
+    } else if (!licenseAllowed(license)) {
+      failures.push(
+        `${name} is licensed ${license}, which is not on the allowed list `
+        + `(${[...ALLOWED_LICENSES].join(', ')}).`,
+      );
+    }
+  }
+
+  const installed = await installedPackageNames(join(PROJECT_ROOT, 'node_modules'));
+  const unexpectedDevOnly = [...DEV_ONLY_LICENSE_EXCEPTIONS.keys()]
+    .filter((name) => !installed.has(name));
+  for (const name of unexpectedDevOnly) {
+    failures.push(
+      `${name} carries a recorded dev-only license exception but is not installed; remove the `
+      + 'exception rather than leaving a rule for a package that is gone.',
+    );
+  }
+  for (const [name, license] of installed) {
+    if (licenseAllowed(license)) continue;
+    const exception = DEV_ONLY_LICENSE_EXCEPTIONS.get(name);
+    if (exception !== undefined && exception.license === license) continue;
+    if (license === null) {
+      failures.push(
+        `${name} is installed in the dependency tree but declares no license, so its `
+        + 'redistribution terms are unknown.',
+      );
+    } else {
+      failures.push(
+        `${name} is installed in the dependency tree under ${license}, which is not on the `
+        + `allowed list (${[...ALLOWED_LICENSES].join(', ')}). A copyleft or source-available `
+        + 'license entering the tree is a decision: record it in '
+        + 'DEV_ONLY_LICENSE_EXCEPTIONS with its reason, or remove the dependency.',
+      );
     }
   }
 
@@ -242,10 +355,14 @@ async function main() {
     return;
   }
 
+  const exceptionCount = [...installed].filter(([name, license]) =>
+    DEV_ONLY_LICENSE_EXCEPTIONS.get(name)?.license === license).length;
   console.log(
     `${LOG_PREFIX} ${String(runtimeDependencies.length)} runtime dependencies; `
     + `${EXPECTED_OPTIONAL_PEERS.join(' and ')} optional peers; `
-    + `${String(licenses.length)} dev dependencies all permissively licensed; `
+    + `${String(licenses.length)} direct dev dependencies and all `
+    + `${String(installed.size)} installed packages permissively licensed `
+    + `(${String(exceptionCount)} recorded build-time exceptions); `
     + `runtime-only audit ${String(runtime.total)} findings, full audit `
     + `${String(full.total)} findings, none high or critical`,
   );

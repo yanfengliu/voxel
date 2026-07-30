@@ -58,6 +58,8 @@ Visual work is never complete until the rendered result has been visually inspec
 ## Known traps
 
 - Do not approve visual behavior from source inspection alone, structural correctness from a pleasing screenshot alone, or performance from a single unrepeatable frame-time number — the three classic renderer false-positives. (The concurrent-index commit trap that bit this repo — c024b33, 2026-07-17 — is now in the constitution above.)
+- Whole-app gates are unattributable in a shared worktree. `npm run test:browser` serves whatever is on disk, so a concurrent session's half-written studio code fails specs that have nothing to do with your diff — the 2026-07-30 full review saw four such failures, including a `.scene-canvas` that never became visible. Never read those as your own result and never blame the other session without proof: add a throwaway `git worktree` at HEAD, apply only your own staged diff, `npm ci` there, and run the gate in that tree (the same review then went green through the specs that had failed). The same reasoning covers any gate that exercises the whole app rather than your files.
+- A test written against a fixed reviewer claim can pass for the wrong reason. Neutralize the fix and watch the test fail before believing either. The 2026-07-30 review discarded two tests that passed with and without their fix — one because an unrelated guard rejected the payload first, one because the validator already caught what the estimator had missed — and only the failing-first check separated a real repair from a plausible story.
 
 ## Conventions
 

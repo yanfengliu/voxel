@@ -74,9 +74,12 @@ test('lighting changes illumination without changing light-source movement', asy
   const afterLightingOff = await page.evaluate(() => window.voxelStudio!.playerState());
   expect(afterLightingOff.playing).toBe(afterLighting.playing);
   expect(afterLightingOff.periodMs).toBe(afterLighting.periodMs);
-  await page.waitForTimeout(100);
-  expect(await page.evaluate(() => window.voxelStudio!.playerState().timeMs))
-    .not.toBe(afterLightingOff.timeMs);
+  // Poll for the clock to advance instead of assuming one fixed wait covers a
+  // frame: a busy runner can skip past 100 ms without presenting one.
+  await expect.poll(
+    () => page.evaluate(() => window.voxelStudio!.playerState().timeMs),
+    { message: 'the scene clock keeps running with lighting off', timeout: 10_000 },
+  ).not.toBe(afterLightingOff.timeMs);
 
   const exactFrames = await page.evaluate(() => {
     const harness = window.voxelStudio!;
