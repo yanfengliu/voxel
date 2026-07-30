@@ -78,11 +78,24 @@ const STRUCTURE_HONESTY =
   'Visible architecture only: no load, stress, weather, or shading is '
   + 'solved, and the building never touches the solver trace.';
 
+/**
+ * Roof-course evidence: the same review anchors as every other box, plus the
+ * researched fact the pitch answers. Every documented working windmill —
+ * post, tower, smock, and the low Dutch industrial stamper bodies — carries
+ * a pitched, curved, or capped head; none is flat-roofed
+ * (en.wikipedia.org/wiki/Windmill, article text and all plates and
+ * photographs checked 2026-07-29: Beebe isometric, Meopham section,
+ * Encyclopedie post mill, Zaanse Schans industrial mills, and eleven more).
+ */
+const RESEARCH_EVIDENCE = `${REVIEW_EVIDENCE} The pitched form itself is `
+  + 'anchored to the 2026-07-29 Windmill reference survey: every documented '
+  + 'working mill carries a pitched or curved roof, never a flat slab.';
+
 const BUILDING_SPECS: readonly RecordSpecV1[] = [
   {
     boxKey: 'building-post-front-left',
     needId: 'windmill:purpose:building-roof-bearing',
-    beneficiary: 'The roof slab over the northwest corner.',
+    beneficiary: 'The roof eaves over the northwest corner.',
     job: 'Carries the roof corner the two built walls cannot reach alone and '
       + 'marks the northwest limit of the sheltered bay.',
     locationDatum: 'Northwest footprint corner at world x -1.125..-0.875, '
@@ -98,7 +111,7 @@ const BUILDING_SPECS: readonly RecordSpecV1[] = [
   {
     boxKey: 'building-post-front-right',
     needId: 'windmill:purpose:building-roof-bearing',
-    beneficiary: 'The roof slab over the northeast corner.',
+    beneficiary: 'The roof eaves and east header over the northeast corner.',
     job: 'Carries the roof corner beside the open east side so the opening '
       + 'reads as a doorway between post and wall, not a missing wall.',
     locationDatum: 'Northeast footprint corner at world x 3.875..4.125, '
@@ -114,7 +127,7 @@ const BUILDING_SPECS: readonly RecordSpecV1[] = [
   {
     boxKey: 'building-post-back-right',
     needId: 'windmill:purpose:building-roof-bearing',
-    beneficiary: 'The roof slab over the southeast corner.',
+    beneficiary: 'The roof eaves and both headers over the southeast corner.',
     job: 'Carries the roof corner at the open working-bay corner the default '
       + 'camera looks into.',
     locationDatum: 'Southeast footprint corner at world x 3.875..4.125, '
@@ -130,7 +143,7 @@ const BUILDING_SPECS: readonly RecordSpecV1[] = [
   {
     boxKey: 'building-post-back-left',
     needId: 'windmill:purpose:building-roof-bearing',
-    beneficiary: 'The roof slab over the southwest corner.',
+    beneficiary: 'The roof eaves over the southwest corner.',
     job: 'Carries the roof corner where the west wall ends.',
     locationDatum: 'Southwest footprint corner at world x -1.125..-0.875, '
       + 'z 2.8125..3.0625.',
@@ -248,20 +261,245 @@ const BUILDING_SPECS: readonly RecordSpecV1[] = [
     evidence: REVIEW_EVIDENCE,
   },
   {
-    boxKey: 'building-roof',
-    needId: 'windmill:purpose:mill-roof-shelter',
-    beneficiary: 'The housed-mill reading of the whole scene.',
-    job: 'Covers the working bay so the machine reads as indoors, while the '
-      + '30-degree default camera still sees the whole interior under its '
-      + 'open edges.',
-    locationDatum: 'One slab at world y 2.625..2.75 over the full '
-      + 'footprint, clearing the cam-nose sweep radius by 0.116 world units.',
-    removalFailure: 'The walls and posts enclose nothing; the scene reads '
-      + 'as machinery beside two freestanding walls.',
-    relocationFailure: 'Raised it floats off its posts; lowered it enters '
-      + 'the cam-nose sweep; shifted it overhangs the sail sweep.',
-    smallestAdequateForm: 'One voxel thick, exactly the footprint.',
+    boxKey: 'building-east-header',
+    needId: 'windmill:purpose:opening-framing',
+    beneficiary: 'The authored-opening reading of the open east side.',
+    job: 'Spans the east opening from post to post under the eave so the '
+      + 'missing wall reads as a framed working opening, the way a real '
+      + 'mill\'s loading bay is a spanned opening and never an absent wall.',
+    locationDatum: 'East face between the two east posts, world '
+      + 'y 2.375..2.625, z 0.8125..2.8125, above every interior sight line '
+      + 'the default camera needs.',
+    removalFailure: 'The east side reverts to an unexplained missing wall: '
+      + 'posts carry a roof edge over nothing and the opening loses the '
+      + 'beam that says it was built this way.',
+    relocationFailure: 'Lowered it cuts the default camera\'s view of the '
+      + 'hammer bay; moved off the east plane it spans no opening at all.',
+    smallestAdequateForm: 'Two voxels deep to read as a beam against the '
+      + 'two-voxel posts; one would read as a color seam at this distance.',
     evidence: REVIEW_EVIDENCE,
+  },
+  {
+    boxKey: 'building-south-header',
+    needId: 'windmill:purpose:opening-framing',
+    beneficiary: 'The authored-opening reading of the open south side.',
+    job: 'Spans the south opening between the corner posts so the bay '
+      + 'front reads as a framed opening under the eave, matching the east '
+      + 'header so both open sides share one construction grammar.',
+    locationDatum: 'South face between the corner posts, world '
+      + 'y 2.375..2.625, z 2.8125..3.0625.',
+    removalFailure: 'The south side reads as a missing wall again and the '
+      + 'east header becomes a one-off with no shared grammar.',
+    relocationFailure: 'Lowered it blocks the default camera\'s view into '
+      + 'the working bay; raised it merges into the eave and stops reading '
+      + 'as a beam.',
+    smallestAdequateForm: 'Two voxels deep, the same beam section as the '
+      + 'east header and the posts it lands on.',
+    evidence: REVIEW_EVIDENCE,
+  },
+  {
+    boxKey: 'building-west-gable-base',
+    needId: 'windmill:purpose:west-enclosure',
+    beneficiary: 'The rear-quarter silhouette of the enclosed west side.',
+    job: 'Starts the west gable: the widest strip of the triangle that '
+      + 'keeps the closed side closed under the pitched courses, as the '
+      + 'gable end of every referenced mill body does.',
+    locationDatum: 'West face at world x -1.125..-1.0, y 2.625..2.75, '
+      + 'z 0.9375..2.6875, on the west wall top between the eave courses.',
+    removalFailure: 'The rear-quarter camera sees a daylight slot the full '
+      + 'width of the wall top and the closed side reads as broken.',
+    relocationFailure: 'Moved off the west plane it plugs nothing; moved '
+      + 'up it floats over the wall it must continue.',
+    smallestAdequateForm: 'One voxel thick and exactly the band between '
+      + 'the eave courses, the same thickness as the wall below.',
+    evidence: REVIEW_EVIDENCE,
+  },
+  {
+    boxKey: 'building-west-gable-mid',
+    needId: 'windmill:purpose:west-enclosure',
+    beneficiary: 'The rear-quarter silhouette of the enclosed west side.',
+    job: 'Continues the west gable triangle one course up, stepping in '
+      + 'with the roof pitch it closes against.',
+    locationDatum: 'West face at world y 2.75..2.875, z 1.1875..2.4375, '
+      + 'on the gable base between the low roof courses.',
+    removalFailure: 'A daylight slot opens mid-gable between the base '
+      + 'strip and the high strip, splitting the closed end in two.',
+    relocationFailure: 'Off the gable centerline it no longer steps with '
+      + 'the courses beside it; detached it floats over the base.',
+    smallestAdequateForm: 'One voxel thick, stepped in one course width '
+      + 'on each side to follow the pitch.',
+    evidence: REVIEW_EVIDENCE,
+  },
+  {
+    boxKey: 'building-west-gable-high',
+    needId: 'windmill:purpose:west-enclosure',
+    beneficiary: 'The rear-quarter silhouette of the enclosed west side.',
+    job: 'Continues the west gable triangle to the course under the peak.',
+    locationDatum: 'West face at world y 2.875..3.0, z 1.4375..2.1875, on '
+      + 'the gable mid strip between the mid roof courses.',
+    removalFailure: 'The gable stops two courses short of the ridge and '
+      + 'the closed end reads as a wall with its top torn off.',
+    relocationFailure: 'Off the centerline or its bearing it floats or '
+      + 'double-fills a roof course.',
+    smallestAdequateForm: 'One voxel thick, one pitch step narrower than '
+      + 'the strip below.',
+    evidence: REVIEW_EVIDENCE,
+  },
+  {
+    boxKey: 'building-west-gable-peak',
+    needId: 'windmill:purpose:west-enclosure',
+    beneficiary: 'The rear-quarter silhouette of the enclosed west side.',
+    job: 'Tops the west gable directly under the ridge, closing the last '
+      + 'band so the triangle meets the roof line.',
+    locationDatum: 'West face at world y 3.0..3.125, z 1.6875..1.9375, '
+      + 'under the ridge course.',
+    removalFailure: 'A one-band daylight hole sits under the ridge at the '
+      + 'closed end — the exact broken-gable read the strips exist to '
+      + 'prevent.',
+    relocationFailure: 'Anywhere else it plugs nothing and leaves the hole '
+      + 'under the ridge open.',
+    smallestAdequateForm: 'One voxel thick and exactly the ridge-width '
+      + 'band, the smallest closing strip.',
+    evidence: REVIEW_EVIDENCE,
+  },
+  {
+    boxKey: 'building-roof-north-eave',
+    needId: 'windmill:purpose:mill-roof-shelter',
+    beneficiary: 'The housed-mill reading and the pitched-roof silhouette.',
+    job: 'Starts the roof at the rotor-wall eave: the lowest north course '
+      + 'of the pitch, bearing on the rotor wall and both north posts.',
+    locationDatum: 'World y 2.625..2.75 over z 0.5625..0.9375; its '
+      + 'governing clearance is 0.0625 world units radially outside the '
+      + 'sail-panel swept band that ends at z 0.5.',
+    removalFailure: 'The pitch loses its north eave: the course above '
+      + 'floats over the rotor wall and the bay is open to the sky along '
+      + 'the wall the shaft crosses.',
+    relocationFailure: 'Shifted north it overhangs the sail sweep plane; '
+      + 'raised it floats off the rotor wall and posts.',
+    smallestAdequateForm: 'One voxel thick over exactly the band the '
+      + 'course above does not cover.',
+    evidence: RESEARCH_EVIDENCE,
+  },
+  {
+    boxKey: 'building-roof-south-eave',
+    needId: 'windmill:purpose:mill-roof-shelter',
+    beneficiary: 'The housed-mill reading and the pitched-roof silhouette.',
+    job: 'Starts the roof at the south eave over the working-bay opening, '
+      + 'bearing on both south posts and the south header.',
+    locationDatum: 'World y 2.625..2.75 over z 2.6875..3.0625.',
+    removalFailure: 'The south courses float over the open bay front and '
+      + 'the roof reads as sliding off the building.',
+    relocationFailure: 'Shifted it abandons the posts and header that '
+      + 'carry it; raised it opens a daylight slot over the bay front.',
+    smallestAdequateForm: 'One voxel thick over exactly the south band '
+      + 'the course above does not cover.',
+    evidence: RESEARCH_EVIDENCE,
+  },
+  {
+    boxKey: 'building-roof-north-low',
+    needId: 'windmill:purpose:mill-roof-shelter',
+    beneficiary: 'The pitched-roof silhouette from every fixed camera.',
+    job: 'Second north course of the pitch, one rise up and one step in, '
+      + 'resting on the north eave along their overlap.',
+    locationDatum: 'World y 2.75..2.875 over z 0.8125..1.1875, bearing '
+      + 'one voxel on the north eave.',
+    removalFailure: 'The north slope breaks between eave and mid course; '
+      + 'the pitch reads as unrelated ledges, not one roof plane.',
+    relocationFailure: 'Slid off its overlap it floats; dropped a course '
+      + 'it flattens the pitch toward the tabletop no working mill had.',
+    smallestAdequateForm: 'One voxel thick and one course rise, the '
+      + 'steepest step the grid can draw.',
+    evidence: RESEARCH_EVIDENCE,
+  },
+  {
+    boxKey: 'building-roof-south-low',
+    needId: 'windmill:purpose:mill-roof-shelter',
+    beneficiary: 'The pitched-roof silhouette from every fixed camera.',
+    job: 'Second south course of the pitch, mirroring the north side so '
+      + 'both slopes climb at one rate.',
+    locationDatum: 'World y 2.75..2.875 over z 2.4375..2.8125, bearing '
+      + 'one voxel on the south eave.',
+    removalFailure: 'The south slope breaks above the eave and the gable '
+      + 'reads as a one-sided lean-to.',
+    relocationFailure: 'Slid off its overlap it floats; moved north it '
+      + 'unbalances the two slopes the ridge must cap evenly.',
+    smallestAdequateForm: 'One voxel thick and one course rise, the '
+      + 'mirror of the north course.',
+    evidence: RESEARCH_EVIDENCE,
+  },
+  {
+    boxKey: 'building-roof-north-mid',
+    needId: 'windmill:purpose:mill-roof-shelter',
+    beneficiary: 'The pitched-roof silhouette from every fixed camera.',
+    job: 'Third north course, continuing the climb toward the ridge.',
+    locationDatum: 'World y 2.875..3.0 over z 1.0625..1.4375, bearing one '
+      + 'voxel on the course below.',
+    removalFailure: 'The north slope gaps mid-climb and the high course '
+      + 'floats two rises over its nearest support.',
+    relocationFailure: 'Off its overlap it floats; off the slope line it '
+      + 'breaks the one climbing plane into scattered ledges.',
+    smallestAdequateForm: 'One voxel thick and one course rise.',
+    evidence: RESEARCH_EVIDENCE,
+  },
+  {
+    boxKey: 'building-roof-south-mid',
+    needId: 'windmill:purpose:mill-roof-shelter',
+    beneficiary: 'The pitched-roof silhouette from every fixed camera.',
+    job: 'Third south course, mirroring the north climb.',
+    locationDatum: 'World y 2.875..3.0 over z 2.1875..2.5625, bearing one '
+      + 'voxel on the course below.',
+    removalFailure: 'The south slope gaps mid-climb; the pitch reads as '
+      + 'collapsed on the camera-facing side.',
+    relocationFailure: 'Off its overlap it floats; off the slope line the '
+      + 'two sides stop reading as one gable.',
+    smallestAdequateForm: 'One voxel thick and one course rise.',
+    evidence: RESEARCH_EVIDENCE,
+  },
+  {
+    boxKey: 'building-roof-north-high',
+    needId: 'windmill:purpose:mill-roof-shelter',
+    beneficiary: 'The pitched-roof silhouette from every fixed camera.',
+    job: 'Fourth north course, the last rise under the ridge cap.',
+    locationDatum: 'World y 3.0..3.125 over z 1.3125..1.6875, bearing one '
+      + 'voxel on the course below.',
+    removalFailure: 'The ridge floats a full course over the north slope '
+      + 'and the peak reads as detached from its roof.',
+    relocationFailure: 'Off its overlap it floats; off the line it breaks '
+      + 'the slope the ridge must land on.',
+    smallestAdequateForm: 'One voxel thick and one course rise.',
+    evidence: RESEARCH_EVIDENCE,
+  },
+  {
+    boxKey: 'building-roof-south-high',
+    needId: 'windmill:purpose:mill-roof-shelter',
+    beneficiary: 'The pitched-roof silhouette from every fixed camera.',
+    job: 'Fourth south course, the mirror rise the ridge lands on.',
+    locationDatum: 'World y 3.0..3.125 over z 1.9375..2.3125, bearing one '
+      + 'voxel on the course below.',
+    removalFailure: 'The ridge overhangs open air to the south and the '
+      + 'peak reads as tipping off the building.',
+    relocationFailure: 'Off its overlap it floats; off the line the ridge '
+      + 'loses one of its two bearings.',
+    smallestAdequateForm: 'One voxel thick and one course rise.',
+    evidence: RESEARCH_EVIDENCE,
+  },
+  {
+    boxKey: 'building-roof-ridge',
+    needId: 'windmill:purpose:mill-roof-shelter',
+    beneficiary: 'The pitched-roof silhouette and the mill-not-table read.',
+    job: 'Caps the pitch over the bay centerline, bearing on both high '
+      + 'courses, so the shell tops out in the ridge line every documented '
+      + 'working mill shares.',
+    locationDatum: 'World y 3.125..3.25 over z 1.5625..2.0625, overlapping '
+      + 'both high courses by one voxel of bearing each.',
+    removalFailure: 'A daylight slot opens between the two slopes at the '
+      + 'roof\'s highest line and the pitch reads as two ramps that never '
+      + 'meet.',
+    relocationFailure: 'Off the centerline it caps neither slope; raised '
+      + 'it floats; lowered it double-fills the high courses.',
+    smallestAdequateForm: 'One voxel thick and wide enough to bear one '
+      + 'voxel on each high course.',
+    evidence: RESEARCH_EVIDENCE,
   },
 ];
 
@@ -573,9 +811,11 @@ readonly WindmillProductionSystemPurposeV1[] = Object.freeze([
     relocationFailure: 'Any shift drives a wall or post into the sail, '
       + 'collar, or cam sweep envelopes or tears the shaft opening off the '
       + 'frozen axis datum.',
-    smallestAdequateForm: 'Two walls, four posts, one roof: the fewest '
-      + 'built surfaces that still read as a building from the rear '
-      + 'quarter while hiding nothing from the front quarter.',
+    smallestAdequateForm: 'Two walls, four posts, two opening headers, and '
+      + 'a five-course pitched roof: the fewest built surfaces that read '
+      + 'as a real mill housing from the rear quarter — pitched like every '
+      + 'documented working mill — while hiding nothing from the front '
+      + 'quarter.',
     evidence: REVIEW_EVIDENCE,
     honestyBoundary: STRUCTURE_HONESTY,
   }),

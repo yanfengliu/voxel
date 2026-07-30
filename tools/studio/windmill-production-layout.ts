@@ -144,14 +144,22 @@ function anAsset(
 /**
  * The mill building shell: the rotor wall (full-height, carrying the shaft
  * opening and the ground-tie notch), the closed west side wall, four corner
- * posts, and one roof slab. The east side and the south side stay open so the
- * default camera looks straight into the working bay.
+ * posts, a stepped gabled roof rising from both eaves to a ridge over the
+ * bay's centerline, and one header beam over each open side. The east side
+ * and the south side stay open below their headers so the default camera
+ * looks straight into the working bay.
+ *
+ * The roof pitch is the one silhouette fact every documented working mill
+ * shares — post, tower, smock, and the low Dutch industrial stamper bodies
+ * alike carry a pitched or curved head, never a flat tabletop — so the
+ * pitched courses are what make this shell read as a mill housing rather
+ * than furniture (see the Windmill research anchors in the purpose ledger).
  *
  * Grid origin sits at world (-1.125, 0, 0.5625): one half-voxel gap behind
  * the sail sweep plane at z = 0.5, chosen so the sails pass the wall face
  * with visible daylight rather than coincident faces.
  */
-const BUILDING_SIZE: Vec3 = [42, 22, 20];
+const BUILDING_SIZE: Vec3 = [42, 26, 20];
 const BUILDING_AT: Vec3 = [1.5, 0, 1.8125];
 
 export const WINDMILL_BUILDING_LAYOUT_V1 = anAsset(
@@ -171,7 +179,21 @@ export const WINDMILL_BUILDING_LAYOUT_V1 = anAsset(
     box('building-rotor-wall-sill', [8, 0, 0], [5, 10, 1], 'mill-wall'),
     box('building-rotor-wall-right-pier', [13, 0, 0], [27, 21, 1], 'mill-wall'),
     box('building-side-wall', [0, 0, 2], [1, 21, 16], 'mill-wall'),
-    box('building-roof', [0, 21, 0], [42, 1, 20], 'mill-roof'),
+    box('building-east-header', [40, 19, 2], [2, 2, 16], 'mill-post'),
+    box('building-south-header', [2, 19, 18], [38, 2, 2], 'mill-post'),
+    box('building-west-gable-base', [0, 21, 3], [1, 1, 14], 'mill-wall'),
+    box('building-west-gable-mid', [0, 22, 5], [1, 1, 10], 'mill-wall'),
+    box('building-west-gable-high', [0, 23, 7], [1, 1, 6], 'mill-wall'),
+    box('building-west-gable-peak', [0, 24, 9], [1, 1, 2], 'mill-wall'),
+    box('building-roof-north-eave', [0, 21, 0], [42, 1, 3], 'mill-roof'),
+    box('building-roof-south-eave', [0, 21, 17], [42, 1, 3], 'mill-roof'),
+    box('building-roof-north-low', [0, 22, 2], [42, 1, 3], 'mill-roof'),
+    box('building-roof-south-low', [0, 22, 15], [42, 1, 3], 'mill-roof'),
+    box('building-roof-north-mid', [0, 23, 4], [42, 1, 3], 'mill-roof'),
+    box('building-roof-south-mid', [0, 23, 13], [42, 1, 3], 'mill-roof'),
+    box('building-roof-north-high', [0, 24, 6], [42, 1, 3], 'mill-roof'),
+    box('building-roof-south-high', [0, 24, 11], [42, 1, 3], 'mill-roof'),
+    box('building-roof-ridge', [0, 25, 8], [42, 1, 4], 'mill-roof'),
   ],
   [
     Object.freeze({

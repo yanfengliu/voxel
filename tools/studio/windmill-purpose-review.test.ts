@@ -104,7 +104,7 @@ describe('selected windmill purpose review variants', () => {
       'hammer-pivot-core',
       'hammer-impact-toe',
       'anvil-impact-cap',
-      'building-roof',
+      'building-roof-ridge',
       'building-side-wall',
       'sack-tie',
     ]);

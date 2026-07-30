@@ -470,7 +470,11 @@ describe('windmill production clearances against the committed replay', () => {
     }
   });
 
-  it('keeps every authored track clear of statics, the rotor, and each other', () => {
+  // The gabled shell grew the static set to 31 prisms, so this 721-frame
+  // sweep runs near vitest's 5-second default when the whole suite loads
+  // every core; the explicit budget keeps a loaded machine from reporting a
+  // scheduling stall as a clearance failure.
+  it('keeps every authored track clear of statics, the rotor, and each other', { timeout: 30_000 }, () => {
     const trackPoses = WINDMILL_PRODUCTION_TRACK_IDS_V1.map(
       (placementId) => ({ placementId, poses: framePoses(placementId) }),
     );

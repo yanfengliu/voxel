@@ -182,7 +182,8 @@ describe('selected compact windmill scene', () => {
     expect(WINDMILL_SCENE_SUMMARY)
       .toMatch(/rotor and sails outside its shaft-opening wall/);
     expect(WINDMILL_SCENE_SUMMARY)
-      .toMatch(/open east and south faces show the working bay/);
+      .toMatch(/east and south faces stay open below their headers to show the working bay/);
+    expect(WINDMILL_SCENE_SUMMARY).toMatch(/stepped gabled roof/);
     expect(WINDMILL_SCENE_SUMMARY)
       .toMatch(/Five wheat sacks queue at the visible infeed/);
     expect(WINDMILL_SCENE_SUMMARY)

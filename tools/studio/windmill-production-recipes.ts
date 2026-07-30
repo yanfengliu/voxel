@@ -31,8 +31,9 @@ readonly ProductionRoleColorV1[] = Object.freeze([
   Object.freeze({
     role: 'mill-post',
     color: Object.freeze({ r: 112, g: 80, b: 52 }),
-    job: 'Marks the four vertical members that carry the roof, so the open '
-      + 'sides read as deliberate architecture rather than missing walls.',
+    job: 'Marks the timber frame — the four corner posts and the two '
+      + 'opening header beams — so the open sides read as deliberate '
+      + 'architecture rather than missing walls.',
     honestyBoundary: 'A color role only; no load, stress, or joinery is '
       + 'solved anywhere in the scene.',
   }),
@@ -47,8 +48,8 @@ readonly ProductionRoleColorV1[] = Object.freeze([
   Object.freeze({
     role: 'mill-roof',
     color: Object.freeze({ r: 133, g: 104, b: 70 }),
-    job: 'Warms the one overhead slab so it reads as a timber roof over '
-      + 'the bay rather than a dark tabletop from the fixed cameras.',
+    job: 'Warms the stepped roof courses so the pitch reads as one timber '
+      + 'roof over the bay from the fixed cameras.',
     honestyBoundary: 'A color role only; no weather, shading, or shadow '
       + 'simulation is claimed.',
   }),
@@ -111,9 +112,10 @@ Record<WindmillProductionRecipeIdV1, ProductionRecipeSpecV1>
     label: 'Mill building shell',
     seed: 0x71c4_201,
     summary:
-      'Two built walls, four corner posts, and a roof house the trip mill; '
-      + 'the rotor wall carries the shaft opening and the ground-tie notch, '
-      + 'and the south and east sides stay open so the working bay is '
+      'Two built walls, four corner posts, two opening headers, and a '
+      + 'stepped gabled roof house the trip mill; the rotor wall carries '
+      + 'the shaft opening and the ground-tie notch, and the south and '
+      + 'east sides stay open under their headers so the working bay is '
       + 'visible from the default camera.',
     tags: Object.freeze([
       'windmill', 'production-line', 'building', 'partial-enclosure',

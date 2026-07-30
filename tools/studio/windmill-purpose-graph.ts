@@ -257,9 +257,17 @@ const PRODUCTION_SOLIDS: Readonly<Record<string, {
   },
   'windmill:purpose:mill-roof-shelter': {
     label: 'mill roof',
-    job: 'Cover the working bay so the mechanism reads as housed.',
+    job: 'Cover the working bay with the pitched courses that make the '
+      + 'shell read as a mill housing, so the mechanism reads as housed.',
     requiredBy: Object.freeze([NEED.housed]),
     honestyBoundary: 'No weather, shadow, or structural claim.',
+  },
+  'windmill:purpose:opening-framing': {
+    label: 'opening header beams',
+    job: 'Span the two open sides under the eaves so each reads as a built '
+      + 'working opening instead of a missing wall.',
+    requiredBy: Object.freeze([NEED.housed]),
+    honestyBoundary: 'Visible framing only; no load or joinery is solved.',
   },
   'windmill:purpose:grain-infeed-mass': {
     label: 'wheat sack bodies',
@@ -418,8 +426,8 @@ const NEEDS: readonly PurposeNodeV1[] = Object.freeze([
       + 'a field contradicts the scene\'s stated setting.',
     evidence: PRODUCTION_EVIDENCE,
     honestyBoundary:
-      'Two walls, posts, and a roof communicate enclosure only; nothing '
-      + 'structural, thermal, or meteorological is claimed.',
+      'Walls, posts, headers, and gabled roof courses communicate enclosure '
+      + 'only; nothing structural, thermal, or meteorological is claimed.',
   }),
 ]);
 

@@ -423,7 +423,7 @@ readonly WindmillRecipeContrastV1[] = Object.freeze([
       Object.freeze({
         axis: 'construction-grammar',
         difference:
-          'Axis-aligned one-voxel wall planes and a flat slab roof replace sculpted arch limbs; every opening exists for a named crossing.',
+          'Axis-aligned one-voxel wall planes, header beams, and a stepped gabled roof replace sculpted arch limbs; every opening exists for a named crossing.',
       }),
     ]),
   }),

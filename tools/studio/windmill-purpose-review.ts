@@ -103,11 +103,12 @@ const RELOCATION_SPECS: readonly RelocationSpecV1[] = Object.freeze([
     boxKey: 'anvil-impact-cap',
     delta: Object.freeze([1, 0, 0] as const),
   }),
-  // Bounded representative production relocations: the roof off its posts,
-  // the side wall off its wall line, and the tie cue off the sack neck.
+  // Bounded representative production relocations: the ridge off its slope
+  // bearings, the side wall off its wall line, and the tie cue off the sack
+  // neck.
   Object.freeze({
-    boxKey: 'building-roof',
-    delta: Object.freeze([2, 0, 0] as const),
+    boxKey: 'building-roof-ridge',
+    delta: Object.freeze([0, 0, 2] as const),
   }),
   Object.freeze({
     boxKey: 'building-side-wall',

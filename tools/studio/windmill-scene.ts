@@ -27,7 +27,7 @@ export const WINDMILL_SCENE_SUMMARY =
   'A grounded frame carries two separated rotor-bearing spans and one rear hammer-bearing span. '
   + 'One continuous shaft connects two opposite pitched stepped sail plates to two opposed cam noses; one localized follower connects through a journaled lever and terminal hammer toe to a directly grounded anvil cap. '
   + 'A consumer-owned rigid-body fixture supplies equivalent-plate wind loads, ideal revolute constraints, gravity, and rigid contact, then records the resulting poses for Studio playback; visible geometry and purpose records do not substitute for that dynamic proof. '
-  + 'Around that mechanism, a mill building with two built walls, four corner posts, and a roof keeps the rotor and sails outside its shaft-opening wall while the open east and south faces show the working bay. '
+  + 'Around that mechanism, a mill building with two built walls, four corner posts, a header beam over each open face, and a stepped gabled roof keeps the rotor and sails outside its shaft-opening wall while the east and south faces stay open below their headers to show the working bay. '
   + 'Five wheat sacks queue at the visible infeed, one slides to the anvil before each recorded impact and is set aside spent, and the flour level in the outfeed bin rises one step after each; that material flow is authored presentation kinematics keyed to the five recorded hammer-anvil impacts, not simulated milling, and the fixture still proves wind, rotor, cam, hammer, and anvil dynamics and nothing about grain or flour. '
   + 'The model does not claim CFD, solved pressure, bearing pressure or friction, stress, elasticity, fatigue, wear, forging, heat, sound, or real-machine efficiency.';
 
