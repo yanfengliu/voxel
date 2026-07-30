@@ -169,9 +169,16 @@ function insertedSolidCells(
           y + offset[1]!,
           z + offset[2]!,
         ] as const;
+        // Cells one row above the recipient grid are kept: a seat plane on the
+        // recipient's top face is real mating geometry even though the tight
+        // model box ends exactly there.
         if (target[0] < 0 || target[0] >= recipientX
-          || target[1] < 0 || target[1] >= recipientY
+          || target[1] < 0 || target[1] > recipientY
           || target[2] < 0 || target[2] >= recipientZ) {
+          continue;
+        }
+        if (target[1] === recipientY) {
+          insertedInside.push(target);
           continue;
         }
         insertedInside.push(target);
@@ -293,8 +300,9 @@ describe('machine works physical assets', () => {
     const capCells = insertedSolidCells(
       core, coreAsset, 'cap-socket', cap, capAsset, 'core-key',
     );
-    expect(coreCells).toHaveLength(18);
-    expect(new Set(coreCells.map(([, y]) => y))).toEqual(new Set([2, 3]));
+    const coreKeyCells = coreCells.filter(([, y]) => y < base.size[1]);
+    expect(coreKeyCells).toHaveLength(18);
+    expect(new Set(coreKeyCells.map(([, y]) => y))).toEqual(new Set([2, 3]));
     const capKeyCells = capCells.filter(([, y]) => y < 9);
     const capCrownSeatCells = capCells.filter(([, y]) => y === 9);
     expect(capKeyCells).toHaveLength(18);
@@ -318,6 +326,33 @@ describe('machine works physical assets', () => {
     expect(portModelPlaneY(headAsset, 'pickup-face')).toBe(occupiedYFaces(head)[0]);
     expect(portModelPlaneY(coreAsset, 'pickup-face')).toBe(occupiedYFaces(core)[1]);
     expect(portModelPlaneY(capAsset, 'pickup-face')).toBe(occupiedYFaces(cap)[1]);
+  });
+
+  it('fills every recipe box tightly, so the drawn content center is the sidecar origin', () => {
+    // The studio places a model by its painted-content middle, while the
+    // recorded tracks and every validator use the sidecar body origin. Loose
+    // box layers made those two frames drift apart (the insertion head drew
+    // 1.4 world units off its validated pose); a tight box plus the
+    // box-center origin below makes drawn and validated geometry identical.
+    for (const recipeId of IDS) {
+      const recipe = recipes[recipeId]!;
+      const model = buildRecipe(recipe, parts, recipes).model;
+      const [sx, sy, sz] = model.size;
+      const min = [Infinity, Infinity, Infinity];
+      const max = [-Infinity, -Infinity, -Infinity];
+      for (let z = 0; z < sz; z += 1) {
+        for (let y = 0; y < sy; y += 1) {
+          for (let x = 0; x < sx; x += 1) {
+            if ((model.voxels[x + sx * (y + sy * z)] ?? 0) === 0) continue;
+            min[0] = Math.min(min[0]!, x); max[0] = Math.max(max[0]!, x);
+            min[1] = Math.min(min[1]!, y); max[1] = Math.max(max[1]!, y);
+            min[2] = Math.min(min[2]!, z); max[2] = Math.max(max[2]!, z);
+          }
+        }
+      }
+      expect([min, [max[0]! + 1, max[1]! + 1, max[2]! + 1]], recipeId)
+        .toEqual([[0, 0, 0], [sx, sy, sz]]);
+    }
   });
 
   it('centers each single sidecar body on the rendered recipe matrix origin', () => {
@@ -362,16 +397,16 @@ describe('machine works physical assets', () => {
         { key: 'far-side-guard', at: [0, 2.5, 3] },
       ],
       [
-        { key: 'west-front-foundation-foot', at: [-10, -10, -2.5] },
-        { key: 'west-rear-foundation-foot', at: [-10, -10, 2.5] },
-        { key: 'east-front-foundation-foot', at: [10, -10, -2.5] },
-        { key: 'east-rear-foundation-foot', at: [10, -10, 2.5] },
-        { key: 'core-west-alignment', at: [-8, -2.5, -3] },
-        { key: 'core-east-alignment', at: [-5, -2.5, -3] },
-        { key: 'cap-west-alignment', at: [5, -2.5, -3] },
-        { key: 'cap-east-alignment', at: [8, -2.5, -3] },
-        { key: 'core-actuator-spine', at: [-7, -2.5, -2.5] },
-        { key: 'cap-actuator-spine', at: [7, -2.5, -2.5] },
+        { key: 'west-front-foundation-foot', at: [-10, -10, -0.5] },
+        { key: 'west-rear-foundation-foot', at: [-10, -10, 1.5] },
+        { key: 'east-front-foundation-foot', at: [10, -10, -0.5] },
+        { key: 'east-rear-foundation-foot', at: [10, -10, 1.5] },
+        { key: 'core-west-alignment', at: [-8, -2.5, -1] },
+        { key: 'core-east-alignment', at: [-5, -2.5, -1] },
+        { key: 'cap-west-alignment', at: [5, -2.5, -1] },
+        { key: 'cap-east-alignment', at: [8, -2.5, -1] },
+        { key: 'core-actuator-spine', at: [-7, 1, -2.5] },
+        { key: 'cap-actuator-spine', at: [7, 1, -2.5] },
         { key: 'core-servo', at: [-6.5, 8.5, -1] },
         { key: 'cap-servo', at: [6.5, 8.5, -1] },
         { key: 'power-controller', at: [0, 7, 1.5] },
@@ -387,44 +422,44 @@ describe('machine works physical assets', () => {
         { key: 'belt-pitch-top', at: [0, 5.5, 0] },
       ],
       [
-        { key: 'axle', at: [0, 0, 0] },
-        { key: 'phase-key', at: [0, -3, 0] },
+        { key: 'axle', at: [0, 1.5, 0] },
+        { key: 'phase-key', at: [0, -1.5, 0] },
       ],
       [{ key: 'capture-mouth', at: [0, 5, 0] }],
       [
-        { key: 'pivot-axis', at: [0, -1.5, 0] },
-        { key: 'near-bearing-bore', at: [0, -1.5, -10.5] },
-        { key: 'far-bearing-bore', at: [0, -1.5, 10.5] },
-        { key: 'servo-output', at: [0, -1.5, 11.5] },
-        { key: 'servo-service', at: [-2.5, 0, 13.5] },
+        { key: 'pivot-axis', at: [1, 0, -1.5] },
+        { key: 'near-bearing-bore', at: [1, 0, -12] },
+        { key: 'far-bearing-bore', at: [1, 0, 9] },
+        { key: 'servo-output', at: [1, 0, 10] },
+        { key: 'servo-service', at: [-1.5, 1.5, 12] },
       ],
       [
-        { key: 'load', at: [0, 3, 0] },
-        { key: 'belt-contact-underside', at: [0, -3, 0] },
-        { key: 'near-runner-contact', at: [0, -3, -2.5] },
-        { key: 'far-runner-contact', at: [0, -3, 2.5] },
-        { key: 'tip-pivot-axis', at: [7, 0, 0] },
-        { key: 'near-trunnion', at: [7, 0, -10.5] },
-        { key: 'far-trunnion', at: [7, 0, 10.5] },
-        { key: 'servo-drive-face', at: [7, 0, 11.5] },
+        { key: 'load', at: [0, 2.5, 0] },
+        { key: 'belt-contact-underside', at: [0, -2.5, 0] },
+        { key: 'near-runner-contact', at: [0, -2.5, -2.5] },
+        { key: 'far-runner-contact', at: [0, -2.5, 2.5] },
+        { key: 'tip-pivot-axis', at: [7, 0.5, 0] },
+        { key: 'near-trunnion', at: [7, 0.5, -10.5] },
+        { key: 'far-trunnion', at: [7, 0.5, 10.5] },
+        { key: 'servo-drive-face', at: [7, 0.5, 11.5] },
       ],
       [
-        { key: 'pickup-face', at: [0, -9, 0] },
-        { key: 'pickup-buffer', at: [0, -3.5, -2.5] },
-        { key: 'mount', at: [0, 9, 0] },
-        { key: 'west-rear-alignment', at: [-5, 0, 5.5] },
-        { key: 'east-rear-alignment', at: [5, 0, 5.5] },
-        { key: 'actuator-yoke-cavity', at: [0, 0, 7] },
+        { key: 'pickup-face', at: [0, -9, -5.5] },
+        { key: 'pickup-buffer', at: [0, -3.5, -8] },
+        { key: 'mount', at: [0, 9, -5.5] },
+        { key: 'west-rear-alignment', at: [-5, 0, 9] },
+        { key: 'east-rear-alignment', at: [5, 0, 9] },
+        { key: 'actuator-yoke-cavity', at: [0, 0, 4.5] },
       ],
       [
         { key: 'carriage-mount', at: [0, -2, 0] },
         { key: 'core-socket', at: [0, 2, 0] },
       ],
       [
-        { key: 'base-key', at: [0, -3, 0] },
-        { key: 'cap-socket', at: [0, 4, 0] },
-        { key: 'cap-seat', at: [0, 4, 0] },
-        { key: 'pickup-face', at: [0, 4, 0] },
+        { key: 'base-key', at: [0, -2.5, 0] },
+        { key: 'cap-socket', at: [0, 4.5, 0] },
+        { key: 'cap-seat', at: [0, 4.5, 0] },
+        { key: 'pickup-face', at: [0, 4.5, 0] },
       ],
       [
         { key: 'core-key', at: [0, -0.5, 0] },

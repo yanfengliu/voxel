@@ -1,72 +1,68 @@
 /**
  * Authored world layout shared by the Machine Works scene and its consumer
- * fixture, in two frames. MACHINE_WORKS_PROCESS_LAYOUT_V1 is the recorded
- * process's own frame: the consumer fixture simulates and validates there, so
- * the committed trace and its hashes never depend on how the scene presents.
- * MACHINE_WORKS_SCENE_LAYOUT_V1 is what the scene draws: the same layout with
- * the still machinery settled just below the recorded process.
+ * fixture. These are presentation positions, not a simulation API: the
+ * consumer still derives and validates physical body and port coordinates
+ * from the exact sidecars before it advances Rapier.
+ *
+ * The scene draws exactly the frame the fixture simulates and validates.
+ * An earlier revision drew the still machinery settled 0.02 below the
+ * recorded process (`MACHINE_WORKS_STILL_SETTLE_V1`) because the foundation's
+ * bridge pads topped out on the recorded slat plane and fought for
+ * visibility (the owner's pinned request 2026-07-30T00-21-35-915Z-002). This
+ * layout removes that coincidence at its source — no still solid now stands
+ * inside the moving belt band — so the settle and the two-frame split it
+ * required are gone, and sceneSurfaceFightsV1 pins the scene at zero
+ * coincident same-facing planes across its sampled recorded poses.
  */
 import {
   MACHINE_WORKS_CONVEYOR_V1,
   machineWorksDrumSceneFloorV1,
 } from './machine-works-conveyor.js';
 
-/**
- * How far the drawn still machinery sits below the recorded process, in world
- * units.
- *
- * The recorded conveyor slats top out at exactly y = 9, and the foundation's
- * bridge-pad tops used to land on that same plane — two same-facing surfaces
- * on one plane, so the picture flickered between them at both tower feet (the
- * owner's pinned request 2026-07-30T00-21-35-915Z-002, "I see these weird
- * surfaces where different models compete for visibility again"). The drawn
- * foundation and press bridge settle by this amount together, so every
- * still-on-still landing stays exactly flush
- * while no still face can share a plane with the recorded process: 0.02 is
- * off every recorded grain lattice (0.25, 0.3, 0.4, 0.5), two hundred times
- * the float32 depth-collapse distance the surface-fight check guards (1e-4),
- * and under a pixel at the scene's viewing sizes. The output dock cannot
- * settle — its bearing bores hold the recorded carrier's trunnion axis — so
- * it keeps the process height and stands the settle above the drawn guards.
- * sceneSurfaceFightsV1 pins that no coincidence comes back.
- */
-export const MACHINE_WORKS_STILL_SETTLE_V1 = 0.02;
-
-export const MACHINE_WORKS_PROCESS_LAYOUT_V1 = Object.freeze({
+export const MACHINE_WORKS_SCENE_LAYOUT_V1 = Object.freeze({
   foundation: Object.freeze({
     at: Object.freeze([-2.9, 0, 0] as const),
     grain: 1.8,
     sizeVoxels: Object.freeze([31, 5, 11] as const),
   }),
+  /**
+   * The bridge stands behind the belt band: its rail-front plane at z = 5.8
+   * keeps the whole front tower row (z 5.8..7.0) clear of the slat band
+   * (|z| <= 3.25) and of the carrier's widest part (|z| <= 4.6), while the
+   * rear tower row (z 8.2..9.4) still lands on the foundation. The stator
+   * blades hang from the load beam one voxel in front of that plane, over
+   * the head stroke only, so the moving C-yokes wrap them without ever
+   * entering the rail columns or the carrier lane below.
+   */
   pressBridge: Object.freeze({
-    at: Object.freeze([0, 9, 5.8] as const),
+    at: Object.freeze([0, 9, 7] as const),
     grain: 1.2,
     sizeVoxels: Object.freeze([25, 20, 6] as const),
     guideTowers: Object.freeze({
       west: Object.freeze({
-        atVoxels: Object.freeze([0, 0, 0] as const),
-        sizeVoxels: Object.freeze([5, 15, 6] as const),
+        atVoxels: Object.freeze([0, 0, 2] as const),
+        sizeVoxels: Object.freeze([5, 15, 3] as const),
       }),
       east: Object.freeze({
-        atVoxels: Object.freeze([20, 0, 0] as const),
-        sizeVoxels: Object.freeze([5, 15, 6] as const),
+        atVoxels: Object.freeze([20, 0, 2] as const),
+        sizeVoxels: Object.freeze([5, 15, 3] as const),
       }),
     }),
     guideRails: Object.freeze({
       coreWest: Object.freeze({
-        atVoxels: Object.freeze([4, 0, 0] as const),
+        atVoxels: Object.freeze([4, 0, 2] as const),
         sizeVoxels: Object.freeze([1, 15, 1] as const),
       }),
       coreEast: Object.freeze({
-        atVoxels: Object.freeze([7, 0, 0] as const),
+        atVoxels: Object.freeze([7, 0, 2] as const),
         sizeVoxels: Object.freeze([1, 15, 1] as const),
       }),
       capWest: Object.freeze({
-        atVoxels: Object.freeze([17, 0, 0] as const),
+        atVoxels: Object.freeze([17, 0, 2] as const),
         sizeVoxels: Object.freeze([1, 15, 1] as const),
       }),
       capEast: Object.freeze({
-        atVoxels: Object.freeze([20, 0, 0] as const),
+        atVoxels: Object.freeze([20, 0, 2] as const),
         sizeVoxels: Object.freeze([1, 15, 1] as const),
       }),
     }),
@@ -76,12 +72,12 @@ export const MACHINE_WORKS_PROCESS_LAYOUT_V1 = Object.freeze({
     }),
     actuatorSpines: Object.freeze({
       core: Object.freeze({
-        atVoxels: Object.freeze([5, 0, 0] as const),
-        sizeVoxels: Object.freeze([1, 15, 1] as const),
+        atVoxels: Object.freeze([5, 7, 0] as const),
+        sizeVoxels: Object.freeze([1, 8, 1] as const),
       }),
       cap: Object.freeze({
-        atVoxels: Object.freeze([19, 0, 0] as const),
-        sizeVoxels: Object.freeze([1, 15, 1] as const),
+        atVoxels: Object.freeze([19, 7, 0] as const),
+        sizeVoxels: Object.freeze([1, 8, 1] as const),
       }),
     }),
     servoHousings: Object.freeze({
@@ -100,26 +96,39 @@ export const MACHINE_WORKS_PROCESS_LAYOUT_V1 = Object.freeze({
     }),
     staticNonColliding: true,
   }),
+  /**
+   * The docked carrier's east face stops exactly this far west of the
+   * bucket's painted west face; the tip sweep carries the product across
+   * that declared approach gap into the open mouth.
+   */
   bucket: Object.freeze({
     at: Object.freeze([32.5, 0, 0] as const),
     grain: 1,
-    sizeVoxels: Object.freeze([15, 10, 13] as const),
+    sizeVoxels: Object.freeze([13, 10, 13] as const),
+    carrierApproachGap: 1,
   }),
+  /**
+   * `at` places the painted content: its center sits 0.4 west of the
+   * bearing-bore axis and 0.6 south of the bore midpoint, so the pivot-axis
+   * port lands exactly on the carrier trunnion line (24.8, 10.2) while the
+   * drawn east face stops at 25.8 — 0.2 clear of the bucket's painted west
+   * face at 26.0.
+   */
   outputDock: Object.freeze({
     at: Object.freeze([
-      MACHINE_WORKS_CONVEYOR_V1.rightAxleX + 2.8,
+      MACHINE_WORKS_CONVEYOR_V1.rightAxleX + 2.4,
       9,
-      0,
+      0.6,
     ] as const),
     grain: 0.4,
-    sizeVoxels: Object.freeze([9, 9, 31] as const),
+    sizeVoxels: Object.freeze([7, 6, 28] as const),
     minimumBeltAxialClearance: 0.5,
     minimumSweptClearance: 0.14,
   }),
   carriage: Object.freeze({
     at: Object.freeze([-20, 9, 0] as const),
     grain: 0.4,
-    sizeVoxels: Object.freeze([15, 6, 23] as const),
+    sizeVoxels: Object.freeze([15, 5, 23] as const),
   }),
   conveyor: Object.freeze({
     slat: Object.freeze({
@@ -137,89 +146,67 @@ export const MACHINE_WORKS_PROCESS_LAYOUT_V1 = Object.freeze({
       sizeVoxels: MACHINE_WORKS_CONVEYOR_V1.drumSizeVoxels,
     }),
   }),
+  /**
+   * The heads stand at z = 2.2 so their pickup plates (the front seven voxel
+   * layers) stay centered over the product line at z = 0 while their rear
+   * alignment pads reach back to the bridge's rail-front plane at z = 5.8
+   * and their C-yokes wrap the stator blades hanging in front of it.
+   */
   coreHead: Object.freeze({
-    at: Object.freeze([-8.2, 19, 0] as const),
+    at: Object.freeze([-8.2, 19, 2.2] as const),
     grain: 0.4,
-    sizeVoxels: Object.freeze([13, 18, 21] as const),
+    sizeVoxels: Object.freeze([11, 18, 18] as const),
   }),
   capHead: Object.freeze({
-    at: Object.freeze([8.2, 19.3, 0] as const),
+    at: Object.freeze([8.2, 19.3, 2.2] as const),
     grain: 0.4,
-    sizeVoxels: Object.freeze([13, 18, 21] as const),
+    sizeVoxels: Object.freeze([11, 18, 18] as const),
   }),
   headAlignmentPads: Object.freeze({
     west: Object.freeze({
-      atVoxels: Object.freeze([1, 8, 15] as const),
-      sizeVoxels: Object.freeze([1, 2, 1] as const),
+      atVoxels: Object.freeze([0, 8, 16] as const),
+      sizeVoxels: Object.freeze([1, 2, 2] as const),
     }),
     east: Object.freeze({
-      atVoxels: Object.freeze([11, 8, 15] as const),
-      sizeVoxels: Object.freeze([1, 2, 1] as const),
+      atVoxels: Object.freeze([10, 8, 16] as const),
+      sizeVoxels: Object.freeze([1, 2, 2] as const),
     }),
   }),
   headActuatorYoke: Object.freeze({
     cavity: Object.freeze({
-      atVoxels: Object.freeze([3, 8, 15] as const),
+      atVoxels: Object.freeze([2, 8, 11] as const),
       sizeVoxels: Object.freeze([7, 2, 5] as const),
     }),
     minimumRunningClearance: 0.4,
     bars: Object.freeze({
       west: Object.freeze({
-        atVoxels: Object.freeze([2, 8, 15] as const),
+        atVoxels: Object.freeze([1, 8, 11] as const),
         sizeVoxels: Object.freeze([1, 2, 6] as const),
       }),
       east: Object.freeze({
-        atVoxels: Object.freeze([10, 8, 15] as const),
+        atVoxels: Object.freeze([9, 8, 11] as const),
         sizeVoxels: Object.freeze([1, 2, 6] as const),
       }),
       rear: Object.freeze({
-        atVoxels: Object.freeze([3, 8, 20] as const),
+        atVoxels: Object.freeze([2, 8, 16] as const),
         sizeVoxels: Object.freeze([7, 2, 1] as const),
       }),
     }),
   }),
+  /** The base rests directly on the carrier deck: bottom face at y = 11.0. */
   base: Object.freeze({
-    at: Object.freeze([-20, 11.4, 0] as const),
+    at: Object.freeze([-20, 11, 0] as const),
     grain: 0.3,
     sizeVoxels: Object.freeze([11, 4, 11] as const),
   }),
   core: Object.freeze({
     at: Object.freeze([-8.2, 16.3, 0] as const),
     grain: 0.3,
-    sizeVoxels: Object.freeze([7, 10, 7] as const),
+    sizeVoxels: Object.freeze([7, 9, 7] as const),
   }),
   cap: Object.freeze({
     at: Object.freeze([8.2, 17.8, 0] as const),
     grain: 0.3,
     sizeVoxels: Object.freeze([11, 5, 11] as const),
-  }),
-});
-
-/**
- * What the scene draws: the process layout with the still foundation and
- * press bridge settled together just below the recorded process, so their
- * exact flush landing on each other survives while no still face shares a
- * rendered plane with a recorded one. The output dock stays at the process
- * height because its bearing bores hold the recorded carrier's trunnion axis;
- * it stands the settle above the drawn guards. Replay-driven placements keep
- * their process positions — the recorded tracks pose them anyway.
- */
-export const MACHINE_WORKS_SCENE_LAYOUT_V1 = Object.freeze({
-  ...MACHINE_WORKS_PROCESS_LAYOUT_V1,
-  foundation: Object.freeze({
-    ...MACHINE_WORKS_PROCESS_LAYOUT_V1.foundation,
-    at: Object.freeze([
-      MACHINE_WORKS_PROCESS_LAYOUT_V1.foundation.at[0],
-      MACHINE_WORKS_PROCESS_LAYOUT_V1.foundation.at[1] - MACHINE_WORKS_STILL_SETTLE_V1,
-      MACHINE_WORKS_PROCESS_LAYOUT_V1.foundation.at[2],
-    ] as const),
-  }),
-  pressBridge: Object.freeze({
-    ...MACHINE_WORKS_PROCESS_LAYOUT_V1.pressBridge,
-    at: Object.freeze([
-      MACHINE_WORKS_PROCESS_LAYOUT_V1.pressBridge.at[0],
-      MACHINE_WORKS_PROCESS_LAYOUT_V1.pressBridge.at[1] - MACHINE_WORKS_STILL_SETTLE_V1,
-      MACHINE_WORKS_PROCESS_LAYOUT_V1.pressBridge.at[2],
-    ] as const),
   }),
 });

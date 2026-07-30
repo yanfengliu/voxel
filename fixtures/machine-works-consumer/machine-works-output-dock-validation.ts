@@ -6,7 +6,7 @@ import {
   createMachineWorksTransferCarriagePhysicalAsset,
 } from '../../tools/studio/machine-works-physical-assets.js';
 import { MACHINE_WORKS_CONVEYOR_V1 } from '../../tools/studio/machine-works-conveyor.js';
-import { MACHINE_WORKS_PROCESS_LAYOUT_V1 } from '../../tools/studio/machine-works-layout.js';
+import { MACHINE_WORKS_SCENE_LAYOUT_V1 } from '../../tools/studio/machine-works-layout.js';
 import type { PhysicalAssetV1 } from '../../tools/studio/physical-asset.js';
 import { machineWorksOutputDockSweepMeasurementV1 } from './machine-works-output-dock-sweep.js';
 import {
@@ -23,8 +23,8 @@ import {
   type SupportPointV1,
 } from './machine-works-support-geometry.js';
 
-const CARRIAGE_ORIGIN = [7.5, 3, 11.5] as const;
-const DOCK_ORIGIN = [4.5, 4.5, 15.5] as const;
+const CARRIAGE_ORIGIN = [7.5, 2.5, 11.5] as const;
+const DOCK_ORIGIN = [3.5, 3, 14] as const;
 const TRUNNION_BOX = {
   atVoxels: [14, 2, 0],
   sizeVoxels: [1, 2, 23],
@@ -32,41 +32,41 @@ const TRUNNION_BOX = {
 const BEARINGS = [
   {
     label: 'near',
-    lower: { atVoxels: [1, 0, 3], sizeVoxels: [6, 1, 3] },
-    back: { atVoxels: [6, 1, 4], sizeVoxels: [1, 5, 2] },
-    upper: { atVoxels: [2, 5, 4], sizeVoxels: [4, 1, 2] },
+    lower: { atVoxels: [1, 0, 0], sizeVoxels: [6, 1, 3] },
+    back: { atVoxels: [6, 1, 1], sizeVoxels: [1, 5, 2] },
+    upper: { atVoxels: [2, 5, 1], sizeVoxels: [4, 1, 2] },
   },
   {
     label: 'far',
-    lower: { atVoxels: [1, 0, 25], sizeVoxels: [6, 1, 3] },
-    back: { atVoxels: [6, 1, 25], sizeVoxels: [1, 5, 2] },
-    upper: { atVoxels: [2, 5, 25], sizeVoxels: [4, 1, 2] },
+    lower: { atVoxels: [1, 0, 22], sizeVoxels: [6, 1, 3] },
+    back: { atVoxels: [6, 1, 22], sizeVoxels: [1, 5, 2] },
+    upper: { atVoxels: [2, 5, 22], sizeVoxels: [4, 1, 2] },
   },
 ] as const;
 const SERVO_COUPLER = {
-  atVoxels: [4, 2, 27],
+  atVoxels: [4, 2, 24],
   sizeVoxels: [1, 2, 1],
 } as const satisfies AuthoredVoxelBoxV1;
 const SERVO_FOOT = {
-  atVoxels: [2, 0, 28],
+  atVoxels: [2, 0, 25],
   sizeVoxels: [5, 1, 2],
 } as const satisfies AuthoredVoxelBoxV1;
 const SERVO_HOUSING = {
-  atVoxels: [2, 1, 28],
+  atVoxels: [2, 1, 25],
   sizeVoxels: [5, 5, 2],
 } as const satisfies AuthoredVoxelBoxV1;
 const SERVO_SERVICE_ROUTE = [
   {
     label: 'servo-service foundation entry',
-    box: { atVoxels: [0, 0, 28], sizeVoxels: [2, 1, 2] },
+    box: { atVoxels: [0, 0, 25], sizeVoxels: [2, 1, 2] },
   },
   {
     label: 'servo-service riser',
-    box: { atVoxels: [0, 1, 28], sizeVoxels: [1, 3, 2] },
+    box: { atVoxels: [0, 1, 25], sizeVoxels: [1, 3, 2] },
   },
   {
     label: 'servo-service housing inlet',
-    box: { atVoxels: [0, 4, 28], sizeVoxels: [2, 1, 2] },
+    box: { atVoxels: [0, 4, 25], sizeVoxels: [2, 1, 2] },
   },
   {
     label: 'rotary-servo housing',
@@ -246,8 +246,8 @@ function canonicalAlignmentIssues(
   maximumError: number,
 ): readonly string[] {
   const issues: string[] = [];
-  const carriageGrain = MACHINE_WORKS_PROCESS_LAYOUT_V1.carriage.grain;
-  const dockGrain = MACHINE_WORKS_PROCESS_LAYOUT_V1.outputDock.grain;
+  const carriageGrain = MACHINE_WORKS_SCENE_LAYOUT_V1.carriage.grain;
+  const dockGrain = MACHINE_WORKS_SCENE_LAYOUT_V1.outputDock.grain;
   for (const [carriagePort, dockPort] of [
     ['tip-pivot-axis', 'pivot-axis'],
     ['near-trunnion', 'near-bearing-bore'],
@@ -320,9 +320,9 @@ export function machineWorksOutputDockEnvironmentIssuesV1(
   maximumError: number,
 ): readonly string[] {
   const issues: string[] = [];
-  const dockGrain = MACHINE_WORKS_PROCESS_LAYOUT_V1.outputDock.grain;
-  const foundationGrain = MACHINE_WORKS_PROCESS_LAYOUT_V1.foundation.grain;
-  const bucketGrain = MACHINE_WORKS_PROCESS_LAYOUT_V1.bucket.grain;
+  const dockGrain = MACHINE_WORKS_SCENE_LAYOUT_V1.outputDock.grain;
+  const foundationGrain = MACHINE_WORKS_SCENE_LAYOUT_V1.foundation.grain;
+  const bucketGrain = MACHINE_WORKS_SCENE_LAYOUT_V1.bucket.grain;
   const dockSolids = physicalAssetAxisAlignedSolidBounds(dock, dockGrain, dockCenter);
   const foundationSolids = physicalAssetAxisAlignedSolidBounds(
     foundation, foundationGrain, foundationCenter,
@@ -385,7 +385,7 @@ export function machineWorksOutputDockEnvironmentIssuesV1(
     minimumBeltClearance = Math.min(minimumBeltClearance, clearance);
   }
   const requiredBeltClearance =
-    MACHINE_WORKS_PROCESS_LAYOUT_V1.outputDock.minimumBeltAxialClearance;
+    MACHINE_WORKS_SCENE_LAYOUT_V1.outputDock.minimumBeltAxialClearance;
   if (minimumBeltClearance < requiredBeltClearance - maximumError) {
     issues.push(
       `output dock leaves ${minimumBeltClearance.toFixed(3)} world units outside the `
@@ -406,12 +406,12 @@ export function machineWorksOutputDockCanonicalIssuesV1(
   const bucket = createMachineWorksCollectionBucketPhysicalAsset();
   const carriageCenter: SupportPointV1 = [
     MACHINE_WORKS_CONVEYOR_V1.rightAxleX,
-    sceneCenter(MACHINE_WORKS_PROCESS_LAYOUT_V1.carriage)[1],
+    sceneCenter(MACHINE_WORKS_SCENE_LAYOUT_V1.carriage)[1],
     0,
   ];
-  const dockCenter = sceneCenter(MACHINE_WORKS_PROCESS_LAYOUT_V1.outputDock);
-  const foundationCenter = sceneCenter(MACHINE_WORKS_PROCESS_LAYOUT_V1.foundation);
-  const bucketCenter = sceneCenter(MACHINE_WORKS_PROCESS_LAYOUT_V1.bucket);
+  const dockCenter = sceneCenter(MACHINE_WORKS_SCENE_LAYOUT_V1.outputDock);
+  const foundationCenter = sceneCenter(MACHINE_WORKS_SCENE_LAYOUT_V1.foundation);
+  const bucketCenter = sceneCenter(MACHINE_WORKS_SCENE_LAYOUT_V1.bucket);
   return [
     ...canonicalAlignmentIssues(
       carriage, dock, carriageCenter, dockCenter, maximumError,
@@ -421,10 +421,10 @@ export function machineWorksOutputDockCanonicalIssuesV1(
       dock,
       foundation,
       bucket,
-      carriageGrain: MACHINE_WORKS_PROCESS_LAYOUT_V1.carriage.grain,
-      dockGrain: MACHINE_WORKS_PROCESS_LAYOUT_V1.outputDock.grain,
-      foundationGrain: MACHINE_WORKS_PROCESS_LAYOUT_V1.foundation.grain,
-      bucketGrain: MACHINE_WORKS_PROCESS_LAYOUT_V1.bucket.grain,
+      carriageGrain: MACHINE_WORKS_SCENE_LAYOUT_V1.carriage.grain,
+      dockGrain: MACHINE_WORKS_SCENE_LAYOUT_V1.outputDock.grain,
+      foundationGrain: MACHINE_WORKS_SCENE_LAYOUT_V1.foundation.grain,
+      bucketGrain: MACHINE_WORKS_SCENE_LAYOUT_V1.bucket.grain,
       carriageCenter,
       dockCenter,
       foundationCenter,

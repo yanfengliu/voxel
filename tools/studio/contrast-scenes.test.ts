@@ -130,6 +130,9 @@ describe('contrast scenes', () => {
       ({ model }) => model === 'studio:machine-works:drive-cog',
     )).toHaveLength(MACHINE_WORKS_EXPOSED_COGS_V1.length);
     for (const { id, side, z } of MACHINE_WORKS_EXPOSED_COGS_V1) {
+      // At phase zero the flag hangs straight down: the model origin (its
+      // painted middle) sits below the axle by the hub offset, and the base
+      // sits half the cog's own height below that.
       expect(byId.get(id)).toMatchObject({
         model: 'studio:machine-works:drive-cog',
         at: [
@@ -137,7 +140,9 @@ describe('contrast scenes', () => {
             ? MACHINE_WORKS_CONVEYOR_V1.leftAxleX
             : MACHINE_WORKS_CONVEYOR_V1.rightAxleX,
           MACHINE_WORKS_CONVEYOR_V1.axleY
-            - MACHINE_WORKS_CONVEYOR_V1.drumSizeVoxels[1]
+            - MACHINE_WORKS_CONVEYOR_V1.cogHubOffsetVoxels
+              * MACHINE_WORKS_CONVEYOR_V1.drumGrain
+            - MACHINE_WORKS_CONVEYOR_V1.cogSizeVoxels[1]
               * MACHINE_WORKS_CONVEYOR_V1.drumGrain / 2,
           z,
         ],
@@ -190,7 +195,7 @@ describe('contrast scenes', () => {
     ]);
     expect(bridgeRecipe.steps.some((step) =>
       step.kind === 'part' && step.part === 'truss-span')).toBe(false);
-    expect(bridgeRecipe.summary).toMatch(/four foundation feet.*linear-stator spines.*empty moving C-yoke cavities/i);
+    expect(bridgeRecipe.summary).toMatch(/four foundation feet.*linear-stator blades.*empty moving C-yoke cavities/i);
     const foundationTop = layout.foundation.at[1]
       + layout.foundation.sizeVoxels[1] * layout.foundation.grain;
     const foundationRight = layout.foundation.at[0]
@@ -199,19 +204,19 @@ describe('contrast scenes', () => {
       - layout.bucket.sizeVoxels[0] * layout.bucket.grain / 2;
     expect(layout.pressBridge.guideRails).toEqual({
       coreWest: {
-        atVoxels: [4, 0, 0],
+        atVoxels: [4, 0, 2],
         sizeVoxels: [1, 15, 1],
       },
       coreEast: {
-        atVoxels: [7, 0, 0],
+        atVoxels: [7, 0, 2],
         sizeVoxels: [1, 15, 1],
       },
       capWest: {
-        atVoxels: [17, 0, 0],
+        atVoxels: [17, 0, 2],
         sizeVoxels: [1, 15, 1],
       },
       capEast: {
-        atVoxels: [20, 0, 0],
+        atVoxels: [20, 0, 2],
         sizeVoxels: [1, 15, 1],
       },
     });
@@ -236,22 +241,29 @@ describe('contrast scenes', () => {
       expect(shoeCenterX).toBeGreaterThanOrEqual(railMinX);
       expect(shoeCenterX).toBeLessThanOrEqual(railMaxX);
     }
-    const bridgeFrontZ = layout.pressBridge.at[2]
-      - layout.pressBridge.sizeVoxels[2] * layout.pressBridge.grain / 2;
+    const railFrontZ = layout.pressBridge.at[2]
+      + (layout.pressBridge.guideRails.coreWest.atVoxels[2]
+        - layout.pressBridge.sizeVoxels[2] / 2) * layout.pressBridge.grain;
     const shoeRearZ = layout.coreHead.at[2]
       + (layout.headAlignmentPads.west.atVoxels[2]
         + layout.headAlignmentPads.west.sizeVoxels[2]
         - layout.coreHead.sizeVoxels[2] / 2) * layout.coreHead.grain;
 
     expect(foundationTop).toBe(layout.pressBridge.at[1]);
-    expect(foundationRight).toBeCloseTo(bucketLeft);
-    expect(bridgeFrontZ).toBeCloseTo(shoeRearZ, 9);
+    // The bucket's painted west face stands the declared pour approach gap
+    // beyond the foundation's east face, where the docked carrier ends.
+    expect(bucketLeft).toBeCloseTo(
+      foundationRight + layout.bucket.carrierApproachGap,
+    );
+    expect(railFrontZ).toBeCloseTo(shoeRearZ, 9);
     expect(MACHINE_WORKS_LAYOUT.capStationX).toBeLessThan(foundationRight);
     expect(MACHINE_WORKS_LAYOUT.tipStationX).toBe(MACHINE_WORKS_CONVEYOR_V1.rightAxleX);
     expect(
       MACHINE_WORKS_LAYOUT.tipStationX + MACHINE_WORKS_LAYOUT.carriageTipPivotLocalX,
-    ).toBeCloseTo(layout.outputDock.at[0], 9);
-    expect(bucketLeft - layout.outputDock.at[0]).toBeCloseTo(0.2, 9);
+    ).toBeCloseTo(MACHINE_WORKS_LAYOUT.outputDockPivotX, 9);
+    const dockEast = layout.outputDock.at[0]
+      + layout.outputDock.sizeVoxels[0] * layout.outputDock.grain / 2;
+    expect(bucketLeft - dockEast).toBeCloseTo(0.2, 9);
     const paintedSlatLength =
       MACHINE_WORKS_CONVEYOR_V1.slatSizeVoxels[0]
         * MACHINE_WORKS_CONVEYOR_V1.slatGrain;

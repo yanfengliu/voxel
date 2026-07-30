@@ -125,30 +125,6 @@ describe('scene surface fights', () => {
       expect(replay, `Scene '${scene.id}' must resolve pose replay '${scene.poseReplay.id}'.`)
         .toBeDefined();
       const report = sceneSurfaceFightsV1(scene, replay!, recipes, parts);
-      if (scene.id === 'studio:scene:contrast-machines') {
-        // One known residual, pinned so it can only shrink: the output dock's
-        // east base cells end under the recorded collection bucket's outward
-        // rim flare, and both undersides sit on the y = 9 plane. The bucket is
-        // a recorded collider and the dock's bearing bores hold the recorded
-        // carrier's trunnion points, so neither can move without re-recording
-        // the replay — that is the machine re-layout follow-up, not a check
-        // exemption. Any other fight at the sampled times fails the scene.
-        // A full-frame sweep also found one sub-visible transit crossing the
-        // sampling deliberately does not chase: at recorded frame 143 only
-        // (16.7 ms), the carriage's +x face passes within 1e-4 of the west
-        // tower's x = -9 plane. If SAMPLES_PER_REPLAY changes and this test
-        // starts reporting that crossing, that is the known transit, not a
-        // regression of the settled layout.
-        expect(report.fights, JSON.stringify(report.fights, null, 2)).toHaveLength(1);
-        expect(report.fights[0]).toMatchObject({
-          moving: 'collection-bucket',
-          still: 'assembly-output-dock',
-          axis: 'y',
-          facing: -1,
-          plane: 9,
-        });
-        return;
-      }
       expect(report.fights, JSON.stringify(report.fights, null, 2)).toEqual([]);
     });
   }

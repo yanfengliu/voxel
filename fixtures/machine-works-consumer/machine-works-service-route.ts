@@ -1,5 +1,5 @@
 import { exactMagnitudeV1 } from '../deterministic-math.js';
-import { MACHINE_WORKS_PROCESS_LAYOUT_V1 } from '../../tools/studio/machine-works-layout.js';
+import { MACHINE_WORKS_SCENE_LAYOUT_V1 } from '../../tools/studio/machine-works-layout.js';
 import type { PhysicalAssetV1 } from '../../tools/studio/physical-asset.js';
 import {
   physicalAssetAxisAlignedSolidBounds,
@@ -32,7 +32,7 @@ interface RequiredRouteBoxV1 extends AuthoredVoxelBoxV1 {
 
 const ZERO: SupportPointV1 = [0, 0, 0];
 const BRIDGE_ORIGIN: SupportPointV1 = [12.5, 10, 3];
-const HEAD_ORIGIN: SupportPointV1 = [6.5, 9, 10.5];
+const HEAD_ORIGIN: SupportPointV1 = [5.5, 9, 9];
 
 const BRIDGE_BOXES: readonly RequiredRouteBoxV1[] = [
   { key: 'controller', label: 'controller cabinet', atVoxels: [10, 15, 3], sizeVoxels: [5, 4, 3] },
@@ -40,18 +40,18 @@ const BRIDGE_BOXES: readonly RequiredRouteBoxV1[] = [
   { key: 'core-housing', label: 'core servo housing', atVoxels: [4, 17, 0], sizeVoxels: [4, 3, 4] },
   { key: 'cap-housing', label: 'cap servo housing', atVoxels: [17, 17, 0], sizeVoxels: [4, 3, 4] },
   { key: 'beam', label: 'press load beam', atVoxels: [4, 15, 0], sizeVoxels: [17, 2, 3] },
-  { key: 'core-stator', label: 'core fixed stator', atVoxels: [5, 0, 0], sizeVoxels: [1, 15, 1] },
-  { key: 'cap-stator', label: 'cap fixed stator', atVoxels: [19, 0, 0], sizeVoxels: [1, 15, 1] },
+  { key: 'core-stator', label: 'core fixed stator', atVoxels: [5, 7, 0], sizeVoxels: [1, 8, 1] },
+  { key: 'cap-stator', label: 'cap fixed stator', atVoxels: [19, 7, 0], sizeVoxels: [1, 8, 1] },
 ];
 
 const HEAD_BOXES: readonly RequiredRouteBoxV1[] = [
-  { key: 'buffer', label: 'precharged head buffer', atVoxels: [4, 4, 7], sizeVoxels: [5, 3, 2] },
-  { key: 'ram-west', label: 'west insertion-ram rail', atVoxels: [5, 4, 9], sizeVoxels: [1, 14, 3] },
-  { key: 'ram-center', label: 'insertion-ram center rail', atVoxels: [6, 4, 10], sizeVoxels: [1, 14, 2] },
-  { key: 'ram-east', label: 'east insertion-ram rail', atVoxels: [7, 4, 9], sizeVoxels: [1, 14, 3] },
-  { key: 'conduit', label: 'buffer-to-pickup conduit', atVoxels: [6, 4, 9], sizeVoxels: [1, 14, 1] },
-  { key: 'backing', label: 'pickup backing', atVoxels: [3, 1, 7], sizeVoxels: [7, 3, 7] },
-  { key: 'pickup', label: 'electromagnetic pickup plate', atVoxels: [3, 0, 7], sizeVoxels: [7, 1, 7] },
+  { key: 'buffer', label: 'precharged head buffer', atVoxels: [3, 4, 0], sizeVoxels: [5, 3, 2] },
+  { key: 'ram-west', label: 'west insertion-ram rail', atVoxels: [4, 4, 2], sizeVoxels: [1, 14, 3] },
+  { key: 'ram-center', label: 'insertion-ram center rail', atVoxels: [5, 4, 3], sizeVoxels: [1, 14, 2] },
+  { key: 'ram-east', label: 'east insertion-ram rail', atVoxels: [6, 4, 2], sizeVoxels: [1, 14, 3] },
+  { key: 'conduit', label: 'buffer-to-pickup conduit', atVoxels: [5, 4, 2], sizeVoxels: [1, 14, 1] },
+  { key: 'backing', label: 'pickup backing', atVoxels: [2, 1, 0], sizeVoxels: [7, 3, 7] },
+  { key: 'pickup', label: 'electromagnetic pickup plate', atVoxels: [2, 0, 0], sizeVoxels: [7, 1, 7] },
 ];
 
 const BRIDGE_CONTACTS: readonly (readonly [RouteNode, RouteNode])[] = [
@@ -202,7 +202,7 @@ export function machineWorksServiceRouteIssuesV1(
     'studio:machine-works:press-bridge',
     BRIDGE_BOXES,
     BRIDGE_ORIGIN,
-    MACHINE_WORKS_PROCESS_LAYOUT_V1.pressBridge.grain,
+    MACHINE_WORKS_SCENE_LAYOUT_V1.pressBridge.grain,
     maximumError,
     issues,
   );
@@ -211,7 +211,7 @@ export function machineWorksServiceRouteIssuesV1(
     'studio:machine-works:insertion-head',
     HEAD_BOXES,
     HEAD_ORIGIN,
-    MACHINE_WORKS_PROCESS_LAYOUT_V1.coreHead.grain,
+    MACHINE_WORKS_SCENE_LAYOUT_V1.coreHead.grain,
     maximumError,
     issues,
   );

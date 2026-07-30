@@ -163,7 +163,7 @@ describe('Machine Works creator purpose map', () => {
     expect(MACHINE_WORKS_PURPOSE_BOUNDARIES_V1.attachmentHandoff)
       .toMatch(/two-voxel keyed insertion.*fixed joint is removed.*software compound weld.*not a solved latch/i);
     expect(MACHINE_WORKS_PURPOSE_BOUNDARIES_V1.pressBridge)
-      .toMatch(/exact press-bridge sidecar is hashed.*stator spines.*not ingested into Rapier.*without proving.*solver load transfer/i);
+      .toMatch(/exact press-bridge sidecar is hashed.*stator blades.*not ingested into Rapier.*without proving.*solver load transfer/i);
     expect(MACHINE_WORKS_PURPOSE_BOUNDARIES_V1.outputPivot)
       .toMatch(/trunnion axle.*bearing cradles.*servo housing.*no revolute constraint.*motor torque/i);
   });
@@ -178,7 +178,7 @@ describe('Machine Works creator purpose map', () => {
 
     expect(exposedCogs?.purpose).toMatch(/minimal non-interacting radial phase flag/i);
     expect(exposedCogs?.removalConsequence).toMatch(/solver outcome.*remain unchanged/i);
-    expect(heads?.purpose).toMatch(/preloaded component.*magnetic pickup.*stator spine.*prescribed vertical stroke/i);
+    expect(heads?.purpose).toMatch(/preloaded component.*magnetic pickup.*stator blade.*prescribed vertical stroke/i);
     expect(heads?.mechanicalRelationships.find(({ verb }) => verb === 'holds')?.evidence)
       .toMatch(/without simulating charging, current, magnetic force, or jaw closure/i);
   });

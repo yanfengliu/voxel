@@ -156,7 +156,7 @@ const NEEDS: readonly PurposeNodeV1[] = Object.freeze([
       proofId: REPLAY_PROOF,
       establishes: Object.freeze([
         'The committed trace records release, contact, and collection evidence '
-        + 'at about 18.33, 20.87, and 27.42 seconds.',
+        + 'at about 18.33, 20.80, and 26.33 seconds.',
       ]),
     },
     honestyBoundary:

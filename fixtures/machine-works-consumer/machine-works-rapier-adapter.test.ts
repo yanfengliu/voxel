@@ -123,7 +123,7 @@ describe('Machine Works Rapier sidecar adapter', () => {
       expect(half.z).toBeCloseTo(0.8);
       const at = first.translation();
       expect(at.x).toBeCloseTo(4);
-      expect(at.y).toBeCloseTo(7);
+      expect(at.y).toBeCloseTo(7.2);
       expect(at.z).toBeCloseTo(1);
       expect(first.friction()).toBeCloseTo(1.3);
       expect(first.restitution()).toBeCloseTo(0.02);
@@ -397,7 +397,7 @@ describe('Machine Works Rapier sidecar adapter', () => {
       const carriageAsset = createMachineWorksTransferCarriagePhysicalAsset();
       const baseAsset = createMachineWorksProductBasePhysicalAsset();
       expect(scaledPhysicalPortV1(carriageAsset, 'load', 0.4).position.y)
-        .toBeCloseTo(1.2);
+        .toBeCloseTo(1);
       expect(scaledPhysicalPortV1(baseAsset, 'carriage-mount', 0.3).position.y)
         .toBeCloseTo(-0.6);
 

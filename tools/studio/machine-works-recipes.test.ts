@@ -139,7 +139,7 @@ describe('machine works recipes', () => {
       (record) => [`${record.recipeId}#${String(record.stepIndex)}`, record],
     ));
 
-    expect(liveSteps).toHaveLength(115);
+    expect(liveSteps).toHaveLength(126);
     expect(MACHINE_WORKS_STEP_PURPOSES_V1).toHaveLength(liveSteps.length);
     expect(recordsByAddress.size).toBe(liveSteps.length);
     expect(new Set(MACHINE_WORKS_STEP_PURPOSES_V1.map(({ id }) => id)).size)
@@ -198,34 +198,36 @@ describe('machine works recipes', () => {
     const book = createMachineWorksRecipeBook();
 
     expect(recipe.size).toEqual([25, 20, 6]);
-    expect(roleAt(recipe, book, 0, 0, 0)).toBe('structure');
-    expect(roleAt(recipe, book, 24, 0, 0)).toBe('structure');
-    expect(roleAt(recipe, book, 4, 8, 0)).toBe('structure');
-    expect(roleAt(recipe, book, 7, 8, 0)).toBe('wear');
-    expect(roleAt(recipe, book, 17, 8, 0)).toBe('wear');
-    expect(roleAt(recipe, book, 20, 8, 0)).toBe('structure');
-    expect(roleAt(recipe, book, 5, 8, 0)).toBe('detail');
-    expect(roleAt(recipe, book, 6, 8, 0)).toBe('empty');
-    expect(roleAt(recipe, book, 18, 8, 0)).toBe('empty');
-    expect(roleAt(recipe, book, 19, 8, 0)).toBe('detail');
+    expect(roleAt(recipe, book, 0, 0, 2)).toBe('structure');
+    expect(roleAt(recipe, book, 24, 0, 2)).toBe('structure');
+    expect(roleAt(recipe, book, 4, 8, 2)).toBe('structure');
+    expect(roleAt(recipe, book, 7, 8, 2)).toBe('wear');
+    expect(roleAt(recipe, book, 17, 8, 2)).toBe('wear');
+    expect(roleAt(recipe, book, 20, 8, 2)).toBe('structure');
+    expect(roleAt(recipe, book, 5, 10, 0)).toBe('detail');
+    expect(roleAt(recipe, book, 5, 3, 0)).toBe('empty');
+    expect(roleAt(recipe, book, 6, 10, 0)).toBe('empty');
+    expect(roleAt(recipe, book, 18, 10, 0)).toBe('empty');
+    expect(roleAt(recipe, book, 19, 10, 0)).toBe('detail');
     expect(roleAt(recipe, book, 12, 15, 1)).toBe('structure');
     expect(roleAt(recipe, book, 5, 18, 1)).toBe('wear');
     expect(roleAt(recipe, book, 19, 18, 1)).toBe('wear');
     expect(roleAt(recipe, book, 12, 19, 3)).toBe('detail');
-    expect(roleAt(recipe, book, 12, 19, 4)).toBe('empty');
-    expect(roleAt(recipe, book, 12, 17, 4)).toBe('structure');
-    expect(roleAt(recipe, book, 12, 8, 4)).toBe('empty');
+    expect(roleAt(recipe, book, 12, 19, 5)).toBe('empty');
+    expect(roleAt(recipe, book, 12, 18, 5)).toBe('structure');
+    expect(roleAt(recipe, book, 12, 17, 5)).toBe('structure');
+    expect(roleAt(recipe, book, 12, 8, 5)).toBe('empty');
   });
 
   it('marks only the moving insertion-head yoke around the empty stator cavity as a safety boundary', () => {
     const recipe = createMachineWorksInsertionHeadRecipe();
     const book = createMachineWorksRecipeBook();
 
-    expect(roleAt(recipe, book, 2, 8, 15)).toBe('safety');
-    expect(roleAt(recipe, book, 10, 8, 15)).toBe('safety');
-    expect(roleAt(recipe, book, 6, 8, 20)).toBe('safety');
-    expect(roleAt(recipe, book, 6, 8, 17)).toBe('empty');
-    expect(roleAt(recipe, book, 6, 8, 14)).toBe('structure');
+    expect(roleAt(recipe, book, 1, 8, 12)).toBe('safety');
+    expect(roleAt(recipe, book, 9, 8, 12)).toBe('safety');
+    expect(roleAt(recipe, book, 5, 8, 16)).toBe('safety');
+    expect(roleAt(recipe, book, 5, 8, 13)).toBe('empty');
+    expect(roleAt(recipe, book, 5, 8, 9)).toBe('structure');
   });
 
   it('keeps the foundation open below and its moving belt lane clear between side guards', () => {
@@ -240,10 +242,16 @@ describe('machine works recipes', () => {
     expect(roleAt(recipe, book, 15, 4, 8)).toBe('wear');
     expect(roleAt(recipe, book, 0, 4, 2)).toBe('safety');
     expect(roleAt(recipe, book, 0, 4, 5)).toBe('empty');
-    expect(roleAt(recipe, book, 10, 4, 6)).toBe('structure');
+    expect(roleAt(recipe, book, 10, 4, 6)).toBe('empty');
+    expect(roleAt(recipe, book, 23, 4, 6)).toBe('empty');
     expect(roleAt(recipe, book, 10, 4, 9)).toBe('structure');
-    expect(roleAt(recipe, book, 23, 4, 6)).toBe('structure');
+    expect(roleAt(recipe, book, 10, 4, 10)).toBe('structure');
     expect(roleAt(recipe, book, 23, 4, 9)).toBe('structure');
+    expect(roleAt(recipe, book, 23, 4, 10)).toBe('structure');
+    expect(roleAt(recipe, book, 0, 3, 1)).toBe('structure');
+    expect(roleAt(recipe, book, 0, 3, 5)).toBe('empty');
+    expect(roleAt(recipe, book, 30, 3, 5)).toBe('empty');
+    expect(roleAt(recipe, book, 0, 0, 5)).toBe('structure');
   });
 
   it('makes the belt pitch, retaining flanges, and minimal axle phase flag mechanically legible', () => {
@@ -257,21 +265,19 @@ describe('machine works recipes', () => {
     expect(roleAt(slat, book, 4, 0, 13)).toBe('wear');
     expect(roleAt(slat, book, 4, 0, 25)).toBe('safety');
 
-    expect(drum.size).toEqual([11, 11, 19]);
+    expect(drum.size).toEqual([11, 11, 17]);
     expect(roleAt(drum, book, 5, 0, 1)).toBe('safety');
     expect(roleAt(drum, book, 0, 5, 1)).toBe('safety');
     expect(roleAt(drum, book, 0, 0, 1)).toBe('empty');
     expect(roleAt(drum, book, 5, 5, 9)).toBe('wear');
     expect(roleAt(drum, book, 5, 1, 0)).toBe('detail');
     expect(roleAt(drum, book, 5, 9, 0)).toBe('structure');
-    expect(exposedCog.size).toEqual([11, 11, 3]);
+    expect(exposedCog.size).toEqual([3, 6, 3]);
     expect(exposedCog.steps).toHaveLength(2);
-    expect(roleAt(exposedCog, book, 5, 1, 1)).toBe('safety');
-    expect(roleAt(exposedCog, book, 5, 5, 1)).toBe('structure');
-    expect(roleAt(exposedCog, book, 5, 0, 1)).toBe('empty');
-    expect(roleAt(exposedCog, book, 1, 5, 1)).toBe('empty');
-    expect(roleAt(exposedCog, book, 9, 5, 1)).toBe('empty');
-    expect(roleAt(exposedCog, book, 0, 0, 1)).toBe('empty');
+    expect(roleAt(exposedCog, book, 1, 1, 1)).toBe('safety');
+    expect(roleAt(exposedCog, book, 0, 0, 0)).toBe('safety');
+    expect(roleAt(exposedCog, book, 1, 4, 1)).toBe('structure');
+    expect(roleAt(exposedCog, book, 2, 5, 2)).toBe('structure');
     const model = buildRecipe(drum, parts, book).model;
     const drumIsSolidAt = (x: number, y: number, z: number): boolean =>
       (model.voxels[x + 11 * (y + 11 * z)] ?? 0) !== 0;
@@ -281,7 +287,7 @@ describe('machine works recipes', () => {
           const solid = drumIsSolidAt(x, y, z);
           expect(drumIsSolidAt(10 - x, y, z)).toBe(solid);
           expect(drumIsSolidAt(x, 10 - y, z)).toBe(solid);
-          expect(drumIsSolidAt(x, y, 18 - z)).toBe(solid);
+          expect(drumIsSolidAt(x, y, 16 - z)).toBe(solid);
         }
       }
     }
@@ -291,13 +297,13 @@ describe('machine works recipes', () => {
     const recipe = createMachineWorksCollectionBucketRecipe();
     const book = createMachineWorksRecipeBook();
 
-    expect(roleAt(recipe, book, 7, 0, 6)).toBe('wear');
-    expect(roleAt(recipe, book, 7, 2, 2)).toBe('structure');
-    expect(roleAt(recipe, book, 7, 8, 2)).toBe('empty');
-    expect(roleAt(recipe, book, 7, 8, 10)).toBe('structure');
-    expect(roleAt(recipe, book, 7, 9, 6)).toBe('empty');
+    expect(roleAt(recipe, book, 6, 0, 6)).toBe('wear');
+    expect(roleAt(recipe, book, 6, 2, 2)).toBe('structure');
+    expect(roleAt(recipe, book, 6, 8, 2)).toBe('empty');
+    expect(roleAt(recipe, book, 6, 8, 10)).toBe('structure');
+    expect(roleAt(recipe, book, 6, 9, 6)).toBe('empty');
     expect(roleAt(recipe, book, 0, 5, 5)).toBe('empty');
-    expect(roleAt(recipe, book, 14, 5, 5)).toBe('empty');
+    expect(roleAt(recipe, book, 12, 5, 5)).toBe('empty');
     expect(recipe.steps).toHaveLength(10);
   });
 
@@ -305,20 +311,20 @@ describe('machine works recipes', () => {
     const recipe = createMachineWorksOutputDockRecipe();
     const book = createMachineWorksRecipeBook();
 
-    expect(recipe.size).toEqual([9, 9, 31]);
+    expect(recipe.size).toEqual([7, 6, 28]);
     expect(connectedComponentCount(recipe, book)).toBe(2);
-    expect(roleAt(recipe, book, 4, 0, 4)).toBe('wear');
-    expect(roleAt(recipe, book, 4, 3, 4)).toBe('empty');
-    expect(roleAt(recipe, book, 6, 3, 4)).toBe('wear');
-    expect(roleAt(recipe, book, 4, 5, 4)).toBe('wear');
-    expect(roleAt(recipe, book, 4, 0, 15)).toBe('empty');
-    expect(roleAt(recipe, book, 4, 0, 26)).toBe('wear');
-    expect(roleAt(recipe, book, 4, 3, 26)).toBe('empty');
-    expect(roleAt(recipe, book, 4, 2, 27)).toBe('safety');
-    expect(roleAt(recipe, book, 4, 0, 28)).toBe('structure');
-    expect(roleAt(recipe, book, 4, 3, 29)).toBe('structure');
-    expect(roleAt(recipe, book, 4, 3, 30)).toBe('safety');
-    expect(roleAt(recipe, book, 0, 2, 28)).toBe('detail');
+    expect(roleAt(recipe, book, 4, 0, 1)).toBe('wear');
+    expect(roleAt(recipe, book, 4, 3, 1)).toBe('empty');
+    expect(roleAt(recipe, book, 6, 3, 1)).toBe('wear');
+    expect(roleAt(recipe, book, 4, 5, 1)).toBe('wear');
+    expect(roleAt(recipe, book, 4, 0, 12)).toBe('empty');
+    expect(roleAt(recipe, book, 4, 0, 23)).toBe('wear');
+    expect(roleAt(recipe, book, 4, 3, 23)).toBe('empty');
+    expect(roleAt(recipe, book, 4, 2, 24)).toBe('safety');
+    expect(roleAt(recipe, book, 4, 0, 25)).toBe('structure');
+    expect(roleAt(recipe, book, 4, 3, 26)).toBe('structure');
+    expect(roleAt(recipe, book, 4, 3, 27)).toBe('safety');
+    expect(roleAt(recipe, book, 0, 2, 25)).toBe('detail');
   });
 
   it('gives the carrier a raised deck, broad belt runners, and a chassis-backed trunnion axle', () => {
@@ -329,11 +335,11 @@ describe('machine works recipes', () => {
     expect(roleAt(recipe, book, 11, 0, 14)).toBe('wear');
     expect(roleAt(recipe, book, 7, 0, 11)).toBe('empty');
     expect(roleAt(recipe, book, 7, 4, 11)).toBe('wear');
-    expect(roleAt(recipe, book, 3, 5, 8)).toBe('empty');
+    expect(roleAt(recipe, book, 11, 4, 2)).toBe('empty');
     expect(roleAt(recipe, book, 13, 2, 11)).toBe('structure');
     expect(roleAt(recipe, book, 14, 2, 0)).toBe('safety');
     expect(roleAt(recipe, book, 14, 2, 22)).toBe('safety');
-    expect(roleAt(recipe, book, 11, 5, 14)).toBe('empty');
+    expect(roleAt(recipe, book, 3, 4, 16)).toBe('empty');
     expect(recipe.steps).toHaveLength(7);
   });
 
@@ -341,20 +347,20 @@ describe('machine works recipes', () => {
     const recipe = createMachineWorksInsertionHeadRecipe();
     const book = createMachineWorksRecipeBook();
 
-    expect(recipe.size).toEqual([13, 18, 21]);
-    expect(roleAt(recipe, book, 6, 0, 10)).toBe('detail');
-    expect(roleAt(recipe, book, 6, 2, 10)).toBe('structure');
-    expect(roleAt(recipe, book, 6, 5, 8)).toBe('detail');
-    expect(roleAt(recipe, book, 5, 8, 10)).toBe('wear');
-    expect(roleAt(recipe, book, 6, 8, 9)).toBe('detail');
-    expect(roleAt(recipe, book, 1, 9, 15)).toBe('wear');
-    expect(roleAt(recipe, book, 11, 9, 15)).toBe('wear');
-    expect(roleAt(recipe, book, 6, 9, 17)).toBe('empty');
-    expect(roleAt(recipe, book, 2, 9, 17)).toBe('safety');
-    expect(roleAt(recipe, book, 10, 9, 17)).toBe('safety');
-    expect(roleAt(recipe, book, 6, 9, 20)).toBe('safety');
-    expect(roleAt(recipe, book, 5, 16, 10)).toBe('wear');
-    expect(roleAt(recipe, book, 0, 4, 10)).toBe('empty');
+    expect(recipe.size).toEqual([11, 18, 18]);
+    expect(roleAt(recipe, book, 5, 0, 3)).toBe('detail');
+    expect(roleAt(recipe, book, 5, 2, 3)).toBe('structure');
+    expect(roleAt(recipe, book, 5, 5, 1)).toBe('detail');
+    expect(roleAt(recipe, book, 4, 8, 3)).toBe('wear');
+    expect(roleAt(recipe, book, 5, 8, 2)).toBe('detail');
+    expect(roleAt(recipe, book, 0, 9, 16)).toBe('wear');
+    expect(roleAt(recipe, book, 10, 9, 17)).toBe('wear');
+    expect(roleAt(recipe, book, 5, 9, 13)).toBe('empty');
+    expect(roleAt(recipe, book, 1, 9, 13)).toBe('safety');
+    expect(roleAt(recipe, book, 9, 9, 13)).toBe('safety');
+    expect(roleAt(recipe, book, 5, 9, 16)).toBe('safety');
+    expect(roleAt(recipe, book, 5, 16, 3)).toBe('wear');
+    expect(roleAt(recipe, book, 0, 4, 3)).toBe('empty');
     expect(recipe.tags).toContain('electromagnetic-pickup');
     expect(recipe.tags).not.toContain('gripper');
   });

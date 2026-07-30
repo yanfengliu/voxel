@@ -53,7 +53,10 @@ const MACHINE_WORKS_SCENE_ID = 'studio:scene:contrast-machines';
 // The committed replay is Float32-packed; one-thousandth-world-unit authored
 // coincidence can accumulate a few additional microunits after port rotation.
 export const MACHINE_WORKS_PORT_COINCIDENCE_TOLERANCE = 0.0011;
-export const MACHINE_WORKS_PICKUP_TRANSFER_TOLERANCE = 0.002;
+// The core is held its authored 0.0015-world-unit hold clearance above the
+// canonical socket pose until the weld, so the pickup faces part by that gap
+// plus joint sag and packing slack at the recorded merge instant.
+export const MACHINE_WORKS_PICKUP_TRANSFER_TOLERANCE = 0.004;
 
 export function groundOrbitCenterForSubject(
   subject: readonly [number, number, number],

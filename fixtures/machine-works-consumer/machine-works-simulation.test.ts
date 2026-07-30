@@ -31,7 +31,7 @@ import {
   machineWorksExposedCogMotionV1,
   machineWorksSlatMotionV1,
 } from '../../tools/studio/machine-works-conveyor.js';
-import { MACHINE_WORKS_PROCESS_LAYOUT_V1 } from '../../tools/studio/machine-works-layout.js';
+import { MACHINE_WORKS_SCENE_LAYOUT_V1 } from '../../tools/studio/machine-works-layout.js';
 
 function translation(
   trace: MachineWorksTraceV1,
@@ -344,8 +344,8 @@ describe('Machine Works consumer physics fixture', () => {
       throw new Error('The Machine Works trace must contain solver contact evidence.');
     }
     expect(contact.point.every(Number.isFinite)).toBe(true);
-    const bucketHalfWidth = MACHINE_WORKS_PROCESS_LAYOUT_V1.bucket.sizeVoxels[0]
-      * MACHINE_WORKS_PROCESS_LAYOUT_V1.bucket.grain / 2;
+    const bucketHalfWidth = MACHINE_WORKS_SCENE_LAYOUT_V1.bucket.sizeVoxels[0]
+      * MACHINE_WORKS_SCENE_LAYOUT_V1.bucket.grain / 2;
     expect(contact.point[0]).toBeGreaterThanOrEqual(
       MACHINE_WORKS_LAYOUT.bucketCenterX - bucketHalfWidth,
     );
@@ -353,9 +353,9 @@ describe('Machine Works consumer physics fixture', () => {
       MACHINE_WORKS_LAYOUT.bucketCenterX + bucketHalfWidth,
     );
     expect(contact.point[1]).toBeGreaterThanOrEqual(0);
-    const bucketTop = MACHINE_WORKS_PROCESS_LAYOUT_V1.bucket.at[1]
-      + MACHINE_WORKS_PROCESS_LAYOUT_V1.bucket.sizeVoxels[1]
-        * MACHINE_WORKS_PROCESS_LAYOUT_V1.bucket.grain;
+    const bucketTop = MACHINE_WORKS_SCENE_LAYOUT_V1.bucket.at[1]
+      + MACHINE_WORKS_SCENE_LAYOUT_V1.bucket.sizeVoxels[1]
+        * MACHINE_WORKS_SCENE_LAYOUT_V1.bucket.grain;
     expect(contact.point[1]).toBeLessThanOrEqual(
       bucketTop + MACHINE_WORKS_COLLECTION_RULE.containmentMargin,
     );
@@ -369,7 +369,9 @@ describe('Machine Works consumer physics fixture', () => {
     const carriage = translation(trace, MACHINE_WORKS_TICKS.released - 1, 'assembly-carriage');
     const base = translation(trace, MACHINE_WORKS_TICKS.released - 1, 'product-base');
     expect(base[0]).toBeCloseTo(carriage[0], 3);
-    expect(base[1] - carriage[1]).toBeCloseTo(1.8, 3);
+    // The base rests on the deck: deck top (center + 1.0) plus half the
+    // base height (0.6).
+    expect(base[1] - carriage[1]).toBeCloseTo(1.6, 3);
     expect(base[2]).toBeCloseTo(carriage[2], 3);
     expect(Math.abs(
       translation(trace, MACHINE_WORKS_TICKS.coreAttached, 'assembly-carriage')[0]
@@ -499,17 +501,35 @@ describe('Machine Works consumer physics fixture', () => {
           : 'belt-drive-east';
         const drumTranslation = vector(trace.translations, frame, drumId, 3);
         const cogTranslation = vector(trace.translations, frame, descriptor.id, 3);
-        expect(cogTranslation).toEqual([
-          drumTranslation[0],
-          drumTranslation[1],
-          descriptor.z,
-        ]);
-        expect(vector(trace.rotations, frame, descriptor.id, 4))
-          .toEqual(vector(trace.rotations, frame, drumId, 4));
-        expect(vector(trace.linearVelocities, frame, descriptor.id, 3))
-          .toEqual(vector(trace.linearVelocities, frame, drumId, 3));
-        expect(vector(trace.angularVelocities, frame, descriptor.id, 3))
-          .toEqual(vector(trace.angularVelocities, frame, drumId, 3));
+        const cogRotation = vector(trace.rotations, frame, descriptor.id, 4);
+        // The flag's origin is its painted middle, below the hub, so the
+        // recorded translation orbits the axle. The rigid derivation to pin
+        // is that the hub point itself never leaves the paired drum's axle.
+        const hubOffset = MACHINE_WORKS_CONVEYOR_V1.cogHubOffsetVoxels
+          * MACHINE_WORKS_CONVEYOR_V1.drumGrain;
+        const sinHalf = cogRotation[2]!;
+        const cosHalf = cogRotation[3]!;
+        const hub = [
+          cogTranslation[0]! - hubOffset * 2 * sinHalf * cosHalf,
+          cogTranslation[1]! + hubOffset * (1 - 2 * sinHalf * sinHalf),
+          cogTranslation[2]!,
+        ];
+        expect(hub[0]).toBeCloseTo(drumTranslation[0]!, 5);
+        expect(hub[1]).toBeCloseTo(drumTranslation[1]!, 5);
+        expect(hub[2]).toBeCloseTo(descriptor.z, 5);
+        expect(cogRotation).toEqual(vector(trace.rotations, frame, drumId, 4));
+        // The origin orbits, so its velocity is the drum's angular rate
+        // crossed with the origin's offset from the axle.
+        const angular = vector(trace.angularVelocities, frame, descriptor.id, 3);
+        const radial = [
+          cogTranslation[0]! - drumTranslation[0]!,
+          cogTranslation[1]! - drumTranslation[1]!,
+        ];
+        const orbital = vector(trace.linearVelocities, frame, descriptor.id, 3);
+        expect(orbital[0]).toBeCloseTo(-angular[2]! * radial[1]!, 5);
+        expect(orbital[1]).toBeCloseTo(angular[2]! * radial[0]!, 5);
+        expect(orbital[2]).toBeCloseTo(0, 5);
+        expect(angular).toEqual(vector(trace.angularVelocities, frame, drumId, 3));
       }
     }
     const description = machineWorksInputDescriptionV1();
@@ -543,7 +563,7 @@ describe('Machine Works consumer physics fixture', () => {
     expect(trace.outputDockEvidence).toMatchObject({
       tick: released,
       tipRadians: MACHINE_WORKS_LAYOUT.carriageTipRadians,
-      requiredClearance: MACHINE_WORKS_PROCESS_LAYOUT_V1.outputDock.minimumSweptClearance,
+      requiredClearance: MACHINE_WORKS_SCENE_LAYOUT_V1.outputDock.minimumSweptClearance,
       limitingFoundationCarrierSolid: 6,
       limitingFoundationSolid: 22,
       limitingBucketCarrierSolid: 3,
@@ -553,20 +573,21 @@ describe('Machine Works consumer physics fixture', () => {
       handoff[0] + MACHINE_WORKS_LAYOUT.carriageTipPivotLocalX,
       5,
     );
-    expect(trace.outputDockEvidence.pivot[1]).toBeCloseTo(handoff[1], 5);
+    // The tip-pivot-axis port sits half a voxel above the carrier center.
+    expect(trace.outputDockEvidence.pivot[1]).toBeCloseTo(handoff[1] + 0.2, 5);
     expect(trace.outputDockEvidence.sweptRadius).toBeCloseTo(Math.hypot(0.2, 0.4), 5);
     expect(trace.outputDockEvidence.minimumClearance)
       .toBeGreaterThan(trace.outputDockEvidence.requiredClearance);
     expect(trace.outputDockEvidence.minimumClearance).toBeCloseTo(
-      MACHINE_WORKS_LAYOUT.outputDockCenterX + 0.6
+      MACHINE_WORKS_LAYOUT.outputDockCenterX + 1
         - trace.outputDockEvidence.pivot[0]
         - trace.outputDockEvidence.sweptRadius,
       5,
     );
     expect(trace.outputDockEvidence.minimumFoundationClearance)
-      .toBeCloseTo(0.7517552918291432, 6);
+      .toBeCloseTo(0.7517659729814863, 6);
     expect(trace.outputDockEvidence.minimumBucketClearance)
-      .toBeCloseTo(0.5989688873291019, 6);
+      .toBeCloseTo(0.5989795684814467, 6);
     expect(Math.hypot(
       handoff[0] - beforeHandoff[0],
       handoff[1] - beforeHandoff[1],

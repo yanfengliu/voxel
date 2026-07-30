@@ -30,6 +30,7 @@ import {
 import {
   MACHINE_WORKS_CONVEYOR_DRUM_IDS,
   MACHINE_WORKS_CONVEYOR_SLAT_IDS,
+  MACHINE_WORKS_CONVEYOR_V1,
   MACHINE_WORKS_EXPOSED_COGS_V1,
   machineWorksDrumMotionV1,
   machineWorksSlatMotionV1,
@@ -135,6 +136,14 @@ const HEAD_PICKUP = scaledPhysicalPortV1(
 );
 const BASE_CENTER_Y = MACHINE_WORKS_LAYOUT.carriageCenterY
   + CARRIAGE_LOAD.position.y - BASE_MOUNT.position.y;
+/**
+ * Both heads stand at the z that puts their pickup plates over the product
+ * line at z = 0; the plate is the front of the head, so the body origin sits
+ * behind it by exactly the pickup port's local depth.
+ */
+const HEAD_STATION_Z = -HEAD_PICKUP.position.z;
+const COG_HUB_OFFSET = MACHINE_WORKS_CONVEYOR_V1.cogHubOffsetVoxels
+  * MACHINE_WORKS_CONVEYOR_V1.drumGrain;
 const CORE_LOCAL: Vector = {
   x: 0,
   y: BASE_CORE_SOCKET.position.y - CORE_BASE_KEY.position.y,
@@ -311,7 +320,8 @@ export async function simulateMachineWorksV1(): Promise<MachineWorksTraceV1> {
       world, carriage, CARRIAGE_LOAD, base, BASE_MOUNT,
     );
 
-    const coreAttachedY = BASE_CENTER_Y + CORE_LOCAL.y;
+    const coreAttachedY = BASE_CENTER_Y + CORE_LOCAL.y
+      + MACHINE_WORKS_ATTACHMENT_RULE.coreInsertionHoldClearance;
     const coreRestY = MACHINE_WORKS_LAYOUT.coreLoosePartCenterY;
     const coreHeadRestY =
       coreRestY + CORE_PICKUP.position.y - HEAD_PICKUP.position.y;
@@ -320,7 +330,7 @@ export async function simulateMachineWorksV1(): Promise<MachineWorksTraceV1> {
     const coreHeadInstance = createPhysicalAssetBodyV1(
       world,
       MACHINE_WORKS_ASSETS.head,
-      { position: { x: MACHINE_WORKS_LAYOUT.coreStationX, y: coreHeadRestY, z: 0 } },
+      { position: { x: MACHINE_WORKS_LAYOUT.coreStationX, y: coreHeadRestY, z: HEAD_STATION_Z } },
       { grain: MACHINE_WORKS_GRAINS.head },
     );
     const coreHead = coreHeadInstance.body;
@@ -344,7 +354,7 @@ export async function simulateMachineWorksV1(): Promise<MachineWorksTraceV1> {
     const capHeadInstance = createPhysicalAssetBodyV1(
       world,
       MACHINE_WORKS_ASSETS.head,
-      { position: { x: MACHINE_WORKS_LAYOUT.capStationX, y: capHeadRestY, z: 0 } },
+      { position: { x: MACHINE_WORKS_LAYOUT.capStationX, y: capHeadRestY, z: HEAD_STATION_Z } },
       { grain: MACHINE_WORKS_GRAINS.head },
     );
     const capHead = capHeadInstance.body;
@@ -427,15 +437,32 @@ export async function simulateMachineWorksV1(): Promise<MachineWorksTraceV1> {
       ];
       const slatPoses = slatInstances.map(({ body }) => rigidPose(body));
       const drumPoses = drumInstances.map(({ body }) => rigidPose(body));
-      const exposedCogPoses = MACHINE_WORKS_EXPOSED_COGS_V1.map(
-        ({ side, z }) => {
-          const drumPose = drumPoses[side === 'west' ? 0 : 1]!;
-          return {
-            ...drumPose,
-            translation: { ...drumPose.translation, z },
-          };
-        },
-      );
+      // The flag origin is its painted-content center, below the hub, so its
+      // recorded translation orbits the axle. Each track derives exactly from
+      // its paired drum's recorded pose - same quaternion, same angular rate,
+      // and a translation that keeps the drawn hub on that drum's axle.
+      const exposedCogPoses = MACHINE_WORKS_EXPOSED_COGS_V1.map(({ side, z }) => {
+        const drumPose = drumPoses[side === 'west' ? 0 : 1]!;
+        const hubOffset = COG_HUB_OFFSET;
+        const sinTheta = 2 * drumPose.rotation.z * drumPose.rotation.w;
+        const cosTheta = 1 - 2 * drumPose.rotation.z * drumPose.rotation.z;
+        const radialX = hubOffset * sinTheta;
+        const radialY = -hubOffset * cosTheta;
+        return {
+          translation: {
+            x: drumPose.translation.x + radialX,
+            y: drumPose.translation.y + radialY,
+            z,
+          },
+          rotation: { ...drumPose.rotation },
+          linearVelocity: {
+            x: -drumPose.angularVelocity.z * radialY,
+            y: drumPose.angularVelocity.z * radialX,
+            z: 0,
+          },
+          angularVelocity: { ...drumPose.angularVelocity },
+        };
+      });
       [
         ...ordinaryPoses,
         ...slatPoses,
@@ -526,7 +553,7 @@ export async function simulateMachineWorksV1(): Promise<MachineWorksTraceV1> {
           foundationGrain: MACHINE_WORKS_GRAINS.foundation,
           bucketGrain: MACHINE_WORKS_GRAINS.bucket,
           carriageCenter: [carrierPosition.x, carrierPosition.y, carrierPosition.z],
-          dockCenter: [MACHINE_WORKS_LAYOUT.outputDockCenterX, MACHINE_WORKS_LAYOUT.outputDockCenterY, 0],
+          dockCenter: [MACHINE_WORKS_LAYOUT.outputDockCenterX, MACHINE_WORKS_LAYOUT.outputDockCenterY, MACHINE_WORKS_LAYOUT.outputDockCenterZ],
           foundationCenter: [
             MACHINE_WORKS_LAYOUT.foundationCenterX,
             MACHINE_WORKS_LAYOUT.foundationCenterY,
@@ -571,7 +598,7 @@ export async function simulateMachineWorksV1(): Promise<MachineWorksTraceV1> {
           : returningHeadY(
               tick, MACHINE_WORKS_TICKS.coreAttached, coreHeadAttachedY, coreHeadRestY,
             ),
-        z: 0,
+        z: HEAD_STATION_Z,
       });
       const capPartY = descendingPartY(
         tick, MACHINE_WORKS_TICKS.capDescendStart,
@@ -584,7 +611,7 @@ export async function simulateMachineWorksV1(): Promise<MachineWorksTraceV1> {
           : returningHeadY(
               tick, MACHINE_WORKS_TICKS.assembled, capHeadAttachedY, capHeadRestY,
             ),
-        z: 0,
+        z: HEAD_STATION_Z,
       });
 
       if (tick === MACHINE_WORKS_TICKS.released) {

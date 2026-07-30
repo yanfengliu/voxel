@@ -21,7 +21,7 @@ import {
   MACHINE_WORKS_CONVEYOR_V1,
   MACHINE_WORKS_EXPOSED_COGS_V1,
 } from '../../tools/studio/machine-works-conveyor.js';
-import { MACHINE_WORKS_PROCESS_LAYOUT_V1 } from '../../tools/studio/machine-works-layout.js';
+import { MACHINE_WORKS_SCENE_LAYOUT_V1 } from '../../tools/studio/machine-works-layout.js';
 import {
   boundsHavePositiveOverlap,
   physicalAssetHasExactSolidBox,
@@ -75,15 +75,15 @@ export const MACHINE_WORKS_ASSETS = Object.freeze({
 });
 
 export const MACHINE_WORKS_GRAINS = Object.freeze({
-  foundation: MACHINE_WORKS_PROCESS_LAYOUT_V1.foundation.grain,
-  pressBridge: MACHINE_WORKS_PROCESS_LAYOUT_V1.pressBridge.grain,
-  outputDock: MACHINE_WORKS_PROCESS_LAYOUT_V1.outputDock.grain,
-  carriage: MACHINE_WORKS_PROCESS_LAYOUT_V1.carriage.grain,
-  head: MACHINE_WORKS_PROCESS_LAYOUT_V1.coreHead.grain,
-  base: MACHINE_WORKS_PROCESS_LAYOUT_V1.base.grain,
-  core: MACHINE_WORKS_PROCESS_LAYOUT_V1.core.grain,
-  cap: MACHINE_WORKS_PROCESS_LAYOUT_V1.cap.grain,
-  bucket: MACHINE_WORKS_PROCESS_LAYOUT_V1.bucket.grain,
+  foundation: MACHINE_WORKS_SCENE_LAYOUT_V1.foundation.grain,
+  pressBridge: MACHINE_WORKS_SCENE_LAYOUT_V1.pressBridge.grain,
+  outputDock: MACHINE_WORKS_SCENE_LAYOUT_V1.outputDock.grain,
+  carriage: MACHINE_WORKS_SCENE_LAYOUT_V1.carriage.grain,
+  head: MACHINE_WORKS_SCENE_LAYOUT_V1.coreHead.grain,
+  base: MACHINE_WORKS_SCENE_LAYOUT_V1.base.grain,
+  core: MACHINE_WORKS_SCENE_LAYOUT_V1.core.grain,
+  cap: MACHINE_WORKS_SCENE_LAYOUT_V1.cap.grain,
+  bucket: MACHINE_WORKS_SCENE_LAYOUT_V1.bucket.grain,
   slat: MACHINE_WORKS_CONVEYOR_V1.slatGrain,
   drum: MACHINE_WORKS_CONVEYOR_V1.drumGrain,
   exposedCog: MACHINE_WORKS_CONVEYOR_V1.drumGrain,
@@ -101,31 +101,39 @@ export const MACHINE_WORKS_TICKS = Object.freeze({
 });
 
 export const MACHINE_WORKS_LAYOUT = Object.freeze({
-  entryX: MACHINE_WORKS_PROCESS_LAYOUT_V1.carriage.at[0],
-  coreStationX: MACHINE_WORKS_PROCESS_LAYOUT_V1.coreHead.at[0],
-  capStationX: MACHINE_WORKS_PROCESS_LAYOUT_V1.capHead.at[0],
+  entryX: MACHINE_WORKS_SCENE_LAYOUT_V1.carriage.at[0],
+  coreStationX: MACHINE_WORKS_SCENE_LAYOUT_V1.coreHead.at[0],
+  capStationX: MACHINE_WORKS_SCENE_LAYOUT_V1.capHead.at[0],
   tipStationX: MACHINE_WORKS_CONVEYOR_V1.rightAxleX,
-  bucketCenterX: MACHINE_WORKS_PROCESS_LAYOUT_V1.bucket.at[0],
-  outputDockCenterX: MACHINE_WORKS_PROCESS_LAYOUT_V1.outputDock.at[0],
-  outputDockCenterY: MACHINE_WORKS_PROCESS_LAYOUT_V1.outputDock.at[1]
-    + MACHINE_WORKS_PROCESS_LAYOUT_V1.outputDock.sizeVoxels[1]
-      * MACHINE_WORKS_PROCESS_LAYOUT_V1.outputDock.grain / 2,
-  foundationCenterX: MACHINE_WORKS_PROCESS_LAYOUT_V1.foundation.at[0],
-  carriageCenterY: MACHINE_WORKS_PROCESS_LAYOUT_V1.carriage.at[1]
-    + MACHINE_WORKS_PROCESS_LAYOUT_V1.carriage.sizeVoxels[1]
-      * MACHINE_WORKS_PROCESS_LAYOUT_V1.carriage.grain / 2,
-  foundationCenterY: MACHINE_WORKS_PROCESS_LAYOUT_V1.foundation.at[1]
-    + MACHINE_WORKS_PROCESS_LAYOUT_V1.foundation.sizeVoxels[1]
-      * MACHINE_WORKS_PROCESS_LAYOUT_V1.foundation.grain / 2,
-  bucketCenterY: MACHINE_WORKS_PROCESS_LAYOUT_V1.bucket.at[1]
-    + MACHINE_WORKS_PROCESS_LAYOUT_V1.bucket.sizeVoxels[1]
-      * MACHINE_WORKS_PROCESS_LAYOUT_V1.bucket.grain / 2,
-  coreLoosePartCenterY: MACHINE_WORKS_PROCESS_LAYOUT_V1.core.at[1]
-    + MACHINE_WORKS_PROCESS_LAYOUT_V1.core.sizeVoxels[1]
-      * MACHINE_WORKS_PROCESS_LAYOUT_V1.core.grain / 2,
-  capLoosePartCenterY: MACHINE_WORKS_PROCESS_LAYOUT_V1.cap.at[1]
-    + MACHINE_WORKS_PROCESS_LAYOUT_V1.cap.sizeVoxels[1]
-      * MACHINE_WORKS_PROCESS_LAYOUT_V1.cap.grain / 2,
+  bucketCenterX: MACHINE_WORKS_SCENE_LAYOUT_V1.bucket.at[0],
+  outputDockCenterX: MACHINE_WORKS_SCENE_LAYOUT_V1.outputDock.at[0],
+  outputDockCenterZ: MACHINE_WORKS_SCENE_LAYOUT_V1.outputDock.at[2],
+  /** The bearing-bore axis: the dock's pivot-axis port, not its painted middle. */
+  outputDockPivotX: MACHINE_WORKS_SCENE_LAYOUT_V1.outputDock.at[0]
+    + scaledPortPosition(
+      MACHINE_WORKS_ASSETS.outputDock,
+      'pivot-axis',
+      MACHINE_WORKS_SCENE_LAYOUT_V1.outputDock.grain,
+    )[0],
+  outputDockCenterY: MACHINE_WORKS_SCENE_LAYOUT_V1.outputDock.at[1]
+    + MACHINE_WORKS_SCENE_LAYOUT_V1.outputDock.sizeVoxels[1]
+      * MACHINE_WORKS_SCENE_LAYOUT_V1.outputDock.grain / 2,
+  foundationCenterX: MACHINE_WORKS_SCENE_LAYOUT_V1.foundation.at[0],
+  carriageCenterY: MACHINE_WORKS_SCENE_LAYOUT_V1.carriage.at[1]
+    + MACHINE_WORKS_SCENE_LAYOUT_V1.carriage.sizeVoxels[1]
+      * MACHINE_WORKS_SCENE_LAYOUT_V1.carriage.grain / 2,
+  foundationCenterY: MACHINE_WORKS_SCENE_LAYOUT_V1.foundation.at[1]
+    + MACHINE_WORKS_SCENE_LAYOUT_V1.foundation.sizeVoxels[1]
+      * MACHINE_WORKS_SCENE_LAYOUT_V1.foundation.grain / 2,
+  bucketCenterY: MACHINE_WORKS_SCENE_LAYOUT_V1.bucket.at[1]
+    + MACHINE_WORKS_SCENE_LAYOUT_V1.bucket.sizeVoxels[1]
+      * MACHINE_WORKS_SCENE_LAYOUT_V1.bucket.grain / 2,
+  coreLoosePartCenterY: MACHINE_WORKS_SCENE_LAYOUT_V1.core.at[1]
+    + MACHINE_WORKS_SCENE_LAYOUT_V1.core.sizeVoxels[1]
+      * MACHINE_WORKS_SCENE_LAYOUT_V1.core.grain / 2,
+  capLoosePartCenterY: MACHINE_WORKS_SCENE_LAYOUT_V1.cap.at[1]
+    + MACHINE_WORKS_SCENE_LAYOUT_V1.cap.sizeVoxels[1]
+      * MACHINE_WORKS_SCENE_LAYOUT_V1.cap.grain / 2,
   carriageTipPivotLocalX: 2.8,
   carriageTipRadians: -Math.PI / 2,
 });
@@ -204,6 +212,15 @@ export const MACHINE_WORKS_ATTACHMENT_RULE = Object.freeze({
   maximumMergeAngularCorrectionRadians: 0.03,
   maximumMergePenetration: 0.001,
   minimumDwellTicks: 20,
+  /**
+   * The core is held this far above its canonical socket pose through the
+   * mating dwell, so joint compliance under gravity never presses it into
+   * the base past the merge-penetration budget; the weld's recorded position
+   * correction absorbs this authored gap together with the joint sag, inside
+   * the declared merge budgets. The cap takes no hover because its crown
+   * genuinely seats on the core top plane.
+   */
+  coreInsertionHoldClearance: 0.0015,
   mergeStrategy: 'validated-keyed-seat-to-compound-weld',
 });
 
@@ -344,12 +361,12 @@ export function machineWorksSupportAlignmentIssuesV1(): readonly string[] {
   const foundationCenter: SupportPointV1 = [
     MACHINE_WORKS_LAYOUT.foundationCenterX,
     MACHINE_WORKS_LAYOUT.foundationCenterY,
-    MACHINE_WORKS_PROCESS_LAYOUT_V1.foundation.at[2],
+    MACHINE_WORKS_SCENE_LAYOUT_V1.foundation.at[2],
   ];
   const carriageCenter: SupportPointV1 = [
     MACHINE_WORKS_LAYOUT.entryX,
     MACHINE_WORKS_LAYOUT.carriageCenterY,
-    MACHINE_WORKS_PROCESS_LAYOUT_V1.carriage.at[2],
+    MACHINE_WORKS_SCENE_LAYOUT_V1.carriage.at[2],
   ];
   const slatTop = translated(
     scaledPortPosition(
@@ -430,9 +447,9 @@ export function machineWorksSupportAlignmentIssuesV1(): readonly string[] {
     ),
     foundationCenter,
   );
-  const bucketLeft = MACHINE_WORKS_PROCESS_LAYOUT_V1.bucket.at[0]
-    - MACHINE_WORKS_PROCESS_LAYOUT_V1.bucket.sizeVoxels[0]
-      * MACHINE_WORKS_PROCESS_LAYOUT_V1.bucket.grain / 2;
+  const bucketLeft = MACHINE_WORKS_SCENE_LAYOUT_V1.bucket.at[0]
+    - MACHINE_WORKS_SCENE_LAYOUT_V1.bucket.sizeVoxels[0]
+      * MACHINE_WORKS_SCENE_LAYOUT_V1.bucket.grain / 2;
   const beltTurnMinimumX =
     MACHINE_WORKS_CONVEYOR_V1.leftAxleX - MACHINE_WORKS_CONVEYOR_V1.pitchRadius;
   const beltTurnMaximumX =
@@ -462,19 +479,23 @@ export function machineWorksSupportAlignmentIssuesV1(): readonly string[] {
   }
   const pivotX = MACHINE_WORKS_LAYOUT.tipStationX
     + MACHINE_WORKS_LAYOUT.carriageTipPivotLocalX;
-  if (Math.abs(pivotX - MACHINE_WORKS_LAYOUT.outputDockCenterX) > maximum) {
+  if (Math.abs(pivotX - MACHINE_WORKS_LAYOUT.outputDockPivotX) > maximum) {
     issues.push(
       `authored carrier tip pivot x=${pivotX.toFixed(3)} does not meet `
-      + `output dock axis x=${MACHINE_WORKS_LAYOUT.outputDockCenterX.toFixed(3)}`,
+      + `output dock bearing axis x=${MACHINE_WORKS_LAYOUT.outputDockPivotX.toFixed(3)}`,
     );
   }
   const carrierEast = MACHINE_WORKS_LAYOUT.tipStationX
-    + MACHINE_WORKS_PROCESS_LAYOUT_V1.carriage.sizeVoxels[0]
-      * MACHINE_WORKS_PROCESS_LAYOUT_V1.carriage.grain / 2;
-  if (Math.abs(carrierEast - bucketLeft) > maximum) {
+    + MACHINE_WORKS_SCENE_LAYOUT_V1.carriage.sizeVoxels[0]
+      * MACHINE_WORKS_SCENE_LAYOUT_V1.carriage.grain / 2;
+  const approachGap = bucketLeft - carrierEast;
+  if (Math.abs(approachGap - MACHINE_WORKS_SCENE_LAYOUT_V1.bucket.carrierApproachGap)
+    > maximum) {
     issues.push(
-      `docked carrier edge x=${carrierEast.toFixed(3)} does not meet `
-      + `bucket boundary x=${bucketLeft.toFixed(3)} without a gap or overlap`,
+      `docked carrier east face x=${carrierEast.toFixed(3)} leaves `
+      + `${approachGap.toFixed(3)} world units to the bucket's painted west face `
+      + `x=${bucketLeft.toFixed(3)}, but the authored pour approach gap is `
+      + `${String(MACHINE_WORKS_SCENE_LAYOUT_V1.bucket.carrierApproachGap)}`,
     );
   }
   const slatWorldLength =
@@ -500,9 +521,9 @@ export function machineWorksSupportAlignmentIssuesV1(): readonly string[] {
   }
 
   const foundationTop = MACHINE_WORKS_LAYOUT.foundationCenterY
-    + MACHINE_WORKS_PROCESS_LAYOUT_V1.foundation.sizeVoxels[1]
+    + MACHINE_WORKS_SCENE_LAYOUT_V1.foundation.sizeVoxels[1]
       * MACHINE_WORKS_GRAINS.foundation / 2;
-  const bridgeBase = MACHINE_WORKS_PROCESS_LAYOUT_V1.pressBridge.at[1];
+  const bridgeBase = MACHINE_WORKS_SCENE_LAYOUT_V1.pressBridge.at[1];
   if (Math.abs(foundationTop - bridgeBase) > maximum) {
     issues.push(
       `static press-bridge base y=${String(bridgeBase)} does not meet foundation top `
@@ -510,7 +531,7 @@ export function machineWorksSupportAlignmentIssuesV1(): readonly string[] {
     );
   }
 
-  const pressBridge = MACHINE_WORKS_PROCESS_LAYOUT_V1.pressBridge;
+  const pressBridge = MACHINE_WORKS_SCENE_LAYOUT_V1.pressBridge;
   const pressBridgeCenter: SupportPointV1 = [
     pressBridge.at[0],
     pressBridge.at[1] + pressBridge.sizeVoxels[1] * pressBridge.grain / 2,
@@ -582,14 +603,14 @@ export function machineWorksSupportAlignmentIssuesV1(): readonly string[] {
     const rail = pressBridge.guideRails[railKey];
     if (rail.atVoxels[0] !== expectedRailX[railKey]
       || rail.atVoxels[1] !== 0
-      || rail.atVoxels[2] !== 0
+      || rail.atVoxels[2] !== 2
       || rail.sizeVoxels[0] !== 1
       || rail.sizeVoxels[1] !== 15
       || rail.sizeVoxels[2] !== 1) {
       issues.push(
         `press-bridge ${railKey} guide rail [${rail.atVoxels.join(', ')}] size `
-        + `[${rail.sizeVoxels.join(', ')}] does not occupy the required straight front rail `
-        + `at x=${String(expectedRailX[railKey])} through the full 15-voxel stroke`,
+        + `[${rail.sizeVoxels.join(', ')}] does not occupy the required straight rail on the `
+        + `tower front face at x=${String(expectedRailX[railKey])} through the full 15-voxel stroke`,
       );
     }
   }
@@ -602,7 +623,7 @@ export function machineWorksSupportAlignmentIssuesV1(): readonly string[] {
       ? {
           rule,
           stationX: MACHINE_WORKS_LAYOUT.coreStationX,
-          scene: MACHINE_WORKS_PROCESS_LAYOUT_V1.coreHead,
+          scene: MACHINE_WORKS_SCENE_LAYOUT_V1.coreHead,
           restCenterY: MACHINE_WORKS_LAYOUT.coreLoosePartCenterY
             + corePickup[1] - headPickup[1],
           attachedCenterY: coreAttachedCenterY + corePickup[1] - headPickup[1],
@@ -610,14 +631,14 @@ export function machineWorksSupportAlignmentIssuesV1(): readonly string[] {
       : {
           rule,
           stationX: MACHINE_WORKS_LAYOUT.capStationX,
-          scene: MACHINE_WORKS_PROCESS_LAYOUT_V1.capHead,
+          scene: MACHINE_WORKS_SCENE_LAYOUT_V1.capHead,
           restCenterY: MACHINE_WORKS_LAYOUT.capLoosePartCenterY
             + capPickup[1] - headPickup[1],
           attachedCenterY: capAttachedCenterY + capPickup[1] - headPickup[1],
         });
   for (const aligned of alignedHeads) {
     const rail = pressBridge.guideRails[aligned.rule.rail];
-    const pad = MACHINE_WORKS_PROCESS_LAYOUT_V1.headAlignmentPads[aligned.rule.pad];
+    const pad = MACHINE_WORKS_SCENE_LAYOUT_V1.headAlignmentPads[aligned.rule.pad];
     const railMinX = pressBridge.at[0]
       + (rail.atVoxels[0] - pressBridge.sizeVoxels[0] / 2) * pressBridge.grain;
     const railMaxX = railMinX + rail.sizeVoxels[0] * pressBridge.grain;
@@ -690,8 +711,8 @@ export function machineWorksSupportAlignmentIssuesV1(): readonly string[] {
   }
   for (const actuator of MACHINE_WORKS_SUPPORT_ALIGNMENT_RULE.actuatorPairs) {
     const scene = actuator.station === 'core'
-      ? MACHINE_WORKS_PROCESS_LAYOUT_V1.coreHead
-      : MACHINE_WORKS_PROCESS_LAYOUT_V1.capHead;
+      ? MACHINE_WORKS_SCENE_LAYOUT_V1.coreHead
+      : MACHINE_WORKS_SCENE_LAYOUT_V1.capHead;
     const stationX = actuator.station === 'core'
       ? MACHINE_WORKS_LAYOUT.coreStationX
       : MACHINE_WORKS_LAYOUT.capStationX;
@@ -714,7 +735,7 @@ export function machineWorksSupportAlignmentIssuesV1(): readonly string[] {
       spineMin[1] + spine.sizeVoxels[1] * pressBridge.grain,
       spineMin[2] + spine.sizeVoxels[2] * pressBridge.grain,
     ];
-    const yoke = MACHINE_WORKS_PROCESS_LAYOUT_V1.headActuatorYoke;
+    const yoke = MACHINE_WORKS_SCENE_LAYOUT_V1.headActuatorYoke;
     const headBody = MACHINE_WORKS_ASSETS.head.bodies[0]!;
     const headOrigin = headBody.pose.position;
     const restCenter: SupportPointV1 = [stationX, restCenterY, scene.at[2]];
@@ -912,7 +933,7 @@ export function machineWorksInputDescriptionV1(): Readonly<Record<string, unknow
     grains: MACHINE_WORKS_GRAINS,
     layout: MACHINE_WORKS_LAYOUT,
     presentationSupports: {
-      sceneLayout: MACHINE_WORKS_PROCESS_LAYOUT_V1,
+      sceneLayout: MACHINE_WORKS_SCENE_LAYOUT_V1,
       alignmentRule: MACHINE_WORKS_SUPPORT_ALIGNMENT_RULE,
       pressBridge: {
         placementId: MACHINE_WORKS_HEAD_ACTUATION_RULE.supportPlacementId,
@@ -937,8 +958,8 @@ export function machineWorksInputDescriptionV1(): Readonly<Record<string, unknow
         carrierCenterX: MACHINE_WORKS_LAYOUT.tipStationX,
         localX: MACHINE_WORKS_LAYOUT.carriageTipPivotLocalX,
         bucketBoundaryX: MACHINE_WORKS_LAYOUT.bucketCenterX
-          - MACHINE_WORKS_PROCESS_LAYOUT_V1.bucket.sizeVoxels[0]
-            * MACHINE_WORKS_PROCESS_LAYOUT_V1.bucket.grain / 2,
+          - MACHINE_WORKS_SCENE_LAYOUT_V1.bucket.sizeVoxels[0]
+            * MACHINE_WORKS_SCENE_LAYOUT_V1.bucket.grain / 2,
         actuation: 'prescribed-position-servo-aligned-to-visible-trunnion-dock-with-no-revolute-constraint-or-torque-model',
       },
     },
