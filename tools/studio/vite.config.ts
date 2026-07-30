@@ -48,22 +48,35 @@ export type StudioRequestsHandler = (
  * its cross-site writes refused. A request carrying neither is a non-browser
  * caller (curl, a test, a script the owner ran), which is allowed.
  */
+function isLoopbackHost(host: string): boolean {
+  const name = host.replace(/:\d+$/, '').replace(/^\[|\]$/g, '').toLowerCase();
+  return name === 'localhost' || name === '127.0.0.1' || name === '::1';
+}
+
 function foreignRequestReason(request: IncomingMessage): string | null {
   const site = request.headers['sec-fetch-site'];
   if (typeof site === 'string' && site !== 'same-origin' && site !== 'none') {
     return `This request came from another site (sec-fetch-site: ${site}).`;
   }
+  const host = request.headers.host;
+  // An origin check alone cannot see DNS rebinding: a page on a name that now
+  // resolves to loopback is same-origin with itself, so its Origin matches the
+  // Host it sent. Requiring the studio's own loopback name closes that, and
+  // costs nothing — this server is only ever reached at localhost.
+  if (typeof host !== 'string' || !isLoopbackHost(host)) {
+    return `This request was addressed to '${String(host)}' rather than the studio's own `
+      + 'loopback address.';
+  }
   const origin = request.headers.origin;
   if (typeof origin === 'string' && origin.length > 0) {
-    const host = request.headers.host;
     let originHost: string;
     try {
       originHost = new URL(origin).host;
     } catch {
       return `This request carries an unreadable origin ('${origin}').`;
     }
-    if (typeof host !== 'string' || originHost !== host) {
-      return `This request came from origin '${origin}', not this studio ('${String(host)}').`;
+    if (originHost !== host) {
+      return `This request came from origin '${origin}', not this studio ('${host}').`;
     }
   }
   return null;

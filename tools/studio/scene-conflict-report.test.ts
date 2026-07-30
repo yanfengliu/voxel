@@ -58,10 +58,15 @@ describe('the scene surface-conflict report', () => {
       : null;
     expect(replay).toBeDefined();
     const lines = sceneSurfaceConflictsV1(machine!, replay, recipes, parts);
-    expect(lines, lines.join('\n')).toHaveLength(1);
-    const [dent] = lines;
-    expect(dent).toMatch(
+    expect(lines, lines.join('\n')).toHaveLength(2);
+    expect(lines[0]).toMatch(
       /^collection-bucket \(moving\) and product-core \(moving\) co-exist in the same space \(at least 0\.023 world units deep\)$/,
+    );
+    // The belt slats tilt as they wrap the drums, and two tilted recorded
+    // poses have no pairwise space test yet. The announcer says so rather
+    // than implying those pairs were judged and found clean.
+    expect(lines[1]).toMatch(
+      /^\d+ moving pairs could not be judged for shared space while both poses are tilted: belt-slat-\d+ & belt-slat-\d+/,
     );
   });
 });

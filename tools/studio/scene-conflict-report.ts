@@ -69,6 +69,21 @@ export function sceneSurfaceConflictsV1(
         + `${fight.axis} = ${String(Number(fight.plane.toFixed(3)))} plane and fight for visibility`,
       );
     }
+    // What the check could not judge is part of the answer. A pair of recorded
+    // bodies both tilted off the world axes at one sampled instant has no
+    // pairwise space test yet, and a clean-looking line for it would claim a
+    // verdict nobody reached — the same silence this report exists to end.
+    const uncheckedPairs = report.unchecked.filter((entry) => entry.placementId.includes(' & '));
+    if (uncheckedPairs.length > 0) {
+      const shown = uncheckedPairs.slice(0, 3).map((entry) => entry.placementId);
+      const more = uncheckedPairs.length - shown.length;
+      lines.push(
+        `${String(uncheckedPairs.length)} moving pair`
+        + `${uncheckedPairs.length === 1 ? '' : 's'} could not be judged for shared space `
+        + `while both poses are tilted: ${shown.join('; ')}`
+        + (more > 0 ? `; and ${String(more)} more` : ''),
+      );
+    }
   }
   return lines;
 }

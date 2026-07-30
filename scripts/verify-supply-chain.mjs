@@ -1,7 +1,7 @@
 import { spawn } from 'node:child_process';
 import assert from 'node:assert/strict';
 import { readdir, readFile, stat } from 'node:fs/promises';
-import { delimiter, dirname, join, resolve as resolvePath } from 'node:path';
+import { delimiter, dirname, join, relative, resolve as resolvePath } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const LOG_PREFIX = '[supply-chain]';
@@ -39,20 +39,30 @@ const ALLOWED_LICENSES = new Set([
  * package's exact declared license, so a version that relicenses fails the
  * gate instead of inheriting an old exception.
  */
-const DEV_ONLY_LICENSE_EXCEPTIONS = new Map([
-  ['lightningcss', {
+const DEV_ONLY_LICENSE_EXCEPTIONS = [
+  {
+    label: 'lightningcss and its per-platform binaries',
+    matches: (name) => name === 'lightningcss' || name.startsWith('lightningcss-'),
     license: 'MPL-2.0',
     reason: 'Vite CSS transform, build-time only; MPL obligations attach to its own sources.',
-  }],
-  ['lightningcss-win32-x64-msvc', {
-    license: 'MPL-2.0',
-    reason: 'Platform binary for lightningcss, installed only on Windows build machines.',
-  }],
-  ['minimatch', {
+    // npm installs exactly one of eleven platform binaries, chosen by the
+    // machine, so naming a single one would clear Windows and fail Linux --
+    // both of which this repository's CI runs.
+    everyMachineInstallsIt: false,
+  },
+  {
+    label: 'minimatch',
+    matches: (name) => name === 'minimatch',
     license: 'BlueOak-1.0.0',
     reason: 'Glob matching inside dev tooling; BlueOak is permissive but not on the list above.',
-  }],
-]);
+    everyMachineInstallsIt: true,
+  },
+];
+
+/** The recorded exception covering this package, or undefined. */
+function licenseExceptionFor(name) {
+  return DEV_ONLY_LICENSE_EXCEPTIONS.find((exception) => exception.matches(name));
+}
 
 /**
  * The package ships no runtime dependencies at all: `three` is an optional
@@ -204,6 +214,39 @@ function selfTest() {
     /broken audit produced no parseable report.*connection refused/s,
   );
   console.log(`${LOG_PREFIX} audit-report parser self-test passed`);
+
+  // Plain allowlist hits, and expressions on both sides of each operator.
+  assert.equal(licenseAllowed('MIT'), true);
+  assert.equal(licenseAllowed('GPL-3.0'), false);
+  assert.equal(licenseAllowed(null), false);
+  assert.equal(licenseAllowed('(MIT OR GPL-3.0)'), true);
+  assert.equal(licenseAllowed('GPL-3.0 OR LGPL-3.0'), false);
+  assert.equal(licenseAllowed('MIT AND ISC'), true);
+  assert.equal(licenseAllowed('MIT AND GPL-3.0'), false);
+  // Operator words with nothing to split: these once recursed until the stack
+  // gave out, which failed closed but said nothing about which package.
+  for (const malformed of ['MIT OR', 'OR MIT', 'MIT AND', 'AND', 'OR']) {
+    assert.equal(licenseAllowed(malformed), false, `${malformed} must be refused, not thrown`);
+  }
+
+  // A per-platform binary family: npm installs exactly one of these, so the
+  // gate must clear whichever the machine has. Naming a single platform
+  // cleared Windows and would have failed this repository's Linux CI leg.
+  for (const platformBinary of [
+    'lightningcss-win32-x64-msvc',
+    'lightningcss-linux-x64-gnu',
+    'lightningcss-darwin-arm64',
+  ]) {
+    const exception = licenseExceptionFor(platformBinary);
+    assert.ok(exception, `${platformBinary} must be covered by a recorded exception`);
+    assert.equal(exception.license, 'MPL-2.0');
+    assert.equal(exception.everyMachineInstallsIt, false);
+  }
+  assert.equal(licenseExceptionFor('some-other-package'), undefined);
+  // The exception clears a family by name, but never a license it did not
+  // record: a relicensed lightningcss still fails.
+  assert.equal(licenseExceptionFor('lightningcss').license === 'GPL-3.0', false);
+  console.log(`${LOG_PREFIX} license-expression and exception self-test passed`);
 }
 
 async function readLicense(name) {
@@ -224,32 +267,50 @@ async function readLicense(name) {
  * arrives as somebody else's transitive dependency is exactly the case a
  * direct-only sweep cannot see.
  */
-async function installedPackageNames(directory, found = new Map()) {
+async function installedPackageNames(directory, found = new Map(), unreadable = []) {
   let entries;
   try {
     entries = await readdir(directory, { withFileTypes: true });
   } catch {
-    return found;
+    return { found, unreadable };
   }
   for (const entry of entries) {
     if (!entry.isDirectory() || entry.name === '.bin') continue;
     const path = join(directory, entry.name);
     if (entry.name.startsWith('@')) {
-      await installedPackageNames(path, found);
+      await installedPackageNames(path, found, unreadable);
       continue;
     }
+    const manifestPath = join(path, 'package.json');
+    let manifest;
     try {
-      const manifest = JSON.parse(await readFile(join(path, 'package.json'), 'utf8'));
-      const name = typeof manifest.name === 'string' ? manifest.name : entry.name;
-      if (!found.has(name)) {
-        found.set(name, typeof manifest.license === 'string' ? manifest.license : null);
+      manifest = JSON.parse(await readFile(manifestPath, 'utf8'));
+    } catch (error) {
+      // A directory with no manifest at all is not a package; one whose
+      // manifest exists but will not parse is a package this sweep cannot
+      // vouch for, and silently skipping it is how a gate clears what it
+      // never read.
+      if (!(error && typeof error === 'object' && error.code === 'ENOENT')) {
+        unreadable.push(relative(PROJECT_ROOT, manifestPath));
       }
-    } catch {
       continue;
     }
-    await installedPackageNames(join(path, 'node_modules'), found);
+    const name = typeof manifest.name === 'string' ? manifest.name : entry.name;
+    const version = typeof manifest.version === 'string' ? manifest.version : 'unknown';
+    // Keyed by name and version, because npm installs two versions of one name
+    // in different places and they may not share a license. Keying by name
+    // alone let whichever copy the walk reached first speak for both.
+    const key = `${name}@${version}`;
+    if (!found.has(key)) {
+      found.set(key, {
+        name,
+        version,
+        license: typeof manifest.license === 'string' ? manifest.license : null,
+      });
+    }
+    await installedPackageNames(join(path, 'node_modules'), found, unreadable);
   }
-  return found;
+  return { found, unreadable };
 }
 
 /**
@@ -260,11 +321,18 @@ function licenseAllowed(declared) {
   if (declared === null) return false;
   const expression = declared.replace(/[()]/g, '').trim();
   if (ALLOWED_LICENSES.has(expression)) return true;
-  if (/\bAND\b/i.test(expression)) {
-    return expression.split(/\s+AND\s+/i).every((term) => licenseAllowed(term.trim()));
+  // Split first and only recurse when the split actually cut the string.
+  // Testing for the operator before splitting recursed forever on strings
+  // where the word appears but the separator does not -- "MIT OR", "OR MIT",
+  // "MIT AND" -- which failed closed only by exhausting the stack, naming
+  // neither the package nor the license.
+  const conjuncts = expression.split(/\s+AND\s+/i);
+  if (conjuncts.length > 1) {
+    return conjuncts.every((term) => licenseAllowed(term.trim()));
   }
-  if (/\bOR\b/i.test(expression)) {
-    return expression.split(/\s+OR\s+/i).some((term) => licenseAllowed(term.trim()));
+  const disjuncts = expression.split(/\s+OR\s+/i);
+  if (disjuncts.length > 1) {
+    return disjuncts.some((term) => licenseAllowed(term.trim()));
   }
   return false;
 }
@@ -312,29 +380,39 @@ async function main() {
     }
   }
 
-  const installed = await installedPackageNames(join(PROJECT_ROOT, 'node_modules'));
-  const unexpectedDevOnly = [...DEV_ONLY_LICENSE_EXCEPTIONS.keys()]
-    .filter((name) => !installed.has(name));
-  for (const name of unexpectedDevOnly) {
+  const { found: installed, unreadable } = await installedPackageNames(
+    join(PROJECT_ROOT, 'node_modules'),
+  );
+  for (const path of unreadable) {
     failures.push(
-      `${name} carries a recorded dev-only license exception but is not installed; remove the `
-      + 'exception rather than leaving a rule for a package that is gone.',
+      `${path} could not be parsed, so that package's license was never read. A sweep that `
+      + 'skips what it cannot read reports a clean tree it did not inspect.',
     );
   }
-  for (const [name, license] of installed) {
+  const installedNames = [...installed.values()].map((entry) => entry.name);
+  for (const exception of DEV_ONLY_LICENSE_EXCEPTIONS) {
+    if (!exception.everyMachineInstallsIt) continue;
+    if (installedNames.some((name) => exception.matches(name))) continue;
+    failures.push(
+      `${exception.label} carries a recorded dev-only license exception but is not installed; `
+      + 'remove the exception rather than leaving a rule for a package that is gone.',
+    );
+  }
+  for (const { name, version, license } of installed.values()) {
     if (licenseAllowed(license)) continue;
-    const exception = DEV_ONLY_LICENSE_EXCEPTIONS.get(name);
+    const exception = licenseExceptionFor(name);
     if (exception !== undefined && exception.license === license) continue;
+    const installedAs = `${name}@${version}`;
     if (license === null) {
       failures.push(
-        `${name} is installed in the dependency tree but declares no license, so its `
+        `${installedAs} is installed in the dependency tree but declares no license, so its `
         + 'redistribution terms are unknown.',
       );
     } else {
       failures.push(
-        `${name} is installed in the dependency tree under ${license}, which is not on the `
-        + `allowed list (${[...ALLOWED_LICENSES].join(', ')}). A copyleft or source-available `
-        + 'license entering the tree is a decision: record it in '
+        `${installedAs} is installed in the dependency tree under ${license}, which is not on `
+        + `the allowed list (${[...ALLOWED_LICENSES].join(', ')}). A copyleft or `
+        + 'source-available license entering the tree is a decision: record it in '
         + 'DEV_ONLY_LICENSE_EXCEPTIONS with its reason, or remove the dependency.',
       );
     }
@@ -355,8 +433,8 @@ async function main() {
     return;
   }
 
-  const exceptionCount = [...installed].filter(([name, license]) =>
-    DEV_ONLY_LICENSE_EXCEPTIONS.get(name)?.license === license).length;
+  const exceptionCount = [...installed.values()].filter(({ name, license }) =>
+    licenseExceptionFor(name)?.license === license).length;
   console.log(
     `${LOG_PREFIX} ${String(runtimeDependencies.length)} runtime dependencies; `
     + `${EXPECTED_OPTIONAL_PEERS.join(' and ')} optional peers; `

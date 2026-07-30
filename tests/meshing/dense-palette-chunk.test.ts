@@ -55,6 +55,26 @@ describe('DensePaletteChunk', () => {
     expect(Object.getPrototypeOf(chunk.copyVoxels())).toBe(Uint16Array.prototype);
   });
 
+  /**
+   * `length` on a typed-array instance is a prototype getter, so an own
+   * property shadows it. A subclass reporting the expected volume over a
+   * shorter buffer once passed the volume check and left the tail cells
+   * reading undefined for the life of the chunk — the copy measured the real
+   * length while the check measured the claimed one.
+   */
+  it('rejects a voxel array whose reported length hides a shorter buffer', () => {
+    const volume = 27;
+    const short = new Uint16Array(volume - 5);
+    Object.defineProperty(short, 'length', { value: volume, configurable: true });
+    expect(short.length).toBe(volume);
+
+    expect(() => new DensePaletteChunk({
+      origin: { x: 0, y: 0, z: 0 },
+      size: { x: 3, y: 3, z: 3 },
+      voxels: short,
+    })).toThrow(/does not match chunk volume/);
+  });
+
   it('supports bounded mutation without exposing its owned storage', () => {
     const chunk = new DensePaletteChunk({
       origin: { x: 0, y: 0, z: 0 },

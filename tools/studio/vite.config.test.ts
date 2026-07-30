@@ -1,4 +1,9 @@
-import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
+import {
+  createServer,
+  request as httpRequest,
+  type IncomingMessage,
+  type ServerResponse,
+} from 'node:http';
 import { mkdtemp, readFile, readdir, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -12,6 +17,31 @@ type Middleware = (
   response: ServerResponse,
   next: () => void,
 ) => void;
+
+/** A POST that can set headers `fetch` reserves, notably Host. */
+async function rawPost(
+  url: string,
+  headers: Record<string, string>,
+  body: string,
+): Promise<{ readonly status: number; readonly body: string }> {
+  const target = new URL(url);
+  return new Promise((resolve, reject) => {
+    const request = httpRequest({
+      hostname: target.hostname,
+      port: target.port,
+      path: target.pathname,
+      method: 'POST',
+      headers: { ...headers, 'content-length': String(Buffer.byteLength(body)) },
+    }, (response) => {
+      let text = '';
+      response.setEncoding('utf8');
+      response.on('data', (chunk: string) => { text += chunk; });
+      response.on('end', () => { resolve({ status: response.statusCode ?? 0, body: text }); });
+    });
+    request.on('error', reject);
+    request.end(body);
+  });
+}
 
 const INPUT_HASH = `sha256:${'a'.repeat(64)}`;
 const FINAL_HASH = `sha256:${'b'.repeat(64)}`;
@@ -238,6 +268,18 @@ describe('Studio request-saving middleware', () => {
         body: JSON.stringify(legacy),
       });
       expect(byOrigin.status).toBe(403);
+
+      // A rebound name is same-origin with itself, so its Origin matches the
+      // Host it sent and an origin check alone waves it through. The write
+      // path is loopback-only for exactly that reason. `fetch` will not let a
+      // caller set Host, so this one goes out as a raw request.
+      const rebound = await rawPost(url, {
+        'sec-fetch-site': 'same-origin',
+        host: 'studio.attacker.example',
+        origin: 'http://studio.attacker.example',
+      }, JSON.stringify(legacy));
+      expect(rebound.status).toBe(403);
+      expect(rebound.body).toContain('loopback');
 
       // The studio's own page still saves.
       const sameOrigin = await fetch(url, {

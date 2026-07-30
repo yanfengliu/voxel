@@ -3,6 +3,7 @@ import {
   MAX_EXACT_FLOAT32_VOXEL_COORDINATE_V1,
 } from '../core/contracts.js';
 import { copyTypedArrayInternal } from '../core/typed-array-copy.js';
+import { typedArrayLengthInternal } from '../core/typed-array-intrinsics.js';
 
 /** Integer vector used for voxel coordinates and chunk dimensions. */
 export interface Int3 {
@@ -96,9 +97,17 @@ export class DensePaletteChunk implements DensePaletteChunkReader {
       );
     }
     assertRenderableCoordinateRange(options.origin, options.size);
-    if (options.voxels && options.voxels.length !== volume) {
+    // Measured through the captured intrinsic, because `length` on the
+    // instance can be shadowed by an own property: a subclass reporting the
+    // expected volume over a shorter buffer would otherwise pass this check
+    // and leave the tail cells reading undefined for the rest of the chunk's
+    // life. The copy below reads that same true length, so the two agree.
+    const suppliedLength = options.voxels === undefined
+      ? volume
+      : typedArrayLengthInternal(options.voxels);
+    if (suppliedLength !== volume) {
       throw new RangeError(
-        `voxel array length ${String(options.voxels.length)} does not match chunk volume ${String(volume)}`,
+        `voxel array length ${String(suppliedLength)} does not match chunk volume ${String(volume)}`,
       );
     }
 
