@@ -1,0 +1,6 @@
+# Committed generated replay sources are byte-compared against a fresh
+# regeneration by their fixtures' tests, so checkout must hand back the exact
+# committed bytes: a core.autocrlf=true checkout that rewrites their LF line
+# endings to CRLF fails all four byte-for-byte suites on an otherwise clean
+# tree (seen on a fresh Windows worktree, 2026-07-30).
+tools/studio/generated-*.ts -text
