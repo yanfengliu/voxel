@@ -366,27 +366,44 @@ function parseInput(
       'Per-triangle material output requires at least one material entry.',
     );
   }
+  // Read every remaining caller property before the sample volume is checked
+  // again below. These were once read inside the returned literal, which put
+  // caller accessors after the length check -- and a getter there can detach
+  // the sample buffer, leaving a zero-length view inside an input this
+  // function has already called valid.
+  const dependencySignature = boundedStringMesherInternal(
+    input.dependencySignature,
+    'input.dependencySignature',
+    MAX_MESHER_DEPENDENCY_SIGNATURE_LENGTH_V1,
+  );
+  const outputBudget = parseMesherOutputBudgetV1Internal(
+    input.outputBudget,
+    'input.outputBudget',
+    descriptor.limits.output,
+    0,
+  );
+  // The last word on the sample volume, after every caller accessor has run.
+  if (sampleVolume.length !== expectedVolume) {
+    failMesherValidationInternal(
+      'mesher.value',
+      'input.sampleVolume',
+      `input.sampleVolume length must equal ${String(expectedVolume)}; it measured `
+      + `${String(sampleVolume.length)} once the rest of the input had been read, so it was `
+      + 'detached or resized during validation.',
+    );
+  }
   return Object.freeze({
     schemaVersion: MESHER_INPUT_SCHEMA_V1,
     mesherId,
     mesherVersion,
-    dependencySignature: boundedStringMesherInternal(
-      input.dependencySignature,
-      'input.dependencySignature',
-      MAX_MESHER_DEPENDENCY_SIGNATURE_LENGTH_V1,
-    ),
+    dependencySignature,
     source,
     dependencies: Object.freeze(dependencies),
     missingNeighbor: input.missingNeighbor,
     paletteEntryCount,
     materialEntryCount,
     sampleVolume,
-    outputBudget: parseMesherOutputBudgetV1Internal(
-      input.outputBudget,
-      'input.outputBudget',
-      descriptor.limits.output,
-      0,
-    ),
+    outputBudget,
   });
 }
 

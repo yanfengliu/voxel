@@ -45,6 +45,43 @@ describe('pure mesher descriptor and input validation', () => {
     expect(Object.isFrozen(input.value)).toBe(true);
   });
 
+  /**
+   * The sample volume's length is checked partway through validation, and the
+   * caller's own accessors keep running after that: a getter on a later field
+   * can transfer the sample buffer away, leaving a zero-length view inside an
+   * input the validator has already called valid. An input detached before
+   * validation was always refused; this pins the ordering case too.
+   */
+  it('refuses a sample volume detached by a later accessor during validation', () => {
+    const descriptor = validatePureMesherDescriptorV1(MESHER_CORPUS_DESCRIPTOR_V1);
+    expect(descriptor.ok).toBe(true);
+    if (!descriptor.ok) return;
+    const fixture = solidFixture();
+    const sampleVolume = fixture.input.sampleVolume.slice();
+
+    const poisoned = {
+      ...fixture.input,
+      sampleVolume,
+      get outputBudget() {
+        structuredClone(sampleVolume.buffer, { transfer: [sampleVolume.buffer] });
+        return fixture.input.outputBudget;
+      },
+    };
+    expectFailure(
+      validatePureMesherInputV1(poisoned, descriptor.value),
+      'mesher.value',
+      'input.sampleVolume',
+    );
+    expect(sampleVolume.length).toBe(0);
+
+    // The same input without the poisoning getter still validates.
+    const clean = validatePureMesherInputV1(
+      { ...fixture.input, sampleVolume: fixture.input.sampleVolume.slice() },
+      descriptor.value,
+    );
+    expect(clean.ok).toBe(true);
+  });
+
   it('rejects duplicate dependencies, excessive halo, and sparse dependency arrays', () => {
     const firstOffset = MESHER_CORPUS_DESCRIPTOR_V1.dependencyOffsets[0]!;
     const duplicateDescriptor = validatePureMesherDescriptorV1({
