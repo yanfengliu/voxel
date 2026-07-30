@@ -430,3 +430,64 @@ test('real keyboard shortcuts preserve editors and route page focus to the last 
   await page.keyboard.press('Control+Shift+z');
   expect(await chairX()).toBe(11);
 });
+
+test('the studio announces surface conflicts for every scene it opens or edits', async ({ page }) => {
+  await page.goto(studioOrigin, { waitUntil: 'load' });
+  await page.waitForFunction(() => typeof window.voxelStudio === 'object');
+
+  // A recorded scene with known debts announces them without being asked:
+  // the machine's recorded process still threads through its scenery, and the
+  // report must say so on screen rather than wait for the owner's eye.
+  await page.evaluate(() => { window.voxelStudio!.openScene('studio:scene:contrast-machines'); });
+  await page.waitForFunction(() =>
+    window.voxelStudio!.sceneSurfaceConflicts()?.status === 'ready');
+  const machine = await page.evaluate(() => window.voxelStudio!.sceneSurfaceConflicts());
+  expect(machine?.conflicts.length ?? 0).toBeGreaterThan(0);
+  expect(machine?.conflicts.join('\n')).toContain('co-exist in the same space');
+  await expect(page.locator('.scene-conflicts')).toBeVisible();
+  await expect(page.locator('.scene-conflicts')).toContainText('surface conflict');
+
+  // A clean editable scene stays quiet; committing a placement into another's
+  // space makes the report speak immediately, and undo silences it again.
+  const cleanSceneId = await page.evaluate(() => {
+    for (const info of window.voxelStudio!.scenes()) {
+      window.voxelStudio!.openScene(info.id);
+      const open = window.voxelStudio!.sceneState();
+      if (open !== null && !('poseReplay' in open)) return info.id;
+    }
+    throw new Error('the catalog offers no plain scene to edit');
+  });
+  expect(cleanSceneId).toBeTruthy();
+  await page.waitForFunction(() =>
+    window.voxelStudio!.sceneSurfaceConflicts()?.status === 'ready');
+  expect(await page.evaluate(() => window.voxelStudio!.sceneSurfaceConflicts()?.conflicts))
+    .toEqual([]);
+  await expect(page.locator('.scene-conflicts')).toBeHidden();
+
+  await page.evaluate(() => {
+    const scene = window.voxelStudio!.sceneState();
+    if (!scene) throw new Error('no scene is open to edit');
+    const first = scene.placements[0];
+    if (!first) throw new Error('the open scene has no placement to duplicate');
+    window.voxelStudio!.editScene({
+      ...scene,
+      placements: [...scene.placements, { ...first, id: 'conflict-probe' }],
+    });
+  });
+  await page.waitForFunction(() => {
+    const report = window.voxelStudio!.sceneSurfaceConflicts();
+    return report?.status === 'ready' && report.conflicts.length > 0;
+  });
+  const conflicts = await page.evaluate(() =>
+    window.voxelStudio!.sceneSurfaceConflicts()?.conflicts ?? []);
+  expect(conflicts.join('\n')).toContain('occupy the same space');
+  await expect(page.locator('.scene-conflicts')).toBeVisible();
+  await expect(page.locator('.scene-conflicts')).toContainText('occupy the same space');
+
+  await page.evaluate(() => { window.voxelStudio!.undoScene(); });
+  await page.waitForFunction(() => {
+    const report = window.voxelStudio!.sceneSurfaceConflicts();
+    return report?.status === 'ready' && report.conflicts.length === 0;
+  });
+  await expect(page.locator('.scene-conflicts')).toBeHidden();
+});

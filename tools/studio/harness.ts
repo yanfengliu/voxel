@@ -300,6 +300,18 @@ export interface VoxelStudioHarnessV1 {
   /** Whether a scene is on the stage rather than a single model. */
   sceneMode(): boolean;
   /**
+   * The open scene's surface-conflict report: placements occupying the same
+   * space, and recorded surfaces sharing a still surface's plane facing the
+   * same way. The studio computes it off the open/edit path, so right after a
+   * change the status reads 'checking' until the fresh report lands; the
+   * conflicts are the same plain-words lines the Examine pane shows. Null in
+   * model mode.
+   */
+  sceneSurfaceConflicts(): {
+    readonly status: 'checking' | 'ready';
+    readonly conflicts: readonly string[];
+  } | null;
+  /**
    * The stage pointer mode. 'adjust' is the editing pointer; 'interact' hands
    * the left button to the live solver on scenes that declare one. Scenes
    * without a live profile always report 'adjust'.
@@ -531,6 +543,11 @@ export interface HarnessHostV1 {
   deleteScene(id: string): SceneV1;
   /** Whether a scene is on the stage rather than a single model. */
   sceneMode(): boolean;
+  /** The open scene's surface-conflict report; null in model mode. */
+  sceneSurfaceConflicts(): {
+    readonly status: 'checking' | 'ready';
+    readonly conflicts: readonly string[];
+  } | null;
   /**
    * The stage pointer mode. 'adjust' is the editing pointer; 'interact' hands
    * the left button to the live solver on scenes that declare one. Scenes
@@ -1092,6 +1109,7 @@ export function createStudioHarness(host: HarnessHostV1): VoxelStudioHarnessV1 {
     renameScene: (id, label) => host.renameScene(id, label),
     deleteScene: (id) => host.deleteScene(id),
     sceneMode: () => host.sceneMode(),
+    sceneSurfaceConflicts: () => host.sceneSurfaceConflicts(),
     stageMode: () => host.stageMode(),
     setStageMode: (mode) => { host.setStageMode(mode); },
     livePhysics: () => host.livePhysics(),

@@ -11,17 +11,20 @@ import {
 import { validateSceneV1, type SceneV1 } from './scene.js';
 
 /**
- * Finds surfaces that would compete for visibility between a replay-driven
- * placement and the still scenery around it.
+ * Judges replay-driven placements against the still scenery around them, the
+ * lane sceneOverlapsV1 deliberately leaves alone because recorded poses come
+ * from the trace, not from `at`. Two findings come out:
  *
- * sceneOverlapsV1 keeps authored placements out of each other's space, but it
- * deliberately does not judge placements a pose replay moves — their presented
- * poses come from the recorded trace, not from `at`. That left a gap the owner
- * saw twice: when a moving piece's surface lands exactly on the same plane as
- * a still surface, facing the same way and covering the same area, the two
- * pictures flicker per pixel ("weird surfaces where different models compete
- * for visibility"). Machine Works had exactly this — the conveyor slats' top
- * faces shared the y=9 plane with the foundation's bridge-pad tops.
+ * - A volume overlap: a recorded body entering a still body's space beyond
+ *   the numerical contact slop. Real objects have volumes and two things
+ *   cannot co-exist in the same space (the owner's rule, 2026-07-30) — every
+ *   such entry is an authoring error even when nothing visibly flickers.
+ * - A surface fight: a recorded face lying on a still face's plane, facing
+ *   the same way, over the same area. This is the visible symptom — the two
+ *   pictures flicker per pixel ("weird surfaces where different models
+ *   compete for visibility"), which the owner has now hit in more than one
+ *   scene. Machine Works had exactly this: the conveyor slats' top faces
+ *   shared the y=9 plane with the foundation's bridge-pad tops.
  *
  * Only same-facing coincident surfaces fight. Two solids resting flush —
  * a foot's bottom on a pad's top — put opposite-facing faces on the shared
@@ -31,9 +34,13 @@ import { validateSceneV1, type SceneV1 } from './scene.js';
  *
  * The replay is sampled at recorded frame times: always the opening frame (the
  * pose a scene presents at rest and Interact seeds from), then evenly through
- * the recording. A sampled pose that is not an axis-aligned turn cannot hold a
- * shared plane across an area, so tilted poses are skipped and reported as
- * unchecked rather than silently passed.
+ * the recording. Every sampled pose is judged for space: an axis-aligned turn
+ * cube-against-cube, a tilted pose by the exact separating-axis test for
+ * boxes. Only the plane check skips tilted poses — a tilted face cannot hold
+ * a still face's plane across an area — and says so as unchecked. Films
+ * (surface 'top-film') are drawn skins, not solids: they claim no space on
+ * either side of the volume check, while their up-facing skin still fights
+ * like any face.
  *
  * The verdict is therefore about the sampled times, not every presented
  * instant: a fight must dwell for at least one sampling stride to be caught at
@@ -50,6 +57,15 @@ const PLANE_EPSILON = 1e-4;
 const AXIS_EPSILON = 1e-6;
 /** Sampled poses per replay, spread evenly, plus the exact final frame. */
 const SAMPLES_PER_REPLAY = 96;
+/**
+ * How deep a recorded body may dent a still surface before it counts as
+ * co-existing in its space. Recorded physics resolves resting contact
+ * numerically, so a ball sitting on a ramp sinks in by around a thousandth of
+ * a world unit; that is contact, not co-existence. Anything deeper means two
+ * volumes claim the same space, which real objects never do — the owner's
+ * rule this check enforces.
+ */
+const CONTACT_SLOP = 0.005;
 
 export interface SceneSurfaceFightV1 {
   /** The replay-driven placement whose surface lands on a still surface. */
@@ -77,8 +93,25 @@ export interface SceneSurfaceUncheckedV1 {
   readonly sampledTimes: number;
 }
 
+export interface SceneVolumeOverlapV1 {
+  /** The replay-driven placement whose body enters a still body's space. */
+  readonly moving: string;
+  /** The still placement whose space it enters. */
+  readonly still: string;
+  /** Voxel pairs sharing space beyond the contact slop, over all samples. */
+  readonly cellPairs: number;
+  /** The deepest entry seen, in world units. */
+  readonly deepest: number;
+  /** The first sampled replay time that showed the overlap. */
+  readonly firstTimeMs: number;
+  /** How many sampled times showed it. */
+  readonly sampledTimes: number;
+}
+
 export interface SceneSurfaceFightReportV1 {
   readonly fights: readonly SceneSurfaceFightV1[];
+  /** Recorded bodies co-existing with still bodies — real objects never do. */
+  readonly overlaps: readonly SceneVolumeOverlapV1[];
   readonly unchecked: readonly SceneSurfaceUncheckedV1[];
 }
 
@@ -230,6 +263,83 @@ function stillFaceIndex(
   return index;
 }
 
+interface StillVoxel {
+  readonly x: number;
+  readonly y: number;
+  readonly z: number;
+  readonly size: number;
+  readonly placementId: string;
+}
+
+interface StillVoxelIndex {
+  readonly byCell: Map<string, StillVoxel[]>;
+  readonly maxSize: number;
+}
+
+function unitCellKey(x: number, y: number, z: number): string {
+  return `${String(Math.floor(x))},${String(Math.floor(y))},${String(Math.floor(z))}`;
+}
+
+/** Every still voxel, bucketed by the unit cell of its low corner. */
+function stillVoxelIndex(
+  scene: SceneV1,
+  stillIds: ReadonlySet<string>,
+  models: Map<string, BuiltModel>,
+  recipes: RecipeBookV1,
+): StillVoxelIndex {
+  const byCell = new Map<string, StillVoxel[]>();
+  let maxSize = 0;
+  for (const placement of scene.placements) {
+    if (!stillIds.has(placement.id)) continue;
+    const built = models.get(modelKeyOf(placement, recipes));
+    if (!built) continue;
+    // A film is a drawn skin, not a solid: it claims no space on either side
+    // of the volume check, though its up-facing skin still fights like any face.
+    if (built.topFilm) continue;
+    for (const box of placementVoxelsV1(placement, built.model, built.grain)) {
+      const key = unitCellKey(box.x, box.y, box.z);
+      const entry: StillVoxel = {
+        x: box.x, y: box.y, z: box.z, size: box.size, placementId: placement.id,
+      };
+      const bucket = byCell.get(key);
+      if (bucket) bucket.push(entry);
+      else byCell.set(key, [entry]);
+      if (box.size > maxSize) maxSize = box.size;
+    }
+  }
+  return { byCell, maxSize };
+}
+
+/**
+ * Still voxels near a moving box: a still cube can only meet the span from
+ * `low` to `high` when its low corner sits between `low` minus the largest
+ * still size and `high`, so only those unit cells are probed. The span is the
+ * moving voxel itself when the pose is an exact turn, or the world box around
+ * its tilted body when it is not.
+ */
+function stillCellCandidates(
+  index: StillVoxelIndex,
+  low: readonly [number, number, number],
+  high: readonly [number, number, number],
+): StillVoxel[] {
+  const found: StillVoxel[] = [];
+  const x0 = Math.floor(low[0] - index.maxSize);
+  const y0 = Math.floor(low[1] - index.maxSize);
+  const z0 = Math.floor(low[2] - index.maxSize);
+  const x1 = Math.floor(high[0]);
+  const y1 = Math.floor(high[1]);
+  const z1 = Math.floor(high[2]);
+  for (let cx = x0; cx <= x1; cx += 1) {
+    for (let cy = y0; cy <= y1; cy += 1) {
+      for (let cz = z0; cz <= z1; cz += 1) {
+        const bucket = index.byCell.get(`${String(cx)},${String(cy)},${String(cz)}`);
+        if (bucket) found.push(...bucket);
+      }
+    }
+  }
+  return found;
+}
+
 /** A rotation column snapped to a signed axis, or null when it is tilted. */
 function snapColumn(x: number, y: number, z: number): readonly [number, number, number] | null {
   const sx = Math.abs(Math.abs(x) - 1) <= AXIS_EPSILON && Math.abs(y) <= AXIS_EPSILON && Math.abs(z) <= AXIS_EPSILON;
@@ -265,6 +375,86 @@ function rotate(
   ];
 }
 
+/** The pose's full rotation as matrix columns — the world directions of the model axes. */
+function quaternionColumns(
+  quaternion: readonly [number, number, number, number],
+): readonly (readonly [number, number, number])[] {
+  const [x, y, z, w] = quaternion;
+  return [
+    [1 - 2 * (y * y + z * z), 2 * (x * y + w * z), 2 * (x * z - w * y)],
+    [2 * (x * y - w * z), 1 - 2 * (x * x + z * z), 2 * (y * z + w * x)],
+    [2 * (x * z + w * y), 2 * (y * z - w * x), 1 - 2 * (x * x + y * y)],
+  ];
+}
+
+/** Axes with squared length under this are degenerate cross products, skipped in the box test. */
+const CROSS_AXIS_EPSILON = 1e-9;
+
+/**
+ * How deep a tilted cube and a world-aligned cube enter each other, or 0 when
+ * they do not: the exact separating-axis test for two boxes — the three world
+ * axes, the tilted cube's three axes, and their nine cross products. The
+ * returned depth is the smallest push that would separate them, matching the
+ * per-pair depth the aligned path reads off its face gaps.
+ */
+function tiltedBoxEntryDepth(
+  center: readonly [number, number, number],
+  half: number,
+  columns: readonly (readonly [number, number, number])[],
+  still: StillVoxel,
+): number {
+  const stillHalf = still.size / 2;
+  const d = [
+    center[0] - (still.x + stillHalf),
+    center[1] - (still.y + stillHalf),
+    center[2] - (still.z + stillHalf),
+  ] as const;
+  let depth = Number.POSITIVE_INFINITY;
+  // World axes: the still cube projects to its half size; the tilted cube to
+  // the reach of its three columns along that axis.
+  for (let axis = 0; axis < 3; axis += 1) {
+    const reach = half * (
+      Math.abs(columns[0]![axis]!) + Math.abs(columns[1]![axis]!) + Math.abs(columns[2]![axis]!)
+    );
+    const overlap = stillHalf + reach - Math.abs(d[axis]!);
+    if (overlap <= 0) return 0;
+    if (overlap < depth) depth = overlap;
+  }
+  // The tilted cube's own axes.
+  for (const column of columns) {
+    const stillReach = stillHalf * (Math.abs(column[0]) + Math.abs(column[1]) + Math.abs(column[2]));
+    const distance = Math.abs(d[0] * column[0] + d[1] * column[1] + d[2] * column[2]);
+    const overlap = stillReach + half - distance;
+    if (overlap <= 0) return 0;
+    if (overlap < depth) depth = overlap;
+  }
+  // Cross products of each tilted axis with each world axis. Unnormalized, so
+  // projections divide by the axis length at the end.
+  for (const column of columns) {
+    for (let axis = 0; axis < 3; axis += 1) {
+      const cross: readonly [number, number, number] = axis === 0
+        ? [0, column[2], -column[1]]
+        : axis === 1
+          ? [-column[2], 0, column[0]]
+          : [column[1], -column[0], 0];
+      const lengthSquared = cross[0] * cross[0] + cross[1] * cross[1] + cross[2] * cross[2];
+      if (lengthSquared < CROSS_AXIS_EPSILON) continue;
+      const stillReach = stillHalf * (Math.abs(cross[0]) + Math.abs(cross[1]) + Math.abs(cross[2]));
+      let tiltedReach = 0;
+      for (const other of columns) {
+        tiltedReach += half * Math.abs(
+          cross[0] * other[0] + cross[1] * other[1] + cross[2] * other[2],
+        );
+      }
+      const distance = Math.abs(d[0] * cross[0] + d[1] * cross[1] + d[2] * cross[2]);
+      const overlap = (stillReach + tiltedReach - distance) / Math.sqrt(lengthSquared);
+      if (overlap <= 0) return 0;
+      if (overlap < depth) depth = overlap;
+    }
+  }
+  return depth;
+}
+
 /** Evenly spread recorded frame indices: always the first and last frame. */
 function sampleFrames(frameCount: number): number[] {
   const last = Math.max(0, frameCount - 1);
@@ -281,13 +471,14 @@ export function sceneSurfaceFightsV1(
   recipes: RecipeBookV1,
   parts: PartShelfV1,
 ): SceneSurfaceFightReportV1 {
-  if (validateSceneV1(scene).length > 0) return { fights: [], unchecked: [] };
+  if (validateSceneV1(scene).length > 0) return { fights: [], overlaps: [], unchecked: [] };
   const movingIds = new Set(replay.tracks.map(({ placementId }) => placementId));
   const stillIds = new Set(
     scene.placements.map(({ id }) => id).filter((id) => !movingIds.has(id)),
   );
   const models = buildModels(scene, recipes, parts);
   const stillFaces = stillFaceIndex(scene, stillIds, models, recipes);
+  const stillCells = stillVoxelIndex(scene, stillIds, models, recipes);
   const placementsById = new Map(scene.placements.map((placement) => [placement.id, placement]));
 
   const durationMs = scenePoseReplayDurationMsV1OrV2(replay);
@@ -295,6 +486,10 @@ export function sceneSurfaceFightsV1(
   const fights = new Map<string, {
     moving: string; still: string; axis: Axis; facing: 1 | -1; plane: number;
     facePairs: number; firstTimeMs: number; sampledTimes: Set<number>;
+  }>();
+  const overlaps = new Map<string, {
+    moving: string; still: string;
+    cellPairs: number; deepest: number; firstTimeMs: number; sampledTimes: Set<number>;
   }>();
   const unchecked = new Map<string, { reason: string; sampledTimes: number }>();
 
@@ -307,16 +502,73 @@ export function sceneSurfaceFightsV1(
       const built = models.get(modelKeyOf(placement, recipes));
       if (!built) continue;
       const rotation = axisAlignedRotation(pose.quaternion);
-      if (rotation === null) {
-        const entry = unchecked.get(pose.placementId)
-          ?? { reason: 'the recorded pose is tilted off the world axes, so it cannot hold a shared plane', sampledTimes: 0 };
-        entry.sampledTimes += 1;
-        unchecked.set(pose.placementId, entry);
-        continue;
-      }
       const middle = modelCenterV1(built.model);
       const grain = built.grain;
       const [sx, sy, sz] = built.model.size;
+      if (rotation === null) {
+        // A tilted face cannot hold a still face's plane across an area, so
+        // only the plane check skips this pose; its space is still judged
+        // exactly, cube against cube, by the separating-axis test. A film
+        // placement is a drawn skin, not a solid, so it claims no space.
+        const entry = unchecked.get(pose.placementId)
+          ?? {
+            reason: 'the recorded pose is tilted off the world axes, so its faces cannot hold '
+              + 'a shared plane; its space is still checked exactly',
+            sampledTimes: 0,
+          };
+        entry.sampledTimes += 1;
+        unchecked.set(pose.placementId, entry);
+        if (built.topFilm) continue;
+        const columns = quaternionColumns(pose.quaternion);
+        const half = grain / 2;
+        const reach = [
+          half * (Math.abs(columns[0]![0]) + Math.abs(columns[1]![0]) + Math.abs(columns[2]![0])),
+          half * (Math.abs(columns[0]![1]) + Math.abs(columns[1]![1]) + Math.abs(columns[2]![1])),
+          half * (Math.abs(columns[0]![2]) + Math.abs(columns[1]![2]) + Math.abs(columns[2]![2])),
+        ] as const;
+        for (let z = 0; z < sz; z += 1) {
+          for (let y = 0; y < sy; y += 1) {
+            for (let x = 0; x < sx; x += 1) {
+              if (!built.filled.has(cellKey(x, y, z, sx, sy))) continue;
+              const local: readonly [number, number, number] = [
+                (x + 0.5 - middle.x) * grain,
+                (y + 0.5 - middle.y) * grain,
+                (z + 0.5 - middle.z) * grain,
+              ];
+              const spun = rotate(columns, local);
+              const center: readonly [number, number, number] = [
+                pose.translation[0] + spun[0],
+                pose.translation[1] + spun[1],
+                pose.translation[2] + spun[2],
+              ];
+              const aabbLow = [
+                center[0] - reach[0], center[1] - reach[1], center[2] - reach[2],
+              ] as const;
+              const aabbHigh = [
+                center[0] + reach[0], center[1] + reach[1], center[2] + reach[2],
+              ] as const;
+              for (const still of stillCellCandidates(stillCells, aabbLow, aabbHigh)) {
+                const depth = tiltedBoxEntryDepth(center, half, columns, still);
+                if (depth <= CONTACT_SLOP) continue;
+                const key = `${pose.placementId}|${still.placementId}`;
+                const overlap = overlaps.get(key) ?? {
+                  moving: pose.placementId,
+                  still: still.placementId,
+                  cellPairs: 0,
+                  deepest: 0,
+                  firstTimeMs: timeMs,
+                  sampledTimes: new Set<number>(),
+                };
+                overlap.cellPairs += 1;
+                overlap.deepest = Math.max(overlap.deepest, depth);
+                overlap.sampledTimes.add(frame);
+                overlaps.set(key, overlap);
+              }
+            }
+          }
+        }
+        continue;
+      }
       for (let z = 0; z < sz; z += 1) {
         for (let y = 0; y < sy; y += 1) {
           for (let x = 0; x < sx; x += 1) {
@@ -333,6 +585,29 @@ export function sceneSurfaceFightsV1(
               pose.translation[1] + Math.min(a[1], b[1]),
               pose.translation[2] + Math.min(a[2], b[2]),
             ] as const;
+            if (!built.topFilm) {
+              const high = [low[0] + grain, low[1] + grain, low[2] + grain] as const;
+              for (const still of stillCellCandidates(stillCells, low, high)) {
+                const dx = Math.min(high[0], still.x + still.size) - Math.max(low[0], still.x);
+                const dy = Math.min(high[1], still.y + still.size) - Math.max(low[1], still.y);
+                const dz = Math.min(high[2], still.z + still.size) - Math.max(low[2], still.z);
+                const depth = Math.min(dx, dy, dz);
+                if (depth <= CONTACT_SLOP) continue;
+                const key = `${pose.placementId}|${still.placementId}`;
+                const overlap = overlaps.get(key) ?? {
+                  moving: pose.placementId,
+                  still: still.placementId,
+                  cellPairs: 0,
+                  deepest: 0,
+                  firstTimeMs: timeMs,
+                  sampledTimes: new Set<number>(),
+                };
+                overlap.cellPairs += 1;
+                overlap.deepest = Math.max(overlap.deepest, depth);
+                overlap.sampledTimes.add(frame);
+                overlaps.set(key, overlap);
+              }
+            }
             for (const direction of DIRECTIONS) {
               if (built.topFilm && direction[1] !== 1) continue;
               if (!faceOpen(built, x, y, z, direction)) continue;
@@ -386,6 +661,18 @@ export function sceneSurfaceFightsV1(
       firstTimeMs: fight.firstTimeMs,
       sampledTimes: fight.sampledTimes.size,
     })),
+    overlaps: [...overlaps.values()]
+      .sort((a, b) => (a.moving === b.moving
+        ? a.still.localeCompare(b.still)
+        : a.moving.localeCompare(b.moving)))
+      .map((overlap) => ({
+        moving: overlap.moving,
+        still: overlap.still,
+        cellPairs: overlap.cellPairs,
+        deepest: overlap.deepest,
+        firstTimeMs: overlap.firstTimeMs,
+        sampledTimes: overlap.sampledTimes.size,
+      })),
     unchecked: [...unchecked.entries()].map(([placementId, entry]) => ({
       placementId,
       reason: entry.reason,

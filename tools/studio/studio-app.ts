@@ -55,7 +55,8 @@ import {
   type SceneAnnotationsV1,
   type SceneViewPinV1,
 } from './scene-annotations.js';
-import type { ScenePoseReplayEventV1 } from './scene-pose-replay.js';
+import { sceneSurfaceConflictsV1 } from './scene-conflict-report.js';
+import type { ScenePoseReplayEventV1, ScenePoseReplayV1OrV2 } from './scene-pose-replay.js';
 import { VOXEL_SCENE_SCHEMA_V4, type SceneV1 } from './scene.js';
 import { sceneMotionWindowMsV1 } from './scene-motion.js';
 import { sceneOpeningViewV1 } from './scene-opening-view.js';
@@ -656,6 +657,11 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
   // ---- inspector: examine ----
   const motionText = element('p', 'motion');
   const modelLine = element('p', 'factline');
+  // Announces surfaces that occupy the same space or fight for visibility in
+  // the open scene, so the tool catches them instead of the owner's eye.
+  const sceneConflictLine = element('p', 'verdict');
+  sceneConflictLine.classList.add('scene-conflicts');
+  sceneConflictLine.hidden = true;
   // Scale the whole model by its voxel size. The slider resizes it in place
   // against the ground grid; the readout says the size in world units.
   const sizeField = element('div', 'field');
@@ -977,6 +983,13 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
     renameScene: (id, label) => renameStudioScene(id, label),
     deleteScene: (id) => deleteStudioScene(id),
     sceneMode: () => sceneOpen !== null,
+    sceneSurfaceConflicts: () => {
+      if (sceneOpen === null) return null;
+      const cached = sceneConflictReports.get(sceneOpen);
+      return cached
+        ? { status: 'ready' as const, conflicts: cached }
+        : { status: 'checking' as const, conflicts: [] };
+    },
     stageMode: () => liveInteract.mode(),
     setStageMode: (mode) => { liveInteract.setMode(mode); },
     livePhysics: () => liveInteract.state(),
@@ -1561,6 +1574,7 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
   /** Leaves the scene view for the model lane and drops every scene-only edit/selection reference. */
   function closeSceneMode(): void {
     if (sceneOpen === null) return;
+    sceneConflictLine.hidden = true;
     sceneNotesPanel?.cancelCapture();
     sceneAnnotationModeOn = false;
     canvasWrap.classList.remove('scene-annotation-armed');
@@ -1733,6 +1747,62 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
     );
   }
 
+  // ---- scene surface conflicts ----
+  // Cached per scene object (a commit replaces the object, so an edit is a
+  // fresh entry while reopening any unchanged scene is instant), and computed
+  // off the open/edit path. The first look at a heavy recorded scene still
+  // pays the check once — a few seconds after the scene presents, the stage
+  // pauses one long frame while it runs — and every later visit reads the
+  // cache. The WeakMap lets dropped scene objects and their reports go
+  // together.
+  const sceneConflictReports = new WeakMap<SceneV1, readonly string[]>();
+  let sceneConflictToken = 0;
+  function sceneReplayOf(scene: SceneV1): ScenePoseReplayV1OrV2 | null {
+    return scene.schemaVersion === VOXEL_SCENE_SCHEMA_V4
+      ? catalog.scenePoseReplays?.[scene.poseReplay.id] ?? null
+      : null;
+  }
+  function presentSceneConflicts(lines: readonly string[]): void {
+    if (lines.length === 0) {
+      sceneConflictLine.hidden = true;
+      sceneConflictLine.textContent = '';
+      return;
+    }
+    sceneConflictLine.hidden = false;
+    sceneConflictLine.dataset.tone = 'bad';
+    const shown = lines.slice(0, 3);
+    const more = lines.length - shown.length;
+    sceneConflictLine.textContent = `⚠ ${String(lines.length)} surface conflict`
+      + `${lines.length === 1 ? '' : 's'}: ${shown.join('; ')}`
+      + (more > 0 ? `; and ${String(more)} more` : '');
+  }
+  function syncSceneConflicts(scene: SceneV1): void {
+    const cached = sceneConflictReports.get(scene);
+    if (cached) {
+      presentSceneConflicts(cached);
+      return;
+    }
+    sceneConflictLine.hidden = false;
+    sceneConflictLine.dataset.tone = 'idle';
+    sceneConflictLine.textContent = 'Checking surfaces…';
+    const token = ++sceneConflictToken;
+    setTimeout(() => {
+      if (token !== sceneConflictToken || sceneOpen !== scene) return;
+      let lines: readonly string[];
+      try {
+        lines = sceneSurfaceConflictsV1(scene, sceneReplayOf(scene), sceneRecipes, sceneParts);
+      } catch (checkFailure) {
+        // The check failing is itself a finding the owner must see — a quiet
+        // line here would read as a clean scene.
+        lines = [`the surface check itself failed: ${
+          checkFailure instanceof Error ? checkFailure.message : String(checkFailure)
+        }`];
+      }
+      sceneConflictReports.set(scene, lines);
+      presentSceneConflicts(lines);
+    }, 0);
+  }
+
   function refreshScene(scene: SceneV1): void {
     // Moment notes belong to the underlying model. Clear their stage marks as
     // well as hiding their timeline dots so neither layer can seek or annotate
@@ -1795,6 +1865,7 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
         return n === 1 ? label : `${label} ×${String(n)}`;
       })
       .join(' · ');
+    syncSceneConflicts(scene);
     engineWarning.hidden = true;
     checkRow.hidden = true;
     sizeField.hidden = true;
@@ -1820,6 +1891,7 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
   function refresh(): void {
     libraryDetails.refresh();
     if (sceneOpen) { refreshScene(sceneOpen); return; }
+    sceneConflictLine.hidden = true;
     // Returning from a scene un-hides the model-only toggles, checks, size
     // control, tab content, and top-bar commands a scene hid, and re-hides the
     // scene-only snap toggle.
@@ -2644,6 +2716,7 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
     libraryDetails.element,
     motionText,
     modelLine,
+    sceneConflictLine,
     sizeField,
     engineWarning,
     checkRow,
