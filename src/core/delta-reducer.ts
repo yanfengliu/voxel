@@ -6,16 +6,13 @@ import {
   type DeltaApplyResultV1,
   type InstanceBatchV1,
   type OwnedRenderSnapshotV1,
+  type RenderLimitsV1,
   type RenderResourceV1,
   type RenderRevisionRefV1,
   type RenderTransactionLimitsV1,
   type VoxelChunkV1,
 } from './contracts.js';
 import { CanonicalRenderStateV1 } from './canonical-store.js';
-import {
-  copyRenderResourceV1Internal,
-  copyVoxelChunkV1Internal,
-} from './snapshot-copy.js';
 import { DeltaWorkBudgetInternal, estimateRenderOperationWorkInternal } from './delta-work-budget.js';
 import {
   canonicalStringCompareInternal,
@@ -486,22 +483,53 @@ function failPagedPatch(error: PagedInstanceBatchErrorInternal, target: ParsedPa
   fail(error.code, target.path, error.message);
 }
 
+/**
+ * Takes ownership of every put payload, revalidating its contents first.
+ *
+ * Operations are validated as they are read, while their typed arrays are
+ * still borrowed from the caller, and a later operation's property accessor
+ * runs after that — so a hostile getter can write NaN positions or an
+ * out-of-range index into an array this transaction already accepted. The
+ * parsed values here are a getter-free normalized graph, so validating them a
+ * second time and copying in the same pass closes that window: what lands in
+ * canonical state is exactly what was checked. The snapshot path defends its
+ * own ingest the same way, in canonical-snapshot-ingest.
+ *
+ * The revalidation budget is fresh because these are the same bytes already
+ * charged against the transaction's input cap on the first pass, not new
+ * input; the copy it performs is what the metrics record.
+ */
 function ownParsedTargets(
   resources: Map<string, ParsedTarget<RenderResourceV1>>,
   chunks: Map<string, ParsedTarget<VoxelChunkV1>>,
   metrics: SnapshotCopyMetricsInternal,
+  limits: RenderLimitsV1,
+  maxInputTypedArrayBytes: number,
 ): void {
+  const budget = new SnapshotByteBudgetInternal(maxInputTypedArrayBytes, undefined, true);
   for (const [targetKey, target] of resources) {
     if (target.kind !== 'put') continue;
     const source = target.value!;
     recordCopiedArrays(metrics, resourceArrays(source));
-    resources.set(targetKey, { ...target, value: copyRenderResourceV1Internal(source) });
+    const owned = unwrap(validateAndCopyRenderResourceV1Internal(
+      source,
+      `${target.path}.resource`,
+      limits,
+      budget,
+    ));
+    resources.set(targetKey, { ...target, value: owned });
   }
   for (const [targetKey, target] of chunks) {
     if (target.kind !== 'put') continue;
     const source = target.value!;
     recordCopiedArrays(metrics, [source.voxels]);
-    chunks.set(targetKey, { ...target, value: copyVoxelChunkV1Internal(source) });
+    const owned = unwrap(validateAndCopyVoxelChunkV1Internal(
+      source,
+      `${target.path}.chunk`,
+      limits,
+      budget,
+    ));
+    chunks.set(targetKey, { ...target, value: owned });
   }
 }
 
@@ -857,7 +885,13 @@ function applyOperations(
     changeLists,
     work,
   );
-  ownParsedTargets(resourceTargets, chunkTargets, metrics);
+  ownParsedTargets(
+    resourceTargets,
+    chunkTargets,
+    metrics,
+    state.descriptorViewInternal().limits,
+    transactionLimits.maxInputTypedArrayBytes,
+  );
   for (const target of resourceTargets.values()) {
     if (target.kind === 'put') resources.set(target.key, target.value!);
   }

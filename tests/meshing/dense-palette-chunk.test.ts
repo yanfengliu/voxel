@@ -30,6 +30,31 @@ describe('DensePaletteChunk', () => {
     expect(Array.from(chunk.copyVoxels())).toEqual([1, 2, 3, 4, 5, 6, 7, 8]);
   });
 
+  /**
+   * The chunk promises to own its storage, and a caller's own `slice` is not
+   * a copy it can trust: a subclass returning itself would leave the chunk
+   * sharing the caller's array, so later caller writes would rewrite chunk
+   * contents and copyVoxels would hand that same array back out.
+   */
+  it('owns its storage even when the input array supplies a hostile slice', () => {
+    class SelfSlicing extends Uint16Array {
+      override slice(): this { return this; }
+    }
+    const hostile = new SelfSlicing(4);
+    hostile.set([1, 2, 3, 4]);
+    const chunk = new DensePaletteChunk({
+      origin: { x: 0, y: 0, z: 0 },
+      size: { x: 2, y: 2, z: 1 },
+      voxels: hostile,
+    });
+
+    hostile.fill(99);
+
+    expect(Array.from(chunk.copyVoxels())).toEqual([1, 2, 3, 4]);
+    expect(chunk.copyVoxels()).not.toBe(hostile);
+    expect(Object.getPrototypeOf(chunk.copyVoxels())).toBe(Uint16Array.prototype);
+  });
+
   it('supports bounded mutation without exposing its owned storage', () => {
     const chunk = new DensePaletteChunk({
       origin: { x: 0, y: 0, z: 0 },

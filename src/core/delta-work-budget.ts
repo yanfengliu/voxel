@@ -1,3 +1,9 @@
+import {
+  supportedTypedArrayKindInternal,
+  typedArrayLengthInternal,
+  type SupportedTypedArrayInternal,
+} from './typed-array-intrinsics.js';
+
 type WorkLimitFailureInternal = (path: string) => never;
 
 function saturatingAdd(left: number, right: number): number {
@@ -16,9 +22,19 @@ function listLength(value: unknown): number {
   return Array.isArray(value) ? value.length : 0;
 }
 
+/**
+ * How many elements validation will actually scan, read through the captured
+ * %TypedArray% getters rather than the view's own `length`. A subclass can
+ * report length 0 while its buffer holds thousands of elements that
+ * validation reads through a hook-free base view. Such a payload is still
+ * rejected — the scan charges its own work and trips the element limit — but
+ * only after doing the scan this estimate exists to refuse in advance, so the
+ * pre-charge reads the same hook-free length the scan will.
+ */
 function viewLength(value: unknown): number {
-  if (!ArrayBuffer.isView(value) || value instanceof DataView) return 0;
-  const length = (value as ArrayBufferView & { readonly length?: number }).length;
+  const kind = supportedTypedArrayKindInternal(value);
+  if (kind === undefined) return 0;
+  const length = typedArrayLengthInternal(value as SupportedTypedArrayInternal);
   return typeof length === 'number' && Number.isSafeInteger(length) ? length : 0;
 }
 

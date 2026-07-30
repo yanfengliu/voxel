@@ -1,3 +1,4 @@
+import { copyTypedArrayInternal } from '../core/typed-array-copy.js';
 import {
   validatePureMesherDescriptorV1,
   validatePureMesherInputV1,
@@ -193,7 +194,11 @@ export function prepareMeshWorkerRequestV1(
       `${borrowedInput.issue.code} at ${borrowedInput.issue.path}: ${borrowedInput.issue.message}`,
     );
   }
-  const sampleVolume = borrowedInput.value.sampleVolume.slice();
+  // Copied through captured intrinsics: the validated input may still be a
+  // caller subclass, and its own slice could return the caller's array, which
+  // would then be detached out from under the caller when this request's
+  // buffer transfers.
+  const sampleVolume = copyTypedArrayInternal(borrowedInput.value.sampleVolume);
   const candidate: MeshWorkerRequestV1 = {
     schemaVersion: MESH_WORKER_SCHEMA_V1,
     kind: 'mesh',

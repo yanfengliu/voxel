@@ -2,6 +2,7 @@ import {
   HARD_RENDER_LIMITS_V1,
   MAX_EXACT_FLOAT32_VOXEL_COORDINATE_V1,
 } from '../core/contracts.js';
+import { copyTypedArrayInternal } from '../core/typed-array-copy.js';
 
 /** Integer vector used for voxel coordinates and chunk dimensions. */
 export interface Int3 {
@@ -104,7 +105,13 @@ export class DensePaletteChunk implements DensePaletteChunkReader {
     this.origin = Object.freeze({ ...options.origin });
     this.size = Object.freeze({ ...options.size });
     this.volume = volume;
-    this.voxels = options.voxels ? options.voxels.slice() : new Uint16Array(volume);
+    // Copied through captured intrinsics, never the input's own slice: a
+    // Uint16Array subclass whose slice returns itself would leave this chunk
+    // sharing the caller's storage, and copyVoxels would then hand that same
+    // storage back out as if it were a copy.
+    this.voxels = options.voxels
+      ? copyTypedArrayInternal(options.voxels)
+      : new Uint16Array(volume);
   }
 
   containsLocal(x: number, y: number, z: number): boolean {
@@ -137,7 +144,7 @@ export class DensePaletteChunk implements DensePaletteChunkReader {
 
   /** Returns a caller-owned copy of the chunk's x-major storage. */
   copyVoxels(): Uint16Array {
-    return this.voxels.slice();
+    return copyTypedArrayInternal(this.voxels);
   }
 
   private localIndex(x: number, y: number, z: number): number {

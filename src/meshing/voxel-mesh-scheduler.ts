@@ -290,8 +290,12 @@ export class VoxelMeshSchedulerV1 {
     return this.#operate(() => {
       this.#state.tick(logicalTick);
       if (!this.#state.active) return { status: 'disposed' };
-      if (!['cooperative', 'superseded', 'epoch-replaced', 'disposed'].includes(reason)) {
-        throw new RangeError('Unknown mesh scheduler cancellation reason.');
+      const reasons = ['cooperative', 'superseded', 'epoch-replaced', 'disposed'];
+      if (!reasons.includes(reason)) {
+        throw new RangeError(
+          `A mesh scheduler cancellation reason must be one of ${reasons.join(', ')}; received `
+          + `'${reason}'.`,
+        );
       }
       const group = this.#state.groups.get(groupId);
       if (group === undefined) {

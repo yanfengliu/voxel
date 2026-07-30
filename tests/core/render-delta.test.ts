@@ -541,6 +541,44 @@ describe('RenderWorld.acceptDelta', () => {
     expect(world.acceptedRevision).toBe(2);
   });
 
+  /**
+   * The snapshot path revalidates its normalized graph before taking
+   * ownership, precisely so a hostile accessor cannot poison a lane that
+   * already passed validation. Delta ingest borrows its arrays the same way
+   * and must close the same window: here a later operation's `key` getter
+   * writes NaN into an earlier operation's already-validated positions, and
+   * the transaction must refuse rather than commit NaN into canonical state.
+   */
+  it('refuses a delta whose later getter poisons an already-validated lane', () => {
+    const world = new RenderWorld();
+    expect(world.acceptSnapshot(validSnapshot(1)).status).toBe('accepted');
+    const poisoned = geometry(2, 'geometry:poisoned');
+    // The second operation is entirely valid on its own, so nothing but the
+    // poisoning itself can reject this transaction.
+    const second = Object.defineProperty(
+      { resource: geometry(2, 'geometry:second') },
+      'op',
+      {
+        enumerable: true,
+        get() {
+          poisoned.positions[0] = Number.NaN;
+          return 'put-resource';
+        },
+      },
+    );
+    const operations = [
+      { op: 'put-resource', resource: poisoned },
+      second,
+    ] as unknown as readonly RenderOperationV1[];
+
+    const result = world.acceptDelta(delta(1, 2, operations));
+    expect(result.status, JSON.stringify(result)).toBe('rejected');
+    expect(world.acceptedRevision).toBe(1);
+    const committed = world.acceptedSnapshot()?.resources
+      .find((resource) => resource.key === 'geometry:poisoned');
+    expect(committed).toBeUndefined();
+  });
+
   it('enforces validation work before traversing the operation payload', () => {
     const world = new RenderWorld();
     const snapshot = validSnapshot(1);

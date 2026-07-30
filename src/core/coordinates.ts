@@ -14,7 +14,12 @@ function assertIntegerVector(name: string, value: Int3V1, positive: boolean): vo
 
 function splitAxis(value: number, size: number): { chunk: number; local: number } {
   const chunk = Math.floor(value / size);
-  return { chunk, local: value - chunk * size };
+  // The local part comes from an exact remainder, never from value - chunk *
+  // size: at the far end of the safe-integer range that product is not exactly
+  // representable, and the difference lands one voxel off. `%` keeps the
+  // dividend's sign, so a negative remainder is lifted back into [0, size).
+  const remainder = value % size;
+  return { chunk, local: remainder < 0 ? remainder + size : remainder };
 }
 
 export function splitVoxelCoordinate(
