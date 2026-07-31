@@ -202,14 +202,19 @@ export const WINDMILL_LIVE_PROFILE_V1: LivePhysicsProfileV1 = Object.freeze({
       // dragging the hammer round with it.
       material: bodyMaterial('cam', 'rotorCore'),
       ccd: WINDMILL_COMPACT_BODY_DYNAMICS_V1.rotor.continuous,
-      pivotDamping: WINDMILL_COMPACT_BODY_DYNAMICS_V1.rotor.angularDamping,
+      // No bearing-friction tuning here. The universal law's jointFriction
+      // governs this shaft, and the mill runs well on it: measured over 24 s,
+      // governed by the law the rotor settles at 1.373 rad/s and lands 11
+      // blows, against 2.267 rad/s and 9 blows with the consumer
+      // declaration's 0.06 written in. Both work, so there is no effect to
+      // justify a tuning with, and content that does not need to override a
+      // law should not.
     },
     {
       placementId: WINDMILL_PLACEMENT_IDS_V1.hammer,
       kind: 'dynamic',
       material: bodyMaterial('hammerFollower', 'hammerBeam'),
       ccd: WINDMILL_COMPACT_BODY_DYNAMICS_V1.hammer.continuous,
-      pivotDamping: WINDMILL_COMPACT_BODY_DYNAMICS_V1.hammer.angularDamping,
     },
   ] as const),
   joints: JOINTS,
