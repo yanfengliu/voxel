@@ -19,6 +19,8 @@ Run `npm install` in `voxel` first. Its `prepare` script builds `dist`; a Vite c
 
 Import only the lane the consumer uses. `voxel/core` and `voxel/meshing` do not expose Three types. Importing `voxel/three` requires the tested Three peer.
 
+`voxel/physics` needs no peer at all — not Three, not a solver — so a portable simulation module, a worker, or a server can import it.
+
 ## Lifecycle
 
 The game owns an adapter from authoritative or projected game state to a complete `RenderSnapshotV1`. The reusable runtime never reads a simulation, ECS, save, UI, or game command directly.
@@ -178,6 +180,68 @@ V1 admits at most 8,192 active animated slots per snapshot and 16,384 total slot
 For portable occupancy queries, `voxel/meshing` exports `raycastDensePaletteChunks(options)`. It robustly normalizes a finite nonzero direction and traverses caller-supplied, uniformly sized and aligned `DensePaletteChunk` grids up to an inclusive `maxDistance`. Missing chunks are empty; `maxSteps` defaults to `DEFAULT_MAX_VOXEL_RAY_STEPS` (65,536) and may not exceed `HARD_MAX_VOXEL_RAY_STEPS`; budget exhaustion throws rather than returning a false miss. Hits include the world cell, palette index, distance, point, entry normal, chunk coordinate, and local coordinate. Exact boundary starts and simultaneous crossings have documented deterministic rules. This helper is data-only: it is not bound to `ThreeRenderRuntime` accepted/presented state and does not compose geometry or instance hits, so a consumer remains responsible for querying occupancy that matches its displayed frame.
 
 Use a new resource incarnation when a logical key is destroyed and later recreated. Use a higher resource revision when the same incarnation changes. Keep consumer semantics out of resource keys and shared payload fields when identity alone suffices.
+
+## Borrowing the physical laws
+
+`voxel/physics` publishes the laws this universe runs on. It is not a physics engine and contains no solver: a game keeps its own, exactly as it keeps its own rules and state. What a game cannot get on its own is a set of laws shared with every other world drawn through this engine, so that a wooden crate slides, rolls, and settles the same way in two different games.
+
+The laws are stated as what holds, not what is banned. A body keeps its velocity until a force acts on it; an impulse changes velocity by force over mass; two bodies exchange equal and opposite impulses; surfaces resist sliding; rolling contact resists the roll; a bearing resists its shaft; air resists both travel and spin; a collision returns less energy than it receives; a passive machine only spends what it started with. `PHYSICS_LAWS_V1` carries each statement with how it is enforced, and is the list to read before deciding whether this module covers what a game needs.
+
+### Applying them
+
+A body qualifies by being able to report its damping. That is the whole contract:
+
+```ts
+interface PhysicsDampedBodyV1 {
+  setLinearDamping(value: number): void;
+  setAngularDamping(value: number): void;
+}
+```
+
+Rapier's `RigidBody` and `RigidBodyDesc` both satisfy it already. Call the laws where bodies are created, and again each step for bodies that can touch something:
+
+```ts
+import { applyPhysicsLawsToBodyV1 } from 'voxel/physics';
+
+// At creation: air resistance and, for a jointed part, bearing friction.
+const description = RAPIER.RigidBodyDesc.dynamic().setTranslation(x, y, z);
+applyPhysicsLawsToBodyV1(description, { material: 'wood', jointed: false });
+const body = world.createRigidBody(description);
+
+// Each step, before world.step(): rolling resistance is a contact force,
+// so it applies only while the body is actually touching something.
+for (const [id, entry] of bodies) {
+  applyPhysicsLawsToBodyV1(entry.body, {
+    material: entry.material,
+    jointed: entry.jointed,
+    touching: entry.colliders.some((collider) => touchesAnything(world, collider)),
+  });
+}
+```
+
+Passing `touching: false` — or omitting it — is the honest answer when a game cannot cheaply tell. The body is still governed by air resistance and, when jointed, by bearing friction; it simply keeps rolling further than it should. Guessing `true` is worse: it would brake a body in mid-air.
+
+### Materials
+
+`physicsLawValuesForV1(material)` returns the damping rates for a named material, and any name the table does not know is governed by the default set rather than escaping the laws. The names it knows are `wood`, `stone`, `steel`, `ice`, `deck`, and `shot`; `governedMaterialsV1()` lists them at runtime.
+
+These are damping rates in reciprocal seconds, calibrated by measured stopping distance rather than derived from first principles. Their ordering carries the physics — ice resists a roll least, then steel, then stone, then wood, and a steel journal is a better bearing than a wooden one — and their magnitudes were chosen so a body stops in a distance that reads correctly at the scale these scenes are viewed. A game with different scale or feel should expect to tune them and should state the measured effect when it does.
+
+A game with its own material table can hold it to the laws at startup:
+
+```ts
+import { assertMaterialsLawfulV1 } from 'voxel/physics';
+
+assertMaterialsLawfulV1(MY_GAME_MATERIALS);
+```
+
+That throws on a material at or above restitution 1, naming the material, the value, and what would satisfy the law. It fails closed rather than clamping, because a silently corrected coefficient is how a world ends up behaving differently from the numbers its author is reading.
+
+### What this does not do
+
+It supplies damping, and nothing else. It does not create bodies, step a world, resolve contacts, or read a scene. It does not model deformation, fracture, fluids, buoyancy, heat, or aerodynamic lift. Drag is linear rather than quadratic and ignores cross-section, so a flat plate and a sphere of equal mass are slowed identically — an approximation, named as one, that grows less honest as speed rises. Static and dynamic friction cannot differ, because the supported solver exposes a single coefficient.
+
+A game that needs any of those keeps owning them. The laws here are the floor every world shares, not a ceiling on what a game may simulate.
 
 ## Consumer-owned responsibilities
 
