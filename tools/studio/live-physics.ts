@@ -5,6 +5,10 @@ import {
   applyLivePhysicsWindV1,
   type LivePhysicsWindPlanV1,
 } from './live-physics-wind.js';
+import {
+  applyLiveContactPolicyV1,
+  type LiveContactPolicyV1,
+} from './live-physics-contact-policy.js';
 
 /**
  * A live, interactive solver world for one open Studio scene.
@@ -105,6 +109,13 @@ export interface LivePhysicsProfileV1 {
   readonly joints?: readonly LivePhysicsJointPlanV1[];
   /** Flat plates driven by a steady wind, loaded every fixed step. */
   readonly wind?: LivePhysicsWindPlanV1;
+  /**
+   * The only body pairs allowed to touch. Absent means the default — every
+   * body meets every other, which is what a chain or a heap needs. A
+   * mechanism declares its contacts instead, because a shaft inside its
+   * bearing must pass through it.
+   */
+  readonly contactPolicy?: LiveContactPolicyV1;
 }
 
 export interface LivePhysicsJointPlanV1 {
@@ -286,6 +297,13 @@ export class LivePhysicsSessionV1 {
         a: plan.a,
         b: plan.b,
       });
+    }
+    if (profile.contactPolicy !== undefined) {
+      applyLiveContactPolicyV1(
+        profile.contactPolicy,
+        profile.bodies.map((plan) => plan.placementId),
+        (placementId) => this.#bodies.get(placementId)?.colliders ?? [],
+      );
     }
   }
 

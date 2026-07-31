@@ -6,6 +6,10 @@ import type { LivePhysicsWindPlateV1 } from './live-physics-wind.js';
 import { WINDMILL_COMPACT_SELECTED_CANDIDATE_V1 } from './windmill-compact-selection.js';
 import { deriveWindmillCompactPanelBasisV1 } from './windmill-compact-panel-basis.js';
 import {
+  WINDMILL_COMPACT_BODY_DYNAMICS_V1,
+  WINDMILL_COMPACT_MATERIAL_PROFILES_V1,
+} from './windmill-compact-physical-declaration.js';
+import {
   WINDMILL_PLACEMENT_IDS_V1,
   WINDMILL_SCENE_ID,
   WINDMILL_SCENE_LAYOUT_V1,
@@ -125,6 +129,35 @@ function buildPlates(): readonly LivePhysicsWindPlateV1[] {
   return [sailPlate('north'), sailPlate('south')];
 }
 
+/**
+ * One body's contact material, in the units the live lane wants.
+ *
+ * The declaration carries kilograms per voxel cube, which is grain-independent
+ * and therefore the honest way to state it; Rapier wants kilograms per cubic
+ * metre, so it is divided by the grain cubed.
+ *
+ * The live lane gives a whole body one material where the declaration gives
+ * one per part, so `contactKey` names the part that actually touches
+ * something and `massKey` the part that sets the body's weight. That is a
+ * stated simplification: the mill turns on the cam-follower pair, and giving
+ * that pair the rotor's average friction is what jammed it the first time.
+ */
+function bodyMaterial(
+  contactKey: keyof typeof WINDMILL_COMPACT_MATERIAL_PROFILES_V1,
+  massKey?: keyof typeof WINDMILL_COMPACT_MATERIAL_PROFILES_V1,
+): { readonly friction: number; readonly restitution: number; readonly density: number } {
+  const contact = WINDMILL_COMPACT_MATERIAL_PROFILES_V1[contactKey];
+  const mass = WINDMILL_COMPACT_MATERIAL_PROFILES_V1[massKey ?? contactKey];
+  const perVoxelCube = mass.densityKilogramsPerVoxelCube;
+  return {
+    friction: contact.friction,
+    restitution: contact.restitution,
+    // A fixed body's weight never enters the solve, so the declaration leaves
+    // it null; Rapier still wants a number.
+    density: perVoxelCube === null ? 1 : perVoxelCube / GRAIN ** 3,
+  };
+}
+
 const JOINTS: readonly LivePhysicsJointPlanV1[] = Object.freeze([
   {
     id: 'rotor-shaft',
@@ -150,12 +183,53 @@ const JOINTS: readonly LivePhysicsJointPlanV1[] = Object.freeze([
 export const WINDMILL_LIVE_PROFILE_V1: LivePhysicsProfileV1 = Object.freeze({
   sceneId: WINDMILL_SCENE_ID,
   bodies: Object.freeze([
-    { placementId: WINDMILL_PLACEMENT_IDS_V1.frame, kind: 'fixed' },
-    { placementId: WINDMILL_PLACEMENT_IDS_V1.anvil, kind: 'fixed' },
-    { placementId: WINDMILL_PLACEMENT_IDS_V1.rotor, kind: 'dynamic' },
-    { placementId: WINDMILL_PLACEMENT_IDS_V1.hammer, kind: 'dynamic' },
+    {
+      placementId: WINDMILL_PLACEMENT_IDS_V1.frame,
+      kind: 'fixed',
+      material: bodyMaterial('fixedSupport'),
+    },
+    {
+      placementId: WINDMILL_PLACEMENT_IDS_V1.anvil,
+      kind: 'fixed',
+      material: bodyMaterial('fixedSupport'),
+    },
+    {
+      placementId: WINDMILL_PLACEMENT_IDS_V1.rotor,
+      kind: 'dynamic',
+      // The cam's own friction, not the rotor's average: the one contact this
+      // body makes is its cam nose against the follower, and that pair is
+      // declared nearly frictionless so the nose slips off instead of
+      // dragging the hammer round with it.
+      material: bodyMaterial('cam', 'rotorCore'),
+      ccd: WINDMILL_COMPACT_BODY_DYNAMICS_V1.rotor.continuous,
+      pivotDamping: WINDMILL_COMPACT_BODY_DYNAMICS_V1.rotor.angularDamping,
+    },
+    {
+      placementId: WINDMILL_PLACEMENT_IDS_V1.hammer,
+      kind: 'dynamic',
+      material: bodyMaterial('hammerFollower', 'hammerBeam'),
+      ccd: WINDMILL_COMPACT_BODY_DYNAMICS_V1.hammer.continuous,
+      pivotDamping: WINDMILL_COMPACT_BODY_DYNAMICS_V1.hammer.angularDamping,
+    },
   ] as const),
   joints: JOINTS,
+  // The mill is two contacts and nothing else, exactly as the consumer
+  // fixture declares it: the cam presses the follower, and the hammer head
+  // strikes the anvil. Everything else — shaft inside its bearing, sails
+  // passing the frame, beam beside its housing — is held by joints, and
+  // letting those pairs collide is what jammed the mill the first time.
+  contactPolicy: Object.freeze({
+    pairs: Object.freeze([
+      Object.freeze([
+        WINDMILL_PLACEMENT_IDS_V1.rotor,
+        WINDMILL_PLACEMENT_IDS_V1.hammer,
+      ] as const),
+      Object.freeze([
+        WINDMILL_PLACEMENT_IDS_V1.hammer,
+        WINDMILL_PLACEMENT_IDS_V1.anvil,
+      ] as const),
+    ]),
+  }),
   wind: Object.freeze({
     rule: Object.freeze({
       airDensityKilogramsPerCubicMeter: 1.225,

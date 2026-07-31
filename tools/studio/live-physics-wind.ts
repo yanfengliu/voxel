@@ -33,6 +33,30 @@ export interface LivePhysicsWindPlanV1 {
   readonly plates: readonly LivePhysicsWindPlateV1[];
 }
 
+/**
+ * Rotates a unit vector into world space and restores its exact length.
+ *
+ * Rotation preserves length in exact arithmetic but not in floating point, and
+ * the wind law rightly refuses a normal that is not unit to within 1e-9 — a
+ * plate frame that is not a frame is a bug worth catching. A turning rotor
+ * drifts past that bar within a second, so the drift is removed here where it
+ * is introduced, rather than by loosening the law that catches it.
+ */
+function rotateUnitByQuaternion(
+  quaternion: readonly [number, number, number, number],
+  vector: readonly [number, number, number],
+): readonly [number, number, number] {
+  const rotated = rotateByQuaternion(quaternion, vector);
+  const length = Math.hypot(...rotated);
+  if (length === 0) {
+    throw new Error(
+      'A wind plate normal rotated to zero length, so the plate has no face to '
+      + 'push on; check the plate\'s declared normal is a unit vector.',
+    );
+  }
+  return [rotated[0] / length, rotated[1] / length, rotated[2] / length];
+}
+
 /** Rotates a body-local vector into world space by an XYZW quaternion. */
 function rotateByQuaternion(
   quaternion: readonly [number, number, number, number],
@@ -76,7 +100,7 @@ export function applyLivePhysicsWindV1(
       translation.y + offset[1],
       translation.z + offset[2],
     ] as const;
-    const normal = rotateByQuaternion(quaternion, plate.normal);
+    const normal = rotateUnitByQuaternion(quaternion, plate.normal);
     // The plate's speed is the body's, plus the spin about its centre of mass.
     const linear = body.linvel();
     const angular = body.angvel();
