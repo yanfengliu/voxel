@@ -1,7 +1,7 @@
 import type {
   WindmillCompactBoxV1,
   WindmillCompactTripleV1,
-} from '../../tools/studio/windmill-compact-geometry.js';
+} from './windmill-compact-geometry.js';
 
 export const WINDMILL_COMPACT_PHYSICAL_EPSILON = 1e-9;
 export const WINDMILL_COMPACT_SHAFT_AXIS_Z = Object.freeze(

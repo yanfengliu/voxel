@@ -50,7 +50,7 @@ import {
   scaleCompactTriple as scale,
   sortedCompactCells as sortedCells,
   subtractCompactTriple as subtract,
-} from './windmill-compact-physical-math.js';
+} from '../../tools/studio/windmill-compact-physical-math.js';
 import {
   WINDMILL_COMPACT_EVALUATOR_DECLARATION_V1,
 } from './windmill-compact-evaluator-config.js';
