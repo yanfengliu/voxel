@@ -43,7 +43,12 @@ import {
 
 export interface LivePhysicsBodyPlanV1 {
   readonly placementId: string;
-  readonly kind: 'fixed' | 'dynamic';
+  /**
+   * How the solver treats this body. A kinematic body is moved by the scene
+   * rather than by forces: it pushes everything it meets and nothing pushes
+   * back, which is what a driven belt slat or a machine's descending head is.
+   */
+  readonly kind: 'fixed' | 'dynamic' | 'kinematic';
   /**
    * Contact material for this body's colliders. Absent means the lane's
    * long-standing defaults (friction 0.4, restitution 0.05, density 1),
@@ -128,7 +133,7 @@ export interface LivePhysicsProfileV1 {
 
 export interface LivePhysicsJointPlanV1 {
   readonly id: string;
-  readonly kind: 'revolute' | 'spherical' | 'rope';
+  readonly kind: 'revolute' | 'spherical' | 'rope' | 'fixed';
   readonly a: string;
   readonly b: string;
   readonly anchorA: readonly [number, number, number];
@@ -289,33 +294,7 @@ export class LivePhysicsSessionV1 {
         this.#createVoxelBody(source, plan);
       }
     }
-    for (const plan of profile.joints ?? []) {
-      const a = this.#bodies.get(plan.a);
-      const b = this.#bodies.get(plan.b);
-      if (!a || !b) {
-        throw new Error(
-          `Joint '${plan.id}' joins '${plan.a}' and '${plan.b}', but the `
-          + 'built world is missing one of them — joints need build-time '
-          + 'bodies, never spawn-only ones.',
-        );
-      }
-      const anchorA = { x: plan.anchorA[0], y: plan.anchorA[1], z: plan.anchorA[2] };
-      const anchorB = { x: plan.anchorB[0], y: plan.anchorB[1], z: plan.anchorB[2] };
-      const data = plan.kind === 'revolute'
-        ? rapier.JointData.revolute(anchorA, anchorB, {
-          x: plan.axis?.[0] ?? 0, y: plan.axis?.[1] ?? 0, z: plan.axis?.[2] ?? 1,
-        })
-        : plan.kind === 'spherical'
-          ? rapier.JointData.spherical(anchorA, anchorB)
-          : rapier.JointData.rope(plan.lengthMeters ?? 0, anchorA, anchorB);
-      this.#jointedBodies.add(plan.a);
-      this.#jointedBodies.add(plan.b);
-      this.#joints.set(plan.id, {
-        joint: this.#world.createImpulseJoint(data, a.body, b.body, true),
-        a: plan.a,
-        b: plan.b,
-      });
-    }
+    for (const plan of profile.joints ?? []) this.#createJoint(plan);
     if (profile.contactPolicy !== undefined) {
       applyLiveContactPolicyV1(
         profile.contactPolicy,
@@ -350,7 +329,9 @@ export class LivePhysicsSessionV1 {
     const [wx, wy, wz] = source.angularVelocity ?? [0, 0, 0];
     const description = (plan.kind === 'fixed'
       ? rapier.RigidBodyDesc.fixed()
-      : rapier.RigidBodyDesc.dynamic())
+      : plan.kind === 'kinematic'
+        ? rapier.RigidBodyDesc.kinematicPositionBased()
+        : rapier.RigidBodyDesc.dynamic())
       .setTranslation(centreAt[0], centreAt[1], centreAt[2])
       .setRotation({ x: rx, y: ry, z: rz, w: rw })
       .setLinvel(vx, vy, vz)
@@ -560,6 +541,41 @@ export class LivePhysicsSessionV1 {
     );
   }
 
+  /**
+   * Drives a kinematic body to a pose for the next step.
+   *
+   * Position-based kinematics: the solver derives the body's velocity from
+   * where it was and where it is told to be, which is what lets a belt slat
+   * carry a crate by friction rather than teleporting through it.
+   */
+  setKinematicPose(
+    placementId: string,
+    translation: readonly [number, number, number],
+    quaternion: readonly [number, number, number, number],
+  ): void {
+    this.#assertLive();
+    const live = this.#bodies.get(placementId);
+    if (live === undefined) {
+      throw new Error(
+        `Cannot pose '${placementId}': no live body carries that id — it was `
+        + 'never spawned or was removed.',
+      );
+    }
+    if (!live.body.isKinematic()) {
+      throw new Error(
+        `Cannot pose '${placementId}': it is a ${live.body.isFixed() ? 'fixed' : 'dynamic'} `
+        + 'body, and only a kinematic body is moved by the scene. Declare it '
+        + "kind: 'kinematic' in the profile.",
+      );
+    }
+    live.body.setNextKinematicTranslation(
+      { x: translation[0], y: translation[1], z: translation[2] },
+    );
+    live.body.setNextKinematicRotation(
+      { x: quaternion[0], y: quaternion[1], z: quaternion[2], w: quaternion[3] },
+    );
+  }
+
   /** Removes a body outright — the delete-under-load probe. */
   removeBody(placementId: string): void {
     this.#assertLive();
@@ -600,6 +616,66 @@ export class LivePhysicsSessionV1 {
     }
     this.#world.removeImpulseJoint(entry.joint, true);
     this.#joints.delete(jointId);
+  }
+
+  /**
+   * Creates one declared constraint between two live bodies.
+   *
+   * Shared by world building and `attachJoint`, so a joint made while the
+   * machine runs is the same joint the profile would have made — including
+   * being counted as jointed, which is what earns it the universe's bearing
+   * friction.
+   */
+  #createJoint(plan: LivePhysicsJointPlanV1): void {
+    const rapier = this.#rapier;
+    const a = this.#bodies.get(plan.a);
+    const b = this.#bodies.get(plan.b);
+    if (!a || !b) {
+      throw new Error(
+        `Joint '${plan.id}' joins '${plan.a}' and '${plan.b}', but the `
+        + 'built world is missing one of them — joints need live bodies, '
+        + 'never spawn-only ones.',
+      );
+    }
+    const anchorA = { x: plan.anchorA[0], y: plan.anchorA[1], z: plan.anchorA[2] };
+    const anchorB = { x: plan.anchorB[0], y: plan.anchorB[1], z: plan.anchorB[2] };
+    const data = plan.kind === 'revolute'
+      ? rapier.JointData.revolute(anchorA, anchorB, {
+        x: plan.axis?.[0] ?? 0, y: plan.axis?.[1] ?? 0, z: plan.axis?.[2] ?? 1,
+      })
+      : plan.kind === 'spherical'
+        ? rapier.JointData.spherical(anchorA, anchorB)
+        : plan.kind === 'fixed'
+          ? rapier.JointData.fixed(
+            anchorA, { x: 0, y: 0, z: 0, w: 1 },
+            anchorB, { x: 0, y: 0, z: 0, w: 1 },
+          )
+          : rapier.JointData.rope(plan.lengthMeters ?? 0, anchorA, anchorB);
+    this.#jointedBodies.add(plan.a);
+    this.#jointedBodies.add(plan.b);
+    this.#joints.set(plan.id, {
+      joint: this.#world.createImpulseJoint(data, a.body, b.body, true),
+      a: plan.a,
+      b: plan.b,
+    });
+  }
+
+  /**
+   * Constrains two live bodies while the world runs.
+   *
+   * A machine that picks things up needs this: the head meets the part, and
+   * from that moment they move as one until released. The joint is made at
+   * the bodies' current poses, so nothing jumps.
+   */
+  attachJoint(plan: LivePhysicsJointPlanV1): void {
+    this.#assertLive();
+    if (this.#joints.has(plan.id)) {
+      throw new Error(
+        `Cannot attach joint '${plan.id}': a joint with that id is already `
+        + 'live. Detach it first, or choose another id.',
+      );
+    }
+    this.#createJoint(plan);
   }
 
   /** Pauses or resumes the solver clock; the grab spring pauses with it. */
