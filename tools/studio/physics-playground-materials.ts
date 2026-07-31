@@ -30,7 +30,7 @@ export const PLAYGROUND_GRAIN_V1 = 0.25;
  * world, and they agreed on 1/240 only because two files happened to write
  * the same literal.
  *
- * Deriving it was tried twice and backed out both times. At 60 Hz the
+ * Deriving it was tried three times and backed out each time. At 60 Hz the
  * stacking stations rest about 0.05 m into the floor against a 0.02 m
  * tolerance, and none of twelve or sixteen solver iterations, a tighter
  * normalized allowed linear error, or a raised contact natural frequency

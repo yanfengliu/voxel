@@ -43,3 +43,21 @@ The exemption list is part of the design, not a hole in it. Each entry states wh
 This file existed, had a rule about how to write entries, and was never once instructed to be read. `CLAUDE.md` is `@AGENTS.md`, so AGENTS.md reaches every agent automatically and this file reached none of them.
 
 The consequence for where things go: a rule that must be followed belongs in AGENTS.md, which is loaded; the evidence behind it belongs here, which is now read at session start. Writing a hard-won lesson only here was, until today, the same as deleting it.
+
+## A timeout sized against the suite's current load is a time bomb
+
+**Anchor:** 2026-07-31. `tools/studio/lighting-1000-showcase.test.ts` and `tests/testing/mesher-benchmark-harness.test.ts` both timed out under a full `npm run test` and passed alone — the lighting test at 756 ms and 8.8 s respectively in isolation.
+
+The lighting test already carried a comment explaining that 20 s was chosen to "leave room for parallel-suite load" after an earlier timeout. It expired anyway, because the live-physics scenes then added their own multi-second Rapier runs and ate the margin.
+
+Any margin picked against what else happens to be running is consumed by the next heavy test anyone adds, and each expiry presents as a real failure until someone reruns and sees green. That teaches rerunning-until-green, which is how a suite stops being a gate. Size a timeout against the work the test itself does, generously, and let the machine be slow.
+
+## Test the obvious suspect before recording it as unexplored
+
+**Anchor:** 2026-07-31. Rapier's `lengthUnit` at 0.25, 0.5, 1 and 2, against the playground's 60 Hz floor-penetration failure. None changed it.
+
+`lengthUnit` is the reference scale Rapier expresses penetration tolerances against, and the playground runs 0.25 m voxels while never setting it — a textbook explanation for bodies resting too deep, and one the windmill fixture already sets explicitly. It was worth an hour of certainty that the earlier tuning sweep had been scaling values against the wrong unit.
+
+It was not the cause. Recording that is worth as much as a fix, because the next person will have the same idea, and "already tried, no effect" is what stops a good hypothesis being tested three times.
+
+Also worth naming: the second failure that appears at 60 Hz reads as a determinism break, and is not one. The determinism case re-runs the scenario and asserts it does not fail, so it simply reports the penetration failure a second time. A failing check that shows up twice under two names invites a much larger investigation than it deserves.

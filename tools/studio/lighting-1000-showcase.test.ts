@@ -351,9 +351,15 @@ describe('1,000-light showcase', () => {
     }
     // 46,464 clustering passes over 1,000 lights each is genuinely more than
     // the 5 s default allows. Measured 2026-07-28 at 8.8 s alone on Windows
-    // i9-13900KF, so 20 s leaves room for parallel-suite load. It ran 15.5 s
-    // before the hoist above and timed out under a full `npm run test`.
-  }, 20_000);
+    // i9-13900KF.
+    //
+    // The margin was 20 s, chosen against the suite's load that day, and it
+    // timed out again on 2026-07-31 once the live-physics scenes added their
+    // own multi-second Rapier runs. A wall-clock margin sized against what
+    // else happens to be running expires every time the suite grows, and each
+    // expiry looks like a real failure until someone reruns it. Sized against
+    // this test's own work instead, with the repo's heavy-test allowance.
+  }, 600_000);
 
   it('gives every light one neutral receiver in a single Lambert instance batch', () => {
     const scene = lighting1000();

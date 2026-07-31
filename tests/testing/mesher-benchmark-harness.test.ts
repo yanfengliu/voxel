@@ -19,7 +19,11 @@ function gitValue(...args: string[]): string {
 }
 
 describe('mesher benchmark harness', () => {
-  it('runs outside the repository cwd with complete explicit provenance', () => {
+  // Spawns a Node process that meshes and reports, so it is bound by process
+  // startup and whatever else the suite is running rather than by its own
+  // work: 756 ms alone, past the 5 s default under a full parallel run. A gate
+  // that fails on contention teaches people to rerun until green.
+  it('runs outside the repository cwd with complete explicit provenance', { timeout: 120_000 }, () => {
     const report = JSON.parse(execFileSync(process.execPath, [
       BENCHMARK_SCRIPT,
       '--warmup',
