@@ -18,7 +18,7 @@ import {
   createPhysicalAssetBodyV1,
   scaledPhysicalPortV1,
 } from './machine-works-rapier-adapter.js';
-import { nextMachineWorksBeltSpeedV1 } from './machine-works-belt-drive.js';
+import { nextMachineWorksBeltSpeedV1 } from '../../tools/studio/machine-works-belt-drive.js';
 import { IDENTITY_ROTATION, fixedJoint } from './machine-works-simulation-geometry.js';
 
 export interface MachineWorksBeltCounterfactualV1 {
@@ -143,7 +143,7 @@ export function runMachineWorksBeltCounterfactualV1(
     for (let tick = 1; tick <= options.tickCount; tick += 1) {
       beltSpeed = nextMachineWorksBeltSpeedV1(
         beltSpeed,
-        carriage,
+        { x: carriage.translation().x, speedX: carriage.linvel().x },
         tick,
         options.driveScale,
       );

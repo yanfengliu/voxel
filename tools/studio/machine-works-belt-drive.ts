@@ -1,11 +1,19 @@
-import type { RigidBody } from '@dimforge/rapier3d-compat';
+/**
+ * The conveyor's speed controller.
+ *
+ * A position-and-velocity controller commanding one belt speed, so the carrier
+ * arrives at each station and holds there. It takes the carrier's current x
+ * and speed rather than a solver body, which is what lets the same controller
+ * drive the recorded fixture and a live browser scene without either of them
+ * owning the other's world.
+ */
 
 import {
   MACHINE_WORKS_BELT_DRIVE,
   MACHINE_WORKS_FIXED_STEP_MS,
   MACHINE_WORKS_FRAME_COUNT,
   MACHINE_WORKS_TICKS,
-} from './machine-works-fixture-config.js';
+} from './machine-works-machine.js';
 
 function machineWorksBeltTargetX(tick: number): number {
   const stage = MACHINE_WORKS_BELT_DRIVE.targetSchedule.find(
@@ -20,9 +28,16 @@ function machineWorksBeltTargetX(tick: number): number {
   return stage.targetX;
 }
 
+export interface MachineWorksCarrierStateV1 {
+  /** The carrier's world x. */
+  readonly x: number;
+  /** The carrier's world x-velocity. */
+  readonly speedX: number;
+}
+
 export function nextMachineWorksBeltSpeedV1(
   currentSpeed: number,
-  carrier: RigidBody,
+  carrier: MachineWorksCarrierStateV1,
   tick: number,
   driveScale = 1,
 ): number {
@@ -33,7 +48,7 @@ export function nextMachineWorksBeltSpeedV1(
     );
   }
   if (driveScale === 0 || tick >= MACHINE_WORKS_TICKS.released) return 0;
-  const positionError = machineWorksBeltTargetX(tick) - carrier.translation().x;
+  const positionError = machineWorksBeltTargetX(tick) - carrier.x;
   const desiredCarrierSpeed =
     Math.abs(positionError) <= MACHINE_WORKS_BELT_DRIVE.controller.positionDeadband
       ? 0
@@ -47,7 +62,7 @@ export function nextMachineWorksBeltSpeedV1(
         );
   const requested = desiredCarrierSpeed
     + MACHINE_WORKS_BELT_DRIVE.controller.velocityTrackingGain
-      * (desiredCarrierSpeed - carrier.linvel().x);
+      * (desiredCarrierSpeed - carrier.speedX);
   const bounded = Math.max(
     -MACHINE_WORKS_BELT_DRIVE.controller.maximumSpeed,
     Math.min(MACHINE_WORKS_BELT_DRIVE.controller.maximumSpeed, requested),

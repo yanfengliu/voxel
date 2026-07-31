@@ -41,7 +41,7 @@ import {
   scaledPhysicalPortV1,
   type RapierPoseV1,
 } from './machine-works-rapier-adapter.js';
-import { nextMachineWorksBeltSpeedV1 } from './machine-works-belt-drive.js';
+import { nextMachineWorksBeltSpeedV1 } from '../../tools/studio/machine-works-belt-drive.js';
 import {
   runMachineWorksBeltCounterfactualV1,
 } from './machine-works-conveyor-counterfactual.js';
@@ -482,7 +482,7 @@ export async function simulateMachineWorksV1(): Promise<MachineWorksTraceV1> {
     for (let tick = 1; tick <= TOTAL_TICKS; tick += 1) {
       commandedBeltSpeed = nextMachineWorksBeltSpeedV1(
         commandedBeltSpeed,
-        carriage,
+        { x: carriage.translation().x, speedX: carriage.linvel().x },
         tick,
       );
       integratedBeltTravel +=
