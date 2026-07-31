@@ -23,20 +23,22 @@ export const PLAYGROUND_GRAIN_V1 = 0.25;
 
 /** Fixed solver timestep in seconds; matches the live studio lane (1/240). */
 /**
- * The playground's tick, which is NOT yet the live lane's.
+ * The playground's tick, which is NOT yet the live lane's 60 Hz.
  *
- * Every scene solves at 60 Hz now (`LIVE_TIMESTEP_SECONDS_V1`), and this
- * should be that constant rather than a literal of its own — the headless
- * twin and the live session are meant to be one world, and they agreed on
- * 1/240 only because both files happened to spell the same number.
+ * Every scene solves at `LIVE_TIMESTEP_SECONDS_V1` now, and this should be
+ * that constant: the headless twin and the live session are meant to be one
+ * world, and they agreed on 1/240 only because two files happened to write
+ * the same literal.
  *
- * Deriving it was tried and backed out. At 60 Hz the stacking stations sink
- * about 0.05 m into the floor against a 0.02 m tolerance, and neither twelve
- * solver iterations nor a tighter allowed linear error recovered it: a
- * coarser step needs the station thresholds and the law damping rates
- * recalibrated, and those were measured at 240 Hz. That recalibration is the
- * work this constant is waiting on, and until then the drift is stated here
- * instead of hidden.
+ * Deriving it was tried twice and backed out both times. At 60 Hz the
+ * stacking stations rest about 0.05 m into the floor against a 0.02 m
+ * tolerance, and none of twelve or sixteen solver iterations, a tighter
+ * normalized allowed linear error, or a raised contact natural frequency
+ * recovered it. That depth looks like what this solver actually does at a
+ * coarser step rather than a bug to tune away, which means the station
+ * thresholds and the law damping rates -- all measured at 240 Hz -- need
+ * re-measuring before this constant can move. Until then the drift is stated
+ * here rather than hidden.
  */
 export const PLAYGROUND_TIMESTEP_S_V1 = 1 / 240;
 
