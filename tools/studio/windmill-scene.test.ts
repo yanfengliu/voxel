@@ -1,3 +1,4 @@
+import { LIVE_PHYSICS_PROFILES_V1 } from './live-physics-profiles.js';
 import { describe, expect, it } from 'vitest';
 
 import {
@@ -130,22 +131,34 @@ describe('selected compact windmill scene', () => {
       ));
   });
 
-  it('uses inclusive 60 Hz replay timing for one 12 second simulation', () => {
+  it('solves itself instead of carrying a recording', () => {
     const scene = createWindmillScene();
+    // scene/4 is exactly "carries a replay"; the mill is solved live, so it
+    // must not claim one. The consumer trace still exists and is still
+    // byte-pinned, but as a determinism fixture rather than what the studio
+    // plays back.
+    if (scene.schemaVersion !== 'studio.scene/3') {
+      throw new Error(
+        `Selected windmill scene uses '${scene.schemaVersion}', expected 'studio.scene/3'.`,
+      );
+    }
+    expect('poseReplay' in scene).toBe(false);
+    const profile = LIVE_PHYSICS_PROFILES_V1[WINDMILL_SCENE_ID];
+    expect(profile, 'the windmill scene has a live physics profile').toBeDefined();
+    // Wind is what drives it; without plates the sails are scenery.
+    expect(profile!.wind?.plates.length).toBe(2);
+    // The mechanism's contacts are declared, not discovered.
+    expect(profile!.contactPolicy?.pairs.length).toBe(2);
+  });
+
+  it('still records the consumer trace at inclusive 60 Hz for one 12 second run', () => {
+    // The recording is no longer the scene's source of truth, but the fixture
+    // still produces it and its determinism pin still compares against it.
     expect(WINDMILL_SIMULATION_DURATION_MS).toBe(12_000);
     expect(WINDMILL_REPLAY_RECORD_HZ).toBe(60);
     expect(WINDMILL_REPLAY_FRAME_COUNT).toBe(721);
     expect(WINDMILL_REPLAY_DURATION_MS)
       .toBeCloseTo(12_016.666_666_666_666, 10);
-    if (scene.schemaVersion !== 'studio.scene/4') {
-      throw new Error(
-        `Selected windmill scene uses '${scene.schemaVersion}', expected 'studio.scene/4'.`,
-      );
-    }
-    expect(scene.poseReplay).toEqual({
-      id: WINDMILL_POSE_REPLAY_ID,
-      durationMs: WINDMILL_REPLAY_DURATION_MS,
-    });
   });
 
   it('binds the finite replay trace separately from the system proof', () => {
@@ -172,13 +185,16 @@ describe('selected compact windmill scene', () => {
     expect(WINDMILL_SCENE_SUMMARY).toMatch(/localized follower/);
     expect(WINDMILL_SCENE_SUMMARY).toMatch(/terminal hammer toe/);
     expect(WINDMILL_SCENE_SUMMARY).toMatch(/directly grounded anvil cap/);
-    expect(WINDMILL_SCENE_SUMMARY).toMatch(/consumer-owned rigid-body fixture/);
+    expect(WINDMILL_SCENE_SUMMARY).toMatch(/solved in the browser as you watch it/);
+    expect(WINDMILL_SCENE_SUMMARY).toMatch(/bounded equivalent-plate wind law/);
+    expect(WINDMILL_SCENE_SUMMARY)
+      .toMatch(/every blow is an outcome rather than a pose/);
     expect(WINDMILL_SCENE_SUMMARY).toMatch(/not claim CFD/);
     expect(WINDMILL_SCENE_SUMMARY.toLowerCase())
       .not.toMatch(/counterweight|ornament|four[- ]sail/);
   });
 
-  it('states the production line as presentation keyed to recorded impacts', () => {
+  it('states the production line as presentation keyed to landed blows', () => {
     expect(WINDMILL_SCENE_SUMMARY)
       .toMatch(/rotor and sails outside its shaft-opening wall/);
     expect(WINDMILL_SCENE_SUMMARY)
@@ -189,10 +205,10 @@ describe('selected compact windmill scene', () => {
     expect(WINDMILL_SCENE_SUMMARY)
       .toMatch(/flour level in the outfeed bin rises one step after each/);
     expect(WINDMILL_SCENE_SUMMARY).toMatch(
-      /authored presentation kinematics keyed to the five recorded hammer-anvil impacts, not simulated milling/,
+      /authored presentation kinematics keyed to the blows the hammer actually lands/,
     );
     expect(WINDMILL_SCENE_SUMMARY).toMatch(
-      /fixture still proves wind, rotor, cam, hammer, and anvil dynamics and nothing about grain or flour/,
+      /solve proves wind, rotor, cam, hammer, and anvil dynamics and nothing about grain or flour/,
     );
   });
 });

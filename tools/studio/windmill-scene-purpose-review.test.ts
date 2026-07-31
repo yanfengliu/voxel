@@ -11,11 +11,14 @@ import {
 describe('windmill scene purpose review', () => {
   it('moves exactly one placement per review and preserves the canonical scene', () => {
     const canonical = createWindmillScene();
-    if (canonical.schemaVersion !== 'studio.scene/4') {
+    // The mill is solved live, so the canonical scene carries no replay and
+    // the review variants no longer have to strip one to isolate their move.
+    if (canonical.schemaVersion !== 'studio.scene/3') {
       throw new Error(
-        `Canonical windmill review scene uses '${canonical.schemaVersion}', expected 'studio.scene/4'.`,
+        `Canonical windmill review scene uses '${canonical.schemaVersion}', expected 'studio.scene/3'.`,
       );
     }
+    expect('poseReplay' in canonical).toBe(false);
     for (const variant of createWindmillScenePurposeReviewVariantsV1()) {
       expect(variant.scene.id).toBe(canonical.id);
       expect(variant.scene.schemaVersion, variant.id)
