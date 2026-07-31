@@ -137,6 +137,14 @@ describe('the trebuchet scenarios', () => {
     expect(result.status, playgroundResultLineV1(result)).toBe('fail');
   }, 300_000);
 
+  it("answers a kick with force over mass, Newton's second law", async () => {
+    // Expected to PASS, so neutralising the law is visible: halving the
+    // declared impulse makes this fail, which a counter-run on the
+    // energy control could never have shown.
+    const result = await runPlaygroundScenarioV1(station, 'treb-second-law');
+    expect(result.status, playgroundResultLineV1(result)).toBe('pass');
+  }, 120_000);
+
   it('fires identically twice', async () => {
     const first = await runPlaygroundScenarioV1(station, 'treb-fire');
     const second = await runPlaygroundScenarioV1(station, 'treb-fire');

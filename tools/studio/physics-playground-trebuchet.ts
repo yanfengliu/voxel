@@ -102,7 +102,7 @@ export const TREBUCHET_TRIGGER_ROPE_V1 = 0.24;
  * are separate rigid bodies resting on each other, which is the whole
  * reason a hit scatters them without any fracture system.
  */
-export const TREBUCHET_WALL_Z_V1 = -26.6;
+export const TREBUCHET_WALL_Z_V1 = -26.75;
 export const TREBUCHET_WALL_COURSES_V1 = 6;
 const BRICK_W = 1;
 const BRICK_H = 0.5;
@@ -823,15 +823,31 @@ export function createTrebuchetStationV1(): PlaygroundStationV1 {
           // it was thrown. The brick checks below are the direct
           // evidence that it arrived at the wall carrying enough to matter.
           { check: 'moved-at-least', placementId: 'ball', minTravelMeters: 18 },
-          // The wall comes down. Measured under the universal laws, 18 of
-          // 33 pieces travel more than 0.25 m, farthest 4.34 m, mean
-          // 1.37 m at this window; these three are named
-          // because they are the ones a glancing top-clip would leave
-          // standing, so the checks separate 'knocked the wall down'
-          // from 'chipped its top course'.
-          { check: 'moved-at-least', placementId: 'brick-3-1', minTravelMeters: 0.75 },
-          { check: 'moved-at-least', placementId: 'brick-3-3', minTravelMeters: 1.5 },
+          // Newton's first law across the free flight, between release
+          // and the wall: nothing touches the ball there, so gravity and
+          // air resistance alone must account for all of its motion.
+          // Any other acceleration would be a force nothing declared.
+          {
+            check: 'flight-follows-known-forces',
+            placementId: 'ball',
+            fromTick: 500,
+            toTick: 900,
+            airDrag: 0.02,
+            toleranceMetersPerSecond: 0.05,
+          },
+          // The wall comes down. The struck region is named from
+          // measurement rather than chosen for a round number: the shot
+          // meets the wall at y 2.0, so the upper courses go and the
+          // base holds. Measured 4.23, 3.04 and 2.49 m; the thresholds
+          // sit near half of each, which no glancing clip of the top
+          // course could reach.
+          { check: 'moved-at-least', placementId: 'brick-4-2', minTravelMeters: 2 },
+          { check: 'moved-at-least', placementId: 'brick-5-2', minTravelMeters: 1.5 },
           { check: 'moved-at-least', placementId: 'brick-4-3', minTravelMeters: 1 },
+          // The base course stays under the hole: this is a wall punched
+          // through, not a wall swept away, and saying so keeps the
+          // claim honest.
+          { check: 'moved-at-most', placementId: 'brick-0-2', maxTravelMeters: 0.5 },
           // 6 cm: the ball meets the wall at over 12 m/s and a sampled
           // impact frame legitimately reads a step's worth of contact
           // compression. Ending below the floor would still fail every
@@ -875,6 +891,28 @@ export function createTrebuchetStationV1(): PlaygroundStationV1 {
         ],
       },
       {
+        // Newton's second law, on its own scenario and expected to pass.
+        // It cannot live on the energy control below: that run is
+        // expected to fail, so a broken second-law check there would be
+        // invisible — the scenario would fail either way and the test
+        // would stay green. The kick is 4,000 into the 35.3-mass ball,
+        // so its velocity must change by 113 m/s and by exactly that.
+        id: 'treb-second-law',
+        label: 'The kick moves the ball by force over mass, exactly',
+        caseId: 'kick',
+        ticks: 700,
+        checks: [
+          {
+            check: 'impulse-response',
+            placementId: 'ball',
+            atTick: 600,
+            impulse: [0, 4000, 0],
+            toleranceFraction: 0.02,
+          },
+          { check: 'all-finite' },
+        ],
+      },
+      {
         // Negative control for the energy law. The runner is expected to
         // report FAIL: the mid-flight kick puts energy into a machine
         // that has no source for it, which is exactly what the check
@@ -885,6 +923,18 @@ export function createTrebuchetStationV1(): PlaygroundStationV1 {
         caseId: 'kick',
         ticks: 900,
         checks: [
+          // Newton's second law, on the same kick this scenario uses to
+          // prove energy cannot appear from nowhere. The impulse is
+          // 4,000 into a 35.3 mass ball, so its velocity must change by
+          // 113 m/s and by exactly that: the law fixes the answer, and
+          // the check reads it rather than trusting it.
+          {
+            check: 'impulse-response',
+            placementId: 'ball',
+            atTick: 600,
+            impulse: [0, 2000, 0],
+            toleranceFraction: 0.02,
+          },
           { check: 'energy-never-increases', toleranceFraction: 0.02 },
         ],
       },

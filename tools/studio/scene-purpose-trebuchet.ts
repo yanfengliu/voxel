@@ -329,6 +329,36 @@ export function createTrebuchetPurposeGraphV1(): PurposeGraphV1 {
         + 'overhanging and they toppled unaided.',
     }),
     purposeNodeV1({
+      id: sceneNodeId(SYSTEM, 'motion-rule', 'newton'),
+      kind: 'motion-rule',
+      label: "The machine obeys Newton's laws of motion",
+      job: 'Hold the scene to the three laws rather than to the fact '
+        + 'that it looks right. The ball in free flight keeps its '
+        + 'velocity except as gravity and air resistance change it, so '
+        + 'any other acceleration is a force nobody declared; a kick of '
+        + '4,000 into a 35.3-mass ball changes its velocity by 113 m/s '
+        + 'and by exactly that; and two bodies acting on each other '
+        + 'leave the momentum of the pair alone.',
+      requiredBy: Object.freeze([need]),
+      evidence: provenBy(
+        'The first law is measured across the free flight from tick 500 '
+        + 'to 900, where gravity and drag predict the velocity of the ball to '
+        + 'within 0.05 m/s; declaring the drag as zero while the world '
+        + 'applies it makes the same check fail by 0.395 m/s. The second '
+        + 'law is measured on its own passing run, deliberately not on '
+        + 'the energy control, because a scenario expected to fail hides '
+        + 'a broken check.',
+        'treb-fire and treb-second-law',
+      ),
+      honestyBoundary: 'These read the solver rather than deriving it: '
+        + 'they prove this world behaves as the laws require over the '
+        + 'windows named, not that the solver is correct everywhere. The '
+        + "third law's check lives on the launcher, where two bodies "
+        + 'meet in mid-air with nothing else pushing; on the ground the '
+        + 'floor takes momentum through friction and the law is '
+        + 'deliberately not claimed.',
+    }),
+    purposeNodeV1({
       id: sceneNodeId(SYSTEM, 'motion-rule', 'conservation'),
       kind: 'motion-rule',
       label: 'The machine obeys conservation of energy',

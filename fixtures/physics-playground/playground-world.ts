@@ -10,7 +10,7 @@ import {
   PLAYGROUND_GRAVITY_V1,
   PLAYGROUND_TIMESTEP_S_V1,
 } from '../../tools/studio/physics-playground-materials.js';
-import { physicsLawsForV1 } from '../../tools/studio/physics-laws.js';
+import { physicsLawValuesForV1 } from '../../tools/studio/physics-laws.js';
 import type {
   PlaygroundBodySnapshotV1,
   PlaygroundFrameV1,
@@ -150,7 +150,7 @@ export class PlaygroundWorldV1 {
     if (spec.ccd || overrides?.ccd) description.setCcdEnabled(true);
     // Nothing moves through a vacuum. Linear damping is the cheap
     // approximation of a square law, applied to every body there is.
-    description.setLinearDamping(physicsLawsForV1(spec.material).airDrag);
+    description.setLinearDamping(physicsLawValuesForV1(spec.material).airDrag);
 
     const body = world.createRigidBody(description);
     const rule = combineRule(spec.combine);
@@ -292,10 +292,10 @@ export class PlaygroundWorldV1 {
       // The law governs every body; the station's own numbers are
       // overrides of it, never the only source. A body that declares
       // nothing is still subject to friction.
-      const laws = physicsLawsForV1(live.spec.material);
+      const laws = physicsLawValuesForV1(live.spec.material);
       const resistance = live.spec.rollingResistance ?? laws.rollingResistance;
       const pivot = live.spec.pivotDamping
-        ?? (this.#jointedBodies.has(placementId) ? laws.jointFriction : 0);
+        ?? (this.#jointedBodies.has(placementId) ? laws.bearingFriction : 0);
       // A holder object, not a plain `let`: the callback runs
       // synchronously inside contactPairsWith, but control-flow analysis
       // cannot see that and narrows a boolean to always-false.
@@ -304,9 +304,10 @@ export class PlaygroundWorldV1 {
         world.contactPairsWith(collider, () => { contact.found = true; });
         if (contact.found) break;
       }
-      // The two losses add: a bearing is always turning against its axle,
-      // and a body on the ground is additionally losing to rolling.
-      const wanted = pivot + (contact.found ? resistance : 0);
+      // Every angular loss adds: the air always resists a spin, a bearing
+      // is always turning against its axle, and a body on the ground is
+      // additionally losing to rolling.
+      const wanted = laws.airSpinDrag + pivot + (contact.found ? resistance : 0);
       if (live.body.angularDamping() !== wanted) {
         live.body.setAngularDamping(wanted);
       }

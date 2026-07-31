@@ -1,7 +1,7 @@
 import type * as RAPIER_TYPES from '@dimforge/rapier3d-compat';
 import { modelOccupancyV1, decomposeVoxelsV1 } from './voxel-colliders.js';
 import type { StudioModelV1 } from './model.js';
-import { physicsLawsForV1 } from './physics-laws.js';
+import { physicsLawValuesForV1 } from './physics-laws.js';
 import {
   applyLivePhysicsWindV1,
   type LivePhysicsWindPlanV1,
@@ -351,7 +351,7 @@ export class LivePhysicsSessionV1 {
       .setAngvel({ x: wx, y: wy, z: wz });
     if (plan.ccd) description.setCcdEnabled(true);
     // Nothing moves through a vacuum.
-    description.setLinearDamping(physicsLawsForV1(plan.material?.id).airDrag);
+    description.setLinearDamping(physicsLawValuesForV1(plan.material?.id).airDrag);
     const body = this.#world.createRigidBody(description);
     const material = plan.material;
     const combine = material?.combine === 'multiply'
@@ -784,10 +784,10 @@ export class LivePhysicsSessionV1 {
    */
   #applyRollingResistance(): void {
     for (const live of this.#bodies.values()) {
-      const laws = physicsLawsForV1(live.materialId);
+      const laws = physicsLawValuesForV1(live.materialId);
       const resistance = live.rollingResistance ?? laws.rollingResistance;
       const pivot = live.pivotDamping
-        ?? (this.#jointedBodies.has(live.placementId) ? laws.jointFriction : 0);
+        ?? (this.#jointedBodies.has(live.placementId) ? laws.bearingFriction : 0);
       // A holder object, not a plain `let`: the callback runs
       // synchronously inside contactPairsWith, but control-flow analysis
       // cannot see that and narrows a boolean to always-false.
@@ -798,7 +798,7 @@ export class LivePhysicsSessionV1 {
       }
       // The two losses add: a bearing is always turning against its axle,
       // and a body on the ground is additionally losing to rolling.
-      const wanted = pivot + (contact.found ? resistance : 0);
+      const wanted = laws.airSpinDrag + pivot + (contact.found ? resistance : 0);
       if (live.body.angularDamping() !== wanted) {
         live.body.setAngularDamping(wanted);
       }

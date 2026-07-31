@@ -5,6 +5,7 @@
     "./core": "dist/core/index.d.ts",
     "./meshing": "dist/meshing/index.d.ts",
     "./meshing/browser-worker": "dist/meshing/browser-worker.d.ts",
+    "./physics": "dist/physics/index.d.ts",
     "./testing": "dist/testing/index.d.ts",
     "./three": "dist/three/index.d.ts"
   },
@@ -275,6 +276,18 @@
       "reachableFrom": [
         "./meshing",
         "./three"
+      ]
+    },
+    "dist/physics/index.d.ts": {
+      "sha256": "e87fb9f8f1e78229f00511bc2b5a2ab777b38e452833c6b0498805f3f33808e7",
+      "reachableFrom": [
+        "./physics"
+      ]
+    },
+    "dist/physics/laws.d.ts": {
+      "sha256": "2218ccb2b031ee6914dbd4e9f630757672e6599ef645909989b601f3b6045342",
+      "reachableFrom": [
+        "./physics"
       ]
     },
     "dist/testing/frame-budget.d.ts": {

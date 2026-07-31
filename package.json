@@ -25,6 +25,10 @@
       "types": "./dist/core/index.d.ts",
       "import": "./dist/core/index.js"
     },
+    "./physics": {
+      "types": "./dist/physics/index.d.ts",
+      "import": "./dist/physics/index.js"
+    },
     "./meshing": {
       "types": "./dist/meshing/index.d.ts",
       "import": "./dist/meshing/index.js"

@@ -584,10 +584,14 @@ describe('Machine Works consumer physics fixture', () => {
         - trace.outputDockEvidence.sweptRadius,
       5,
     );
+    // Re-baselined when the universe's laws reached this fixture: air
+    // resistance moved the swept clearance by 1.05e-5 m. The tolerance
+    // stays at six places so a real drift is still caught; the margin
+    // that matters is asserted above, and it still holds.
     expect(trace.outputDockEvidence.minimumFoundationClearance)
-      .toBeCloseTo(0.7517659729814863, 6);
+      .toBeCloseTo(0.7517554825640058, 6);
     expect(trace.outputDockEvidence.minimumBucketClearance)
-      .toBeCloseTo(0.5989795684814467, 6);
+      .toBeCloseTo(0.5989690780639663, 6);
     expect(Math.hypot(
       handoff[0] - beforeHandoff[0],
       handoff[1] - beforeHandoff[1],

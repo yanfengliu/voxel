@@ -31,6 +31,7 @@ Each game keeps simulation, gameplay rules, UI, art direction, and the adapter t
 ## Package surface
 
 - `voxel/core` — V1 snapshot/delta contracts, bounded validation/copying, immutable canonical lanes, coordinates, and the accepted/presented `RenderWorld` lifecycle.
+- `voxel/physics` — the laws of the voxel universe as plain data plus one function that applies them to any rigid body able to report its damping. No solver, no Three.js, no DOM: a game keeps its own physics and borrows the constitution so its world behaves like every other world drawn through this engine.
 - `voxel/meshing` — dense palette chunks, uniform profiles and indexed adjacency/invalidation, deterministic pure mesher contracts, copied-halo visible-face oracle and greedy production mesher, packaged worker protocol/runtime, bounded scheduler, and a Three-free bounded DDA occupancy ray query.
 - `voxel/meshing/browser-worker` — the browser-only bundler entry that starts Voxel's packaged module worker; portable and custom hosts use the factory API from `voxel/meshing`.
 - `voxel/three` — the Three.js WebGL runtime: snapshot/delta ingest, runtime-rendered and host-managed frame modes, chunk and instance presentation, cameras, daylight, deterministic playback, committed picking for profiled `voxelWorkers` worlds, capture, metrics, lifecycle, and disposal.

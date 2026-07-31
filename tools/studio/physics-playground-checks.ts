@@ -474,6 +474,113 @@ function evaluateCheck(
         + `expected ${String(ref.minTravelMeters)} m.`,
       );
     }
+    case 'flight-follows-known-forces': {
+      // Integrate the known forces forward from the first sampled frame
+      // in the window and compare with what the solver actually did.
+      // Rapier applies linear damping as v <- (v + a*dt) / (1 + dt*c),
+      // so the prediction uses exactly that form rather than a
+      // continuous approximation of it.
+      const window = frames.filter(
+        (frame) => frame.tick >= ref.fromTick && frame.tick <= ref.toTick);
+      const first = window[0];
+      const lastFrame = window[window.length - 1];
+      if (first === undefined || lastFrame === undefined || window.length < 2) {
+        return fail(
+          `flight-follows-known-forces needs at least two sampled frames `
+          + `between ticks ${String(ref.fromTick)} and ${String(ref.toTick)}, `
+          + `but found ${String(window.length)}. Widen the window or lower `
+          + 'the sampling stride.',
+        );
+      }
+      const startBody = first.bodies.find(
+        (row) => row.placementId === ref.placementId);
+      const endBody = lastFrame.bodies.find(
+        (row) => row.placementId === ref.placementId);
+      if (startBody === undefined || endBody === undefined) {
+        return fail(
+          `flight-follows-known-forces names '${ref.placementId}', which has `
+          + 'no body across the whole window; a flight test needs the body '
+          + 'present at both ends.',
+        );
+      }
+      const dt = PLAYGROUND_TIMESTEP_S_V1;
+      const decay = 1 / (1 + dt * ref.airDrag);
+      let px = startBody.linearVelocity[0];
+      let py = startBody.linearVelocity[1];
+      let pz = startBody.linearVelocity[2];
+      for (let tick = first.tick; tick < lastFrame.tick; tick += 1) {
+        px *= decay;
+        py = (py + PLAYGROUND_GRAVITY_V1 * dt) * decay;
+        pz *= decay;
+      }
+      const predicted: readonly [number, number, number] = [px, py, pz];
+      const error = Math.hypot(
+        endBody.linearVelocity[0] - predicted[0],
+        endBody.linearVelocity[1] - predicted[1],
+        endBody.linearVelocity[2] - predicted[2]);
+      if (error > ref.toleranceMetersPerSecond) {
+        return fail(
+          `'${ref.placementId}' ended the flight window at `
+          + `(${endBody.linearVelocity.map((v) => v.toFixed(2)).join(', ')}) `
+          + `m/s, but gravity and air resistance alone predict `
+          + `(${predicted.map((v) => v.toFixed(2)).join(', ')}) — an error of `
+          + `${error.toFixed(3)} m/s against a ${String(ref.toleranceMetersPerSecond)} `
+          + 'allowance. Something accelerated it that nothing declared.',
+        );
+      }
+      return pass(
+        `'${ref.placementId}' followed gravity and air resistance alone `
+        + `across ticks ${String(first.tick)}-${String(lastFrame.tick)}, to `
+        + `within ${error.toFixed(3)} m/s.`,
+      );
+    }
+    case 'impulse-response': {
+      const before = frames.filter((frame) => frame.tick <= ref.atTick).pop();
+      const after = frames.find((frame) => frame.tick > ref.atTick);
+      if (before === undefined || after === undefined) {
+        return fail(
+          `impulse-response needs a sampled frame on each side of tick `
+          + `${String(ref.atTick)}; the run does not have both.`,
+        );
+      }
+      const a = before.bodies.find((row) => row.placementId === ref.placementId);
+      const b = after.bodies.find((row) => row.placementId === ref.placementId);
+      if (a === undefined || b === undefined) {
+        return fail(
+          `impulse-response names '${ref.placementId}', which has no body on `
+          + 'both sides of the impulse.',
+        );
+      }
+      // The frames straddle the impulse, so gravity acts over that gap
+      // too; subtract its exact contribution before judging the impulse.
+      const gap = (after.tick - before.tick) * PLAYGROUND_TIMESTEP_S_V1;
+      const predicted: readonly [number, number, number] = [
+        a.linearVelocity[0] + ref.impulse[0] / a.mass,
+        a.linearVelocity[1] + ref.impulse[1] / a.mass + PLAYGROUND_GRAVITY_V1 * gap,
+        a.linearVelocity[2] + ref.impulse[2] / a.mass,
+      ];
+      const magnitude = Math.hypot(
+        ref.impulse[0] / a.mass, ref.impulse[1] / a.mass, ref.impulse[2] / a.mass);
+      const error = Math.hypot(
+        b.linearVelocity[0] - predicted[0],
+        b.linearVelocity[1] - predicted[1],
+        b.linearVelocity[2] - predicted[2]);
+      const allowance = Math.max(1e-6, magnitude * ref.toleranceFraction);
+      if (error > allowance) {
+        return fail(
+          `An impulse of ${JSON.stringify(ref.impulse)} on '${ref.placementId}' `
+          + `(mass ${a.mass.toFixed(2)}) should change its velocity by `
+          + `${magnitude.toFixed(3)} m/s, but the measured change misses the `
+          + `prediction by ${error.toFixed(3)} m/s, past the `
+          + `${allowance.toFixed(3)} allowance.`,
+        );
+      }
+      return pass(
+        `'${ref.placementId}' answered its impulse with the predicted `
+        + `${magnitude.toFixed(3)} m/s change, to within ${error.toFixed(3)} m/s `
+        + `— force divided by mass, exactly.`,
+      );
+    }
     case 'energy-never-increases': {
       // Total mechanical energy: translational plus rotational kinetic,
       // plus gravitational potential measured from y = 0. Rotational

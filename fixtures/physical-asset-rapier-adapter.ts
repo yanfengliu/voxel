@@ -1,3 +1,4 @@
+import { applyPhysicsLawsToBodyV1 } from '../src/physics/index.js';
 import RAPIER, {
   type Collider,
   type ColliderDesc,
@@ -218,6 +219,17 @@ export function createPhysicalAssetBodyV1(
   desc = desc
     .setTranslation(worldPose.position.x, worldPose.position.y, worldPose.position.z)
     .setRotation(worldPose.rotation ?? IDENTITY);
+  // The laws first, then whatever this asset declares on top of them.
+  // A body that declares nothing is still governed; a body that declares
+  // damping is stating a property of its own material, not an exemption.
+  applyPhysicsLawsToBodyV1(desc, {
+    // A sidecar body names no material, so the default law values
+    // govern it. Contact is not known at build time; rolling resistance
+    // is applied per step by the caller that can see contacts.
+    jointed: asset.constraints.some(
+      (constraint) => constraint.bodyA === body.key
+        || constraint.bodyB === body.key),
+  });
   if (body.linearDamping !== undefined) desc.setLinearDamping(body.linearDamping);
   if (body.angularDamping !== undefined) desc.setAngularDamping(body.angularDamping);
   if (body.gravityScale !== undefined) desc.setGravityScale(body.gravityScale);

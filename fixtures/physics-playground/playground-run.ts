@@ -1,3 +1,4 @@
+import { expect } from 'vitest';
 import {
   evaluatePlaygroundScenarioV1,
   type PlaygroundFrameV1,
@@ -151,4 +152,23 @@ export function playgroundResultLineV1(
     + `${headline}; max step ${result.maxStepMs.toFixed(2)} ms, mean `
     + `${result.meanStepMs.toFixed(3)} ms, deepest floor dip `
     + `${result.maxFloorPenetration.toFixed(4)} m`;
+}
+
+/**
+ * Asserts a scenario is physically correct: every check passed.
+ *
+ * Deliberately not `status === 'pass'`. The runner downgrades a run to
+ * 'warn' when any solver step exceeded the wall-clock budget, which is a
+ * statement about how busy the machine was, not about the physics — a
+ * full-gate run on a loaded host measured a 62 ms step and turned an
+ * all-checks-passed trebuchet run into a failure. Timing stays in the
+ * report, and the preset tests still assert on it, where it is the
+ * point of the test rather than a side effect of the host.
+ */
+export function expectScenarioCorrectV1(
+  result: PlaygroundScenarioResultV1,
+): void {
+  const failed = result.checks.filter((check) => check.status === 'fail');
+  expect(failed.map((check) => check.detail).join(' :: '), playgroundResultLineV1(result))
+    .toBe('');
 }

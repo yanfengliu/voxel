@@ -185,6 +185,39 @@ export type PlaygroundCheckRefV1 =
   }
   | {
     /**
+     * Newton's first law, in the form this universe allows it to be
+     * tested: a body keeps its velocity except as the known forces
+     * change it. In flight those forces are gravity and air resistance,
+     * both of which this module can predict exactly, so any additional
+     * acceleration is a force nothing declared — a phantom contact, a
+     * joint pulling on something it should not, a solver fault.
+     */
+    readonly check: 'flight-follows-known-forces';
+    readonly placementId: string;
+    /** The airborne window to test, in ticks. */
+    readonly fromTick: number;
+    readonly toTick: number;
+    /** Air drag acting on the body, so the prediction can include it. */
+    readonly airDrag: number;
+    /** Allowed speed error in m/s across the window. */
+    readonly toleranceMetersPerSecond: number;
+  }
+  | {
+    /**
+     * Newton's second law: an impulse J delivered to a body of mass m
+     * changes its velocity by exactly J/m, so the same push moves a
+     * heavy body proportionally less than a light one.
+     */
+    readonly check: 'impulse-response';
+    readonly placementId: string;
+    /** The tick the scenario's impulse action fires on. */
+    readonly atTick: number;
+    readonly impulse: readonly [number, number, number];
+    /** Allowed fraction of the predicted velocity change. */
+    readonly toleranceFraction: number;
+  }
+  | {
+    /**
      * Conservation of energy. A passive machine — no motor, no engine —
      * can never hold more mechanical energy than it started with, so the
      * opening total is a ceiling for the whole run. This is the check

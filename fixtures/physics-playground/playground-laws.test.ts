@@ -4,7 +4,9 @@ import {
   assertAllMaterialsLawfulV1,
   assertLawfulMaterialV1,
   governedMaterialsV1,
-  physicsLawsForV1,
+  physicsLawValuesForV1,
+  PHYSICS_LAWS_V1,
+  applyPhysicsLawsToBodyV1,
 } from '../../tools/studio/physics-laws.js';
 import {
   PLAYGROUND_MATERIALS_V1,
@@ -26,9 +28,9 @@ describe('the laws of the voxel universe', () => {
     for (const id of Object.keys(PLAYGROUND_MATERIALS_V1)) {
       expect(governedMaterialsV1(), `material '${id}' has no law entry`)
         .toContain(id);
-      const laws = physicsLawsForV1(id);
+      const laws = physicsLawValuesForV1(id);
       expect(laws.rollingResistance, id).toBeGreaterThan(0);
-      expect(laws.jointFriction, id).toBeGreaterThan(0);
+      expect(laws.bearingFriction, id).toBeGreaterThan(0);
       expect(laws.airDrag, id).toBeGreaterThan(0);
     }
   });
@@ -36,21 +38,21 @@ describe('the laws of the voxel universe', () => {
   it('governs a body that names no material at all', () => {
     // The chain's links and the ball drop's balls declare no material.
     // They are still subject to every law.
-    const laws = physicsLawsForV1(undefined);
+    const laws = physicsLawValuesForV1(undefined);
     expect(laws.rollingResistance).toBeGreaterThan(0);
-    expect(laws.jointFriction).toBeGreaterThan(0);
+    expect(laws.bearingFriction).toBeGreaterThan(0);
     expect(laws.airDrag).toBeGreaterThan(0);
-    expect(physicsLawsForV1('not-a-real-material')).toEqual(laws);
+    expect(physicsLawValuesForV1('not-a-real-material')).toEqual(laws);
   });
 
-  it('lets no material be perfectly elastic', () => {
+  it('holds every material to returning less energy than it receives', () => {
     assertAllMaterialsLawfulV1();
     expect(() => {
       assertLawfulMaterialV1('bouncy', { restitution: 1.2, friction: 0.5 });
-    }).toThrow(/perfectly elastic/);
+    }).toThrow(/returns less energy than it receives/);
     expect(() => {
       assertLawfulMaterialV1('bouncy', { restitution: 1, friction: 0.5 });
-    }).toThrow(/perfectly elastic/);
+    }).toThrow(/returns less energy than it receives/);
     // The identity value for a comparison deck is the one legal 1.
     expect(() => {
       assertLawfulMaterialV1('deck', {
@@ -59,10 +61,10 @@ describe('the laws of the voxel universe', () => {
     }).not.toThrow();
   });
 
-  it('rejects a surface that would push a body along', () => {
+  it('holds friction to being a resisting quantity', () => {
     expect(() => {
       assertLawfulMaterialV1('impossible', { restitution: 0.2, friction: -0.1 });
-    }).toThrow(/never negative/);
+    }).toThrow(/Friction resists sliding/);
   });
 
   it('applies air drag to every dynamic body of every station', async () => {
@@ -106,4 +108,63 @@ describe('the laws of the voxel universe', () => {
       .toBeGreaterThan(0);
     world.free();
   }, 300_000);
+});
+
+describe('the constitution is complete and honest', () => {
+  it('states every law positively and names how each is held', () => {
+    expect(PHYSICS_LAWS_V1.length).toBeGreaterThanOrEqual(10);
+    for (const law of PHYSICS_LAWS_V1) {
+      expect(law.statement.length, law.id).toBeGreaterThan(40);
+      expect(law.enforcedBy.length, law.id).toBeGreaterThan(10);
+      // A law states what holds. These openings are how a prohibition
+      // sneaks back in, and a prohibition cannot be measured.
+      expect(
+        /^(Nothing|No |Never|Do not|Don't)/.test(law.statement),
+        `'${law.id}' is phrased as a prohibition: ${law.statement.slice(0, 60)}`,
+      ).toBe(false);
+    }
+  });
+
+  it("names Newton's three laws among them", () => {
+    for (const id of ['newton-1', 'newton-2', 'newton-3']) {
+      expect(
+        PHYSICS_LAWS_V1.some((law) => law.id === id),
+        `the constitution is missing ${id}`,
+      ).toBe(true);
+    }
+  });
+
+  it('gives every law a kind that says how it is held', () => {
+    for (const law of PHYSICS_LAWS_V1) {
+      expect(['force', 'bound', 'conserved'], law.id).toContain(law.kind);
+    }
+  });
+
+  it('applies the damping laws to any body that can report damping', () => {
+    // The whole borrowing contract: a consumer's own solver body needs
+    // only these two methods to be governed.
+    const seen: { linear: number; angular: number } = { linear: -1, angular: -1 };
+    const body = {
+      setLinearDamping: (value: number) => { seen.linear = value; },
+      setAngularDamping: (value: number) => { seen.angular = value; },
+    };
+    applyPhysicsLawsToBodyV1(body, { material: 'steel', jointed: true, touching: true });
+    const steel = physicsLawValuesForV1('steel');
+    expect(seen.linear).toBe(steel.airDrag);
+    expect(seen.angular).toBeCloseTo(
+      steel.airSpinDrag + steel.bearingFriction + steel.rollingResistance, 10);
+
+    // Airborne and unjointed: only the air acts on it.
+    applyPhysicsLawsToBodyV1(body, { material: 'steel' });
+    expect(seen.angular).toBeCloseTo(steel.airSpinDrag, 10);
+  });
+
+  it('governs a material it has never heard of rather than exempting it', () => {
+    const known = physicsLawValuesForV1('stone');
+    const unknown = physicsLawValuesForV1('unobtanium');
+    expect(unknown.airDrag).toBeGreaterThan(0);
+    expect(unknown.rollingResistance).toBeGreaterThan(0);
+    expect(unknown).toEqual(physicsLawValuesForV1(undefined));
+    expect(known.rollingResistance).toBeGreaterThan(0);
+  });
 });

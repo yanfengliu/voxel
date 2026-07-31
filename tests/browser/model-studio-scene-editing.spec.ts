@@ -446,8 +446,8 @@ test('the studio announces surface conflicts for every scene it opens or edits',
     window.voxelStudio!.sceneSurfaceConflicts()?.status === 'ready');
   const machine = await page.evaluate(() => window.voxelStudio!.sceneSurfaceConflicts());
   expect(machine?.conflicts[0]).toBe(
-    'collection-bucket (moving) and product-core (moving) co-exist in the same space '
-    + '(at least 0.023 world units deep)',
+    'collection-bucket (moving) and product-base (moving) co-exist in the same space '
+    + '(at least 0.029 world units deep)',
   );
   // The belt slats tilt as they wrap the drums, and two tilted recorded poses
   // have no pairwise space test yet — the line says so instead of implying
