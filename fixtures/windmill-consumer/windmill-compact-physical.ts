@@ -5,14 +5,14 @@ import {
   type WindmillCompactBoxV1,
   type WindmillCompactCandidateV1,
   type WindmillCompactSailFrameV1,
-  type WindmillCompactTripleV1,
 } from '../../tools/studio/windmill-compact-geometry.js';
 import {
   createWindmillCompactPhysicalAssetsV1,
 } from '../../tools/studio/windmill-compact-physical-assets.js';
 import {
-  windmillCompactStepEndpointsV1,
-} from '../../tools/studio/windmill-compact-geometry-evidence.js';
+  deriveWindmillCompactPanelBasisV1,
+  type WindmillCompactPanelBasisV1,
+} from '../../tools/studio/windmill-compact-panel-basis.js';
 import {
   WINDMILL_RECIPE_IDS_V1,
 } from '../../tools/studio/windmill-layout.js';
@@ -37,16 +37,12 @@ import {
   WINDMILL_COMPACT_PHYSICAL_EPSILON as EPSILON,
   WINDMILL_COMPACT_SHAFT_AXIS_Z as AXIS_Z,
   addCompactTriple as add,
-  compactBoxCells as cellsOf,
   compactBoxCenter as centerOfBox,
   compactTriple as triple,
   compactTripleMagnitude as magnitude,
   compactTriplesClose as close,
   compactVoxelsToMeters as meters,
-  crossCompactTriple as cross,
   dotCompactTriple as dot,
-  normalizeCompactTriple as normalize,
-  projectedCompactCellCornerSpan,
   scaleCompactTriple as scale,
   sortedCompactCells as sortedCells,
   subtractCompactTriple as subtract,
@@ -58,7 +54,10 @@ import {
   compileWindmillCompactContactIndicesV1,
 } from './windmill-compact-contact-indices.js';
 
-type Triple = WindmillCompactTripleV1;
+export {
+  deriveWindmillCompactPanelBasisV1,
+  type WindmillCompactPanelBasisV1,
+};
 const ASSET_KEYS = Object.freeze([
   'frame',
   'rotor',
@@ -91,58 +90,6 @@ export function windmillCompactSolverInputSha256V1(
   return windmillEvidenceSha256V1([
     canonicalWindmillEvidenceJsonV1(binding),
   ]);
-}
-
-export interface WindmillCompactPanelBasisV1 {
-  readonly panelCells: readonly Triple[];
-  readonly centroid: Triple;
-  readonly radial: Triple;
-  readonly chord: Triple;
-  readonly normal: Triple;
-  readonly endpoints: readonly [Triple, Triple];
-  readonly radialSpan: number;
-  readonly chordSpan: number;
-  readonly equivalentAreaVoxels: number;
-}
-
-export function deriveWindmillCompactPanelBasisV1(
-  boxes: readonly WindmillCompactBoxV1[],
-  bodyOrigin: Triple,
-  shaft: Triple,
-): WindmillCompactPanelBasisV1 {
-  const panelCells = sortedCells(boxes.flatMap(cellsOf));
-  const centroid = scale(panelCells.reduce(
-    (sum, cell) => add(sum, triple(
-      cell[0] + 0.5 - bodyOrigin[0],
-      cell[1] + 0.5 - bodyOrigin[1],
-      cell[2] + 0.5 - bodyOrigin[2],
-    )),
-    triple(0, 0, 0),
-  ), 1 / panelCells.length);
-  const shaftToCentroid = subtract(centroid, shaft);
-  const radial = normalize(subtract(
-    shaftToCentroid,
-    scale(AXIS_Z, dot(shaftToCentroid, AXIS_Z)),
-  ));
-  const endpoints = windmillCompactStepEndpointsV1(
-    panelCells,
-    centroid[1] + bodyOrigin[1],
-  ).map((point) => subtract(point, bodyOrigin)) as [Triple, Triple];
-  const chord = normalize(subtract(endpoints[1], endpoints[0]));
-  const normal = normalize(cross(radial, chord));
-  const radialSpan = projectedCompactCellCornerSpan(panelCells, radial);
-  const chordSpan = projectedCompactCellCornerSpan(panelCells, chord);
-  return Object.freeze({
-    panelCells,
-    centroid,
-    radial,
-    chord,
-    normal,
-    endpoints: Object.freeze(endpoints),
-    radialSpan,
-    chordSpan,
-    equivalentAreaVoxels: radialSpan * chordSpan,
-  });
 }
 
 function compileSailFrame(
