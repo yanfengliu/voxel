@@ -114,7 +114,12 @@ export class WindmillLiveProductionV1 {
         quaternion: quaternionOf(pose),
       });
     });
-    const flour = windmillFlourPoseV1(this.#impacts, timeSeconds);
+    // One rise per sack milled, and there are five sacks. The recording had
+    // exactly five blows so this never came up; a live mill strikes for as
+    // long as the wind blows, and an uncapped level climbs out through the
+    // roof — which is what it did, while every number still looked sane.
+    const milled = this.#impacts.slice(0, SACK_IDS.length);
+    const flour = windmillFlourPoseV1(milled, timeSeconds);
     poses.set(WINDMILL_PRODUCTION_PLACEMENT_IDS_V1.flourHeap, {
       translation: flour.translation,
       quaternion: quaternionOf(flour),

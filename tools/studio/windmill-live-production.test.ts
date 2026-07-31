@@ -92,6 +92,17 @@ describe('the mill\'s live material flow', () => {
     expect(beforeId).toBeDefined();
   });
 
+  it('fills the bin once and stops, however long the mill runs', () => {
+    const production = lift(new WindmillLiveProductionV1());
+    // Five sacks, five rises. A live mill strikes for as long as the wind
+    // blows, and an uncapped level climbed out through the roof.
+    for (let blow = 0; blow < SACKS.length; blow += 1) strike(production, 2 + blow * 3);
+    const full = production.poses(60).get(FLOUR)!.translation[1];
+    for (let blow = 0; blow < 20; blow += 1) strike(production, 20 + blow * 3);
+    const later = production.poses(200).get(FLOUR)!.translation[1];
+    expect(later).toBeCloseTo(full, 9);
+  });
+
   it('raises the flour once per blow that actually landed', () => {
     const production = lift(new WindmillLiveProductionV1());
     const settle = 6;
