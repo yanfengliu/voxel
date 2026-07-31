@@ -6,7 +6,7 @@ import {
 } from './contrast-recipes.js';
 import {
   VOXEL_SCENE_SCHEMA_V1,
-  VOXEL_SCENE_SCHEMA_V4,
+  VOXEL_SCENE_SCHEMA_V3,
   type SceneV1,
 } from './scene.js';
 import {
@@ -162,7 +162,7 @@ function familyScene(
 
 function machineWorksScene(): SceneV1 {
   return {
-    schemaVersion: VOXEL_SCENE_SCHEMA_V4,
+    schemaVersion: VOXEL_SCENE_SCHEMA_V3,
     id: 'studio:scene:contrast-machines',
     label: 'Machine works',
     summary: 'One consumer-generated fixed-step process drives two Rapier kinematic drums and a closed loop of '
@@ -180,11 +180,7 @@ function machineWorksScene(): SceneV1 {
       + 'before the position command tips the still-physical carrier about that bucket-boundary axis so gravity drops the welded product into '
       + 'the collection bucket; the dock is visual alignment evidence, not a revolute constraint or torque model. Four '
       + 'minimal exterior radial flags remain non-interacting phase witnesses, not torque or tooth-engagement evidence. Voxel '
-      + 'presents the replay while the consumer owns each bounded claim.',
-    poseReplay: {
-      id: 'studio:pose-replay:machine-works',
-      durationMs: 30_000,
-    },
+      + 'solves the machine in the browser as you watch it: the schedule says when the heads move and when each grip opens, and everything that follows -- whether the belt carries the carrier, whether the parts seat, and where the product ends up -- is the solver answering. The consumer fixture still owns each bounded claim and still records its trace as a determinism fixture.',
     placements: [
       {
         id: 'assembly-foundation',

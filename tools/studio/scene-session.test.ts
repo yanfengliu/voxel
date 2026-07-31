@@ -215,25 +215,28 @@ function movingScene(id: string): SceneV1 {
   };
 }
 
-function isReplayScene(scene: SceneV1): scene is SceneSchemaV4 {
-  return scene.schemaVersion === 'studio.scene/4';
-}
-
 /**
- * Machine Works by name, not "whichever replay scene comes first". More than
- * one scene carries a V4 replay now, and these assertions are about this one.
+ * A V4 replay document built from the Machine Works placements.
+ *
+ * These assertions are about how a session handles a replay document, not
+ * about any scene still shipping one. Machine Works is solved live now, so it
+ * no longer carries a replay; its trace remains as a determinism fixture and
+ * is still registered in the catalog, which is exactly what a V4 document
+ * needs to point at.
  */
 function machineWorksReplayScene(scenes: readonly SceneV1[] | undefined): SceneSchemaV4 {
-  const scene = scenes
-    ?.filter(isReplayScene)
-    .find((entry) => entry.id === 'studio:scene:contrast-machines');
+  const scene = scenes?.find((entry) => entry.id === 'studio:scene:contrast-machines');
   if (scene === undefined) {
     throw new Error(
-      'The Studio catalog must provide the Machine Works V4 replay scene '
+      'The Studio catalog must provide the Machine Works scene '
       + "'studio:scene:contrast-machines'.",
     );
   }
-  return scene;
+  return {
+    ...scene,
+    schemaVersion: 'studio.scene/4',
+    poseReplay: { id: 'studio:pose-replay:machine-works', durationMs: 30_000 },
+  };
 }
 
 function camera(): OrthographicCamera {

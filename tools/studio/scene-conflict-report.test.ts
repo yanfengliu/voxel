@@ -36,37 +36,22 @@ describe('the scene surface-conflict report', () => {
     expect(lines[0]).toMatch(/^first and second occupy the same space \(\d+ shared cells\)$/);
   });
 
-  it('announces only the machine scene\'s one known landing dent', { timeout: 60_000 }, () => {
-    // The re-layout cleared this report's still-lane debts - pads in the belt
-    // band, drums inside the end frames, the dock under the bucket rim - and
-    // the still lane stays silent here.
+  it('finds nothing to announce in the machine scene, which now solves itself', () => {
+    // This test used to pin one landing dent: as the finished product dropped
+    // into the collection bucket, a recorded pose put it 0.023 world units
+    // inside the bucket wall for a single sampled instant.
     //
-    // The moving-vs-moving lane, added 2026-07-30, then found the one thing no
-    // gate had ever looked at: as the finished product drops into the
-    // collection bucket it dents the bucket by 0.023 world units at a single
-    // sampled instant (t = 20.9 s of 30 s, 1 sample of 96, 2 voxel pairs) and
-    // the solver pushes it back out. That is an impact transient rather than a
-    // resting state, but it is still four times the contact slop, so it is
-    // pinned exactly here instead of being tolerated by a wider slop: a deeper
-    // dent, a second sampled instant, or any other pair fails this test.
-    // Regenerating the drop with continuous collision on the product is the
-    // recorded fix and its own unit of work.
+    // Converting Machine Works to a live scene dissolved it rather than fixed
+    // it. There is no recording left to sample, so there is no recorded pose
+    // to be wrong: the landing is a runtime contact the solver resolves, and
+    // if it ever needs a finer answer the lever is substepping rather than a
+    // re-recording. The still lane is clean too, because every placement the
+    // live profile opens on a path is judged where it is actually posed.
     const machine = scenes.find((scene) => scene.id === 'studio:scene:contrast-machines');
     expect(machine).toBeDefined();
-    const replay = 'poseReplay' in machine!
-      ? catalog.scenePoseReplays?.[machine.poseReplay.id] ?? null
-      : null;
-    expect(replay).toBeDefined();
+    expect('poseReplay' in machine!, 'the machine scene carries no recording').toBe(false);
+    const replay = null;
     const lines = sceneSurfaceConflictsV1(machine!, replay, recipes, parts);
-    expect(lines, lines.join('\n')).toHaveLength(2);
-    expect(lines[0]).toMatch(
-      /^collection-bucket \(moving\) and product-core \(moving\) co-exist in the same space \(at least 0\.023 world units deep\)$/,
-    );
-    // The belt slats tilt as they wrap the drums, and two tilted recorded
-    // poses have no pairwise space test yet. The announcer says so rather
-    // than implying those pairs were judged and found clean.
-    expect(lines[1]).toMatch(
-      /^\d+ moving pairs could not be judged for shared space while both poses are tilted: belt-slat-\d+ & belt-slat-\d+/,
-    );
+    expect(lines, lines.join(' | ')).toEqual([]);
   });
 });

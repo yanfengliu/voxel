@@ -1,3 +1,4 @@
+import { LIVE_PHYSICS_PROFILES_V1 } from './live-physics-profiles.js';
 import type { PartShelfV1, RecipeBookV1 } from './recipe.js';
 import { sceneOverlapsV1 } from './scene-overlap.js';
 import type { ScenePoseReplayV1OrV2 } from './scene-pose-replay.js';
@@ -27,10 +28,18 @@ export function sceneSurfaceConflictsV1(
   parts: PartShelfV1,
 ): readonly string[] {
   const lines: string[] = [];
-  const replayed = new Set(replay?.tracks.map(({ placementId }) => placementId) ?? []);
-  const stills = replay === null
+  // A placement whose presented pose comes from somewhere else is judged
+  // there, not at its authored transform. A replay track is one such source;
+  // a live physics profile that opens its bodies on a path — a belt's slats,
+  // a machine's heads — is the other, and judging the authored fallback would
+  // be judging something nobody ever sees.
+  const posedElsewhere = new Set([
+    ...(replay?.tracks.map(({ placementId }) => placementId) ?? []),
+    ...Object.keys(LIVE_PHYSICS_PROFILES_V1[scene.id]?.poses ?? {}),
+  ]);
+  const stills = posedElsewhere.size === 0
     ? scene
-    : { ...scene, placements: scene.placements.filter(({ id }) => !replayed.has(id)) };
+    : { ...scene, placements: scene.placements.filter(({ id }) => !posedElsewhere.has(id)) };
   for (const overlap of sceneOverlapsV1(stills, recipes, parts)) {
     lines.push(
       `${overlap.a} and ${overlap.b} occupy the same space `

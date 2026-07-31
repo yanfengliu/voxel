@@ -1,5 +1,10 @@
 import type { LivePhysicsSessionV1 } from './live-physics.js';
 import type { ScenePlacementPoseV1 } from './scene-pose-delta.js';
+import {
+  LIVE_TIMESTEP_SECONDS_V1,
+} from './live-physics.js';
+import { MachineWorksLiveControllerV1 } from './machine-works-live.js';
+import { MACHINE_WORKS_LIVE_SCENE_ID_V1 } from './machine-works-live-profile.js';
 import { WindmillLiveProductionV1 } from './windmill-live-production.js';
 import { WINDMILL_PLACEMENT_IDS_V1 } from './windmill-layout.js';
 import { WINDMILL_SCENE_ID } from './windmill-layout.js';
@@ -43,9 +48,28 @@ function createWindmillProductionDriver(): LiveScenePresentationDriverV1 {
   };
 }
 
+/**
+ * The Machine Works machine, commanded each step.
+ *
+ * Unlike the mill's grain this driver poses nothing: it commands the machine's
+ * kinematic bodies and opens its grips, and the solver answers. It rides the
+ * presentation seam because that seam is simply "something that watches the
+ * live world each step", which is exactly what a machine controller is.
+ */
+function createMachineWorksDriver(): LiveScenePresentationDriverV1 {
+  const controller = new MachineWorksLiveControllerV1();
+  return {
+    observe: (session) => {
+      controller.advance(session, LIVE_TIMESTEP_SECONDS_V1 * 1_000);
+    },
+    poses: () => new Map(),
+  };
+}
+
 const FACTORIES: Readonly<Record<string, () => LiveScenePresentationDriverV1>> =
   Object.freeze({
     [WINDMILL_SCENE_ID]: createWindmillProductionDriver,
+    [MACHINE_WORKS_LIVE_SCENE_ID_V1]: createMachineWorksDriver,
   });
 
 /** A fresh driver for this scene, or null when the scene stages nothing. */

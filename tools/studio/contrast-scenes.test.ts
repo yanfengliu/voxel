@@ -1,3 +1,4 @@
+import { LIVE_PHYSICS_PROFILES_V1 } from './live-physics-profiles.js';
 import { describe, expect, it } from 'vitest';
 
 import {
@@ -39,7 +40,12 @@ describe('contrast scenes', () => {
     expect(scenes).toHaveLength(CONTRAST_FAMILIES.length + 1);
     for (const scene of scenes) expect(validateSceneV1(scene), scene.id).toEqual([]);
 
-    const sheets = scenes.filter((scene) => scene.schemaVersion !== 'studio.scene/4');
+    // A contrast sheet displays specimens; the process scene runs a machine.
+    // Machine Works used to be told apart by carrying a replay, and is now
+    // told apart by having a live physics profile, because that is what
+    // actually distinguishes it: its motion comes from a solver rather than
+    // from the recipes on show.
+    const sheets = scenes.filter((scene) => !(scene.id in LIVE_PHYSICS_PROFILES_V1));
     expect(sheets).toHaveLength(CONTRAST_FAMILIES.length);
 
     // Every promoted recipe appears exactly once, on the sheet for its family.
@@ -68,14 +74,17 @@ describe('contrast scenes', () => {
 
   it('turns Machine Works into one explicit assembly relationship graph', () => {
     const scene = createContrastScenes().find(({ id }) => id === 'studio:scene:contrast-machines');
-    expect(scene?.schemaVersion).toBe('studio.scene/4');
-    if (scene?.schemaVersion !== 'studio.scene/4') {
-      throw new Error('Machine Works must carry its consumer pose replay.');
-    }
-    expect(scene.poseReplay).toEqual({
-      id: 'studio:pose-replay:machine-works',
-      durationMs: 30_000,
-    });
+    expect(scene, 'the Machine Works process scene exists').toBeDefined();
+    if (scene === undefined) throw new Error('unreachable: scene asserted defined');
+    // Solved live, so it carries no recording: scene/4 is exactly "carries a
+    // replay". The machine's consumer trace survives as a determinism fixture,
+    // and what drives the scene now is its live physics profile.
+    expect(scene.schemaVersion).toBe('studio.scene/3');
+    expect('poseReplay' in scene).toBe(false);
+    expect(
+      LIVE_PHYSICS_PROFILES_V1[scene.id],
+      'Machine Works has a live physics profile',
+    ).toBeDefined();
     expect(scene.summary).toMatch(/press-bridge feet meet occupied foundation pads/);
     expect(scene.summary).toMatch(/narrowed cream stator keeps at least 0\.4 world units of running clearance inside an orange moving C-yoke/);
     expect(scene.summary).toMatch(/two-voxel key enters empty socket clearance.*cap crown reaches its core seat/);
@@ -284,7 +293,9 @@ describe('contrast scenes', () => {
     expect(movingRecipes.size).toBeGreaterThan(0);
 
     for (const scene of createContrastScenes()) {
-      if (scene.schemaVersion === 'studio.scene/4') continue;
+      // A scene whose motion comes from a solver is not making a claim about
+      // its specimens' authored motion.
+      if (scene.id in LIVE_PHYSICS_PROFILES_V1) continue;
       const moves = scene.placements.some(({ model }) => movingRecipes.has(model));
       const summary = scene.summary ?? '';
 
