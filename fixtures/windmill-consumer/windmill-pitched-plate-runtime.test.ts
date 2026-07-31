@@ -8,7 +8,7 @@ import {
 } from './windmill-pitched-plate-runtime.js';
 import type {
   WindmillPitchedPlateWindRuleV1,
-} from './windmill-pitched-plate-wind.js';
+} from '../../tools/studio/pitched-plate-wind.js';
 
 const WIND = Object.freeze({
   airDensityKilogramsPerCubicMeter: 1.225,

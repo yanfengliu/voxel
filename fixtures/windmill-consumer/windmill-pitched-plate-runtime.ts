@@ -1,10 +1,10 @@
 import type {
   WindmillPitchedPlateWindRuleV1,
   WindmillVectorV1,
-} from './windmill-pitched-plate-wind.js';
+} from '../../tools/studio/pitched-plate-wind.js';
 import {
   windmillPitchedPlateLoadV1,
-} from './windmill-pitched-plate-wind.js';
+} from '../../tools/studio/pitched-plate-wind.js';
 
 interface VectorObjectV1 {
   readonly x: number;

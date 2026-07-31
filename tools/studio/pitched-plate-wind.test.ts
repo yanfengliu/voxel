@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
   windmillPitchedPlateLoadV1,
   type WindmillVectorV1,
-} from './windmill-pitched-plate-wind.js';
+} from './pitched-plate-wind.js';
 
 const beta = Math.PI / 4;
 const sine = Math.sin(beta);

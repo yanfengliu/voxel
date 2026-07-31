@@ -6,7 +6,7 @@ import {
 } from '../../tools/studio/windmill-compact-geometry.js';
 import {
   windmillPitchedPlateLoadV1,
-} from './windmill-pitched-plate-wind.js';
+} from '../../tools/studio/pitched-plate-wind.js';
 
 export const WINDMILL_COMPACT_MAXIMUM_ROTOR_ANGULAR_SPEED_RADIANS_PER_SECOND_V1 =
   24 as const;

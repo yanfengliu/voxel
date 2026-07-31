@@ -6,7 +6,7 @@ import {
 } from '../../tools/studio/windmill-compact-physical-assets.js';
 import type {
   WindmillPitchedPlateWindRuleV1,
-} from './windmill-pitched-plate-wind.js';
+} from '../../tools/studio/pitched-plate-wind.js';
 import {
   deriveWindmillCompactDesignBasisV1,
 } from './windmill-compact-design-basis.js';

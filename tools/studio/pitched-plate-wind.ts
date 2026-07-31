@@ -1,3 +1,15 @@
+/**
+ * The pitched-plate wind law, shared by the windmill's consumer fixture and
+ * the Studio's live lane.
+ *
+ * It sits in `tools/studio` rather than in the fixture because scenes are
+ * solved live in the browser, and `tools/studio` cannot import `fixtures/` —
+ * the browser bundle must not pull a solver in behind it. Fixtures may import
+ * Studio, so this direction keeps one implementation instead of a copy that
+ * drifts. It is pure arithmetic with no solver dependency, which is what makes
+ * it portable at all.
+ */
+
 export type WindmillVectorV1 = readonly [number, number, number];
 
 export interface WindmillPitchedPlateWindRuleV1 {
