@@ -66,18 +66,18 @@ export function createTrebuchetPurposeGraphV1(): PurposeGraphV1 {
       kind: 'solid',
       label: 'Stage and landing floors',
       job: 'Carry the machine, the flight, the wall, and the rubble: '
-        + 'four flush tiles reach z -42, and a catch berm past the wall '
-        + 'ends every roll on screen.',
+        + 'four flush tiles reach z -42, past every measured landing.',
       requiredBy: Object.freeze([need]),
       evidence: provenBy(
-        'Removing the berm makes the same fire fail: the ball rolls off '
-        + 'the last tile and keeps falling, which the floor-penetration '
-        + 'check reads as an unbounded dip.',
-        'the treb-fire-no-berm control',
+        'Every body ends the fire on a tile: the floor-penetration check '
+        + 'reads the whole run and would report an unbounded dip for '
+        + 'anything that left the field.',
+        'treb-fire',
       ),
       honestyBoundary: 'Fixed deck slabs; the multiply combine rule reads '
-        + 'each touching body\'s own friction. Rapier models no rolling '
-        + 'resistance, so the berm stops the ball, not the ground.',
+        + 'each touching body\'s own friction. Coulomb friction cannot slow '
+        + 'a rolling ball, which is what the ball\'s own contact-gated '
+        + 'rolling resistance supplies.',
     }),
     purposeNodeV1({
       id: sceneNodeId(SYSTEM, 'solid', 'frame'),
@@ -99,7 +99,7 @@ export function createTrebuchetPurposeGraphV1(): PurposeGraphV1 {
       ),
       honestyBoundary: 'Staked (a fixed body), like the real machine, and '
         + 'load-bearing only in appearance. Free-standing it somersaulted: '
-        + 'at 70.8 against the crate at 317.5 it is the light end, and '
+        + 'at 70.8 against the crate at 990.6 it is the light end, and '
         + 'reaction torque flips the light end. A free-standing frame with '
         + 'drawn ballast is the recorded deferred improvement.',
     }),
@@ -121,10 +121,12 @@ export function createTrebuchetPurposeGraphV1(): PurposeGraphV1 {
     purposeNodeV1({
       id: sceneNodeId(SYSTEM, 'solid', 'cw'),
       kind: 'solid',
-      label: 'Stone counterweight crate',
-      job: 'Power the machine: 317.5 of stone, thirty-seven times the '
+      label: 'Steel counterweight crate',
+      job: 'Power the machine: 990.6 of steel, twenty-eight times the '
         + 'ball, whose fall is the only energy input and whose material '
-        + 'is the range governor that keeps the throw on the stage.',
+        + 'is the range governor. Stone in the same drawn volume threw '
+        + 'at 4.9 m/s and the shot ended as a coordinate; steel is what '
+        + 'makes the throw reach a wall 32 m away.',
       requiredBy: Object.freeze([need, cocked]),
       evidence: provenBy(
         'Without it the fired arm swings under 15 degrees and the ball '
@@ -153,21 +155,25 @@ export function createTrebuchetPurposeGraphV1(): PurposeGraphV1 {
     purposeNodeV1({
       id: sceneNodeId(SYSTEM, 'solid', 'ball'),
       kind: 'solid',
-      label: 'Wood ball payload',
-      job: 'Carry the machine\'s output where checks can measure it — '
-        + 'deliberately light at 8.5 against the sling\'s 30.6, because '
-        + 'the whip only multiplies speed while the payload stays much '
-        + 'lighter than what throws it.',
+      label: 'Shot ball payload',
+      job: 'Carry the machine\'s output where checks can measure it, and '
+        + 'carry enough of it to matter: 35.3 against the crate\'s 990.6, '
+        + 'because the whip only multiplies speed while the payload stays '
+        + 'much lighter than what throws it, but a lighter ball leaves '
+        + 'faster and bounces off the wall without moving it.',
       requiredBy: Object.freeze([need]),
       evidence: provenBy(
-        'The ball passes 5 m/s before tick 900 — while still on the '
-        + 'sling, not after falling — travels at least 15 m, crosses '
-        + 'z -8, and ends asleep.',
+        'The ball peaks at 16.07 m/s before tick 500 — while still on the '
+        + 'sling, not after falling — and travels 27.8 m against a 25 m '
+        + 'floor.',
         'treb-fire',
       ),
       honestyBoundary: 'A declared primitive-ball collider, so launch '
         + 'reads whip dynamics rather than voxel-corner snags; the '
-        + 'rolling station measures that artifact separately.',
+        + 'rolling station measures that artifact separately. Its '
+        + '\'shot\' material is stone in every physical respect and '
+        + 'carries a separate colour only so the projectile is not drawn '
+        + 'identically to its target.',
     }),
     purposeNodeV1({
       id: sceneNodeId(SYSTEM, 'solid', 'anchor'),
@@ -184,23 +190,6 @@ export function createTrebuchetPurposeGraphV1(): PurposeGraphV1 {
       ),
       honestyBoundary: 'The post stays drawn and solid after firing; only '
         + 'the lashing is released.',
-    }),
-    purposeNodeV1({
-      id: sceneNodeId(SYSTEM, 'solid', 'catch-berm'),
-      kind: 'solid',
-      label: 'Catch berm',
-      job: 'End the roll on screen. Rapier models no rolling resistance, '
-        + 'so a landed ball keeps its speed indefinitely; without a wall '
-        + 'it leaves the last tile and falls out of the world.',
-      requiredBy: Object.freeze([need]),
-      evidence: provenBy(
-        'The same fire with this berm omitted fails: the ball rolls off '
-        + 'the field and the floor check reads the fall.',
-        'treb-fire-no-berm',
-      ),
-      honestyBoundary: 'The same answer the rolling station reached for '
-        + 'the same reason; 1.25 m tall because a wall below the centre '
-        + 'of a rolling ball just torques it over.',
     }),
     purposeNodeV1({
       id: sceneNodeId(SYSTEM, 'interface', 'axle-bearing'),
@@ -301,8 +290,10 @@ export function createTrebuchetPurposeGraphV1(): PurposeGraphV1 {
       truncates: 'Heat and sound.',
       requiredBy: Object.freeze([need]),
       evidence: provenBy(
-        'Every body stays finite through 3,570 post-fire ticks and the '
-        + 'ball ends asleep against the berm.',
+        'Every body stays finite through the fire\'s 1,470 post-trigger '
+        + 'ticks, and mechanical energy falls monotonically from 49,967 J '
+        + 'to 27,582 J across it — dissipation is where the machine\'s '
+        + 'energy goes.',
         'treb-fire',
       ),
       honestyBoundary: 'Configured friction and restitution, never '
@@ -321,8 +312,12 @@ export function createTrebuchetPurposeGraphV1(): PurposeGraphV1 {
       requiredBy: Object.freeze([need]),
       evidence: provenBy(
         'The wall stands through the 3-second hold with every brick '
-        + 'inside 0.02 m, and the same fire moves 30 of its 33 bricks '
-        + 'more than 0.25 m, the farthest by 3.31 m.',
+        + 'inside 0.02 m, and the same fire moves four named bricks above '
+        + 'the base course between 1.0 and 3.2 m, which is what the '
+        + 'checks assert. The wider population — 25 of 33 pieces past '
+        + '0.25 m, farthest 4.52 m, mean 1.85 m — is measured, not '
+        + 'asserted, because a collapsing stack is chaotic and pinning a '
+        + 'count would pin noise.',
         'treb-hold and treb-fire',
       ),
       honestyBoundary: 'Not a fracture model and not masonry: no brick '
@@ -334,6 +329,33 @@ export function createTrebuchetPurposeGraphV1(): PurposeGraphV1 {
         + 'overhanging and they toppled unaided.',
     }),
     purposeNodeV1({
+      id: sceneNodeId(SYSTEM, 'motion-rule', 'conservation'),
+      kind: 'motion-rule',
+      label: 'The machine obeys conservation of energy',
+      job: 'Bound every motion in the scene by a law rather than by '
+        + 'taste. The crate is the only energy source: whatever the '
+        + 'arm, the sling, the ball, and 33 bricks end up carrying was '
+        + 'already in the raised crate when the run began. A solver that '
+        + 'invents energy is how physics bugs usually present — a stack '
+        + 'that shivers apart, a joint that flings its own arm — and '
+        + 'this is the node that forbids it.',
+      requiredBy: Object.freeze([need]),
+      evidence: provenBy(
+        'Mechanical energy — translational and rotational kinetic plus '
+        + 'gravitational potential — never rises above its opening value '
+        + 'across the whole fire, and the same check fails outright when '
+        + 'one impulse is added mid-flight, so the passing verdict is '
+        + 'not a check that cannot fail.',
+        'treb-fire and the treb-energy-control counter-run',
+      ),
+      honestyBoundary: 'A 2% allowance covers frame sampling and the '
+        + 'principal-frame rotation, not a real gain; energy injection '
+        + 'runs away by orders of magnitude, not percent. The ball\'s '
+        + 'contact-gated rolling resistance only ever removes energy, so '
+        + 'it cannot mask a gain. This node claims conservation, not '
+        + 'that every dissipation path is physically modelled.',
+    }),
+    purposeNodeV1({
       id: sceneNodeId(SYSTEM, 'solid', 'wall-base'),
       kind: 'solid',
       label: 'Target wall, base course',
@@ -341,10 +363,12 @@ export function createTrebuchetPurposeGraphV1(): PurposeGraphV1 {
         + 'separates a wall that came down from a wall with a hole in it.',
       requiredBy: Object.freeze([need]),
       evidence: provenBy(
-        'Measured, the base course barely moves (0.0 to 0.4 m) while '
-        + 'courses 3 and 4 travel 2 to 3.3 m: this shot removes the wall '
-        + 'above its footing rather than sweeping the footing away, and '
-        + 'the named brick checks are all above the base.',
+        'Every named brick check sits above the base course, and each '
+        + 'asserts a metre or more of travel; the base is deliberately '
+        + 'left unasserted because what it does is stay. Measured, the '
+        + 'upper courses run to 4.52 m while the base barely moves, so '
+        + 'this shot removes the wall above its footing rather than '
+        + 'sweeping the footing away.',
         'treb-fire',
       ),
       honestyBoundary: 'A separate record from the courses above because '

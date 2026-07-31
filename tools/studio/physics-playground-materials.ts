@@ -27,7 +27,7 @@ export const PLAYGROUND_TIMESTEP_S_V1 = 1 / 240;
 /** Straight-down gravity, meters per second squared. */
 export const PLAYGROUND_GRAVITY_V1 = -9.81;
 
-export type PlaygroundMaterialIdV1 = 'wood' | 'stone' | 'steel' | 'ice' | 'deck';
+export type PlaygroundMaterialIdV1 = 'wood' | 'stone' | 'steel' | 'ice' | 'deck' | 'shot';
 
 export interface PlaygroundMaterialV1 {
   readonly id: PlaygroundMaterialIdV1;
@@ -99,6 +99,22 @@ export const PLAYGROUND_MATERIALS_V1: Readonly<
     friction: 0.04,
     restitution: 0.05,
     color: Object.freeze({ r: 168, g: 214, b: 232 }),
+    combine: 'average',
+  } as const),
+  // Physically stone, and deliberately so: the trebuchet's tuning depends
+  // on the projectile's exact density, and this entry exists to make the
+  // shot legible, not to model a different rock. Without it the ball is
+  // drawn in the same grey as the wall it is thrown at and the same tan
+  // as the machine that throws it, so at the moment of impact there is
+  // nothing on screen to follow. That is a named readability job — which
+  // object is the projectile — not decoration.
+  shot: Object.freeze({
+    id: 'shot',
+    label: 'Shot',
+    density: 2.5,
+    friction: 0.7,
+    restitution: 0.08,
+    color: Object.freeze({ r: 168, g: 74, b: 58 }),
     combine: 'average',
   } as const),
   deck: Object.freeze({

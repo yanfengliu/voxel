@@ -144,6 +144,7 @@ export class PlaygroundWorldV1 {
       );
     }
     if (spec.ccd || overrides?.ccd) description.setCcdEnabled(true);
+
     const body = world.createRigidBody(description);
     const rule = combineRule(spec.combine);
     const colliders: RAPIER.Collider[] = [];
@@ -243,8 +244,40 @@ export class PlaygroundWorldV1 {
     );
   }
 
+  /**
+   * Rolling resistance is a contact force, so it is applied only while
+   * the body is actually touching something. Applying it always — as
+   * plain angular damping does — quietly drags every airborne body too:
+   * measured, a constant 0.8 on the trebuchet's ball bled the whip while
+   * the ball was still in the pouch and dropped its arrival at the wall
+   * from 2.27 m to 1.33 m, landing the shot short. Rolling resistance
+   * that changes a projectile's trajectory in flight is not rolling
+   * resistance.
+   */
+  #applyRollingResistance(): void {
+    const world = this.#requireWorld();
+    for (const [placementId, live] of this.#bodies) {
+      const resistance = live.spec.rollingResistance;
+      if (resistance === undefined) continue;
+      // A holder object, not a plain `let`: the callback runs
+      // synchronously inside contactPairsWith, but control-flow analysis
+      // cannot see that and narrows a boolean to always-false.
+      const contact = { found: false };
+      for (const collider of live.colliders) {
+        world.contactPairsWith(collider, () => { contact.found = true; });
+        if (contact.found) break;
+      }
+      const wanted = contact.found ? resistance : 0;
+      if (live.body.angularDamping() !== wanted) {
+        live.body.setAngularDamping(wanted);
+      }
+      void placementId;
+    }
+  }
+
   /** Advances exactly one fixed 1/240 s tick. */
   step(): void {
+    this.#applyRollingResistance();
     this.#requireWorld().step();
     this.#tick += 1;
   }
@@ -317,6 +350,8 @@ export class PlaygroundWorldV1 {
       const rotation = body.rotation();
       const linear = body.linvel();
       const angular = body.angvel();
+      const inertia = body.principalInertia();
+      const inertiaFrame = body.principalInertiaLocalFrame();
       bodies.push({
         placementId,
         translation: [translation.x, translation.y, translation.z],
@@ -325,6 +360,10 @@ export class PlaygroundWorldV1 {
         angularVelocity: [angular.x, angular.y, angular.z],
         sleeping: body.isSleeping(),
         mass: body.mass(),
+        principalInertia: [inertia.x, inertia.y, inertia.z],
+        principalInertiaFrame: [
+          inertiaFrame.x, inertiaFrame.y, inertiaFrame.z, inertiaFrame.w,
+        ],
       });
     }
     bodies.sort((a, b) => a.placementId.localeCompare(b.placementId));

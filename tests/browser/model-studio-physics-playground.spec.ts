@@ -292,6 +292,39 @@ test('a launcher case fires and the debug overlay draws', async ({ page }) => {
   expect(errors).toEqual([]);
 });
 
+test('a live-solved scene says so, and never calls itself a recording', async ({ page }) => {
+  // The studio used to label any scene with computed opening poses a
+  // 'consumer replay · read-only'. The trebuchet computes its cocked
+  // pose and then solves every frame in this browser, which is the
+  // opposite of a recording, and the scenes-simulate-live rule makes
+  // that distinction the point rather than a detail.
+  const response = await page.goto(studioOrigin, { waitUntil: 'load' });
+  expect(response?.ok()).toBe(true);
+  await openPlayground(page, 'studio:scene:physics-trebuchet');
+
+  const chip = page.locator('.status');
+  await expect(chip).toContainText('live physics · solved in browser');
+  await expect(chip).not.toContainText('consumer replay');
+  await expect(chip).not.toContainText('replay staged');
+
+  // The Edit tab carries the same fact at length; it must not contradict
+  // the chip by telling the reader to regenerate a replay there is none of.
+  await page.getByRole('tab', { name: 'Edit' }).click();
+  await expect(page.getByText('poses its own models from a live physics profile'))
+    .toBeVisible();
+  // The recorded-replay note still exists in the DOM for scenes that are
+  // recordings; on this one it must be hidden, not merely outnumbered.
+  await expect(page.getByText('regenerate the replay')).toBeHidden();
+
+  // And it really is advancing: the solver's own tick counter climbs.
+  const first = await page.evaluate(() => window.voxelStudio!.livePhysics().stepped);
+  await page.waitForFunction(
+    (start) => window.voxelStudio!.livePhysics().stepped > start + 60,
+    first,
+    { timeout: 15_000 },
+  );
+});
+
 test('the fired trebuchet knocks the brick wall down', async ({ page }) => {
   const errors: string[] = [];
   page.on('pageerror', (error) => errors.push(error.message));
@@ -351,7 +384,7 @@ test('the fired trebuchet knocks the brick wall down', async ({ page }) => {
     farthest = Math.max(farthest, moved);
   }
   // Deliberately a loose bound on a chaotic quantity. Headless measures
-  // 30 of 33; this lane measured 25 and 11 across runs, because the
+  // 25 of 33; this lane measured 25 and 11 across runs, because the
   // world settles for a variable number of wall-clock steps before the
   // test can pause it, and a collapsing stack amplifies that start
   // difference. Pinning 18 or 25 here would be a flake generator. Eight

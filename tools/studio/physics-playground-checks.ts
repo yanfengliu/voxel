@@ -2,6 +2,10 @@ import type {
   PlaygroundBodySpecV1,
 } from './physics-playground-bodies.js';
 import {
+  PLAYGROUND_GRAVITY_V1,
+  PLAYGROUND_TIMESTEP_S_V1,
+} from './physics-playground-materials.js';
+import {
   PLAYGROUND_FLOOR_TOP_V1,
   type PlaygroundCheckRefV1,
   type PlaygroundScenarioV1,
@@ -9,6 +13,12 @@ import {
 } from './physics-playground-stations.js';
 
 /**
+ * Size note: this module passed 700 lines when the two conservation laws
+ * landed. Energy and momentum are a check family of their own, which is
+ * the recorded extraction trigger: the plan is physics-playground-laws.ts
+ * for the conservation checks the next time a law is added, keeping the
+ * geometric checks here.
+ *
  * Scenario evaluation over recorded solver frames.
  *
  * Pure data in, pure verdicts out. Today the headless fixture runner is
@@ -39,6 +49,14 @@ export interface PlaygroundBodySnapshotV1 {
   readonly angularVelocity: readonly [number, number, number];
   readonly sleeping: boolean;
   readonly mass: number;
+  /**
+   * Principal moments of inertia and the rotation from the body frame
+   * into those principal axes. Both are needed to state rotational
+   * energy honestly: a compound of offset boxes has no reason for its
+   * inertia tensor to be diagonal in the body frame.
+   */
+  readonly principalInertia: readonly [number, number, number];
+  readonly principalInertiaFrame: readonly [number, number, number, number];
 }
 
 export interface PlaygroundFrameV1 {
@@ -84,6 +102,30 @@ function rotate(
     vy + qw * ty + qz * tx - qx * tz,
     vz + qw * tz + qx * ty - qy * tx,
   ];
+}
+
+/** Hamilton product `a*b`: the rotation `b` applied first, then `a`. */
+function multiplyQuaternion(
+  a: readonly [number, number, number, number],
+  b: readonly [number, number, number, number],
+): readonly [number, number, number, number] {
+  const [ax, ay, az, aw] = a;
+  const [bx, by, bz, bw] = b;
+  return [
+    aw * bx + ax * bw + ay * bz - az * by,
+    aw * by - ax * bz + ay * bw + az * bx,
+    aw * bz + ax * by - ay * bx + az * bw,
+    aw * bw - ax * bx - ay * by - az * bz,
+  ];
+}
+
+/** Rotates a world vector into the frame the quaternion describes. */
+function rotateByInverse(
+  quaternion: readonly [number, number, number, number],
+  vector: readonly [number, number, number],
+): readonly [number, number, number] {
+  const [qx, qy, qz, qw] = quaternion;
+  return rotate([-qx, -qy, -qz, qw], vector);
 }
 
 /** The lowest world-space point of a body's colliders at a pose. */
@@ -430,6 +472,157 @@ function evaluateCheck(
       return pass(
         `'${ref.placementId}' travelled ${moved.toFixed(3)} m, at least the `
         + `expected ${String(ref.minTravelMeters)} m.`,
+      );
+    }
+    case 'energy-never-increases': {
+      // Total mechanical energy: translational plus rotational kinetic,
+      // plus gravitational potential measured from y = 0. Rotational
+      // energy is computed in the body's principal frame, because the
+      // inertia tensor is only diagonal there.
+      const only = ref.placementIds;
+      const totalAt = (frame: PlaygroundFrameV1): number => {
+        let total = 0;
+        for (const body of frame.bodies) {
+          const spec = specs.get(body.placementId);
+          if (spec?.kind !== 'dynamic') continue;
+          if (only !== undefined && !only.includes(body.placementId)) continue;
+          const [vx, vy, vz] = body.linearVelocity;
+          total += 0.5 * body.mass * (vx * vx + vy * vy + vz * vz);
+          total += body.mass * Math.abs(PLAYGROUND_GRAVITY_V1) * body.translation[1];
+          // World angular velocity into principal axes: rotate by the
+          // inverse of (body rotation * principal frame).
+          const q = multiplyQuaternion(body.quaternion, body.principalInertiaFrame);
+          const w = rotateByInverse(q, body.angularVelocity);
+          total += 0.5 * (
+            body.principalInertia[0] * w[0] * w[0]
+            + body.principalInertia[1] * w[1] * w[1]
+            + body.principalInertia[2] * w[2] * w[2]);
+        }
+        return total;
+      };
+      // Frame to frame, not against the opening total. Comparing to the
+      // opening looks stricter and is far weaker: a dissipating machine
+      // sinks further below that fixed ceiling every second, so the
+      // slack grows without bound and a mid-run injection hides inside
+      // it. Measured on this trebuchet, the opening ceiling left 7,392 J
+      // invisible by tick 600 — a 1,000 J kick passed. Requiring each
+      // sampled total to be no greater than the previous one has no such
+      // hole, because the ceiling follows the machine down.
+      //
+      // The set of bodies must be constant: a spawn adds real energy and
+      // a removal takes it away, neither of which is the solver's doing.
+      const counted = (frame: PlaygroundFrameV1): number => {
+        let n = 0;
+        for (const body of frame.bodies) {
+          const spec = specs.get(body.placementId);
+          if (spec?.kind !== 'dynamic') continue;
+          if (only !== undefined && !only.includes(body.placementId)) continue;
+          n += 1;
+        }
+        return n;
+      };
+      const openingCount = counted(frames[0]!);
+      for (const frame of frames) {
+        if (counted(frame) !== openingCount) {
+          return fail(
+            `The counted body set changes during this run (${String(openingCount)} `
+            + `bodies at tick ${String(frames[0]!.tick)}, `
+            + `${String(counted(frame))} at tick ${String(frame.tick)}). `
+            + 'Conservation of energy is only meaningful over a fixed set, '
+            + 'because a spawn brings its own energy and a removal takes '
+            + 'energy away. Name the bodies explicitly with placementIds, '
+            + 'or apply this check to a scenario that spawns and removes '
+            + 'nothing.',
+          );
+        }
+      }
+      let worstGain = 0;
+      let worstTick = frames[0]!.tick;
+      let previous = totalAt(frames[0]!);
+      const opening = previous;
+      for (const frame of frames.slice(1)) {
+        const total = totalAt(frame);
+        const allowance = Math.abs(previous) * ref.toleranceFraction;
+        const gain = total - previous;
+        if (gain > allowance && gain / Math.max(1, Math.abs(previous)) > worstGain) {
+          worstGain = gain / Math.max(1, Math.abs(previous));
+          worstTick = frame.tick;
+        }
+        previous = total;
+      }
+      if (worstGain > 0) {
+        return fail(
+          `Mechanical energy rose ${(worstGain * 100).toFixed(2)}% from one `
+          + `sampled frame to the next at tick ${String(worstTick)}; a `
+          + 'passive machine has no source for that, so energy is entering '
+          + `from somewhere. The per-frame allowance is `
+          + `${(ref.toleranceFraction * 100).toFixed(0)}%.`,
+        );
+      }
+      const closing = previous;
+      return pass(
+        `Mechanical energy never rose between sampled frames: `
+        + `${opening.toFixed(0)} J at the start, ${closing.toFixed(0)} J at `
+        + `the end, spent monotonically throughout.`,
+      );
+    }
+    case 'momentum-conserved': {
+      const at = (tick: number): PlaygroundFrameV1 => {
+        let best = frames[0]!;
+        for (const frame of frames) {
+          if (Math.abs(frame.tick - tick) < Math.abs(best.tick - tick)) best = frame;
+        }
+        return best;
+      };
+      const before = at(ref.fromTick);
+      const after = at(ref.toTick);
+      const sum = (frame: PlaygroundFrameV1): readonly [number, number, number] => {
+        let x = 0;
+        let y = 0;
+        let z = 0;
+        for (const body of frame.bodies) {
+          if (!ref.placementIds.includes(body.placementId)) continue;
+          x += body.mass * body.linearVelocity[0];
+          y += body.mass * body.linearVelocity[1];
+          z += body.mass * body.linearVelocity[2];
+        }
+        return [x, y, z];
+      };
+      const missing = ref.placementIds.filter((id) =>
+        !before.bodies.some((body) => body.placementId === id));
+      if (missing.length > 0) {
+        return fail(
+          `momentum-conserved names ${missing.join(', ')}, which had no `
+          + `body at tick ${String(before.tick)}; a momentum sum needs `
+          + 'every named body present at both ends of the window.',
+        );
+      }
+      const p0 = sum(before);
+      const p1 = sum(after);
+      // Gravity is the only outside force acting on the set, and its
+      // impulse over the window is exactly (total mass) x g x dt.
+      let totalMass = 0;
+      for (const body of before.bodies) {
+        if (ref.placementIds.includes(body.placementId)) totalMass += body.mass;
+      }
+      const seconds = (after.tick - before.tick) * PLAYGROUND_TIMESTEP_S_V1;
+      const expectedY = p0[1] + totalMass * PLAYGROUND_GRAVITY_V1 * seconds;
+      const drift = Math.hypot(p1[0] - p0[0], p1[1] - expectedY, p1[2] - p0[2]);
+      const scale = Math.max(1e-6, Math.hypot(p0[0], p0[1], p0[2]));
+      if (drift > scale * ref.toleranceFraction) {
+        return fail(
+          `Total momentum of ${ref.placementIds.join(', ')} drifted `
+          + `${drift.toFixed(3)} between ticks ${String(before.tick)} and `
+          + `${String(after.tick)}, past the `
+          + `${(ref.toleranceFraction * 100).toFixed(0)}% allowance of `
+          + `${(scale * ref.toleranceFraction).toFixed(3)} — after removing `
+          + 'gravity, the collision gained or lost momentum from nowhere.',
+        );
+      }
+      return pass(
+        `Total momentum of ${ref.placementIds.join(', ')} held to `
+        + `${drift.toFixed(3)} across the collision, once gravity's exact `
+        + 'impulse is removed.',
       );
     }
     case 'all-finite': {

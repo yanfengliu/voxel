@@ -39,7 +39,7 @@ import type {
  * ball, which leaves the open pouch front by contact alone when the whip
  * swings past it.
  *
- * Size note: this module runs to roughly 740 lines because one machine's
+ * Size note: this module runs to roughly 890 lines because one machine's
  * recipes, cocked-pose math, station, and joints live together, and
  * splitting them would separate the pose numbers from the geometry they
  * derive from — the exact coupling the tests pin. The recorded extraction
@@ -118,7 +118,7 @@ const COCKED = (TREBUCHET_COCKED_DEGREES_V1 * Math.PI) / 180;
  * first free-standing fire proved why: the wood frame somersaulted,
  * tangled its own arm, and rolled off the world, because reaction torque
  * flips whichever end of the mechanism is lighter. The shipped frame
- * masses 70.8 against the crate's 317.5 — a 4.5:1 ratio it would still
+ * masses 70.8 against the crate's 990.6 — a 14:1 ratio it would still
  * lose. A free-standing frame with drawn stone ballast is the recorded
  * deferred improvement.
  */
@@ -142,7 +142,7 @@ export function createTrebuchetFrameRecipe(): RecipeV1 {
     label: 'Trebuchet frame',
     summary: 'Two trestles with closed bearing rings, staked to the ground '
       + 'like the real machine — free-standing, this 70.8-mass frame '
-      + 'somersaulted under the 317.5-mass crate it reacts, which is why '
+      + 'somersaulted under the 990.6-mass crate it reacts, which is why '
       + 'stakes existed. The trestles stand outboard of the counterweight, '
       + 'whose swing passes between them; the first narrow frame jammed '
       + 'the weight against its own fore posts early in the drop. Staked, '
@@ -271,12 +271,12 @@ export function createTrebuchetSlingRecipe(): RecipeV1 {
   });
 }
 
-/** The payload: a wood ball, deliberately light. The whip only works
+/** The payload: a stone ball in its own 'shot' colour. The whip only works
  * with the ball much lighter than the sling — a stone ball as heavy as
  * the sling deadened the whip and dribbled out backward at 4 m/s. */
 export function createTrebuchetBallRecipe(): RecipeV1 {
   const diameter = 3;
-  const { roles, palette } = materialPalette('wood');
+  const { roles, palette } = materialPalette('shot');
   return {
     schemaVersion: 'studio.voxel-recipe/1',
     id: 'studio:pg-treb-ball',
@@ -518,7 +518,10 @@ export function createTrebuchetStationV1(): PlaygroundStationV1 {
       material: 'deck',
       at: [0, 0, -12],
       tests: 'The landing ground: the fire scenario\'s range checks need '
-        + 'a floor where the ball comes down, flush at the z -6 seam.',
+        + 'ground under the middle of the flight, flush at the z -6 seam. '
+        + 'It is not where the ball lands — measured, the ball is 14 m up '
+        + 'when it passes z -6 — it is what the rebounding ball rolls '
+        + 'back across, and where it finally comes to rest at z -8.5.',
     },
     {
       placementId: 'floor-downrange-2',
@@ -526,8 +529,9 @@ export function createTrebuchetStationV1(): PlaygroundStationV1 {
       kind: 'fixed',
       material: 'deck',
       at: [0, 0, -24],
-      tests: 'The long-shot margin: the ball lands near z -11 and then '
-        + 'rolls, so the field must reach well past the landing point.',
+      tests: 'The middle of the field: the ball flies over this tile at '
+        + '12 to 15 m up on the way out and rolls back across it on the '
+        + 'way home, so it carries the return rather than the landing.',
     },
     {
       placementId: 'floor-downrange-3',
@@ -538,21 +542,6 @@ export function createTrebuchetStationV1(): PlaygroundStationV1 {
       tests: 'The wall stands on this tile and its rubble lands on it. '
         + 'The steel-crate shot reaches wall height at z -32, well past '
         + 'the three tiles the stone-crate machine needed.',
-    },
-    {
-      placementId: 'catch-berm',
-      recipeId: 'studio:pg-berm',
-      kind: 'fixed',
-      material: 'stone',
-      at: [0, FLOOR, -41.6],
-      turns: 1,
-      tests: 'The end of the field, now beyond the wall so rubble and a '
-        + 'ball that punches through still stop on screen. Rapier models '
-        + 'no rolling resistance, '
-        + 'so the landed ball rolls at a constant 4 m/s forever: measured '
-        + 'without this berm it left the last tile around tick 2100 and '
-        + 'fell out of the world. The rolling station found the same thing '
-        + 'and answered it the same way.',
     },
     {
       placementId: 'frame',
@@ -614,11 +603,13 @@ export function createTrebuchetStationV1(): PlaygroundStationV1 {
       placementId: 'ball',
       recipeId: 'studio:pg-treb-ball',
       kind: 'dynamic',
-      // Stone, not wood. A wood ball off the steel crate leaves faster
-      // (26.4 m/s measured) but carries a quarter of the momentum and
-      // sails 111 m; the stone ball arrives at the wall at 20.5 m/s
-      // carrying 35.3 mass, which is what actually knocks masonry down.
-      material: 'stone',
+      // 'shot' is stone in every physical respect — same density,
+      // friction, and restitution — and carries its own colour so the
+      // projectile is not drawn identically to the wall it is thrown at.
+      // Stone rather than wood: a wood ball off the steel crate leaves
+      // faster (26.4 m/s measured) but carries a quarter of the momentum
+      // and sails 111 m, and it bounced off this wall without moving it.
+      material: 'shot',
       at: [2.2, FLOOR, 4.97],
       collider: 'ball',
       ccd: true,
@@ -626,6 +617,23 @@ export function createTrebuchetStationV1(): PlaygroundStationV1 {
         centre: poses.ball.centre,
         quaternion: poses.ball.quaternion,
       },
+      // Rolling resistance, the force the solver cannot produce. Coulomb
+      // friction acts where surfaces slide; a ball rolling without
+      // slipping has no sliding at its contact, so friction does no work
+      // on it. Measured with this at zero, the ball held a constant
+      // 6.19 m/s one second after impact and 6.09 m/s at six seconds,
+      // and rolled back past the machine and out of the world. At 0.8 it
+      // reads 4.37 m/s at one second, 1.74 m/s at five, and comes to
+      // rest at tick 5009 at z -8.47 — 23.2 m of roll, stopping about
+      // 6.8 m short of the axle.
+      //
+      // Honest boundaries: this decays exponentially where true rolling
+      // resistance is closer to a constant retarding force, and the gate
+      // treats ANY contact as rolling contact, so it is also applied
+      // while the ball rests in the pouch. Applied here and not to the
+      // rolling station's sphere and cylinders, whose whole purpose is
+      // to measure undamped rolling.
+      rollingResistance: 0.8,
       tests: 'The payload, CCD on: at release speed it must not tunnel '
         + 'the landing floor.',
     },
@@ -720,13 +728,13 @@ export function createTrebuchetStationV1(): PlaygroundStationV1 {
     label: 'Trebuchet',
     summary: 'The first whole machine, and the only station with a '
       + 'target. Axle and hanger hinges, a sling pivot, and a rope '
-      + 'trigger: fire detaches the rope, the steel crate falls, the arm '
-      + 'whips the sling, and the open pouch lets the ball fly by '
+      + 'trigger: fire detaches the rope, the steel crate falls, the '
+      + 'arm whips the sling, and the open pouch lets the ball fly by '
       + 'geometry alone. It lands 32 m away in a brick wall that is 33 '
       + 'separate stacked bodies bonded by nothing, so it comes apart '
       + 'without any fracture system. Ablation runs prove the '
-      + 'counterweight, the sling, and the catch berm each earn their '
-      + 'place.',
+      + 'counterweight and the sling each earn their place, and a '
+      + 'counter-run proves the energy law can fail.',
     bodies,
     slopes: [],
     joints,
@@ -735,6 +743,23 @@ export function createTrebuchetStationV1(): PlaygroundStationV1 {
         id: 'fire',
         label: 'fire',
         actions: [{ kind: 'detach-joint', atTick: 30, jointId: 'trigger' }],
+      },
+      {
+        // Not offered as a thing to watch — it exists so the energy law
+        // has a demonstrated failure. An impulse is external energy by
+        // definition, so a run containing one must trip the check that
+        // says a passive machine never gains any.
+        id: 'kick',
+        label: 'control: kick the ball',
+        actions: [
+          { kind: 'detach-joint', atTick: 30, jointId: 'trigger' },
+          {
+            kind: 'impulse',
+            atTick: 600,
+            placementId: 'ball',
+            impulse: [0, 4000, 0],
+          },
+        ],
       },
     ],
     scenarios: [
@@ -793,8 +818,8 @@ export function createTrebuchetStationV1(): PlaygroundStationV1 {
           // it was thrown. The brick checks below are the direct
           // evidence that it arrived at z -32 carrying enough to matter.
           { check: 'moved-at-least', placementId: 'ball', minTravelMeters: 25 },
-          // The wall comes down. Measured, 30 of 33 bricks travel more
-          // than 0.25 m and the mean is 1.70 m; these four are named
+          // The wall comes down. Measured, 25 of 33 pieces travel more
+          // than 0.25 m, farthest 4.52 m, mean 1.85 m; these four are named
           // because they are the ones a glancing top-clip would leave
           // standing, so the checks separate 'knocked the wall down'
           // from 'chipped its top course'.
@@ -807,22 +832,34 @@ export function createTrebuchetStationV1(): PlaygroundStationV1 {
           // compression. Ending below the floor would still fail every
           // later frame.
           { check: 'no-floor-penetration', floorTopY: FLOOR, toleranceMeters: 0.06 },
+          // Conservation of energy, frame to frame. The machine has no
+          // motor: every joule it spends on the ball, the wall, and the
+          // rubble was already in the raised crate when the run began,
+          // so the total must fall monotonically.
+          //
+          // 1% is measured, not chosen: the worst legitimate sampled
+          // gain in a clean run is 0.43%, during the violent part of the
+          // whip, so this sits 2.3x above the noise. It is not a claim of
+          // unlimited sensitivity — an injection smaller than one
+          // sampling interval's dissipation is still invisible, and the
+          // measured detection floor is between a 200 and a 400 unit
+          // impulse on the 35.3-mass ball.
+          { check: 'energy-never-increases', toleranceFraction: 0.01 },
           { check: 'all-finite' },
         ],
       },
       {
-        // Negative control. The runner is expected to report FAIL here:
-        // without the berm the rolling ball leaves the last tile and
-        // falls, which the floor-penetration check reads as an enormous
-        // dip. The test asserts the failure, so the berm's stated job is
-        // evidence rather than assertion.
-        id: 'treb-fire-no-berm',
-        label: 'Control: without the catch berm the ball leaves the world',
-        caseId: 'fire',
-        omit: ['catch-berm'],
-        ticks: 3600,
+        // Negative control for the energy law. The runner is expected to
+        // report FAIL: the mid-flight kick puts energy into a machine
+        // that has no source for it, which is exactly what the check
+        // exists to catch. Without this, 'energy never increased' could
+        // equally mean 'the check cannot fail'.
+        id: 'treb-energy-control',
+        label: 'Control: a kicked ball breaks conservation of energy',
+        caseId: 'kick',
+        ticks: 900,
         checks: [
-          { check: 'no-floor-penetration', floorTopY: FLOOR, toleranceMeters: 0.06 },
+          { check: 'energy-never-increases', toleranceFraction: 0.02 },
         ],
       },
       {

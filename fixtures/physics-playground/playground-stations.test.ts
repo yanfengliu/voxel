@@ -221,6 +221,28 @@ describe('collision range', () => {
 
   it('equal masses exchange momentum', async () => {
     expectPass(await runPlaygroundScenarioV1(launcher, 'launcher-equal'));
+  }, 60_000);
+
+  it("conserves momentum when two shots meet in mid-air (Newton's third)", async () => {
+    // The one arrangement here where the third law is checkable exactly:
+    // both bodies airborne, gravity the only outside force and removed
+    // exactly. Measured drift is 0.002 against a momentum of ~2,968.
+    expectPass(await runPlaygroundScenarioV1(launcher, 'launcher-midair-momentum'));
+  }, 60_000);
+
+  it('does not find momentum conserved for one body of the pair', async () => {
+    // The control that makes the law above mean something: the same
+    // collision, one body accounted instead of two, must fail — and
+    // does, drifting 427 against the same 1% allowance.
+    const result = await runPlaygroundScenarioV1(launcher, 'launcher-midair-one-body');
+    expect(result.status, playgroundResultLineV1(result)).toBe('fail');
+    // 'drifted' specifically: the missing-body diagnostic also contains
+    // the word 'momentum', so matching that alone would let this pass
+    // when the scenario never collided at all.
+    expect(
+      result.checks.some((check) => check.detail.includes('drifted')),
+      'expected the momentum drift check to be what fails',
+    ).toBe(true);
   }, 120_000);
 
   it('without CCD the fast shot tunnels through the thin wall (documented artifact)', async () => {

@@ -50,6 +50,9 @@ export function createPhysicsPlaygroundProfileV1(
         combine: spec.combine,
       },
       ...(spec.ccd ? { ccd: true } : {}),
+      ...(spec.rollingResistance !== undefined
+        ? { rollingResistance: spec.rollingResistance }
+        : {}),
       ...(spec.ballRadius !== undefined ? { ballRadius: spec.ballRadius } : {}),
       ...(spec.spawnOnly ? { spawnOnly: true } : {}),
     });

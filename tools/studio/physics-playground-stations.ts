@@ -28,10 +28,13 @@ export * from './physics-playground-types.js';
  * the playground's version of the no-orphan rule. A body that tested
  * nothing would be decoration, and decoration is an uncontrolled variable.
  *
- * Size note: this data module runs well past the 500-line norm because five
- * stations' bodies, cases, and scenarios live together. The recorded
- * extraction plan is one module per station (the fields already moved to
- * physics-playground-fields.ts) the first time any single station grows.
+ * Size note: this data module has now crossed 1,000 lines because five
+ * stations' bodies, cases, and scenarios live together, and the launcher
+ * grew again to carry the mid-air momentum pair that binds Newton's third
+ * law. That is the recorded extraction trigger firing: the next station
+ * to gain anything moves to its own module, launcher first, following
+ * physics-playground-fields.ts and physics-playground-trebuchet.ts which
+ * already left. Nothing further should be added here before that split.
  */
 
 const FLOOR_TOP = PLAYGROUND_FLOOR_TOP_V1;
@@ -409,6 +412,35 @@ function launcherStation(): PlaygroundStationV1 {
         actions: [{ kind: 'spawn', atTick: 0, placementId: 'proj-equal', centre: muzzle(0), velocity: [0, 0, -12] }],
       },
       {
+        // Two bodies meeting in open air, nothing else touching either.
+        // This is the one arrangement in the playground where Newton's
+        // third law is checkable exactly: gravity is the only outside
+        // force and its impulse subtracts cleanly, so whatever momentum
+        // one body gains the other must have lost. On the ground the
+        // floor quietly takes momentum through friction — measured at
+        // the equal-mass lane, the pair's momentum drifts 7.7% across
+        // even a 4-tick window and grows linearly with it, which is
+        // friction, not a solver fault.
+        id: 'head-on-midair',
+        label: 'Two shots meet in mid-air',
+        actions: [
+          {
+            kind: 'spawn',
+            atTick: 0,
+            placementId: 'proj-heavy',
+            centre: [6, 9, 4],
+            velocity: [0, 0, -14],
+          },
+          {
+            kind: 'spawn',
+            atTick: 0,
+            placementId: 'proj-equal',
+            centre: [6, 9, -4],
+            velocity: [0, 0, 10],
+          },
+        ],
+      },
+      {
         id: 'fast-wall-ccd',
         label: 'Fast shot at the thin wall (CCD on)',
         actions: [{ kind: 'spawn', atTick: 0, placementId: 'proj-fast', centre: [2, 1.2, 5.1], velocity: [0, 0, -300], ccd: true }],
@@ -458,6 +490,43 @@ function launcherStation(): PlaygroundStationV1 {
         checks: [
           { check: 'moved-at-least', placementId: 'target-equal', minTravelMeters: 1.5 },
           { check: 'all-finite' },
+        ],
+      },
+      {
+        // The collision happens around tick 80 while both bodies are
+        // still 8 m up; the window brackets it and both are airborne
+        // throughout, so the only outside force is gravity.
+        id: 'launcher-midair-momentum',
+        label: 'Mid-air collision conserves momentum',
+        caseId: 'head-on-midair',
+        ticks: 200,
+        checks: [
+          {
+            check: 'momentum-conserved',
+            placementIds: ['proj-heavy', 'proj-equal'],
+            fromTick: 40,
+            toTick: 120,
+            toleranceFraction: 0.01,
+          },
+          { check: 'all-finite' },
+        ],
+      },
+      {
+        // Negative control for the law above: one body of a colliding
+        // pair does not conserve its own momentum, and must not appear
+        // to. If this passed, the check would be measuring nothing.
+        id: 'launcher-midair-one-body',
+        label: 'Control: one body of the pair does not conserve momentum',
+        caseId: 'head-on-midair',
+        ticks: 200,
+        checks: [
+          {
+            check: 'momentum-conserved',
+            placementIds: ['proj-heavy'],
+            fromTick: 40,
+            toTick: 120,
+            toleranceFraction: 0.01,
+          },
         ],
       },
       {

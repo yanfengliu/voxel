@@ -68,6 +68,25 @@ export interface PlaygroundBodyDefV1 {
   readonly collider?: 'voxel' | 'ball';
   /** Continuous collision detection for declared fast bodies. */
   readonly ccd?: boolean;
+  /**
+   * Rolling resistance, as an angular damping factor (1/s).
+   *
+   * This is a modelled force, not a stabiliser, and it is here because
+   * the solver cannot produce it. Coulomb friction acts where surfaces
+   * slide against each other; a ball rolling without slipping has no
+   * sliding at its contact point, so friction does no work on it and a
+   * rolling sphere on flat ground keeps its speed forever. Real balls
+   * stop because ball and ground deform slightly, moving the contact
+   * pressure ahead of centre and producing a retarding torque. Rigid
+   * bodies do not deform, so that torque has to be supplied.
+   *
+   * Angular damping supplies it: the solver applies a torque opposing
+   * spin, which the rolling constraint turns into deceleration. The
+   * value is stated per body and its measured effect recorded, so this
+   * never becomes an unexplained number that quietly holds a scene
+   * together.
+   */
+  readonly rollingResistance?: number;
   /** Quarter-turns about world y for free-standing bodies. */
   readonly turns?: 0 | 1 | 2 | 3;
   /** The body exists queued and bodiless until a spawn case fires it. */
@@ -133,6 +152,36 @@ export type PlaygroundCheckRefV1 =
      * than loosening the threshold until the truth fits.
      */
     readonly placementIds?: readonly string[];
+  }
+  | {
+    /**
+     * Conservation of energy. A passive machine — no motor, no engine —
+     * can never hold more mechanical energy than it started with, so the
+     * opening total is a ceiling for the whole run. This is the check
+     * that catches a solver injecting energy, which is how a physics bug
+     * usually announces itself: a stack that shivers itself apart, a
+     * joint that flings its own arm, a contact that pumps a body upward.
+     */
+    readonly check: 'energy-never-increases';
+    /** Fraction of the opening total allowed as headroom, e.g. 0.02. */
+    readonly toleranceFraction: number;
+    /** Bodies to account; omitted means every dynamic body. */
+    readonly placementIds?: readonly string[];
+  }
+  | {
+    /**
+     * Newton's third law, as the thing it implies: when two bodies push
+     * on each other and nothing else does, their equal and opposite
+     * impulses leave the total momentum unchanged. Gravity is the one
+     * outside force here and is subtracted exactly, so what remains is
+     * the collision itself.
+     */
+    readonly check: 'momentum-conserved';
+    readonly placementIds: readonly string[];
+    readonly fromTick: number;
+    readonly toTick: number;
+    /** Allowed drift as a fraction of the opening momentum magnitude. */
+    readonly toleranceFraction: number;
   }
   | {
     readonly check: 'peak-speed-at-least';

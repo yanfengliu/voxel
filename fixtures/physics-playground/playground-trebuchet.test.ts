@@ -90,7 +90,7 @@ describe('the trebuchet scenarios', () => {
         ? 'wall-base'
         : id.startsWith('brick-')
           ? 'wall'
-          : id.startsWith('floor') || id === 'catch-berm'
+          : id.startsWith('floor')
             ? 'ground'
             : id;
       const nodeId = sceneNodeId(system, 'solid', slug);
@@ -99,16 +99,15 @@ describe('the trebuchet scenarios', () => {
     }
   });
 
-  it('without the catch berm the ball leaves the world', async () => {
-    // The berm's removal failure, executed. `treb-fire` passes with it;
-    // the same fire without it must fail the floor-penetration check,
-    // because a ball that rolls off the last tile keeps falling.
-    const result = await runPlaygroundScenarioV1(station, 'treb-fire-no-berm');
+  it('a kicked ball is caught breaking conservation of energy', async () => {
+    // The energy law's own failure, executed. `treb-fire` passes the
+    // same check; adding one impulse mid-flight must fail it, or the
+    // passing verdict would mean nothing.
+    const result = await runPlaygroundScenarioV1(station, 'treb-energy-control');
     expect(result.status, playgroundResultLineV1(result)).toBe('fail');
-    const dip = result.checks.find(
-      (check) => check.detail.includes('below the floor top'));
-    expect(dip, 'expected the floor-penetration check to be what fails')
-      .toBeDefined();
+    const energy = result.checks.find(
+      (check) => check.detail.includes('Mechanical energy rose'));
+    expect(energy, 'expected the energy check to be what fails').toBeDefined();
   }, 300_000);
 
   it('fires identically twice', async () => {

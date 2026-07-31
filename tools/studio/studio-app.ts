@@ -263,19 +263,25 @@ function describeVoxelSize(voxelSize: number, size: readonly [number, number, nu
 }
 
 /**
- * True when the scene, not the author, decides where its models stand — a
- * consumer replay, or a live profile that spawns them at solved poses.
- *
- * Editing is switched off for both, for one reason: the pose the editor would
- * write is not the pose that gets presented, so a drag would appear to do
- * nothing. The chain is the clear case — its rings are spawned leaning along
- * the catenary tangent, a rotation no placement can express, so the authored
- * transform is only a fallback nobody ever sees.
+ * True when something other than the authored placement decides where a
+ * body sits, which is what makes placement editing read-only. Covers both
+ * a recorded consumer replay and a live solver's opening poses.
  */
 function isSelfPosedScene(scene: SceneV1 | null): boolean {
   if (scene === null) return false;
   if (scene.schemaVersion === VOXEL_SCENE_SCHEMA_V4) return true;
   return Object.keys(LIVE_PHYSICS_PROFILES_V1[scene.id]?.poses ?? {}).length > 0;
+}
+
+/**
+ * True only for a scene that plays back a recording. Self-posed is not
+ * the same thing: a live-physics scene computes its opening poses and
+ * then solves every frame in the browser, and labelling that a replay
+ * says the opposite of what it does. The distinction is the whole point
+ * of the scenes-simulate-live rule, so the status chip must not blur it.
+ */
+function isRecordedReplayScene(scene: SceneV1 | null): boolean {
+  return scene !== null && scene.schemaVersion === VOXEL_SCENE_SCHEMA_V4;
 }
 
 function replayEventStatusSuffix(event: ScenePoseReplayEventV1): string {
@@ -312,11 +318,24 @@ function replayEventEvidence(event: ScenePoseReplayEventV1): string {
 }
 
 function replaySceneEditError(scene: SceneV1, action: string): Error {
-  const replayId = scene.schemaVersion === VOXEL_SCENE_SCHEMA_V4
-    ? scene.poseReplay.id
-    : 'unknown';
+  // A live-solved scene is not a recording, and telling someone to
+  // 'regenerate the replay' for one sends them after a file that does
+  // not exist. Both kinds are read-only for the same reason — something
+  // other than the authored placement decides where a body sits — but
+  // that reason has to be named correctly.
+  if (scene.schemaVersion !== VOXEL_SCENE_SCHEMA_V4) {
+    return new Error(
+      `Scene '${scene.id}' poses its own models from a live physics `
+      + `profile and is read-only in Studio; ${action} would diverge `
+      + 'authored scene data or selection from the poses the solver is '
+      + 'producing. Use Interact to move things by hand, reset the '
+      + 'station to return them, or change the profile in the source that '
+      + 'declares it.',
+    );
+  }
   return new Error(
-    `Scene '${scene.id}' is driven by consumer pose replay '${replayId}' and is read-only in Studio; `
+    `Scene '${scene.id}' is driven by consumer pose replay `
+    + `'${scene.poseReplay.id}' and is read-only in Studio; `
     + `${action} would diverge authored scene data or selection from the recorded poses. `
     + 'Play or scrub the replay to inspect it, delete the scene from its library menu if it is no longer wanted, '
     + 'or update the consumer simulation or trace source and regenerate the replay to change the assembly.',
@@ -645,6 +664,14 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
     + 'Play or scrub to inspect recorded poses, use the look and camera controls to examine them, '
     + 'or delete the scene from its library menu. To change the assembly, update the consumer simulation '
     + 'or trace source and regenerate the replay.',
+  );
+  // The same read-only fact for a scene that solves live. Nothing here is
+  // recorded, so none of the replay advice above applies.
+  const sceneLiveReadOnlyNote = sceneNote(
+    'This scene poses its own models from a live physics profile and is read-only in Studio. '
+    + 'Nothing here is recorded: the solver runs in this browser every frame. '
+    + 'Use Interact to move things by hand, reset the station to put them back, '
+    + 'or change the profile where it is declared.',
   );
   // A scene's tab content sits as an opaque overlay over each model-only tab,
   // shown while a scene is open — so the model's own content underneath keeps
@@ -1758,10 +1785,11 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
     const count = scene.placements.length;
     const lightCount = scene.lights?.length ?? 0;
     const hasMotion = sceneSession?.hasMotion() === true;
-    const replayReadOnly = isSelfPosedScene(scene);
-    const replay = replayReadOnly ? sceneSession?.poseReplayStatus() : null;
+    const recorded = isRecordedReplayScene(scene);
+    const liveSolved = !recorded && isSelfPosedScene(scene);
+    const replay = recorded ? sceneSession?.poseReplayStatus() : null;
     const latest = replay?.sample?.latestEvent;
-    const replaySuffix = replayReadOnly
+    const replaySuffix = recorded
       ? latest === undefined || latest === null
         ? ' · replay staged'
         : ` · ${replayEventStatusSuffix(latest)}`
@@ -1769,7 +1797,8 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
     statusChip.textContent = `scene · ${String(count)} model${count === 1 ? '' : 's'}`
       + sceneLightingStatusSuffix(lightCount, session.lit)
       + sceneAnimationStatusSuffix(hasMotion, sceneTransport.enabled)
-      + (replayReadOnly ? ' · consumer replay · read-only' : '')
+      + (recorded ? ' · consumer replay · read-only' : '')
+      + (liveSolved ? ' · live physics · solved in browser' : '')
       + (replay?.playback === 'once' ? ' · one shot' : '')
       + replaySuffix;
     statusChip.title = replay === null || replay === undefined
@@ -1942,7 +1971,10 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
     // that make or note a single model step aside.
     setInspectorSceneMode(true);
     sceneEditor.element.hidden = replayReadOnly;
-    sceneReplayReadOnlyNote.hidden = !replayReadOnly;
+    // Both are read-only; only one of them is a recording.
+    const recordedScene = isRecordedReplayScene(scene);
+    sceneReplayReadOnlyNote.hidden = !recordedScene;
+    sceneLiveReadOnlyNote.hidden = !(replayReadOnly && !recordedScene);
     if (!replayReadOnly) sceneEditor.render(scene, selectedPlacementId);
     sceneNotesPanel?.render(scene.id);
     newButton.hidden = true;
@@ -3193,6 +3225,7 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
     };
     attachSceneInspector('edit', sceneEditor.element);
     attachSceneInspector('edit', sceneReplayReadOnlyNote);
+    attachSceneInspector('edit', sceneLiveReadOnlyNote);
     attachSceneInspector('build', sceneBuildNote);
     attachSceneInspector('motion', sceneMotionNote);
     attachSceneInspector('notes', sceneNotesPanel.element);

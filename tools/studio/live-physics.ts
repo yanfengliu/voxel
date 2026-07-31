@@ -55,6 +55,14 @@ export interface LivePhysicsBodyPlanV1 {
   /** Continuous collision detection, for declared fast bodies. */
   readonly ccd?: boolean;
   /**
+   * Angular damping standing in for rolling resistance. A rolling
+   * sphere does not slide at its contact, so Coulomb friction does no
+   * work on it and a rigid ball would roll at constant speed forever;
+   * real ones stop because contact deformation drags them. See the
+   * station body type for the full reasoning.
+   */
+  readonly rollingResistance?: number;
+  /**
    * A primitive ball collider of this radius instead of the exact voxel
    * boxes — a stated simplification for bodies that must roll smoothly.
    */
@@ -191,6 +199,8 @@ interface LiveBodyInternal {
   readonly body: RapierRigidBody;
   readonly colliders: readonly RapierCollider[];
   readonly voxelCount: number;
+  /** Contact-gated rolling resistance, when the plan declares one. */
+  readonly rollingResistance?: number;
 }
 
 interface GrabInternal {
@@ -354,6 +364,9 @@ export class LivePhysicsSessionV1 {
     this.#bodies.set(source.placementId, {
       body,
       colliders,
+      ...(plan.rollingResistance !== undefined
+        ? { rollingResistance: plan.rollingResistance }
+        : {}),
       voxelCount: decomposition.cells,
     });
   }
@@ -559,6 +572,7 @@ export class LivePhysicsSessionV1 {
     this.#assertLive();
     this.#applyGrabSpring();
     this.#applyWind();
+    this.#applyRollingResistance();
     this.#world.step();
     this.#stepped += 1;
   }
@@ -590,8 +604,35 @@ export class LivePhysicsSessionV1 {
       this.#accumulatorS -= TIMESTEP_S;
       this.#applyGrabSpring();
       this.#applyWind();
+      this.#applyRollingResistance();
       this.#world.step();
       this.#stepped += 1;
+    }
+  }
+
+  /**
+   * Rolling resistance, applied only while the body is touching
+   * something — the same contact gate the headless lane uses, because
+   * the two must solve the same world. Always-on angular damping is
+   * drag, not rolling resistance: it bleeds a projectile in flight and
+   * measurably shortens a throw.
+   */
+  #applyRollingResistance(): void {
+    for (const live of this.#bodies.values()) {
+      const resistance = live.rollingResistance;
+      if (resistance === undefined) continue;
+      // A holder object, not a plain `let`: the callback runs
+      // synchronously inside contactPairsWith, but control-flow analysis
+      // cannot see that and narrows a boolean to always-false.
+      const contact = { found: false };
+      for (const collider of live.colliders) {
+        this.#world.contactPairsWith(collider, () => { contact.found = true; });
+        if (contact.found) break;
+      }
+      const wanted = contact.found ? resistance : 0;
+      if (live.body.angularDamping() !== wanted) {
+        live.body.setAngularDamping(wanted);
+      }
     }
   }
 
