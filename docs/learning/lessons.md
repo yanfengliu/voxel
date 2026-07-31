@@ -61,3 +61,15 @@ Any margin picked against what else happens to be running is consumed by the nex
 It was not the cause. Recording that is worth as much as a fix, because the next person will have the same idea, and "already tried, no effect" is what stops a good hypothesis being tested three times.
 
 Also worth naming: the second failure that appears at 60 Hz reads as a determinism break, and is not one. The determinism case re-runs the scenario and asserts it does not fail, so it simply reports the penetration failure a second time. A failing check that shows up twice under two names invites a much larger investigation than it deserves.
+
+## A live Riverfall costs almost a whole frame, and the solver is most of it
+
+**Anchor:** 2026-07-31. Measured through `RiverfallLiveSurfaceV1` at `LIVE_TIMESTEP_SECONDS_V1`: 15.75 ms per frame after optimisation, against the 16.67 ms a 60 Hz frame has for everything including rendering.
+
+Converting Riverfall off the recorded lane is not blocked by the surface mapping, which was the part that looked expensive. It is blocked by the fluid.
+
+The split, measured separately: the PBF solver costs **2.97 ms per 5 ms substep**, and a 1/60 s frame needs **3.33** of them — **9.89 ms of solver per frame**. The surface remap costs the rest.
+
+The remap started at 8.05 ms and is now 6.23 ms, from one change: it was collecting every candidate particle for a cell into an array, sorting the whole array, and keeping the nearest eight. With 321 cells against 288 witnesses that is 321 sorts a frame of a list that is 97% discarded. Keeping the best eight by insertion instead produces the identical selection — the ordering was (distance, then particle index), which is exactly the order particles arrive in for ties — and the byte-for-byte replay pin proved the output did not move by a single float. That pin is what made the optimisation safe to attempt at all.
+
+What is left is the solver, and the honest lever is its substep. `substepMs` is 5, chosen for the recorded lane where wall-clock cost did not matter. Doubling it to 10 would halve the per-frame solver cost, but it changes the integration, so it changes the recorded trace, and PBF stability at a coarser substep has to be re-measured rather than assumed — density error, boundary correction, and the acceptance gates all bound behaviour that a longer substep degrades. Do not simply raise it to make the frame fit; that is the same mistake as widening a penetration tolerance.

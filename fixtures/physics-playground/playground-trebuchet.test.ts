@@ -20,6 +20,7 @@ import {
   TREBUCHET_TRIGGER_ROPE_V1,
 } from '../../tools/studio/physics-playground-trebuchet.js';
 import {
+  expectScenarioCorrectV1,
   playgroundResultLineV1,
   runPlaygroundScenarioV1,
 } from './playground-run.js';
@@ -113,8 +114,15 @@ describe('the trebuchet scenarios', () => {
   it('comes to rest after firing', async () => {
     // The arm and counterweight hang on frictionless revolute joints, so
     // nothing in the solver stops them on its own.
+    // Judged by its checks, not by `status === 'pass'`. The runner
+    // downgrades a run to 'warn' when a solver step overran the wall-clock
+    // budget, which says the machine was busy and nothing about the
+    // physics — measured on a loaded full-gate run, this scenario passed
+    // every check with a max step of 81.48 ms and was reported a failure.
+    // `expectScenarioCorrectV1` exists for exactly this and is documented
+    // as such; these two cases were the last ones not using it.
     const result = await runPlaygroundScenarioV1(station, 'treb-settles');
-    expect(result.status, playgroundResultLineV1(result)).toBe('pass');
+    expectScenarioCorrectV1(result);
   }, 300_000);
 
   it('without bearing friction the machine never stops swinging', async () => {
@@ -142,7 +150,7 @@ describe('the trebuchet scenarios', () => {
     // declared impulse makes this fail, which a counter-run on the
     // energy control could never have shown.
     const result = await runPlaygroundScenarioV1(station, 'treb-second-law');
-    expect(result.status, playgroundResultLineV1(result)).toBe('pass');
+    expectScenarioCorrectV1(result);
   }, 120_000);
 
   it('fires identically twice', async () => {
