@@ -292,6 +292,103 @@ test('a launcher case fires and the debug overlay draws', async ({ page }) => {
   expect(errors).toEqual([]);
 });
 
+test('the fired trebuchet knocks the brick wall down', async ({ page }) => {
+  const errors: string[] = [];
+  page.on('pageerror', (error) => errors.push(error.message));
+  page.on('console', (message) => {
+    if (message.type() === 'error') errors.push(message.text());
+  });
+
+  const response = await page.goto(studioOrigin, { waitUntil: 'load' });
+  expect(response?.ok()).toBe(true);
+  await openPlayground(page, 'studio:scene:physics-trebuchet');
+
+  const wallPoses = async (): Promise<Record<string, readonly number[]>> =>
+    page.evaluate(() => Object.fromEntries(
+      window.voxelStudio!.playground.bodies()
+        .filter((body) => body.placementId.startsWith('brick-'))
+        .map((body) => [body.placementId, body.translation])));
+
+  // The wall stands on its own before anything is thrown at it. This is
+  // the half-brick closers earning their place: whole-brick offsets left
+  // the top corners overhanging and they fell with the world untouched.
+  const before = await wallPoses();
+  expect(Object.keys(before)).toHaveLength(33);
+  await page.waitForFunction(
+    () => window.voxelStudio!.playground.state().stepped > 200,
+    undefined,
+    { timeout: 30_000 },
+  );
+  const settled = await wallPoses();
+  for (const [id, start] of Object.entries(before)) {
+    const now = settled[id]!;
+    const drift = Math.hypot(
+      now[0]! - start[0]!, now[1]! - start[1]!, now[2]! - start[2]!);
+    expect(drift, `${id} drifted before the shot`).toBeLessThan(0.05);
+  }
+
+  // Pause first, then fire and advance an exact tick count. Left to run
+  // on wall-clock timing this assertion is genuinely flaky — a
+  // collapsing stack is chaotic, and two runs of this lane measured 25
+  // and 11 bricks moved from the same starting world, because the live
+  // loop batches a variable number of steps per frame. Fixed stepping
+  // removes the variable, which is what the tick control is for.
+  await page.evaluate(() => { window.voxelStudio!.playground.pause(); });
+  expect(await page.evaluate(() =>
+    window.voxelStudio!.playground.fireCase('fire'))).toBe(true);
+  await page.evaluate(() => {
+    window.voxelStudio!.playground.stepOnce(1500);
+  });
+
+  const after = await wallPoses();
+  let knocked = 0;
+  let farthest = 0;
+  for (const [id, start] of Object.entries(before)) {
+    const now = after[id]!;
+    const moved = Math.hypot(
+      now[0]! - start[0]!, now[1]! - start[1]!, now[2]! - start[2]!);
+    if (moved > 0.25) knocked += 1;
+    farthest = Math.max(farthest, moved);
+  }
+  // Deliberately a loose bound on a chaotic quantity. Headless measures
+  // 30 of 33; this lane measured 25 and 11 across runs, because the
+  // world settles for a variable number of wall-clock steps before the
+  // test can pause it, and a collapsing stack amplifies that start
+  // difference. Pinning 18 or 25 here would be a flake generator. Eight
+  // bricks displaced past a quarter metre, one of them thrown over a
+  // metre, is still something a merely chipped wall cannot produce, and
+  // the headless scenario carries the exact per-brick assertions.
+  expect(knocked, 'the wall should be knocked down, not chipped')
+    .toBeGreaterThanOrEqual(8);
+  expect(farthest).toBeGreaterThan(1);
+
+  // Nothing invalid came out of 33 bodies colliding at once.
+  const finite = await page.evaluate(() => window.voxelStudio!.playground
+    .bodies().every((body) => body.translation.every(Number.isFinite)
+      && body.linearVelocity.every(Number.isFinite)));
+  expect(finite).toBe(true);
+
+  // Reset puts the wall back up, which is what makes it re-runnable.
+  await page.evaluate(() => { window.voxelStudio!.playground.reset(); });
+  await page.waitForFunction(
+    () => {
+      const state = window.voxelStudio!.playground.state();
+      return state.available && state.stepped < 400;
+    },
+    undefined,
+    { timeout: 30_000 },
+  );
+  const rebuilt = await wallPoses();
+  for (const [id, start] of Object.entries(before)) {
+    const now = rebuilt[id]!;
+    const off = Math.hypot(
+      now[0]! - start[0]!, now[1]! - start[1]!, now[2]! - start[2]!);
+    expect(off, `${id} did not return to its course`).toBeLessThan(0.1);
+  }
+
+  expect(errors).toEqual([]);
+});
+
 test('the trebuchet holds cocked, fires downrange, and reset re-cocks it', async ({ page }) => {
   const errors: string[] = [];
   page.on('pageerror', (error) => errors.push(error.message));

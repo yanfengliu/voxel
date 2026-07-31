@@ -85,6 +85,23 @@ export const TREBUCHET_SLING_LENGTH_V1 = 3.0;
  * build gate measured 0.48 m of sling-through-anchor penetration. */
 export const TREBUCHET_TRIGGER_ROPE_V1 = 0.24;
 
+/**
+ * The target wall. Its z is not a taste decision: the shipped machine's
+ * ball comes back down through y = 2.0 m at z = -32.1 doing 20.5 m/s, so
+ * the wall stands exactly there and the ball meets it in its upper-middle
+ * course rather than clearing the top or ploughing the base.
+ *
+ * One brick is 1.0 x 0.5 x 0.5 m. Courses alternate 5 and 4 bricks in a
+ * running bond, so no vertical joint runs through two courses and the
+ * wall must be broken rather than split. Nothing binds the bricks: they
+ * are separate rigid bodies resting on each other, which is the whole
+ * reason a hit scatters them without any fracture system.
+ */
+export const TREBUCHET_WALL_Z_V1 = -32;
+export const TREBUCHET_WALL_COURSES_V1 = 6;
+const BRICK_W = 1;
+const BRICK_H = 0.5;
+
 const FLOOR = PLAYGROUND_FLOOR_TOP_V1;
 const COCKED = (TREBUCHET_COCKED_DEGREES_V1 * Math.PI) / 180;
 
@@ -179,26 +196,29 @@ export function createTrebuchetArmRecipe(): RecipeV1 {
  */
 export function createTrebuchetCounterweightRecipe(): RecipeV1 {
   const eye = (x: number) => [
-    boxStep([x, 4, 0], [1, 1, 5], 'stone', 'Eye ring, lower bar'),
-    boxStep([x, 8, 0], [1, 1, 5], 'stone', 'Eye ring, upper bar'),
-    boxStep([x, 5, 0], [1, 3, 1], 'stone', 'Eye ring, fore cheek'),
-    boxStep([x, 5, 4], [1, 3, 1], 'stone', 'Eye ring, aft cheek'),
+    boxStep([x, 4, 0], [1, 1, 5], 'steel', 'Eye ring, lower bar'),
+    boxStep([x, 8, 0], [1, 1, 5], 'steel', 'Eye ring, upper bar'),
+    boxStep([x, 5, 0], [1, 3, 1], 'steel', 'Eye ring, fore cheek'),
+    boxStep([x, 5, 4], [1, 3, 1], 'steel', 'Eye ring, aft cheek'),
   ];
   return playgroundRecipe({
     id: 'studio:pg-treb-cw',
     label: 'Trebuchet counterweight',
-    summary: 'A hinged crate of stone at 317.5 mass, thirty-seven times '
+    summary: 'A hinged crate of steel at 990.6 mass, twenty-eight times '
       + 'the ball — the machine\'s only power source and its range '
-      + 'governor. Remove it and the fire case does nothing: the '
-      + 'no-counterweight scenario measures the fired arm sweeping 0.4 '
-      + 'degrees and the ball moving 9 cm.',
+      + 'governor. Drawn in steel because it is simulated as steel: the '
+      + 'same crate in stone threw the ball at 4.9 m/s, and a picture '
+      + 'that showed stone would understate the mass threefold. Remove '
+      + 'it and the fire case does nothing: the no-counterweight '
+      + 'scenario measures the fired arm sweeping 0.4 degrees and the '
+      + 'ball moving 9 cm.',
     size: [7, 9, 5],
-    material: 'stone',
+    material: 'steel',
     steps: [
       ...eye(0), ...eye(6),
-      boxStep([0, 2, 0], [1, 2, 5], 'stone', 'West strap joining eye to box'),
-      boxStep([6, 2, 0], [1, 2, 5], 'stone', 'East strap joining eye to box'),
-      boxStep([1, 0, 0], [5, 3, 5], 'stone', 'The stone-filled crate itself'),
+      boxStep([0, 2, 0], [1, 2, 5], 'steel', 'West strap joining eye to box'),
+      boxStep([6, 2, 0], [1, 2, 5], 'steel', 'East strap joining eye to box'),
+      boxStep([1, 0, 0], [5, 3, 5], 'steel', 'The steel-filled crate itself'),
     ],
   });
 }
@@ -261,9 +281,12 @@ export function createTrebuchetBallRecipe(): RecipeV1 {
     schemaVersion: 'studio.voxel-recipe/1',
     id: 'studio:pg-treb-ball',
     label: 'Trebuchet ball',
-    summary: 'The payload. Declared a primitive ball collider so the pouch '
-      + 'launch reads whip dynamics, not voxel-corner snags — the rolling '
-      + 'station already measures that artifact separately.',
+    summary: 'The payload, stone. Declared a primitive ball collider so '
+      + 'the pouch launch reads whip dynamics, not voxel-corner snags — '
+      + 'the rolling station already measures that artifact separately. '
+      + 'Stone rather than wood because momentum, not release speed, is '
+      + 'what brings a wall down: the wood ball leaves faster and '
+      + 'bounced off the same wall without moving it.',
     seed: 1,
     size: [diameter, diameter, diameter],
     roles,
@@ -434,6 +457,48 @@ export function trebuchetCockedPosesV1(): TrebuchetPosesV1 {
 
 // ---- the station ----
 
+/**
+ * The wall's pieces, from one bounded rule. Every course spans exactly
+ * the same 5 m: an even course is 5 full bricks, an odd course is a half
+ * brick, 4 full bricks, and a half brick. That is what staggers the
+ * vertical joints without leaving an overhang — the first cut simply
+ * offset whole bricks, and the measured result was that both top corners
+ * toppled on their own before the ball ever arrived, because a brick
+ * whose center of mass sits past the edge of its support falls.
+ *
+ * Each piece is its own dynamic body resting on the one below. Nothing
+ * binds them, which is precisely why the wall comes apart when hit and
+ * why this needs no fracture system at all.
+ */
+export function trebuchetWallBricksV1(): readonly PlaygroundBodyDefV1[] {
+  const bricks: PlaygroundBodyDefV1[] = [];
+  const half = BRICK_W / 2;
+  for (let course = 0; course < TREBUCHET_WALL_COURSES_V1; course += 1) {
+    // Left edge of the course's span, walked rightwards piece by piece.
+    const widths = course % 2 === 0
+      ? [BRICK_W, BRICK_W, BRICK_W, BRICK_W, BRICK_W]
+      : [half, BRICK_W, BRICK_W, BRICK_W, BRICK_W, half];
+    let left = -2.5;
+    widths.forEach((width, index) => {
+      bricks.push({
+        placementId: `brick-${String(course)}-${String(index)}`,
+        recipeId: width === half ? 'studio:pg-brick-half' : 'studio:pg-brick',
+        kind: 'dynamic',
+        material: 'stone',
+        at: [left + width / 2, FLOOR + course * BRICK_H, TREBUCHET_WALL_Z_V1],
+        tests: course === 0
+          ? 'A base course brick: it carries every course above, so its '
+            + 'displacement separates a hole punched through the wall '
+            + 'from a wall that actually came down.'
+          : 'A brick in the stack, held up by nothing but the bricks '
+            + 'below it and moved by nothing but contact.',
+      });
+      left += width;
+    });
+  }
+  return bricks;
+}
+
 export function createTrebuchetStationV1(): PlaygroundStationV1 {
   const poses = trebuchetCockedPosesV1();
   const bodies: PlaygroundBodyDefV1[] = [
@@ -465,13 +530,25 @@ export function createTrebuchetStationV1(): PlaygroundStationV1 {
         + 'rolls, so the field must reach well past the landing point.',
     },
     {
+      placementId: 'floor-downrange-3',
+      recipeId: 'studio:pg-floor',
+      kind: 'fixed',
+      material: 'deck',
+      at: [0, 0, -36],
+      tests: 'The wall stands on this tile and its rubble lands on it. '
+        + 'The steel-crate shot reaches wall height at z -32, well past '
+        + 'the three tiles the stone-crate machine needed.',
+    },
+    {
       placementId: 'catch-berm',
       recipeId: 'studio:pg-berm',
       kind: 'fixed',
       material: 'stone',
-      at: [0, FLOOR, -29.6],
+      at: [0, FLOOR, -41.6],
       turns: 1,
-      tests: 'The end of the field. Rapier models no rolling resistance, '
+      tests: 'The end of the field, now beyond the wall so rubble and a '
+        + 'ball that punches through still stop on screen. Rapier models '
+        + 'no rolling resistance, '
         + 'so the landed ball rolls at a constant 4 m/s forever: measured '
         + 'without this berm it left the last tile around tick 2100 and '
         + 'fell out of the world. The rolling station found the same thing '
@@ -504,7 +581,11 @@ export function createTrebuchetStationV1(): PlaygroundStationV1 {
       placementId: 'cw',
       recipeId: 'studio:pg-treb-cw',
       kind: 'dynamic',
-      material: 'stone',
+      // Steel, not stone. The stone crate threw the ball at 4.9 m/s in a
+      // lob that was already descending at release — a demonstration of
+      // linkage, not of a weapon. Steel is 3.1x the density in the same
+      // drawn volume, and the measured release went to 15.8 m/s.
+      material: 'steel',
       // Authored hanging: the eye-hole center (1.625 above the model
       // base) must land exactly on the authored hanger rod at 3.625.
       at: [0, TREBUCHET_AXLE_Y_V1 - 1.625,
@@ -533,7 +614,11 @@ export function createTrebuchetStationV1(): PlaygroundStationV1 {
       placementId: 'ball',
       recipeId: 'studio:pg-treb-ball',
       kind: 'dynamic',
-      material: 'wood',
+      // Stone, not wood. A wood ball off the steel crate leaves faster
+      // (26.4 m/s measured) but carries a quarter of the momentum and
+      // sails 111 m; the stone ball arrives at the wall at 20.5 m/s
+      // carrying 35.3 mass, which is what actually knocks masonry down.
+      material: 'stone',
       at: [2.2, FLOOR, 4.97],
       collider: 'ball',
       ccd: true,
@@ -553,6 +638,7 @@ export function createTrebuchetStationV1(): PlaygroundStationV1 {
       tests: 'The tie-down the trigger rope holds the cocked tip against; '
         + 'stays drawn and solid after firing.',
     },
+    ...trebuchetWallBricksV1(),
   ];
   const joints: PlaygroundJointV1[] = [
     {
@@ -632,11 +718,15 @@ export function createTrebuchetStationV1(): PlaygroundStationV1 {
   return {
     sceneId: 'studio:scene:physics-trebuchet',
     label: 'Trebuchet',
-    summary: 'The first whole machine: axle and hanger hinges, a sling '
-      + 'pivot, and a rope trigger. Fire detaches the rope; the '
-      + 'counterweight falls, the arm whips the sling, and the open pouch '
-      + 'lets the ball fly by geometry alone. Ablation runs prove the '
-      + 'counterweight and sling each earn their place.',
+    summary: 'The first whole machine, and the only station with a '
+      + 'target. Axle and hanger hinges, a sling pivot, and a rope '
+      + 'trigger: fire detaches the rope, the steel crate falls, the arm '
+      + 'whips the sling, and the open pouch lets the ball fly by '
+      + 'geometry alone. It lands 32 m away in a brick wall that is 33 '
+      + 'separate stacked bodies bonded by nothing, so it comes apart '
+      + 'without any fracture system. Ablation runs prove the '
+      + 'counterweight, the sling, and the catch berm each earn their '
+      + 'place.',
     bodies,
     slopes: [],
     joints,
@@ -654,9 +744,20 @@ export function createTrebuchetStationV1(): PlaygroundStationV1 {
         ticks: 720,
         checks: [
           {
+            // 'frame' and 'anchor' are deliberately absent: both are
+            // fixed bodies, so a drift check on them cannot fail and
+            // would be evidence of nothing.
             check: 'holds-still',
-            placementIds: ['frame', 'arm', 'cw', 'sling', 'ball', 'anchor'],
+            placementIds: ['arm', 'cw', 'sling', 'ball'],
             maxDriftMeters: 0.12,
+          },
+          {
+            // The wall must be standing when the shot arrives, or the
+            // fire scenario's brick displacements would prove nothing.
+            // Measured drift over these 3 seconds is at most 0.02 m.
+            check: 'holds-still',
+            placementIds: trebuchetWallBricksV1().map((b) => b.placementId),
+            maxDriftMeters: 0.05,
           },
           { check: 'no-floor-penetration', floorTopY: FLOOR, toleranceMeters: 0.005 },
           { check: 'all-finite' },
@@ -666,42 +767,45 @@ export function createTrebuchetStationV1(): PlaygroundStationV1 {
         id: 'treb-fire',
         label: 'Fire: the whip throws the ball downrange',
         caseId: 'fire',
-        // Long enough to reach the far berm: the ball lands near tick
-        // 1055 and rolls the remaining 19 m at a constant 4 m/s, so a
-        // 1,680-tick window ended while it was still travelling and
-        // proved nothing about where it stops.
-        ticks: 3600,
+        // The shot reaches the wall at tick ~974 and the rubble has
+        // settled well before the window closes. It deliberately stops
+        // short of the long rollback: the rebounding ball rolls back up
+        // the field at a constant 4.3 m/s because Rapier models no
+        // rolling resistance, and that is a documented engine finding,
+        // not something this scenario is measuring.
+        ticks: 1500,
         checks: [
           // Swept angle, not final attitude: the arm passes 170 degrees.
           { check: 'rotated-at-least', placementId: 'arm', minDegrees: 100 },
-          // Windowed at tick 900, before the ball lands at ~1055. The
-          // unwindowed peak was 14.6 m/s — the landing impact, reachable
-          // by dropping from the same height with no machine at all. The
-          // ball actually leaves the sling at 6.6 m/s around tick 818,
-          // so 5 m/s is a real margin on what the whip delivered.
+          // Windowed at tick 500, long before the ball starts gaining
+          // speed by falling. Unwindowed, the peak is the impact — a
+          // number reachable by dropping the ball from the same height
+          // with no machine at all. Measured release is 15.8 m/s.
           {
             check: 'peak-speed-at-least',
             placementId: 'ball',
-            minSpeed: 5,
-            throughTick: 900,
+            minSpeed: 12,
+            throughTick: 500,
           },
-          { check: 'crossed-plane', placementId: 'ball', axis: 2, threshold: -8, expect: 'crossed' },
-          { check: 'moved-at-least', placementId: 'ball', minTravelMeters: 15 },
-          // The ball must stop, not merely stay: measured, it reaches the
-          // berm at tick 2092 and is asleep by the window's end. Scoped
-          // to the ball on purpose — the arm hangs on frictionless
-          // hinges and is still swinging at 0.18 m/s here, which is the
-          // solver's honest answer, not a defect to threshold away.
-          {
-            check: 'all-asleep-or-slow',
-            maxSpeed: 0.1,
-            placementIds: ['ball'],
-          },
-          // 6 cm, not the resting 5 mm: the ball lands at ~14 m/s and a
-          // sampled landing frame legitimately reads up to one step's
-          // travel of contact compression (the reference run measured
-          // 4.2 cm at touchdown). Ending below the floor would still
-          // fail every later frame.
+          // No `crossed-plane` here: it reads the ball's final position,
+          // and the ball rebounds off the wall and rolls back up the
+          // field, so where it comes to rest says nothing about how far
+          // it was thrown. The brick checks below are the direct
+          // evidence that it arrived at z -32 carrying enough to matter.
+          { check: 'moved-at-least', placementId: 'ball', minTravelMeters: 25 },
+          // The wall comes down. Measured, 30 of 33 bricks travel more
+          // than 0.25 m and the mean is 1.70 m; these four are named
+          // because they are the ones a glancing top-clip would leave
+          // standing, so the checks separate 'knocked the wall down'
+          // from 'chipped its top course'.
+          { check: 'moved-at-least', placementId: 'brick-3-1', minTravelMeters: 1 },
+          { check: 'moved-at-least', placementId: 'brick-3-3', minTravelMeters: 1 },
+          { check: 'moved-at-least', placementId: 'brick-1-2', minTravelMeters: 0.5 },
+          { check: 'moved-at-least', placementId: 'brick-4-3', minTravelMeters: 1 },
+          // 6 cm: the ball meets the wall at over 12 m/s and a sampled
+          // impact frame legitimately reads a step's worth of contact
+          // compression. Ending below the floor would still fail every
+          // later frame.
           { check: 'no-floor-penetration', floorTopY: FLOOR, toleranceMeters: 0.06 },
           { check: 'all-finite' },
         ],

@@ -52,8 +52,9 @@ export function createTrebuchetPurposeGraphV1(): PurposeGraphV1 {
         + 'proof.',
       evidence: provenBy(
         'The fire scenario sweeps the arm past 100 degrees, puts the ball '
-        + 'past 5 m/s while it is still on the sling, carries it beyond '
-        + 'z -8, and ends with it asleep against the berm.',
+        + 'past 12 m/s while it is still on the sling, carries it 25 m, '
+        + 'and knocks four named bricks out of a wall it could not have '
+        + 'reached without the whip.',
         'treb-fire',
       ),
       honestyBoundary: 'A sandbox study: live runs are unrecorded, the '
@@ -64,15 +65,15 @@ export function createTrebuchetPurposeGraphV1(): PurposeGraphV1 {
       id: sceneNodeId(SYSTEM, 'solid', 'ground'),
       kind: 'solid',
       label: 'Stage and landing floors',
-      job: 'Carry the machine, the flight, and the long roll after it: '
-        + 'three flush tiles reach z -30, and a catch berm ends the roll '
-        + 'on screen.',
+      job: 'Carry the machine, the flight, the wall, and the rubble: '
+        + 'four flush tiles reach z -42, and a catch berm past the wall '
+        + 'ends every roll on screen.',
       requiredBy: Object.freeze([need]),
       evidence: provenBy(
-        'The ball lands near z -11 and rolls to rest against the berm; '
-        + 'removing the berm makes the same fire fail, because the ball '
-        + 'rolls off the last tile and keeps falling.',
-        'treb-fire and the treb-fire-no-berm control',
+        'Removing the berm makes the same fire fail: the ball rolls off '
+        + 'the last tile and keeps falling, which the floor-penetration '
+        + 'check reads as an unbounded dip.',
+        'the treb-fire-no-berm control',
       ),
       honestyBoundary: 'Fixed deck slabs; the multiply combine rule reads '
         + 'each touching body\'s own friction. Rapier models no rolling '
@@ -310,6 +311,46 @@ export function createTrebuchetPurposeGraphV1(): PurposeGraphV1 {
         + 'swinging at 0.18 m/s when the window closes, so the rest '
         + 'claim is scoped to the ball alone.',
     }),
+    purposeNodeV1({
+      id: sceneNodeId(SYSTEM, 'solid', 'wall'),
+      kind: 'solid',
+      label: 'Target wall, courses 1 and up',
+      job: 'Be the thing the machine is for: a stack that stands on its '
+        + 'own and comes apart on contact, so a throw has a visible '
+        + 'consequence instead of a landing coordinate.',
+      requiredBy: Object.freeze([need]),
+      evidence: provenBy(
+        'The wall stands through the 3-second hold with every brick '
+        + 'inside 0.02 m, and the same fire moves 30 of its 33 bricks '
+        + 'more than 0.25 m, the farthest by 3.31 m.',
+        'treb-hold and treb-fire',
+      ),
+      honestyBoundary: 'Not a fracture model and not masonry: no brick '
+        + 'ever breaks, and nothing bonds them. It comes apart because '
+        + 'the pieces were only ever stacked, which is exactly why it '
+        + 'needs no destruction system. Course parity (5 full bricks, or '
+        + '4 full between two closers) is one bounded rule; the closers '
+        + 'exist because whole-brick offsets left both top corners '
+        + 'overhanging and they toppled unaided.',
+    }),
+    purposeNodeV1({
+      id: sceneNodeId(SYSTEM, 'solid', 'wall-base'),
+      kind: 'solid',
+      label: 'Target wall, base course',
+      job: 'Carry every course above it, so its own displacement is what '
+        + 'separates a wall that came down from a wall with a hole in it.',
+      requiredBy: Object.freeze([need]),
+      evidence: provenBy(
+        'Measured, the base course barely moves (0.0 to 0.4 m) while '
+        + 'courses 3 and 4 travel 2 to 3.3 m: this shot removes the wall '
+        + 'above its footing rather than sweeping the footing away, and '
+        + 'the named brick checks are all above the base.',
+        'treb-fire',
+      ),
+      honestyBoundary: 'A separate record from the courses above because '
+        + 'it does a different job and survives the hit; recording them '
+        + 'together would hide that the base is what stays.',
+    }),
   ], [
     {
       quantity: 'energy',
@@ -326,8 +367,9 @@ export function createTrebuchetPurposeGraphV1(): PurposeGraphV1 {
       sourceIds: Object.freeze([]),
       sinkIds: Object.freeze([]),
       statement: 'No body enters or leaves the scene: the trebuchet has '
-        + 'no spawn magazine, and the thrown ball is measured coming to '
-        + 'rest on the field rather than rolling out of the world.',
+        + 'no spawn magazine, no brick is ever created or destroyed, and '
+        + 'the berm past the wall is what keeps the ball and the rubble '
+        + 'on drawn ground.',
     },
   ]);
 }

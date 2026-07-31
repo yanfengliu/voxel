@@ -1065,6 +1065,13 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
       presentView({ ...orbit, ...view }, panCenter);
       return { ...orbit, described: describeOrbit(orbit) };
     },
+    // The camera's look-at point in world units. Orbit alone cannot frame
+    // a scene whose subject is 30 m from the origin, which is exactly the
+    // trebuchet's wall; the same rollback rule as any other view change.
+    setViewCentre(centre) {
+      presentView(orbit, centre);
+      return [...panCenter] as [number, number, number];
+    },
     catalog: () => catalog,
   });
   // Published only once the mount can no longer fail, at the end of this

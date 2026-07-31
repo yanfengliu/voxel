@@ -117,6 +117,33 @@ function blockRecipe(
   });
 }
 
+export function createPlaygroundBrickRecipe(): RecipeV1 {
+  return blockRecipe(
+    'studio:pg-brick',
+    'Physics brick',
+    'One brick of the target wall. The wall is destructible without any '
+      + 'fracture system: it is not one body pretending to break, it is '
+      + 'many bodies that were only ever stacked, so a hit scatters them '
+      + 'because nothing held them together in the first place. Stone, so '
+      + 'a brick outweighs the wood it would be trivial to shove.',
+    [4, 2, 1],
+    'stone',
+  );
+}
+
+export function createPlaygroundHalfBrickRecipe(): RecipeV1 {
+  return blockRecipe(
+    'studio:pg-brick-half',
+    'Physics half brick',
+    'The closer that ends a staggered course. Without it the end brick of '
+      + 'every other course overhangs by half its width, its center of '
+      + 'mass sits over the edge of what holds it, and the wall sheds its '
+      + 'corners standing still — measured, before any ball arrived.',
+    [2, 2, 1],
+    'stone',
+  );
+}
+
 export function createPlaygroundFloorRecipe(): RecipeV1 {
   return slabRecipe(
     'studio:pg-floor',
@@ -529,6 +556,8 @@ export function createPhysicsPlaygroundRecipeBook(): RecipeBookV1 {
     createPlaygroundFloorRecipe(),
     createPlaygroundApronRecipe(),
     createPlaygroundBermRecipe(),
+    createPlaygroundBrickRecipe(),
+    createPlaygroundHalfBrickRecipe(),
     createPlaygroundRampRecipe(),
     createPlaygroundTrackRecipe(),
     ...(['wood', 'stone', 'steel', 'ice'] as const)

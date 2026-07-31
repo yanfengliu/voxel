@@ -7,6 +7,7 @@ import { modelOccupancyV1 } from '../../tools/studio/voxel-colliders.js';
 import { PLAYGROUND_FLOOR_TOP_V1 } from '../../tools/studio/physics-playground-types.js';
 import { playgroundBodySpecsV1 } from '../../tools/studio/physics-playground-bodies.js';
 import { createTrebuchetPurposeGraphV1 } from '../../tools/studio/scene-purpose-trebuchet.js';
+import { sceneNodeId } from '../../tools/studio/scene-purpose-board.js';
 import {
   createTrebuchetStationV1,
   trebuchetCockedPosesV1,
@@ -72,6 +73,31 @@ describe('the trebuchet scenarios', () => {
   it('subtraction: without the sling the swing carries nothing', async () => {
     expectPass(await runPlaygroundScenarioV1(station, 'treb-fire-no-sling'));
   }, 180_000);
+
+  it('records a purpose for every body the station places', () => {
+    // The gap an earlier review found: the graph was well-formed and its
+    // own nodes were checked, but nothing tied those nodes to the bodies
+    // that actually exist, so a body could be added with no stated
+    // reason and every gate would still pass. Bricks share one
+    // bounded-rule record per course role, which the no-orphan rule
+    // allows exactly when one rule gives every member the same job.
+    const graph = createTrebuchetPurposeGraphV1();
+    const recorded = new Set(graph.nodes.map((node) => node.id));
+    const system = 'studio:scene:physics-trebuchet';
+    for (const body of createTrebuchetStationV1().bodies) {
+      const id = body.placementId;
+      const slug = id.startsWith('brick-0-')
+        ? 'wall-base'
+        : id.startsWith('brick-')
+          ? 'wall'
+          : id.startsWith('floor') || id === 'catch-berm'
+            ? 'ground'
+            : id;
+      const nodeId = sceneNodeId(system, 'solid', slug);
+      expect(recorded.has(nodeId), `no purpose record covers '${id}'`)
+        .toBe(true);
+    }
+  });
 
   it('without the catch berm the ball leaves the world', async () => {
     // The berm's removal failure, executed. `treb-fire` passes with it;

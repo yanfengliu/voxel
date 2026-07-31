@@ -120,19 +120,29 @@ await page.evaluate(() => {
 await page.evaluate(() => window.voxelStudio.playground.fireCase('fire'));
 await page.waitForTimeout(650);
 await shot('trebuchet-midwhip');
+// Pull back far enough to hold the machine and the wall in one frame,
+// then follow the shot all the way to the wall and past it.
 await page.evaluate(() => {
-  window.voxelStudio.setViewAngles({ yawDegrees: 75, pitchDegrees: 35, viewHeight: 44 });
+  window.voxelStudio.setViewAngles({ yawDegrees: 80, pitchDegrees: 20, viewHeight: 52 });
 });
-await page.waitForTimeout(2600);
-await shot('trebuchet-landed');
-// Pin the landed ball: overlay lines mark its collider on the far tile.
+await page.waitForTimeout(1500);
+await shot('trebuchet-inflight');
+// The wall standing, framed on its own, just before the ball arrives.
 await page.evaluate(() => {
-  window.voxelStudio.playground.selectBody('ball');
-  window.voxelStudio.playground.setOverlay(true);
-  window.voxelStudio.setViewAngles({ yawDegrees: 90, pitchDegrees: 40, viewHeight: 34 });
+  window.voxelStudio.setViewAngles({ yawDegrees: 60, pitchDegrees: 16, viewHeight: 20 });
+  window.voxelStudio.setViewCentre([0, 2, -32]);
 });
-await shot('trebuchet-ball-landed-overlay');
-await page.evaluate(() => { window.voxelStudio.playground.setOverlay(false); });
+await shot('trebuchet-wall-before-impact');
+await page.waitForTimeout(1400);
+await shot('trebuchet-wall-struck');
+await page.waitForTimeout(1800);
+await shot('trebuchet-wall-rubble');
+// And the whole field, so the throw and its consequence read together.
+await page.evaluate(() => {
+  window.voxelStudio.setViewAngles({ yawDegrees: 80, pitchDegrees: 28, viewHeight: 56 });
+  window.voxelStudio.setViewCentre([0, 2, -18]);
+});
+await shot('trebuchet-field-after');
 
 await browser.close();
 await server.close();

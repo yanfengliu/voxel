@@ -222,6 +222,11 @@ export interface VoxelStudioHarnessV1 {
   depth(): boolean;
   /** Moves the viewpoint; the model itself never moves. Returns where you are. */
   setViewAngles(view: Partial<OrbitStateV1>): OrbitStateV1 & { readonly described: string };
+  /**
+   * Moves the camera's look-at point in world units, so a caller can
+   * frame something far from the origin. Returns the accepted centre.
+   */
+  setViewCentre(centre: readonly [number, number, number]): readonly [number, number, number];
   /** Study edges on (the examining look) or off (the game look). */
   setEdges(on: boolean): boolean;
   edges(): boolean;
@@ -518,6 +523,7 @@ export interface HarnessHostV1 {
   setViewCenter?(center: OrbitCenterV1): OrbitCenterV1;
   resizeStage(width: number, height: number): { readonly width: number; readonly height: number };
   setOrbit(view: Partial<OrbitStateV1>): OrbitStateV1 & { readonly described: string };
+  setViewCentre(centre: readonly [number, number, number]): readonly [number, number, number];
   setDepth(on: boolean): boolean;
   depth(): boolean;
   /**
@@ -1082,6 +1088,7 @@ export function createStudioHarness(host: HarnessHostV1): VoxelStudioHarnessV1 {
     setDepth: (on) => host.setDepth(on),
     depth: () => host.depth(),
     setViewAngles: (view) => host.setOrbit(view),
+    setViewCentre: (centre) => host.setViewCentre(centre),
     setEdges: (on) => host.setEdges(on),
     edges: () => host.session().edges,
     setLit: (on) => host.setLit(on),
