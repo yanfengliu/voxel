@@ -235,6 +235,8 @@ export class MachineWorksLiveControllerV1 {
   #coreHeld = true;
   #capHeld = true;
   #baseHeld = true;
+  #tipping = false;
+  #tipFrom: readonly [number, number, number] = [0, 0, 0];
 
   state(): MachineWorksLiveStateV1 {
     return {
@@ -274,6 +276,7 @@ export class MachineWorksLiveControllerV1 {
     this.#beltTravel += (this.#beltSpeed * stepMs) / 1_000;
     this.#driveConveyor(session);
     this.#driveHeads(session);
+    this.#driveTip(session);
   }
 
   /** The belt controller's decision for this machine tick. */
@@ -287,6 +290,33 @@ export class MachineWorksLiveControllerV1 {
       this.#beltSpeed,
       { x: carriage.translation[0], speedX: velocities.linearVelocity[0] },
       Math.min(this.#tick, MACHINE_WORKS_TICKS.released),
+    );
+  }
+
+  /**
+   * The carrier tipping about its bucket-boundary edge.
+   *
+   * Rotating about a local pivot means the body's centre swings, so the
+   * commanded translation carries the pivot's offset around with the angle;
+   * commanding the rotation alone would spin the carrier in place and drop
+   * the product straight back onto it.
+   */
+  #driveTip(session: LivePhysicsSessionV1): void {
+    if (!this.#tipping) return;
+    const tick = this.#elapsedMs / MACHINE_TICK_MS;
+    const progress = ramp(tick, MACHINE_WORKS_TICKS.released, MACHINE_WORKS_TICKS.tipComplete);
+    const angle = MACHINE_WORKS_LAYOUT.carriageTipRadians * progress;
+    const pivotX = MACHINE_WORKS_LAYOUT.carriageTipPivotLocalX;
+    const pivotY = MACHINE_WORKS_LAYOUT.carriageTipPivotLocalY;
+    const cos = Math.cos(angle);
+    const sin = Math.sin(angle);
+    // Where the body's centre must be so the pivot stays put as it turns.
+    const offsetX = pivotX - (pivotX * cos - pivotY * sin);
+    const offsetY = pivotY - (pivotX * sin + pivotY * cos);
+    session.setKinematicPose(
+      IDS.carriage,
+      [this.#tipFrom[0] + offsetX, this.#tipFrom[1] + offsetY, this.#tipFrom[2]],
+      [0, 0, Math.sin(angle / 2), Math.cos(angle / 2)],
     );
   }
 
@@ -408,6 +438,17 @@ export class MachineWorksLiveControllerV1 {
     if (this.#baseHeld && tick >= MACHINE_WORKS_TICKS.released) {
       session.detachJoint('carriage-grip');
       this.#baseHeld = false;
+      // The carrier empties itself by tipping, which is a position command
+      // rather than a push: it stops being carried by the belt and starts
+      // being driven, and gravity takes the product off it. Letting the
+      // release alone do the work leaves the product sitting on a stopped
+      // carrier -- it only ever left by an accident of contact timing.
+      const pose = session.poses().get(IDS.carriage);
+      if (pose !== undefined) {
+        this.#tipFrom = pose.translation;
+        this.#tipping = true;
+        session.setBodyKind(IDS.carriage, 'kinematic');
+      }
     }
   }
 }

@@ -22,6 +22,22 @@ export const PHYSICS_PLAYGROUND_SCHEMA_V1 = 'studio.physics-playground/1' as con
 export const PLAYGROUND_GRAIN_V1 = 0.25;
 
 /** Fixed solver timestep in seconds; matches the live studio lane (1/240). */
+/**
+ * The playground's tick, which is NOT yet the live lane's.
+ *
+ * Every scene solves at 60 Hz now (`LIVE_TIMESTEP_SECONDS_V1`), and this
+ * should be that constant rather than a literal of its own — the headless
+ * twin and the live session are meant to be one world, and they agreed on
+ * 1/240 only because both files happened to spell the same number.
+ *
+ * Deriving it was tried and backed out. At 60 Hz the stacking stations sink
+ * about 0.05 m into the floor against a 0.02 m tolerance, and neither twelve
+ * solver iterations nor a tighter allowed linear error recovered it: a
+ * coarser step needs the station thresholds and the law damping rates
+ * recalibrated, and those were measured at 240 Hz. That recalibration is the
+ * work this constant is waiting on, and until then the drift is stated here
+ * instead of hidden.
+ */
 export const PLAYGROUND_TIMESTEP_S_V1 = 1 / 240;
 
 /** Straight-down gravity, meters per second squared. */

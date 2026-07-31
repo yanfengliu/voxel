@@ -58,9 +58,18 @@ function createWindmillProductionDriver(): LiveScenePresentationDriverV1 {
  */
 function createMachineWorksDriver(): LiveScenePresentationDriverV1 {
   const controller = new MachineWorksLiveControllerV1();
+  let advancedSteps = 0;
   return {
     observe: (session) => {
-      controller.advance(session, LIVE_TIMESTEP_SECONDS_V1 * 1_000);
+      // Advance by the solver steps that have actually happened, not once per
+      // call. `observe` runs once per pose collection, and the stage collects
+      // once a frame while the solver may have taken several steps or none —
+      // so counting calls ran the machine at the wrong rate and dropped the
+      // product outside the world. The step counter is the only honest clock.
+      const stepped = session.state().stepped;
+      for (; advancedSteps < stepped; advancedSteps += 1) {
+        controller.advance(session, LIVE_TIMESTEP_SECONDS_V1 * 1_000);
+      }
     },
     poses: () => new Map(),
   };

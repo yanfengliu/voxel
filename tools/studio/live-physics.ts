@@ -206,11 +206,24 @@ export interface LiveContactSampleV1 {
   readonly depth: number;
 }
 
-/** The live lane's fixed tick. Exported so a presentation driver can turn
- * a step count into the scene's own clock instead of reading the wall. */
-export const LIVE_TIMESTEP_SECONDS_V1 = 1 / 240;
+/**
+ * The live lane's fixed tick, and the rate every scene in this repository
+ * solves at.
+ *
+ * 60 Hz, matching the rate the machines were designed on and the rate a
+ * browser presents at. Four solver steps per frame bought nothing these
+ * scenes could show, and cost a controller-versus-solver rate mismatch that
+ * threw Machine Works' carrier off its conveyor.
+ *
+ * Exported so a presentation driver can turn a step count into the scene's
+ * own clock instead of reading the wall, and so tests count in the lane's
+ * ticks rather than in a number they hardcode.
+ */
+export const LIVE_TIMESTEP_SECONDS_V1 = 1 / 60;
+export const LIVE_TICKS_PER_SECOND_V1 = Math.round(1 / LIVE_TIMESTEP_SECONDS_V1);
 const TIMESTEP_S = LIVE_TIMESTEP_SECONDS_V1;
-const MAX_STEPS_PER_FRAME = 24;
+/** About 100 ms of catch-up: enough to ride out a hitch, not to time-travel. */
+const MAX_STEPS_PER_FRAME = 6;
 /** Stiff enough to drag a link, soft enough not to explode the contact stack. */
 const GRAB_STIFFNESS = 60;
 /** Manifold points further apart than this are speculative, not contacts. */
@@ -574,6 +587,32 @@ export class LivePhysicsSessionV1 {
     live.body.setNextKinematicRotation(
       { x: quaternion[0], y: quaternion[1], z: quaternion[2], w: quaternion[3] },
     );
+  }
+
+  /**
+   * Changes how the solver treats a live body.
+   *
+   * A machine can need both: Machine Works' carrier is dynamic while the belt
+   * carries it by friction, then position-commanded when it tips to empty
+   * itself. Switching preserves the body's pose and colliders, so the thing
+   * that was being carried is the same thing that now gets driven.
+   */
+  setBodyKind(placementId: string, kind: 'fixed' | 'dynamic' | 'kinematic'): void {
+    this.#assertLive();
+    const live = this.#bodies.get(placementId);
+    if (live === undefined) {
+      throw new Error(
+        `Cannot change the kind of '${placementId}': no live body carries that `
+        + 'id — it was never spawned or was removed.',
+      );
+    }
+    const rapier = this.#rapier;
+    const type = kind === 'fixed'
+      ? rapier.RigidBodyType.Fixed
+      : kind === 'kinematic'
+        ? rapier.RigidBodyType.KinematicPositionBased
+        : rapier.RigidBodyType.Dynamic;
+    live.body.setBodyType(type, true);
   }
 
   /** Removes a body outright — the delete-under-load probe. */

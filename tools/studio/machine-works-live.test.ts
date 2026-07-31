@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import { createStudioCatalog } from './catalog.js';
 import {
+  LIVE_TICKS_PER_SECOND_V1,
   LIVE_TIMESTEP_SECONDS_V1,
   LivePhysicsSessionV1,
   type LivePlacementSourceV1,
@@ -30,7 +31,7 @@ import { catalogPartsV1, catalogRecipesV1 } from './studio-library.js';
  * come apart the moment the belt moved again.
  */
 
-const TICKS_PER_SECOND = 240;
+const TICKS_PER_SECOND = LIVE_TICKS_PER_SECOND_V1;
 const RUN_SECONDS = 32;
 const BUCKET = MACHINE_WORKS_SCENE_LAYOUT_V1.bucket;
 const BUCKET_X = [
@@ -56,15 +57,21 @@ async function runMachine(): Promise<RunV1> {
     .map((placement) => {
       const model = buildRecipe(recipes[placement.model]!, parts, recipes).model;
       const grain = placement.grain ?? 1;
+      // The profile's opening pose wins over the authored anchor, exactly as
+      // the studio's own source builder does it. Without this the belt's
+      // slats start on the grid instead of on their path, and the test
+      // exercises a world the studio never builds.
+      const opening = MACHINE_WORKS_LIVE_PROFILE_V1.poses?.[placement.id];
       return {
         placementId: placement.id,
         model,
         grain,
-        centre: [
+        centre: opening?.centre ?? [
           placement.at[0],
           placement.at[1] + (model.size[1] * grain) / 2,
           placement.at[2],
         ] as const,
+        ...(opening?.rotation === undefined ? {} : { rotation: opening.rotation }),
       };
     });
   const session = await LivePhysicsSessionV1.create(MACHINE_WORKS_LIVE_PROFILE_V1, sources);

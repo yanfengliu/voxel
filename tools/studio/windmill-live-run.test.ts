@@ -1,7 +1,11 @@
 import { describe, expect, it } from 'vitest';
 
 import { createStudioCatalog } from './catalog.js';
-import { LivePhysicsSessionV1, type LivePlacementSourceV1 } from './live-physics.js';
+import {
+  LIVE_TICKS_PER_SECOND_V1,
+  LivePhysicsSessionV1,
+  type LivePlacementSourceV1,
+} from './live-physics.js';
 import { buildRecipe } from './recipe.js';
 import { catalogPartsV1, catalogRecipesV1 } from './studio-library.js';
 import { WINDMILL_LIVE_PROFILE_V1 } from './windmill-live-profile.js';
@@ -19,7 +23,7 @@ import { createWindmillScene } from './windmill-scene.js';
  * only visible by running it and watching the hammer come down.
  */
 
-const TICKS_PER_SECOND = 240;
+const TICKS_PER_SECOND = LIVE_TICKS_PER_SECOND_V1;
 const RUN_SECONDS = 24;
 
 async function runMill(): Promise<{
