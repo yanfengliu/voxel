@@ -21,16 +21,51 @@ function strike(production: WindmillLiveProductionV1, at: number): void {
   production.observe(at + 0.02, false);
 }
 
+/**
+ * A hammer that has been lifted clear, which is what makes the next contact a
+ * blow rather than the resting touch every mill starts from.
+ */
+function lift(production: WindmillLiveProductionV1): WindmillLiveProductionV1 {
+  production.observe(0, false);
+  return production;
+}
+
 describe('the mill\'s live material flow', () => {
-  it('counts one blow per contact, not one per touching tick', () => {
+  it('does not count the rest the hammer starts in as a blow', () => {
     const production = new WindmillLiveProductionV1();
+    // The hammer sits on the anvil before the mill turns. Counting that as a
+    // strike asked the first sack to have left the queue before time zero,
+    // and the schedule rightly refused.
+    production.observe(0, true);
+    production.observe(0.01, true);
+    expect(production.state().impactsSeconds).toEqual([]);
+    // Once it has been lifted clear, the next landing is a real blow.
+    production.observe(0.5, false);
+    production.observe(1, true);
+    expect(production.state().impactsSeconds).toEqual([1]);
+  });
+
+  it('leaves a sack queued when its blow lands too soon to reach the anvil', () => {
+    const production = lift(new WindmillLiveProductionV1());
+    // Two blows almost immediately: a beat exists, but no sack could have
+    // crossed the floor in time, so none is posed out of the queue.
+    strike(production, 0.1);
+    strike(production, 0.2);
+    const poses = production.poses(0.25);
+    for (const id of SACKS) expect(poses.has(id)).toBe(false);
+    // The flour still tracks the blows that landed.
+    expect(poses.has(FLOUR)).toBe(true);
+  });
+
+  it('counts one blow per contact, not one per touching tick', () => {
+    const production = lift(new WindmillLiveProductionV1());
     strike(production, 2);
     strike(production, 5);
     expect(production.state().impactsSeconds).toEqual([2, 5]);
   });
 
   it('waits for a measurable beat before moving any sack', () => {
-    const production = new WindmillLiveProductionV1();
+    const production = lift(new WindmillLiveProductionV1());
     // One blow establishes nothing: a mill that struck once may be stopping.
     strike(production, 2);
     const early = production.poses(2.5);
@@ -44,7 +79,7 @@ describe('the mill\'s live material flow', () => {
   });
 
   it('stops advancing new sacks when the mill stops striking', () => {
-    const production = new WindmillLiveProductionV1();
+    const production = lift(new WindmillLiveProductionV1());
     strike(production, 2);
     strike(production, 5);
     const beforeId = SACKS[2];
@@ -58,7 +93,7 @@ describe('the mill\'s live material flow', () => {
   });
 
   it('raises the flour once per blow that actually landed', () => {
-    const production = new WindmillLiveProductionV1();
+    const production = lift(new WindmillLiveProductionV1());
     const settle = 6;
     strike(production, 2);
     const afterOne = production.poses(2 + settle).get(FLOUR)!.translation[1];
@@ -68,7 +103,7 @@ describe('the mill\'s live material flow', () => {
   });
 
   it('lets a landed blow replace its own prediction', () => {
-    const production = new WindmillLiveProductionV1();
+    const production = lift(new WindmillLiveProductionV1());
     strike(production, 2);
     strike(production, 5);
     // Predicted third blow at 8; the mill actually strikes late, at 9.

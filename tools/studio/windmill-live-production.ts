@@ -1,6 +1,7 @@
 import type { ScenePlacementPoseV1 } from './scene-pose-delta.js';
 import {
   windmillFlourPoseV1,
+  windmillSackLeadSecondsV1,
   windmillWheatSackPoseV1,
 } from './windmill-production-kinematics.js';
 import { WINDMILL_PRODUCTION_PLACEMENT_IDS_V1 } from './windmill-production-layout.js';
@@ -34,6 +35,8 @@ export interface WindmillLiveProductionStateV1 {
 }
 
 const SACK_IDS = WINDMILL_PRODUCTION_PLACEMENT_IDS_V1.wheatSacks;
+/** The schedule's own floor for when a sack may start moving. */
+const MINIMUM_START_SECONDS = 0.05;
 
 function quaternionOf(pose: { readonly quaternion: readonly [number, number, number, number] }):
 readonly [number, number, number, number] {
@@ -42,7 +45,8 @@ readonly [number, number, number, number] {
 
 export class WindmillLiveProductionV1 {
   readonly #impacts: number[] = [];
-  #touching = false;
+  #touching = true;
+  #armed = false;
 
   /**
    * Records the hammer's contact for this instant.
@@ -51,7 +55,13 @@ export class WindmillLiveProductionV1 {
    * a single blow would read as a burst of them and the flour would jump.
    */
   observe(timeSeconds: number, hammerTouchesAnvil: boolean): void {
-    if (hammerTouchesAnvil && !this.#touching) this.#impacts.push(timeSeconds);
+    // The hammer starts resting on the anvil, so the contact that exists at
+    // t=0 is not a blow. It only becomes one once the hammer has been lifted
+    // clear at least once: a blow is a fall, not a touch.
+    if (!hammerTouchesAnvil) this.#armed = true;
+    if (this.#armed && hammerTouchesAnvil && !this.#touching) {
+      this.#impacts.push(timeSeconds);
+    }
     this.#touching = hammerTouchesAnvil;
   }
 
@@ -94,6 +104,10 @@ export class WindmillLiveProductionV1 {
     SACK_IDS.forEach((placementId, index) => {
       const impact = this.#impactFor(index);
       if (impact === null) return;
+      // A sack that could never have reached the anvil in time stays in the
+      // queue. Its blow landed before the mill had a rhythm to anticipate,
+      // which is the honest reading of a machine still starting up.
+      if (impact - windmillSackLeadSecondsV1(index) < MINIMUM_START_SECONDS) return;
       const pose = windmillWheatSackPoseV1(index, impact, timeSeconds);
       poses.set(placementId, {
         translation: pose.translation,

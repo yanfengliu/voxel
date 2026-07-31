@@ -1,6 +1,11 @@
+import {
+  createLiveScenePresentationV1,
+  type LiveScenePresentationDriverV1,
+} from './live-presentation.js';
 import { buildRecipe, mixSeed, type PartShelfV1, type RecipeBookV1 } from './recipe.js';
 import { modelVoxelSizeV1 } from './model.js';
 import {
+  LIVE_TIMESTEP_SECONDS_V1,
   LivePhysicsSessionV1,
   type LivePhysicsProfileV1,
   type LivePlacementSourceV1,
@@ -142,6 +147,7 @@ export class StudioLiveInteract {
   #mode: StudioStageModeV1 = 'adjust';
   #profile: LivePhysicsProfileV1 | null = null;
   #session: LivePhysicsSessionV1 | null = null;
+  #presentation: LiveScenePresentationDriverV1 | null = null;
   #lastOpen: {
     readonly scene: SceneV1;
     readonly recipes: RecipeBookV1;
@@ -207,6 +213,27 @@ export class StudioLiveInteract {
    * settle and whatever reads the result, and the exact state just reached
    * would be gone before it could be asserted on or photographed.
    */
+  /**
+   * Solver poses with any staged presentation merged over them.
+   *
+   * Time comes from the session's own step count rather than the wall clock,
+   * so a deterministic settle and a running frame see the same instant, and a
+   * paused world does not keep aging.
+   */
+  #posesWithPresentation(
+    session: LivePhysicsSessionV1,
+  ): ValidatedScenePlacementPoseMapV1 {
+    const presentation = this.#presentation;
+    if (presentation === null) return session.poses();
+    const timeSeconds = session.state().stepped * LIVE_TIMESTEP_SECONDS_V1;
+    presentation.observe(session, timeSeconds);
+    const merged = new Map(session.poses());
+    for (const [placementId, pose] of presentation.poses(timeSeconds)) {
+      merged.set(placementId, pose);
+    }
+    return merged;
+  }
+
   settleSteps(steps: number): void {
     if (!Number.isSafeInteger(steps) || steps < 0) {
       throw new Error(
@@ -222,8 +249,16 @@ export class StudioLiveInteract {
       );
     }
     session.setPaused(true);
-    for (let step = 0; step < steps; step += 1) session.stepOnce();
-    this.#hooks.acceptPoses(session.poses());
+    for (let step = 0; step < steps; step += 1) {
+      session.stepOnce();
+      // Observed every tick rather than only at the end: a blow lasts a few
+      // ticks, and sampling just the final pose would miss most of them.
+      this.#presentation?.observe(
+        session,
+        session.state().stepped * LIVE_TIMESTEP_SECONDS_V1,
+      );
+    }
+    this.#hooks.acceptPoses(this.#posesWithPresentation(session));
     this.#hooks.redraw();
   }
 
@@ -297,6 +332,7 @@ export class StudioLiveInteract {
           return;
         }
         this.#session = session;
+        this.#presentation = createLiveScenePresentationV1(scene.id);
         if (this.#mode === 'interact') {
           this.#hooks.setLivePoseMode(true);
           this.#startLoop();
@@ -415,7 +451,7 @@ export class StudioLiveInteract {
         const before = performance.now();
         session.step(elapsed);
         this.#stepCostMs = performance.now() - before;
-        this.#hooks.acceptPoses(session.poses());
+        this.#hooks.acceptPoses(this.#posesWithPresentation(session));
         this.#hooks.redraw();
       } catch (error) {
         this.#hooks.report(
@@ -435,6 +471,7 @@ export class StudioLiveInteract {
     this.#grabbing = false;
     this.#session?.dispose();
     this.#session = null;
+    this.#presentation = null;
   }
 
   #reflectButtons(): void {

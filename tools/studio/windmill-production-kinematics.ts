@@ -97,6 +97,28 @@ interface SackScheduleV1 {
   readonly slideEnd: number;
 }
 
+/**
+ * How long before its blow sack `index` must leave the queue.
+ *
+ * A live mill's blows are found, not scheduled, so a caller has to know
+ * whether a sack can still make it before asking for its pose — the schedule
+ * itself refuses an impossible one, and refusing is right, but a live scene
+ * needs to ask first rather than be thrown at.
+ */
+export function windmillSackLeadSecondsV1(index: number): number {
+  const queueX = WINDMILL_WHEAT_QUEUE_XS_V1[index];
+  if (queueX === undefined) {
+    throw new Error(
+      `Cannot measure the lead for windmill wheat sack ${String(index + 1)}: the `
+      + `layout declares only ${String(WINDMILL_WHEAT_QUEUE_XS_V1.length)} queue slots.`,
+    );
+  }
+  const alongQueue = (WINDMILL_STAGING_X_V1 - queueX) / SLIDE_SPEED;
+  const alongLane =
+    (WINDMILL_MILL_SPOT_V1[1] - WINDMILL_WHEAT_QUEUE_Z_V1) / SLIDE_SPEED;
+  return ARRIVE_LEAD_SECONDS + alongLane + alongQueue;
+}
+
 function sackSchedule(
   index: number,
   impactSeconds: number,

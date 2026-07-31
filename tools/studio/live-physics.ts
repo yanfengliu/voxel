@@ -193,7 +193,10 @@ export interface LiveContactSampleV1 {
   readonly depth: number;
 }
 
-const TIMESTEP_S = 1 / 240;
+/** The live lane's fixed tick. Exported so a presentation driver can turn
+ * a step count into the scene's own clock instead of reading the wall. */
+export const LIVE_TIMESTEP_SECONDS_V1 = 1 / 240;
+const TIMESTEP_S = LIVE_TIMESTEP_SECONDS_V1;
 const MAX_STEPS_PER_FRAME = 24;
 /** Stiff enough to drag a link, soft enough not to explode the contact stack. */
 const GRAB_STIFFNESS = 60;
