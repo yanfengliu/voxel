@@ -243,18 +243,24 @@ function createRampPurposeGraphV1(): PurposeGraphV1 {
       id: sceneNodeId(SYSTEM, 'solid', 'berm'),
       kind: 'solid',
       label: 'Catch berm',
-      job: 'End every slide on screen: ice at friction 0.04 would coast '
-        + 'some forty meters and vanish off the world edge, which reads as '
-        + 'a vanishing-object bug.',
+      job: 'End every slide on screen. Ice declares friction 0.04, leaves '
+        + 'the ramp at 6.52 m/s, and needs 40.7 m to stop against the '
+        + '1.5 m of floor past the ramp foot, so without a wall it goes '
+        + 'off the edge and reads as a vanishing-object bug. This is '
+        + 'sliding friction doing what it is declared to do, not a force '
+        + 'left out of the world — which is why this berm stayed when the '
+        + 'rolling station\'s two went.',
       requiredBy: Object.freeze([need]),
       evidence: provenBy(
-        'Every body stayed within 0.02 m of the floor plane for the whole '
-        + 'run — with the berm gone, ice leaves the world and this check '
-        + 'fails.',
-        'ramp-20-split',
+        'Removing the berm and running the same 20-degree ramp puts the '
+        + 'ice block below y -5 while stone and wood hold — the wall is '
+        + 'what keeps it on the floor.',
+        'ramp-berm-control',
       ),
       honestyBoundary: 'A wall, not a measurement: it stops runaways and '
-        + 'claims nothing about their arrival speed.',
+        + 'claims nothing about their arrival speed. It also earns its '
+        + 'place on ice alone at 20 degrees — steel stops 0.19 m short of '
+        + 'the edge on its own, and only needs the wall at 30 and above.',
     }),
     purposeNodeV1({
       id: sceneNodeId(SYSTEM, 'solid', 'magazine'),
@@ -588,12 +594,14 @@ function createRollingPurposeGraphV1(): PurposeGraphV1 {
         + 'sensitive — pinned as documentation, not as physics achieved.',
     }),
     playgroundGround(SYSTEM, need, 'Tiled apron',
-      'Give both tracks and their long run-outs honest ground; two slabs '
-      + 'tile it because a recipe dimension caps at 64 voxels.',
+      'Give both tracks the ground their measured run-outs actually need, '
+      + 'so a racer stops where its own rolling resistance stops it. Four '
+      + 'slabs tile it: a recipe dimension caps at 64 voxels, and the '
+      + 'smooth ball needs 20.1 m of flat past the slope foot.',
       provenBy(
-        'Every racer stayed within 0.05 m of the apron plane for the whole '
-        + 'run.',
-        'rolling-grid-artifact',
+        'Every racer came to rest on the apron, within 0.05 m of its '
+        + 'plane, with nothing walling the run-out in.',
+        'rolling-run-out',
       )),
     purposeNodeV1({
       id: sceneNodeId(SYSTEM, 'solid', 'tracks'),
@@ -661,32 +669,37 @@ function createRollingPurposeGraphV1(): PurposeGraphV1 {
         + 'them is tuned.',
     }),
     purposeNodeV1({
-      id: sceneNodeId(SYSTEM, 'solid', 'berms'),
+      id: sceneNodeId(SYSTEM, 'solid', 'run-out'),
       kind: 'solid',
-      label: 'The catch berms',
-      job: 'End both run-outs on screen: an ideal ball rolls the flat '
-        + 'without losing speed and would leave the world, and a wall '
-        + 'below a ball\'s centre height just torques it over — so the '
-        + 'berms stand 1.25 m.',
+      label: 'The open run-out',
+      job: 'End both runs where the physics ends them, not where a wall '
+        + 'does. Two 1.25 m catch berms used to stand here, built when a '
+        + 'rigid ball never slowed on flat ground. Rolling resistance is a '
+        + 'law now, so their job went to the ground itself and they were '
+        + 'removed.',
       requiredBy: Object.freeze([need]),
       evidence: provenBy(
-        'No racer left the apron plane by more than 0.05 m over the full '
-        + 'race — with the berms gone, the ideal ball rolls off the world '
-        + 'and this check fails.',
-        'rolling-inertia-race',
+        'Every racer comes to rest on the apron with nothing in its way, '
+        + 'and the smooth ball finishes 14.64 m ahead of the voxel sphere '
+        + '— against the berms it finished 0.18 m ahead, which is the '
+        + 'measurement they were destroying. Re-standing them fails this '
+        + 'scenario.',
+        'rolling-run-out',
       ),
-      honestyBoundary: 'Walls, not measurements.',
+      honestyBoundary: 'An absence with a check on it, which is the only '
+        + 'way an absence can be a decision rather than an oversight.',
     }),
     dissipationSink(
       SYSTEM,
       need,
-      notYetShown(
-        'No rolling scenario asserts rest: an ideal ball loses next to '
-        + 'nothing to rolling contact, which is why the berms exist.',
-        'A run asserting the faceted rollers are asleep against the berms.',
+      provenBy(
+        'Every racer is asleep or under 0.05 m/s at 20 s, stopped by '
+        + 'rolling resistance alone — the smooth ball after 20.1 m and '
+        + '14.5 s, the faceted ones far sooner.',
+        'rolling-run-out',
       ),
-      'Bleed collision and sliding energy so the race ends against the '
-      + 'berms instead of amplifying.',
+      'Take the race\'s energy back out of it, so every run ends in a '
+      + 'body at rest on the ground rather than against a wall.',
     ),
   ], [
     {

@@ -450,9 +450,10 @@ export function createTrebuchetPurposeGraphV1(): PurposeGraphV1 {
       sourceIds: Object.freeze([]),
       sinkIds: Object.freeze([]),
       statement: 'No body enters or leaves the scene: the trebuchet has '
-        + 'no spawn magazine, no brick is ever created or destroyed, and '
-        + 'the berm past the wall is what keeps the ball and the rubble '
-        + 'on drawn ground.',
+        + 'no spawn magazine and no brick is ever created or destroyed. A '
+        + 'berm past the wall used to keep the ball and the rubble on '
+        + 'drawn ground; rolling resistance and the wall itself do that '
+        + 'now, and the floor-penetration check is what guards the edge.',
     },
   ]);
 }

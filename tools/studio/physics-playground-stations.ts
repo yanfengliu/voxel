@@ -5,11 +5,10 @@ import {
 } from './physics-playground-materials.js';
 import { createPlaygroundFieldStationsV1 } from './physics-playground-fields.js';
 import { createTrebuchetStationV1 } from './physics-playground-trebuchet.js';
+import { createRollingStationV1 } from './physics-playground-rolling.js';
 import {
   PLAYGROUND_FLOOR_TOP_V1,
-  type PlaygroundAlignV1,
   type PlaygroundBodyDefV1,
-  type PlaygroundSlopeV1,
   type PlaygroundStationV1,
 } from './physics-playground-types.js';
 
@@ -28,13 +27,14 @@ export * from './physics-playground-types.js';
  * the playground's version of the no-orphan rule. A body that tested
  * nothing would be decoration, and decoration is an uncontrolled variable.
  *
- * Size note: this data module has now crossed 1,000 lines because five
- * stations' bodies, cases, and scenarios live together, and the launcher
- * grew again to carry the mid-air momentum pair that binds Newton's third
- * law. That is the recorded extraction trigger firing: the next station
- * to gain anything moves to its own module, launcher first, following
- * physics-playground-fields.ts and physics-playground-trebuchet.ts which
- * already left. Nothing further should be added here before that split.
+ * Size note: this file crossed 1,000 counted lines and the recorded
+ * trigger fired. Rolling left rather than the launcher this note
+ * predicted, because rolling is what grew — its catch berms came down and
+ * the ground and run-out that replaced them are both explained where they
+ * are declared. It joins physics-playground-fields.ts,
+ * physics-playground-trebuchet.ts, and now
+ * physics-playground-rolling.ts. Four stations remain here; the launcher
+ * is still the largest and still the next to go.
  */
 
 const FLOOR_TOP = PLAYGROUND_FLOOR_TOP_V1;
@@ -176,9 +176,16 @@ function rampStation(): PlaygroundStationV1 {
         kind: 'fixed',
         material: 'stone',
         at: [-5.7, FLOOR_TOP, 0],
-        tests: 'The catch wall below the ramp: ice at friction 0.04 would '
-          + 'coast off the world edge and read as a vanishing-object bug, so '
-          + 'every slide must end against something visible.',
+        tests: 'The catch wall below the ramp, and the one berm the '
+          + 'playground still needs. Its job is sliding friction doing '
+          + 'exactly what it is declared to do, not a force left out: at '
+          + 'the default 20 degrees ice leaves the ramp at 6.52 m/s and '
+          + 'slides 40.7 m past its foot before stopping, against the 1.5 m '
+          + 'of floor there is. Nor is ice the only one: measured with the '
+          + 'berm removed and the floor extended, steel needs 3.1 m of '
+          + 'run-out at 30 degrees and wood 2.3 m at 40, both of them past '
+          + 'the floor edge too. A floor the size ice wants would itself be '
+          + 'the scenery, so the wall stays.',
       },
       ...magazineBodies(4, 5),
     ],
@@ -230,6 +237,38 @@ function rampStation(): PlaygroundStationV1 {
             minTravelMeters: 0.5,
           },
           { check: 'no-floor-penetration', floorTopY: FLOOR_TOP, toleranceMeters: 0.02 },
+          { check: 'all-finite' },
+        ],
+      },
+      {
+        // The berm's subtraction test, kept as a run rather than a
+        // sentence. The rolling station's catch walls went when rolling
+        // resistance made them liars; this one stays, and the difference
+        // is that nothing here is missing. Ice really does have friction
+        // 0.04, really does leave the ramp at 6.52 m/s, and really does
+        // need 40.7 m to stop against the 1.5 m of floor past the ramp
+        // foot. Take the wall away and it is gone off the edge.
+        id: 'ramp-berm-control',
+        label: 'Without the berm, ice slides off the world',
+        angleDegrees: 20,
+        ticks: 1440,
+        omit: ['berm'],
+        checks: [
+          // Ice clears the floor edge at about 2.4 s and is in free fall
+          // from there; by 6 s it is tens of metres down. A threshold of
+          // -5 m is unreachable by anything still on the floor, whose top
+          // is at y 0.25.
+          {
+            check: 'crossed-plane',
+            placementId: 'block-ice',
+            axis: 1,
+            threshold: -5,
+            expect: 'crossed',
+          },
+          // Steel stops at x -5.81 at this angle, 0.19 m short of the
+          // edge, so the berm is not what holds it — the wall earns its
+          // place on ice alone here, and on steel and wood at 30 and 40.
+          { check: 'holds-still', placementIds: ['block-stone', 'block-wood'], maxDriftMeters: 0.08 },
           { check: 'all-finite' },
         ],
       },
@@ -790,231 +829,13 @@ function structuresStation(): PlaygroundStationV1 {
   };
 }
 
-/** Station 5 — rolling bodies on a straight track and a 45-degree twin. */
-function rollingStation(): PlaygroundStationV1 {
-  const racers = (track: 'a' | 'b'): PlaygroundBodyDefV1[] => {
-    const slopeAligned = 'slope' as const;
-    const worldAligned = 'world' as const;
-    const entries: readonly {
-      id: string;
-      recipeId: string;
-      lateral: number;
-      collider?: 'ball';
-      align: PlaygroundAlignV1;
-      tests: string;
-    }[] = [
-      {
-        id: 'sphere-voxel',
-        recipeId: 'studio:pg-sphere',
-        lateral: -3.875,
-        align: worldAligned,
-        tests: 'The voxel sphere with its exact stepped colliders: its '
-          + 'clatter, bounce, and drift against the ideal-ball twin measure '
-          + 'the grid-stepping artifact directly.',
-      },
-      {
-        id: 'sphere-ball',
-        recipeId: 'studio:pg-sphere',
-        lateral: -1.925,
-        collider: 'ball',
-        align: worldAligned,
-        tests: 'The same sphere with a primitive ball collider — a stated '
-          + 'simplification. It rolls smoothly on any track heading, which '
-          + 'is what makes it the control for the voxel twin.',
-      },
-      {
-        id: 'cylinder-solid',
-        recipeId: 'studio:pg-cylinder-solid',
-        lateral: -0.1,
-        align: slopeAligned,
-        tests: 'The solid roller: lowest rotational inertia per mass of the '
-          + 'pair, so it must finish ahead of the hollow twin.',
-      },
-      {
-        id: 'cylinder-hollow',
-        recipeId: 'studio:pg-cylinder-hollow',
-        lateral: 1.6,
-        align: slopeAligned,
-        tests: 'The hollow roller: rim-heavy, so it must trail the solid '
-          + 'cylinder on the same slope — the rotational-inertia race.',
-      },
-      {
-        id: 'cube',
-        recipeId: 'studio:pg-block-wood',
-        lateral: 3.05,
-        align: slopeAligned,
-        tests: 'The cube control: it must slide or tumble, never roll '
-          + 'smoothly — if it keeps pace with the rollers, friction or '
-          + 'contact is wrong.',
-      },
-      {
-        id: 'irregular',
-        recipeId: 'studio:pg-irregular',
-        lateral: 4.25,
-        align: slopeAligned,
-        tests: 'The asymmetric chunk: its offset center of mass must make '
-          + 'it tumble irregularly and settle in a biased pose, the '
-          + 'stability probe for non-ideal shapes.',
-      },
-    ];
-    return entries.map((entry): PlaygroundBodyDefV1 => ({
-      placementId: `${entry.id}-${track}`,
-      recipeId: entry.recipeId,
-      kind: 'dynamic',
-      material: entry.recipeId === 'studio:pg-block-wood' ? 'wood' : 'stone',
-      at: [0, 0, 0],
-      onSlope: {
-        slopeId: `track-${track}`,
-        along: 6.8,
-        lateral: entry.lateral,
-        gap: 0.04,
-        align: entry.align,
-      },
-      ...(entry.collider === 'ball' ? { collider: 'ball' as const } : {}),
-      tests: entry.tests,
-    }));
-  };
-  const slope = (
-    slopeId: string,
-    yawDegrees: number,
-    foot: readonly [number, number],
-  ): PlaygroundSlopeV1 => ({
-    slopeId,
-    // 28 degrees, not 20: a d7 voxel cylinder rests on a 0.75 m flat facet
-    // and only tips over its edge above roughly 24 degrees, so on gentler
-    // slopes the faceted rollers sit still forever — a real voxel-physics
-    // finding this station exists to expose, and the race needs them moving.
-    angleDegrees: 28,
-    yawDegrees,
-    foot,
-    footY: FLOOR_TOP,
-    thicknessMeters: 0.25,
-  });
-  return {
-    sceneId: 'studio:scene:physics-rolling',
-    label: 'Physics: rolling and rotation',
-    summary: 'Six bodies race down a 28-degree slope: voxel sphere, '
-      + 'ideal-ball twin, solid and hollow cylinders, a cube, and an '
-      + 'asymmetric chunk. A second identical track runs 45 degrees to the '
-      + 'voxel grid; the spheres stay world-aligned on it, so any behaviour '
-      + 'difference between tracks is the grid-direction artifact.',
-    bodies: [
-      {
-        placementId: 'floor-west',
-        recipeId: 'studio:pg-apron',
-        kind: 'fixed',
-        material: 'deck',
-        at: [-8, 0, 0],
-        tests: 'The west half of the tiled apron: the grid-aligned track '
-          + 'and its run-out need honest ground under every landing point.',
-      },
-      {
-        placementId: 'floor-east',
-        recipeId: 'studio:pg-apron',
-        kind: 'fixed',
-        material: 'deck',
-        at: [8, 0, 0],
-        tests: 'The east half of the tiled apron, under the 45-degree track '
-          + 'and its diagonal run-out.',
-      },
-      {
-        placementId: 'track-a',
-        recipeId: 'studio:pg-track',
-        kind: 'fixed',
-        material: 'deck',
-        at: [0, 0, 0],
-        onSlope: { slopeId: 'track-a', along: 0, lateral: 0, gap: 0, align: 'slope' },
-        tests: 'The grid-aligned slope: downhill runs along the voxel x '
-          + 'axis, the baseline every rolling measurement compares against.',
-      },
-      {
-        placementId: 'track-b',
-        recipeId: 'studio:pg-track',
-        kind: 'fixed',
-        material: 'deck',
-        at: [0, 0, 0],
-        onSlope: { slopeId: 'track-b', along: 0, lateral: 0, gap: 0, align: 'slope' },
-        tests: 'The 45-degree twin: same slab, same angle, yawed against '
-          + 'the grid so voxel-stepped surfaces roll diagonally across '
-          + 'their own steps.',
-      },
-      ...racers('a'),
-      ...racers('b'),
-      {
-        placementId: 'berm-west',
-        recipeId: 'studio:pg-berm',
-        kind: 'fixed',
-        material: 'stone',
-        at: [-15.5, FLOOR_TOP, 0],
-        tests: 'The catch wall of the straight track: an ideal ball rolls '
-          + 'the whole run-out without losing speed, and a racer leaving '
-          + 'the world reads as a vanishing-object bug.',
-      },
-      {
-        placementId: 'berm-north',
-        recipeId: 'studio:pg-berm',
-        kind: 'fixed',
-        material: 'stone',
-        at: [0, FLOOR_TOP, 7.6],
-        turns: 1,
-        tests: 'The catch wall of the diagonal track, turned across its '
-          + 'run-out direction for the same reason the straight track has '
-          + 'one.',
-      },
-    ],
-    slopes: [
-      slope('track-a', 0, [-9, 0]),
-      slope('track-b', 45, [5.8, 2.2]),
-    ],
-    cases: [],
-    scenarios: [
-      {
-        id: 'rolling-inertia-race',
-        label: 'The smooth ball beats both faceted cylinders, which do roll',
-        ticks: 1200,
-        checks: [
-          // On smooth rims the solid cylinder beats the hollow one. Voxel
-          // rims are twelve-sided prisms, tip-rolling speed is
-          // corner-impact-loss dominated, and the measured solid-hollow gap
-          // flips sign with centimeter-scale changes to the spawn pose
-          // (±0.05–0.25 m over this slope, both orderings observed). The
-          // scenario therefore pins only what is robust — the smooth-
-          // collider control wins decisively and both faceted rollers
-          // actually roll — and records the unstable ordering as a
-          // documented grid artifact: bodies meant to race by inertia need
-          // smooth colliders.
-          { check: 'ends-behind', leader: 'sphere-ball-a', trailer: 'cylinder-solid-a', axis: 0, sign: -1 },
-          { check: 'ends-behind', leader: 'sphere-ball-a', trailer: 'cylinder-hollow-a', axis: 0, sign: -1 },
-          { check: 'moved-at-least', placementId: 'cylinder-solid-a', minTravelMeters: 2 },
-          { check: 'moved-at-least', placementId: 'cylinder-hollow-a', minTravelMeters: 2 },
-          { check: 'no-floor-penetration', floorTopY: FLOOR_TOP, toleranceMeters: 0.05 },
-          { check: 'all-finite' },
-        ],
-      },
-      {
-        id: 'rolling-grid-artifact',
-        label: 'The ideal ball behaves alike on both tracks; the voxel sphere may not',
-        ticks: 900,
-        checks: [
-          { check: 'moved-at-least', placementId: 'sphere-ball-a', minTravelMeters: 4 },
-          { check: 'moved-at-least', placementId: 'sphere-ball-b', minTravelMeters: 4 },
-          { check: 'moved-at-least', placementId: 'sphere-voxel-a', minTravelMeters: 1 },
-          { check: 'moved-at-least', placementId: 'sphere-voxel-b', minTravelMeters: 1 },
-          { check: 'no-floor-penetration', floorTopY: FLOOR_TOP, toleranceMeters: 0.05 },
-          { check: 'all-finite' },
-        ],
-      },
-    ],
-  };
-}
-
 export function createPhysicsPlaygroundStationsV1(): readonly PlaygroundStationV1[] {
   return Object.freeze([
     fallingStation(),
     rampStation(),
     launcherStation(),
     structuresStation(),
-    rollingStation(),
+    createRollingStationV1(),
     createTrebuchetStationV1(),
     ...createPlaygroundFieldStationsV1(),
   ]);

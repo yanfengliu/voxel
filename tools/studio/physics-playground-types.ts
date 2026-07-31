@@ -81,10 +81,15 @@ export interface PlaygroundBodyDefV1 {
    * bodies do not deform, so that torque has to be supplied.
    *
    * Angular damping supplies it: the solver applies a torque opposing
-   * spin, which the rolling constraint turns into deceleration. The
-   * value is stated per body and its measured effect recorded, so this
-   * never becomes an unexplained number that quietly holds a scene
-   * together.
+   * spin, which the rolling constraint turns into deceleration.
+   *
+   * The value normally comes from the law table in `voxel/physics`, keyed
+   * by the body's material, and every body gets it without asking. This
+   * field is the per-body override, and today nothing ships using it —
+   * a test asserts that, because a body that declares its own value is
+   * skipped by the walk proving no content escapes the laws. Tune a
+   * material in the law table instead; reach for this only for a
+   * counter-run that has to override a law to show it is load-bearing.
    */
   readonly rollingResistance?: number;
   /**
@@ -152,7 +157,23 @@ export type PlaygroundCheckRefV1 =
   | { readonly check: 'mass-ordering'; readonly heavier: string; readonly lighter: string }
   | { readonly check: 'holds-still'; readonly placementIds: readonly string[]; readonly maxDriftMeters: number }
   | { readonly check: 'slides-downhill'; readonly placementIds: readonly string[]; readonly minTravelMeters: number }
-  | { readonly check: 'ends-behind'; readonly leader: string; readonly trailer: string; readonly axis: 0 | 1 | 2; readonly sign: 1 | -1 }
+  | {
+    readonly check: 'ends-behind';
+    readonly leader: string;
+    readonly trailer: string;
+    readonly axis: 0 | 1 | 2;
+    readonly sign: 1 | -1;
+    /**
+     * How far ahead the leader must finish. Omitted means any positive
+     * lead beyond solver noise, which is all an ordering claim needs.
+     *
+     * A size is worth asking for when the gap is the result rather than
+     * the ordering — the smooth ball outrolling the voxel sphere by
+     * metres is a statement about grid stepping, and a check that would
+     * pass on a centimetre could not tell that from a tie.
+     */
+    readonly minLeadMeters?: number;
+  }
   | { readonly check: 'crossed-plane'; readonly placementId: string; readonly axis: 0 | 1 | 2; readonly threshold: number; readonly expect: 'crossed' | 'stopped' }
   | { readonly check: 'moved-at-most'; readonly placementId: string; readonly maxTravelMeters: number }
   | { readonly check: 'moved-at-least'; readonly placementId: string; readonly minTravelMeters: number }

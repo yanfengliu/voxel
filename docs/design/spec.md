@@ -11,11 +11,14 @@ The toolkit should be voxel-first rather than voxel-only. A dense or sparse bloc
 Use one package with subpath exports during the first implementation:
 
 - `voxel/core` for game-neutral data contracts, coordinate conventions, IDs, revisions, and bounded validation;
+- `voxel/physics` for the stated laws of motion, their per-material values, the bounds content may not declare past, and one function applying the damping laws to a rigid body;
 - `voxel/meshing` for Three-free voxel storage, dirty-region tracking, deterministic mesh generation, and voxel raycasts;
 - `voxel/three` for the scene runtime, resource caches, chunk meshes, instanced batches, cameras, picking bridges, assets, render passes, and capture;
 - `voxel/testing` for reference scenes, structural assertions, browser capture helpers, and render metrics.
 
-Split these into independently versioned workspace packages only if real release or dependency pressure appears. In the one-package form, `three` is an optional peer declared through `peerDependenciesMeta`, externalized from the library bundle, and required only by `voxel/three`; core and meshing entry points and declarations must not reference it. Phase 0 chooses one tested `three` plus matching `@types/three` release, aligns consumers before integration, configures linked Vite consumers with `resolve.dedupe: ['three']`, and verifies the bundle contains exactly one Three.js runtime. Do not advertise a broad 0.x peer range without a real compatibility matrix.
+`voxel/physics` is deliberately not a simulation engine, which the non-goals forbid: it steps nothing, integrates nothing, and resolves no contact, and the renderer never reads it. It exists because a physics flaw found here is fixed as a law of this universe rather than as a patch to the scene that exposed it, and a law nobody can borrow drifts the moment a second solver exists. It therefore depends on no solver, no Three.js, and no DOM — a consuming game keeps its own solver and opts in at its own body-creation site. This repository's own solver lanes apply it where rigid bodies are created, so no scene here can escape a law by declaring nothing.
+
+Split these into independently versioned workspace packages only if real release or dependency pressure appears. In the one-package form, `three` is an optional peer declared through `peerDependenciesMeta`, externalized from the library bundle, and required only by `voxel/three`; core, physics, and meshing entry points and declarations must not reference it. Phase 0 chooses one tested `three` plus matching `@types/three` release, aligns consumers before integration, configures linked Vite consumers with `resolve.dedupe: ['three']`, and verifies the bundle contains exactly one Three.js runtime. Do not advertise a broad 0.x peer range without a real compatibility matrix.
 
 Keep WebGPU as a later experimental backend. The portable data plane and Three-free mesher should not prevent it, but MVP APIs should not pretend that WebGL and WebGPU shaders, post-processing, readback, and lifecycle behavior are interchangeable.
 

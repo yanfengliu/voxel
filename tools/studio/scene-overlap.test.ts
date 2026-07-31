@@ -52,6 +52,50 @@ describe('the studio scenes', () => {
   }
 
   /**
+   * The rolling station's apron, judged rather than exempted.
+   *
+   * The loop above skips every placement a live-physics profile poses, and
+   * the playground profile poses all of them, so the physics scenes reach
+   * `sceneOverlapsV1` with nothing left to judge. That exemption is right
+   * for a body whose presented pose carries a rotation an authored
+   * placement cannot express. It is wrong for these four: they are fixed,
+   * unrotated ground slabs whose live pose is their authored pose, so the
+   * authored transform is exactly what a viewer sees.
+   *
+   * They are worth judging because the apron grew from two slabs to four
+   * when the catch berms came down, and four slabs laid edge to edge share
+   * three seams that each put two upward faces on one plane at y 0.25.
+   * Edge contact with no shared area is the legal coincidence; a tile off
+   * the 16 m pitch, or a fifth laid on top of one of them, is not.
+   */
+  it('the rolling station lays its four apron slabs edge to edge, sharing no cell', () => {
+    const rolling = createStudioScenes()
+      .find((scene) => scene.id === 'studio:scene:physics-rolling');
+    expect(rolling, 'the catalog should carry the rolling station').toBeDefined();
+    const aprons = rolling!.placements
+      .filter((placement) => placement.model === 'studio:pg-apron');
+    expect(aprons, 'the run-out apron is four tiles').toHaveLength(4);
+    const apronScene = { ...rolling!, placements: aprons };
+    const overlaps = sceneOverlapsV1(apronScene, recipes, parts);
+    expect(overlaps, JSON.stringify(overlaps)).toEqual([]);
+
+    // And the check is not vacuous on this scene: a fifth tile dropped on
+    // an existing one is reported. Without this the assertion above would
+    // pass just as well on an empty placement list, which is exactly how
+    // the first version of it was wrong.
+    const doubled = sceneOverlapsV1({
+      ...apronScene,
+      placements: [
+        ...aprons,
+        { ...aprons[0]!, id: 'apron-duplicate' },
+      ],
+    }, recipes, parts);
+    expect(doubled.map(({ a, b }) => `${a}+${b}`))
+      .toEqual([`${aprons[0]!.id}+apron-duplicate`]);
+    expect(doubled[0]!.cells).toBeGreaterThan(0);
+  });
+
+  /**
    * Regression: the former cell hash keyed each target cube by its low corner
    * and probed only downward, so a pair meeting across a unit-cell wall on
    * mutually offset grids was reported clean in one argument order — the

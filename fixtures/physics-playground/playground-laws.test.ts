@@ -108,6 +108,34 @@ describe('the laws of the voxel universe', () => {
       .toBeGreaterThan(0);
     world.free();
   }, 300_000);
+
+  it('leaves no body declaring its own rolling resistance, so none is skipped', () => {
+    // The walk above skips a body that declares its own value, because
+    // such a body is tuning the law rather than escaping it. That skip is
+    // a hole if anything actually uses it: the trebuchet's ball carried
+    // `rollingResistance: 0.8` left over from before the law existed —
+    // a no-op restating its own material's law value — and the only
+    // effect it still had was to exempt that one body from the walk.
+    //
+    // Content may still tune a law per material. This pins that tuning
+    // happens in the material table, where one edit governs every body
+    // made of that material, rather than on a body where it silently
+    // opts out of the proof.
+    const declaring: string[] = [];
+    for (const station of createPhysicsPlaygroundStationsV1()) {
+      for (const body of station.bodies) {
+        if (body.rollingResistance !== undefined) {
+          declaring.push(`${station.sceneId}/${body.placementId}`);
+        }
+      }
+    }
+    expect(
+      declaring,
+      'these bodies declare their own rolling resistance and are therefore '
+      + 'skipped by the law walk above; move the value into the material '
+      + 'table in src/physics/laws.ts instead',
+    ).toEqual([]);
+  });
 });
 
 describe('the constitution is complete and honest', () => {

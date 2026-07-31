@@ -635,10 +635,18 @@ export function createTrebuchetStationV1(): PlaygroundStationV1 {
       // Honest boundaries: this decays exponentially where true rolling
       // resistance is closer to a constant retarding force, and the gate
       // treats ANY contact as rolling contact, so it is also applied
-      // while the ball rests in the pouch. Applied here and not to the
-      // rolling station's sphere and cylinders, whose whole purpose is
-      // to measure undamped rolling.
-      rollingResistance: 0.8,
+      // while the ball rests in the pouch.
+      //
+      // The ball declares nothing, and that is the point. It used to
+      // carry `rollingResistance: 0.8` from before the law existed, next
+      // to a comment saying the rolling station's racers deliberately had
+      // none — which stopped being true the moment rolling resistance
+      // became a law of the universe, and is the premise on which that
+      // station's catch berms were deleted. The declaration was by then a
+      // no-op restating the 'shot' material's own law value, and it had a
+      // cost: `playground-laws.test.ts` skips any body that declares its
+      // own value, so the one body still declaring one was the only body
+      // excluded from the walk that proves nothing escapes the laws.
       tests: 'The payload, CCD on: at release speed it must not tunnel '
         + 'the landing floor.',
     },

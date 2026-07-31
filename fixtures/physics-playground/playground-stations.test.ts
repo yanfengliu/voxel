@@ -8,6 +8,9 @@ import {
 import {
   playgroundBodySpecsV1,
 } from '../../tools/studio/physics-playground-bodies.js';
+import {
+  PLAYGROUND_FLOOR_TOP_V1,
+} from '../../tools/studio/physics-playground-types.js';
 import type {
   PlaygroundScenarioResultV1,
 } from '../../tools/studio/physics-playground-checks.js';
@@ -206,6 +209,40 @@ describe('ramp and friction', () => {
   it('at 40 degrees every material slides', async () => {
     expectPass(await runPlaygroundScenarioV1(ramp, 'ramp-40-all-slide'));
   }, 120_000);
+
+  it('without the berm ice slides off the world, which is why it stays', async () => {
+    // This station's berm survived the same subtraction test the rolling
+    // station's berms failed. Nothing is missing from the physics here:
+    // ice is declared at friction 0.04 and behaves like it.
+    expectPass(await runPlaygroundScenarioV1(ramp, 'ramp-berm-control'));
+  }, 120_000);
+
+  it('with the berm the same ice arrives at the wall and is stopped there', async () => {
+    // The other half of the control, and it has to say more than "the ice
+    // is still above the floor" — the scenario's own floor-penetration
+    // check already covers that, and covers it harder.
+    //
+    // What this pins is where the ice ends up, because that is what shows
+    // the wall is doing the stopping. Measured: it reaches the ramp foot
+    // at x -4.5 doing 6.17 m/s, and one sampling interval later it is at
+    // -4.76 with 0.04 m/s left. That is an impact, not friction running
+    // out. It comes to rest at x -4.799, and its furthest west point is
+    // -4.833 — a 1 m cube still tilted off the 20-degree ramp, so its
+    // leading corner reaches x -5.47, just past the berm's east face at
+    // -5.45. It touches the wall and stops; it does not coast to a halt
+    // short of it, and it does not ride over it.
+    const held = await runPlaygroundScenarioV1(ramp, 'ramp-20-split');
+    const ice = held.finalBodies.find((body) => body.placementId === 'block-ice');
+    expect(ice, 'the 20-degree run lost its ice block').toBeDefined();
+    const line = playgroundResultLineV1(held);
+    const x = ice?.translation[0] ?? 0;
+    expect(x, `${line} :: ice should end past the ramp foot at x -4.5`)
+      .toBeLessThan(-4.5);
+    expect(x, `${line} :: ice should end against the berm, not past it`)
+      .toBeGreaterThan(-5.45);
+    expect(ice?.translation[1] ?? -99, `${line} :: ice should end on the floor`)
+      .toBeGreaterThan(0);
+  }, 120_000);
 });
 
 describe('collision range', () => {
@@ -275,5 +312,56 @@ describe('rolling and rotation', () => {
 
   it('the ideal ball rolls alike on both track headings; the voxel sphere still travels', async () => {
     expectPass(await runPlaygroundScenarioV1(rolling, 'rolling-grid-artifact'));
+  }, 180_000);
+
+  it('every racer stops on the apron under its own rolling resistance', async () => {
+    // Nothing walls this station in any more. Rolling resistance is what
+    // ends every run: the smooth ball takes 19.7 m and 14.5 s from
+    // 5.09 m/s at the slope foot, and the faceted racers stop far sooner.
+    expectPass(await runPlaygroundScenarioV1(rolling, 'rolling-run-out'));
+  }, 180_000);
+
+  it('putting the catch berms back falsifies the run-out result', async () => {
+    // The counter-run for deleting them, and the reason they went.
+    //
+    // The berms were built when a rigid ball never stopped, and stood
+    // 1.25 m at x -15.5 and z 7.6. Rolling resistance stops the ball now:
+    // it used to come to rest against the west wall at x -14.37 and now
+    // rests at -29.13, so the wall no longer catches a runaway, it
+    // truncates a measurement. Measured against the berms
+    // the smooth ball finished 0.177 m ahead of the voxel sphere; measured
+    // on ground long enough, 14.644 m ahead. Re-standing them must fail
+    // this scenario, or the deletion bought nothing.
+    const walled: PlaygroundStationV1 = {
+      ...rolling,
+      bodies: [
+        ...rolling.bodies,
+        {
+          placementId: 'berm-west',
+          recipeId: 'studio:pg-berm',
+          kind: 'fixed',
+          material: 'stone',
+          at: [-15.5, PLAYGROUND_FLOOR_TOP_V1, 0],
+          tests: 'counter-run only: the deleted catch wall, put back',
+        },
+        {
+          placementId: 'berm-north',
+          recipeId: 'studio:pg-berm',
+          kind: 'fixed',
+          material: 'stone',
+          at: [0, PLAYGROUND_FLOOR_TOP_V1, 7.6],
+          turns: 1,
+          tests: 'counter-run only: the deleted catch wall, put back',
+        },
+      ],
+    };
+    const result = await runPlaygroundScenarioV1(walled, 'rolling-run-out');
+    expect(result.status, playgroundResultLineV1(result)).toBe('fail');
+    const truncated = result.checks.filter(
+      (check) => check.status === 'fail' && check.detail.includes('ahead of'));
+    expect(
+      truncated.map((check) => check.detail).join(' | '),
+      'expected the walled run to fail on the lead the berms truncate',
+    ).not.toBe('');
   }, 180_000);
 });

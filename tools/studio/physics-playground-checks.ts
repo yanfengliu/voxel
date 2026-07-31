@@ -403,15 +403,19 @@ function evaluateCheck(
       const trailer = requireBody(last, ref.trailer, ref.check);
       const lead = (leader.translation[ref.axis] - trailer.translation[ref.axis])
         * ref.sign;
-      if (lead <= 0.05) {
+      const wanted = ref.minLeadMeters ?? 0.05;
+      if (lead <= wanted) {
         return fail(
-          `'${ref.leader}' should finish ahead of '${ref.trailer}' along `
-          + `axis ${String(ref.axis)}, but leads by only ${lead.toFixed(3)} m `
-          + '— rotational inertia is not separating them.',
+          `'${ref.leader}' should finish at least ${wanted.toFixed(2)} m `
+          + `ahead of '${ref.trailer}' along axis ${String(ref.axis)}, but `
+          + `leads by ${lead.toFixed(3)} m. Either the shapes are no longer `
+          + 'separating, or the run-out ends before the leader does — a wall '
+          + 'or an apron edge in the way truncates this gap.',
         );
       }
       return pass(
-        `'${ref.leader}' finished ${lead.toFixed(3)} m ahead of '${ref.trailer}'.`,
+        `'${ref.leader}' finished ${lead.toFixed(3)} m ahead of `
+        + `'${ref.trailer}' (at least ${wanted.toFixed(2)} m wanted).`,
       );
     }
     case 'crossed-plane': {
@@ -421,20 +425,32 @@ function evaluateCheck(
       // silent reuse.
       const body = requireBody(last, ref.placementId, ref.check);
       const crossed = body.translation[ref.axis] < ref.threshold;
+      // Axis 1 is down, so a plane below the floor means falling out of
+      // the world; the horizontal axes mean a shot passing a wall. Saying
+      // 'tunnel' for both sent a maintainer whose ice stopped on the floor
+      // looking for a continuous-collision bug that was never involved.
+      const passing = ref.axis === 1 ? 'fall past' : 'pass';
+      const beyond = ref.axis === 1
+        ? 'expected it to fall out of the world below that plane'
+        : 'expected it to tunnel through (the documented no-CCD artifact)';
       if (ref.expect === 'crossed' && !crossed) {
         return fail(
           `'${ref.placementId}' stopped at `
           + `${body.translation[ref.axis].toFixed(3)} on axis `
-          + `${String(ref.axis)} and never crossed ${String(ref.threshold)} — `
-          + 'expected it to tunnel through (the documented no-CCD artifact).',
+          + `${String(ref.axis)} and never got ${passing} `
+          + `${String(ref.threshold)} — ${beyond}. Something is holding it `
+          + 'up that the run expects to be absent.',
         );
       }
       if (ref.expect === 'stopped' && crossed) {
         return fail(
           `'${ref.placementId}' reached `
           + `${body.translation[ref.axis].toFixed(3)} on axis `
-          + `${String(ref.axis)}, beyond ${String(ref.threshold)} — it `
-          + 'tunneled through the wall despite continuous collision detection.',
+          + `${String(ref.axis)}, beyond ${String(ref.threshold)} — `
+          + (ref.axis === 1
+            ? 'it fell out of the world when something should have held it.'
+            : 'it tunneled through the wall despite continuous collision '
+              + 'detection.'),
         );
       }
       return pass(

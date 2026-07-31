@@ -40,6 +40,7 @@ Accepted state may be newer than displayed state. Picking and capture never read
 The public subpaths are:
 
 - voxel/core: schemas, validation, render-world state, revisions, deltas, readiness, and plain data types.
+- voxel/physics: the laws of motion this repository's scenes are held to, as plain data plus one function that applies the damping laws to any rigid body able to report its own damping. It carries no solver, no Three.js, and no DOM, so a consuming game borrows the constitution while keeping its own solver.
 - voxel/meshing: chunk storage/indexing, oracle and production mesher contracts, portable ray queries, dependency signatures, and worker protocol types.
 - voxel/meshing/browser-worker: the browser-only static module-worker launcher used by bundlers; importing it requires DOM worker globals.
 - voxel/three: WebGL2 runtime, presenters, scheduler, camera strategies, picking, capture, metrics, and owned worker integration.
@@ -48,6 +49,7 @@ The public subpaths are:
 Non-binding responsibility map, not a required directory layout:
 
 - Core transactions own snapshot/delta validation, budgets, reduction, canonical state, fixed-page batches, and the presentation ledger.
+- Physics owns the stated laws, their per-material values, the bounds content may not declare past, and the one application function. It owns no simulation: nothing here steps, integrates, or resolves a contact, and the renderer never consults it.
 - Meshing owns profiles, checked coordinates, chunk indexes, invalidation, mesher contracts, dependency signatures, worker protocols, and worker entry points.
 - The Three adapter owns compatibility checks, scheduling integration, revision-atomic presentation, committed presented stores, picking, capture, and GPU lifecycle.
 - Testing owns deterministic fixtures, reference models, race/lifecycle harnesses, and evidence reporters.

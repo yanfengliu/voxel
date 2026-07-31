@@ -160,10 +160,11 @@ export function createPlaygroundApronRecipe(): RecipeV1 {
   return slabRecipe(
     'studio:pg-apron',
     'Physics apron',
-    'One half of the rolling station\'s ground: two of these tile a '
-      + '32-by-16-meter apron, because two ten-meter-wide tracks — one of '
-      + 'them yawed 45 degrees — need more run-out than the standard floor '
-      + 'offers and a recipe dimension caps at 64 voxels.',
+    'One 16-meter tile of ground. A recipe dimension caps at 64 voxels, so '
+      + 'stations that need more run-out than the standard floor lay '
+      + 'several: four tile the rolling station, because its smooth ball '
+      + 'takes 20.1 meters of flat to stop and its 45-degree track throws '
+      + 'its own ball diagonally out of the first two.',
     [64, 1, 64],
     'deck',
   );
@@ -199,11 +200,13 @@ export function createPlaygroundBermRecipe(): RecipeV1 {
   return blockRecipe(
     'studio:pg-berm',
     'Catch berm',
-    'A catch wall. Ice at friction 0.04 would coast some forty meters and '
-      + 'an ideal ball rolls forever, so slides and roll-outs would vanish '
-      + 'off the world edge and read as bugs; a berm ends every run on '
-      + 'screen. Tall enough (1.25 m) that a rolling sphere cannot climb '
-      + 'over — a wall below a ball\'s center height just torques it up.',
+    'The ramp station\'s catch wall, and the last one in the playground. '
+      + 'Ice declares friction 0.04 and slides 40.7 meters past the ramp '
+      + 'foot on 1.5 meters of floor, so without a wall it goes off the '
+      + 'edge and reads as a vanishing-object bug. The rolling station had '
+      + 'two of these until rolling resistance became a law and its racers '
+      + 'started stopping on their own. Tall enough (1.25 m) that a sliding '
+      + 'block cannot ride up and over it.',
     [2, 5, 48],
     'stone',
   );
