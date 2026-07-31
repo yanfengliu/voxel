@@ -1,6 +1,10 @@
 import type * as RAPIER_TYPES from '@dimforge/rapier3d-compat';
 import { modelOccupancyV1, decomposeVoxelsV1 } from './voxel-colliders.js';
 import type { StudioModelV1 } from './model.js';
+import {
+  applyLivePhysicsWindV1,
+  type LivePhysicsWindPlanV1,
+} from './live-physics-wind.js';
 
 /**
  * A live, interactive solver world for one open Studio scene.
@@ -91,6 +95,8 @@ export interface LivePhysicsProfileV1 {
   }>>;
   /** Constraints between planned bodies; anchors are body-local meters. */
   readonly joints?: readonly LivePhysicsJointPlanV1[];
+  /** Flat plates driven by a steady wind, loaded every fixed step. */
+  readonly wind?: LivePhysicsWindPlanV1;
 }
 
 export interface LivePhysicsJointPlanV1 {
@@ -552,6 +558,7 @@ export class LivePhysicsSessionV1 {
   stepOnce(): void {
     this.#assertLive();
     this.#applyGrabSpring();
+    this.#applyWind();
     this.#world.step();
     this.#stepped += 1;
   }
@@ -582,9 +589,20 @@ export class LivePhysicsSessionV1 {
     while (this.#accumulatorS >= TIMESTEP_S) {
       this.#accumulatorS -= TIMESTEP_S;
       this.#applyGrabSpring();
+      this.#applyWind();
       this.#world.step();
       this.#stepped += 1;
     }
+  }
+
+  #applyWind(): void {
+    const wind = this.#profile.wind;
+    if (wind === undefined) return;
+    applyLivePhysicsWindV1(
+      wind,
+      (placementId) => this.#bodies.get(placementId)?.body,
+      TIMESTEP_S,
+    );
   }
 
   #applyGrabSpring(): void {
