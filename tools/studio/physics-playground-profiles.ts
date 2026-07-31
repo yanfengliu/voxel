@@ -44,12 +44,16 @@ export function createPhysicsPlaygroundProfileV1(
       placementId: spec.placementId,
       kind: spec.kind,
       material: {
+        id: spec.material,
         friction: spec.friction,
         restitution: spec.restitution,
         density: spec.worldDensity,
         combine: spec.combine,
       },
       ...(spec.ccd ? { ccd: true } : {}),
+      ...(spec.pivotDamping !== undefined
+        ? { pivotDamping: spec.pivotDamping }
+        : {}),
       ...(spec.rollingResistance !== undefined
         ? { rollingResistance: spec.rollingResistance }
         : {}),

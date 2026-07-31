@@ -87,6 +87,22 @@ export interface PlaygroundBodyDefV1 {
    * together.
    */
   readonly rollingResistance?: number;
+  /**
+   * Always-on angular damping for a body hanging on a joint: one declared
+   * coefficient standing in for axle friction and air drag together, the
+   * two losses a rigid-body solver has no way to produce on its own.
+   *
+   * Without it a jointed machine never stops. Rapier's revolute joint is
+   * frictionless, so the trebuchet's arm and counterweight form a
+   * pendulum with nothing to dissipate its swing: measured over 60
+   * simulated seconds the arm swept 896 degrees, the counterweight
+   * 1,398, and neither body ever slept. That is the solver being
+   * consistent, not broken — nothing was ever asked to slow them down.
+   *
+   * Unlike rolling resistance this is not gated on contact, because a
+   * bearing is always loaded and the air is always there.
+   */
+  readonly pivotDamping?: number;
   /** Quarter-turns about world y for free-standing bodies. */
   readonly turns?: 0 | 1 | 2 | 3;
   /** The body exists queued and bodiless until a spawn case fires it. */
@@ -144,6 +160,20 @@ export type PlaygroundCheckRefV1 =
   | {
     readonly check: 'all-asleep-or-slow';
     readonly maxSpeed: number;
+    /**
+     * How many trailing ticks must ALL be quiet, not just the last one.
+     *
+     * Reading a single final frame cannot tell rest from a pendulum
+     * caught at the top of its swing, where speed passes through zero
+     * every half period. Measured on a frictionless trebuchet, a machine
+     * that never settles at all was under the threshold on 2.29% of its
+     * ticks — enough that the same counter-run passed at five of seven
+     * scenario lengths and failed at the sixth by luck of phase.
+     *
+     * Defaults to a quarter second, which is longer than the interval
+     * between a swing's turning points at any speed these scenes reach.
+     */
+    readonly settledForTicks?: number;
     /**
      * Only these bodies must settle; omitted means every dynamic body.
      * A machine on frictionless hinges never fully stops — the

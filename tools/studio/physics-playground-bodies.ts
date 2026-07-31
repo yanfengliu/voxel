@@ -55,6 +55,7 @@ export interface PlaygroundBodySpecV1 {
   readonly ccd: boolean;
   /** Angular damping standing in for rolling resistance; see the body type. */
   readonly rollingResistance?: number;
+  readonly pivotDamping?: number;
   readonly material: string;
   readonly voxelCount: number;
   readonly grain: number;
@@ -298,6 +299,9 @@ function bodySpec(
     worldDensity: material.density / grain ** 3,
     combine: material.combine,
     ccd: body.ccd ?? false,
+    ...(body.pivotDamping !== undefined
+      ? { pivotDamping: body.pivotDamping }
+      : {}),
     ...(body.rollingResistance !== undefined
       ? { rollingResistance: body.rollingResistance }
       : {}),

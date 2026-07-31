@@ -1,6 +1,7 @@
 import type * as RAPIER_TYPES from '@dimforge/rapier3d-compat';
 import { modelOccupancyV1, decomposeVoxelsV1 } from './voxel-colliders.js';
 import type { StudioModelV1 } from './model.js';
+import { physicsLawsForV1 } from './physics-laws.js';
 import {
   applyLivePhysicsWindV1,
   type LivePhysicsWindPlanV1,
@@ -49,6 +50,12 @@ export interface LivePhysicsBodyPlanV1 {
    * which the chain and ball-drop scenes rely on.
    */
   readonly material?: {
+    /**
+     * The material's name, so the universal law table can be consulted
+     * for it. Absent means the default law set applies — governed, not
+     * exempt.
+     */
+    readonly id?: string;
     readonly friction: number;
     readonly restitution: number;
     /** Rapier world density; the playground derives it per voxel cube. */
@@ -66,6 +73,7 @@ export interface LivePhysicsBodyPlanV1 {
    * station body type for the full reasoning.
    */
   readonly rollingResistance?: number;
+  readonly pivotDamping?: number;
   /**
    * A primitive ball collider of this radius instead of the exact voxel
    * boxes — a stated simplification for bodies that must roll smoothly.
@@ -213,8 +221,12 @@ interface LiveBodyInternal {
   readonly body: RapierRigidBody;
   readonly colliders: readonly RapierCollider[];
   readonly voxelCount: number;
-  /** Contact-gated rolling resistance, when the plan declares one. */
+  /** Kept so the universal law table can be consulted per body. */
+  readonly placementId: string;
+  readonly materialId?: string;
+  /** Contact-gated rolling resistance, when the plan overrides the law. */
   readonly rollingResistance?: number;
+  readonly pivotDamping?: number;
 }
 
 interface GrabInternal {
@@ -229,6 +241,7 @@ export class LivePhysicsSessionV1 {
   readonly #rapier: RapierModule;
   readonly #world: RapierWorld;
   readonly #bodies = new Map<string, LiveBodyInternal>();
+  readonly #jointedBodies = new Set<string>();
   readonly #joints = new Map<string, {
     readonly joint: RAPIER_TYPES.ImpulseJoint;
     readonly a: string;
@@ -295,6 +308,8 @@ export class LivePhysicsSessionV1 {
         : plan.kind === 'spherical'
           ? rapier.JointData.spherical(anchorA, anchorB)
           : rapier.JointData.rope(plan.lengthMeters ?? 0, anchorA, anchorB);
+      this.#jointedBodies.add(plan.a);
+      this.#jointedBodies.add(plan.b);
       this.#joints.set(plan.id, {
         joint: this.#world.createImpulseJoint(data, a.body, b.body, true),
         a: plan.a,
@@ -341,6 +356,8 @@ export class LivePhysicsSessionV1 {
       .setLinvel(vx, vy, vz)
       .setAngvel({ x: wx, y: wy, z: wz });
     if (plan.ccd) description.setCcdEnabled(true);
+    // Nothing moves through a vacuum.
+    description.setLinearDamping(physicsLawsForV1(plan.material?.id).airDrag);
     const body = this.#world.createRigidBody(description);
     const material = plan.material;
     const combine = material?.combine === 'multiply'
@@ -385,6 +402,13 @@ export class LivePhysicsSessionV1 {
     this.#bodies.set(source.placementId, {
       body,
       colliders,
+      placementId: source.placementId,
+      ...(plan.material?.id !== undefined
+        ? { materialId: plan.material.id }
+        : {}),
+      ...(plan.pivotDamping !== undefined
+        ? { pivotDamping: plan.pivotDamping }
+        : {}),
       ...(plan.rollingResistance !== undefined
         ? { rollingResistance: plan.rollingResistance }
         : {}),
@@ -479,6 +503,7 @@ export class LivePhysicsSessionV1 {
     this.#bodies.set(placementId, {
       body,
       colliders: [collider],
+      placementId,
       voxelCount: 0,
     });
     this.#spawned += 1;
@@ -634,14 +659,20 @@ export class LivePhysicsSessionV1 {
   /**
    * Rolling resistance, applied only while the body is touching
    * something — the same contact gate the headless lane uses, because
-   * the two must solve the same world. Always-on angular damping is
-   * drag, not rolling resistance: it bleeds a projectile in flight and
-   * measurably shortens a throw.
+   * the two must solve the same world.
+   *
+   * Rolling resistance is gated on contact because that is where the
+   * force comes from — a body in flight is not rolling on anything.
+   * Joint friction is not gated, because a bearing is always loaded.
+   * Both come from the universal law table unless the content overrides
+   * them, so a body that declares nothing is still governed.
    */
   #applyRollingResistance(): void {
     for (const live of this.#bodies.values()) {
-      const resistance = live.rollingResistance;
-      if (resistance === undefined) continue;
+      const laws = physicsLawsForV1(live.materialId);
+      const resistance = live.rollingResistance ?? laws.rollingResistance;
+      const pivot = live.pivotDamping
+        ?? (this.#jointedBodies.has(live.placementId) ? laws.jointFriction : 0);
       // A holder object, not a plain `let`: the callback runs
       // synchronously inside contactPairsWith, but control-flow analysis
       // cannot see that and narrows a boolean to always-false.
@@ -650,7 +681,9 @@ export class LivePhysicsSessionV1 {
         this.#world.contactPairsWith(collider, () => { contact.found = true; });
         if (contact.found) break;
       }
-      const wanted = contact.found ? resistance : 0;
+      // The two losses add: a bearing is always turning against its axle,
+      // and a body on the ground is additionally losing to rolling.
+      const wanted = pivot + (contact.found ? resistance : 0);
       if (live.body.angularDamping() !== wanted) {
         live.body.setAngularDamping(wanted);
       }

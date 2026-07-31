@@ -10,6 +10,7 @@ import {
   PLAYGROUND_GRAVITY_V1,
   PLAYGROUND_TIMESTEP_S_V1,
 } from '../../tools/studio/physics-playground-materials.js';
+import { physicsLawsForV1 } from '../../tools/studio/physics-laws.js';
 import type {
   PlaygroundBodySnapshotV1,
   PlaygroundFrameV1,
@@ -67,6 +68,7 @@ export class PlaygroundWorldV1 {
     readonly a: string;
     readonly b: string;
   }>();
+  #jointedBodies = new Set<string>();
   #tick = 0;
 
   private constructor(
@@ -103,6 +105,8 @@ export class PlaygroundWorldV1 {
         : plan.kind === 'spherical'
           ? RAPIER.JointData.spherical(anchorA, anchorB)
           : RAPIER.JointData.rope(plan.lengthMeters!, anchorA, anchorB);
+      built.#jointedBodies.add(plan.a);
+      built.#jointedBodies.add(plan.b);
       built.#joints.set(plan.id, {
         joint: world.createImpulseJoint(data, a.body, b.body, true),
         a: plan.a,
@@ -144,6 +148,9 @@ export class PlaygroundWorldV1 {
       );
     }
     if (spec.ccd || overrides?.ccd) description.setCcdEnabled(true);
+    // Nothing moves through a vacuum. Linear damping is the cheap
+    // approximation of a square law, applied to every body there is.
+    description.setLinearDamping(physicsLawsForV1(spec.material).airDrag);
 
     const body = world.createRigidBody(description);
     const rule = combineRule(spec.combine);
@@ -227,6 +234,29 @@ export class PlaygroundWorldV1 {
     this.#joints.delete(jointId);
   }
 
+  /** Damping a body actually carries, so the law tests can read it. */
+  linearDampingOfV1(placementId: string): number {
+    const live = this.#bodies.get(placementId);
+    if (!live) {
+      throw new Error(
+        `No live body '${placementId}' to read damping from; it was never `
+        + 'created, is spawn-only, or was removed.',
+      );
+    }
+    return live.body.linearDamping();
+  }
+
+  angularDampingOfV1(placementId: string): number {
+    const live = this.#bodies.get(placementId);
+    if (!live) {
+      throw new Error(
+        `No live body '${placementId}' to read damping from; it was never `
+        + 'created, is spawn-only, or was removed.',
+      );
+    }
+    return live.body.angularDamping();
+  }
+
   jointCount(): number {
     return this.#joints.size;
   }
@@ -249,16 +279,23 @@ export class PlaygroundWorldV1 {
    * the body is actually touching something. Applying it always — as
    * plain angular damping does — quietly drags every airborne body too:
    * measured, a constant 0.8 on the trebuchet's ball bled the whip while
-   * the ball was still in the pouch and dropped its arrival at the wall
-   * from 2.27 m to 1.33 m, landing the shot short. Rolling resistance
-   * that changes a projectile's trajectory in flight is not rolling
-   * resistance.
+   * the ball is in the pouch for the whole whip, so an ungated coefficient
+   * is drag on the throw itself. Measured, that costs little here — a
+   * free rigid sphere has no spin-to-translation coupling, so damping
+   * cannot bend a trajectory in flight — but rolling resistance applied
+   * to a body that is not rolling is the wrong force in the wrong place,
+   * and gating it is what makes the name true.
    */
   #applyRollingResistance(): void {
     const world = this.#requireWorld();
     for (const [placementId, live] of this.#bodies) {
-      const resistance = live.spec.rollingResistance;
-      if (resistance === undefined) continue;
+      // The law governs every body; the station's own numbers are
+      // overrides of it, never the only source. A body that declares
+      // nothing is still subject to friction.
+      const laws = physicsLawsForV1(live.spec.material);
+      const resistance = live.spec.rollingResistance ?? laws.rollingResistance;
+      const pivot = live.spec.pivotDamping
+        ?? (this.#jointedBodies.has(placementId) ? laws.jointFriction : 0);
       // A holder object, not a plain `let`: the callback runs
       // synchronously inside contactPairsWith, but control-flow analysis
       // cannot see that and narrows a boolean to always-false.
@@ -267,7 +304,9 @@ export class PlaygroundWorldV1 {
         world.contactPairsWith(collider, () => { contact.found = true; });
         if (contact.found) break;
       }
-      const wanted = contact.found ? resistance : 0;
+      // The two losses add: a bearing is always turning against its axle,
+      // and a body on the ground is additionally losing to rolling.
+      const wanted = pivot + (contact.found ? resistance : 0);
       if (live.body.angularDamping() !== wanted) {
         live.body.setAngularDamping(wanted);
       }

@@ -110,6 +110,33 @@ describe('the trebuchet scenarios', () => {
     expect(energy, 'expected the energy check to be what fails').toBeDefined();
   }, 300_000);
 
+  it('comes to rest after firing', async () => {
+    // The arm and counterweight hang on frictionless revolute joints, so
+    // nothing in the solver stops them on its own.
+    const result = await runPlaygroundScenarioV1(station, 'treb-settles');
+    expect(result.status, playgroundResultLineV1(result)).toBe('pass');
+  }, 300_000);
+
+  it('without bearing friction the machine never stops swinging', async () => {
+    // The counter-run: strip the declared damping and the same scenario
+    // must fail, or the constant is not doing the work claimed for it.
+    // Measured frictionless, the arm sweeps 896 degrees over 60 s and
+    // the counterweight never drops below the threshold at all.
+    // The machine declares no damping of its own any more — the universe
+    // supplies it. So the counter-run overrides the law back to zero,
+    // which is the only way a body can be frictionless here and is
+    // exactly what this test exists to forbid.
+    const frictionless = {
+      ...station,
+      bodies: station.bodies.map((body) => (
+        body.placementId === 'arm' || body.placementId === 'cw'
+          ? { ...body, pivotDamping: 0, rollingResistance: 0 }
+          : body)),
+    };
+    const result = await runPlaygroundScenarioV1(frictionless, 'treb-settles');
+    expect(result.status, playgroundResultLineV1(result)).toBe('fail');
+  }, 300_000);
+
   it('fires identically twice', async () => {
     const first = await runPlaygroundScenarioV1(station, 'treb-fire');
     const second = await runPlaygroundScenarioV1(station, 'treb-fire');

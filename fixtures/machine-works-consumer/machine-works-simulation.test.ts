@@ -677,5 +677,9 @@ describe('Machine Works consumer physics fixture', () => {
     expect(repeated.zeroFrictionCounterfactual).toEqual(trace.zeroFrictionCounterfactual);
     expect(repeated.attachmentEvidence).toEqual(trace.attachmentEvidence);
     expect(repeated.outputDockEvidence).toEqual(trace.outputDockEvidence);
-  });
+    // A whole second solver run, against vitest's 5 s default: measured at
+    // 5.06 s and 5.39 s on this host, so it flaked twice in one session
+    // while passing 14/14 whenever the file ran alone. The determinism it
+    // proves is real; only the budget was wrong.
+  }, 120_000);
 });

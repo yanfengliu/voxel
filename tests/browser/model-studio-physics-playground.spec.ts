@@ -384,7 +384,7 @@ test('the fired trebuchet knocks the brick wall down', async ({ page }) => {
     farthest = Math.max(farthest, moved);
   }
   // Deliberately a loose bound on a chaotic quantity. Headless measures
-  // 25 of 33; this lane measured 25 and 11 across runs, because the
+  // 21 of 33; this lane measured 25 and 11 across runs, because the
   // world settles for a variable number of wall-clock steps before the
   // test can pause it, and a collapsing stack amplifies that start
   // difference. Pinning 18 or 25 here would be a flake generator. Eight

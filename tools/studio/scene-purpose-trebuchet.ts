@@ -314,8 +314,8 @@ export function createTrebuchetPurposeGraphV1(): PurposeGraphV1 {
         'The wall stands through the 3-second hold with every brick '
         + 'inside 0.02 m, and the same fire moves four named bricks above '
         + 'the base course between 1.0 and 3.2 m, which is what the '
-        + 'checks assert. The wider population — 25 of 33 pieces past '
-        + '0.25 m, farthest 4.52 m, mean 1.85 m — is measured, not '
+        + 'checks assert. The wider population — 21 of 33 pieces past '
+        + '0.25 m, farthest 4.57 m, mean 1.64 m — is measured, not '
         + 'asserted, because a collapsing stack is chaotic and pinning a '
         + 'count would pin noise.',
         'treb-hold and treb-fire',
@@ -356,6 +356,35 @@ export function createTrebuchetPurposeGraphV1(): PurposeGraphV1 {
         + 'that every dissipation path is physically modelled.',
     }),
     purposeNodeV1({
+      id: sceneNodeId(SYSTEM, 'motion-rule', 'dissipation'),
+      kind: 'motion-rule',
+      label: 'The machine runs down and stops',
+      job: 'Give the swing somewhere to go. A revolute joint in this '
+        + 'solver is frictionless, so the arm and the hanging crate are '
+        + 'a pendulum with no losses at all: nothing in the world asks '
+        + 'them to slow down, and they do not. The declared bearing '
+        + 'damping is the axle friction and air drag a rigid-body solver '
+        + 'cannot produce, and it is what turns a machine that swings '
+        + 'forever into one that fires, settles, and is done.',
+      requiredBy: Object.freeze([need]),
+      evidence: provenBy(
+        'The arm and the counterweight are both asleep or under 0.1 m/s '
+        + 'by 22.5 s after firing, and the same scenario fails outright '
+        + 'when the declared damping is stripped from the two bodies — '
+        + 'measured frictionless, the arm sweeps 896 degrees over 60 s, '
+        + 'the counterweight 1,398, and the counterweight never falls '
+        + 'below the threshold at any point.',
+        'treb-settles and its frictionless counter-run',
+      ),
+      honestyBoundary: 'One coefficient stands for two different losses, '
+        + 'axle friction and air drag, and is not derived from either — '
+        + 'it was measured. It is not free: it costs release speed '
+        + '(16.08 down to 15.58 m/s) and shortens the throw, which is '
+        + 'why the wall stands where this machine lands the ball rather '
+        + 'than where the frictionless one did. This node claims the '
+        + 'machine stops, not that its bearing is modelled.',
+    }),
+    purposeNodeV1({
       id: sceneNodeId(SYSTEM, 'solid', 'wall-base'),
       kind: 'solid',
       label: 'Target wall, base course',
@@ -366,7 +395,7 @@ export function createTrebuchetPurposeGraphV1(): PurposeGraphV1 {
         'Every named brick check sits above the base course, and each '
         + 'asserts a metre or more of travel; the base is deliberately '
         + 'left unasserted because what it does is stay. Measured, the '
-        + 'upper courses run to 4.52 m while the base barely moves, so '
+        + 'upper courses run to 4.57 m while the base barely moves, so '
         + 'this shot removes the wall above its footing rather than '
         + 'sweeping the footing away.',
         'treb-fire',

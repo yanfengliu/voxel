@@ -637,24 +637,39 @@ function evaluateCheck(
     }
     case 'all-asleep-or-slow': {
       const only = ref.placementIds;
-      for (const body of last.bodies) {
-        const spec = specs.get(body.placementId);
-        if (spec?.kind !== 'dynamic') continue;
-        if (only !== undefined && !only.includes(body.placementId)) continue;
-        const bodySpeed = speed(body);
-        if (!body.sleeping && bodySpeed > ref.maxSpeed) {
-          return fail(
-            `'${body.placementId}' is awake at ${bodySpeed.toFixed(3)} m/s `
-            + `on the final tick; everything should be asleep or under `
-            + `${String(ref.maxSpeed)} m/s by then.`,
-          );
+      // Every trailing frame must be quiet, not merely the last one. A
+      // swinging body passes through zero speed at each turning point,
+      // so one frame cannot distinguish rest from the top of a swing.
+      const settledFor = ref.settledForTicks ?? 60;
+      const cutoff = last.tick - settledFor;
+      const trailing = frames.filter((frame) => frame.tick >= cutoff);
+      // Angular speed counts too: a body spinning in place is not at
+      // rest, and its centre may barely move while it does.
+      const restless = (body: PlaygroundBodySnapshotV1): number => Math.max(
+        speed(body), Math.hypot(...body.angularVelocity));
+      for (const frame of trailing) {
+        for (const body of frame.bodies) {
+          const spec = specs.get(body.placementId);
+          if (spec?.kind !== 'dynamic') continue;
+          if (only !== undefined && !only.includes(body.placementId)) continue;
+          const measure = restless(body);
+          if (!body.sleeping && measure > ref.maxSpeed) {
+            return fail(
+              `'${body.placementId}' is awake at ${measure.toFixed(3)} `
+              + `(m/s or rad/s, whichever is larger) at tick `
+              + `${String(frame.tick)}; everything named must stay asleep `
+              + `or under ${String(ref.maxSpeed)} for the whole final `
+              + `${String(settledFor)} ticks, not merely on the last one.`,
+            );
+          }
         }
       }
       return pass(
         `${ref.placementIds === undefined
           ? 'Every dynamic body'
-          : ref.placementIds.map((id) => `'${id}'`).join(', ')} is asleep or `
-        + `under ${String(ref.maxSpeed)} m/s.`,
+          : ref.placementIds.map((id) => `'${id}'`).join(', ')} stayed asleep `
+        + `or under ${String(ref.maxSpeed)} across the final `
+        + `${String(settledFor)} ticks.`,
       );
     }
     case 'peak-speed-at-least': {
