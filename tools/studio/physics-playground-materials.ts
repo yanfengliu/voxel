@@ -21,7 +21,7 @@ export const PHYSICS_PLAYGROUND_SCHEMA_V1 = 'studio.physics-playground/1' as con
 /** World meters per voxel, shared by every playground recipe and body. */
 export const PLAYGROUND_GRAIN_V1 = 0.25;
 
-/** Fixed solver timestep in seconds; matches the live studio lane (1/240). */
+/** Fixed solver timestep in seconds. See the note below: this lane has not reached the shared rate yet. */
 /**
  * The playground's tick, which is NOT yet the live lane's 60 Hz.
  *

@@ -1,6 +1,10 @@
 import type { SceneV1 } from './scene.js';
 import type { StudioLiveInteract } from './studio-live-interact.js';
-import type { LiveBodySnapshotV1, LivePhysicsSessionV1 } from './live-physics.js';
+import {
+  LIVE_TICKS_PER_SECOND_V1,
+  type LiveBodySnapshotV1,
+  type LivePhysicsSessionV1,
+} from './live-physics.js';
 import type { PhysicalOverlaySegmentV1 } from './physical-overlay.js';
 import {
   createPhysicsPlaygroundStationsV1,
@@ -151,8 +155,9 @@ export function createStudioPlaygroundPanel(
     live.setPaused(!live.paused());
     syncTransport();
   });
-  const stepButton = button('tick', 'Advances exactly one 1/240 s solver '
-    + 'tick — works while paused, which is what makes it a debugger.', () => {
+  const stepButton = button('tick', `Advances exactly one ${
+    String(Math.round(1_000 / LIVE_TICKS_PER_SECOND_V1 * 100) / 100)
+  } ms solver tick — works while paused, which is what makes it a debugger.`, () => {
     session()?.stepOnce();
     deps.redraw();
     sync();

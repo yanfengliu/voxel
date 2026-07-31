@@ -728,7 +728,7 @@ export class LivePhysicsSessionV1 {
     return this.#paused;
   }
 
-  /** Advances exactly one fixed 1/240 s tick, even while paused. */
+  /** Advances exactly one fixed solver tick, even while paused. */
   stepOnce(): void {
     this.#assertLive();
     this.#applyGrabSpring();

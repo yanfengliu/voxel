@@ -25,3 +25,21 @@ The finished product dents the collection bucket by 0.023 world units as it land
 Release damping had to be strong enough to soften a landing and weak enough to let the product settle inside a fixed-length trace, and separately weak enough to keep the fall gravity-driven. The usable window for the first two constraints was 4 to 6; the third excluded all of it.
 
 When one knob controls outcomes that pull against each other, scope it to the phase that needs it — damping at the release tick rather than on the asset was the right *shape* even though the value never worked. If no scoping helps, the knob is the wrong lever and the cost is in the model, not the tuning.
+
+## A rule that is only prose drifts inside the session that wrote it
+
+**Anchor:** 2026-07-31. `LIVE_TIMESTEP_SECONDS_V1` and `PLAYGROUND_TIMESTEP_S_V1` both spelled `1 / 240` independently; `tools/studio/solver-rate.test.ts` now fails on any lane that drifts.
+
+The owner's rule is 60 Hz everywhere. Written as prose it lasted less than a session: two files spelled the same literal and agreed by coincidence rather than by construction, so the headless twin and the live session were quietly different worlds and nothing said so.
+
+Turning the rule into a test found three more things immediately that no reviewer had noticed — two stale doc comments claiming a 1/240 tick, and a user-facing button in the playground panel still telling the owner it advanced "one 1/240 s solver tick" on screen. All three were left behind by the very change that moved the lane to 60 Hz. A rule a gate checks is worth more than a rule everyone agrees with, because the gate reads every line and no one does.
+
+The exemption list is part of the design, not a hole in it. Each entry states why, the test asserts the reason still appears in the file it exempts, and the playground case is written to **fail when the playground is fixed** — telling whoever fixes it to delete the exemption. An exception that cannot notice its own obsolescence becomes permanent.
+
+## Lessons nobody reads are not lessons
+
+**Anchor:** 2026-07-31. `AGENTS.md:68` now lists `docs/learning/lessons.md` in the session-start reading; before that, `AGENTS.md:28` mentioned the file only to govern its format.
+
+This file existed, had a rule about how to write entries, and was never once instructed to be read. `CLAUDE.md` is `@AGENTS.md`, so AGENTS.md reaches every agent automatically and this file reached none of them.
+
+The consequence for where things go: a rule that must be followed belongs in AGENTS.md, which is loaded; the evidence behind it belongs here, which is now read at session start. Writing a hard-won lesson only here was, until today, the same as deleting it.
