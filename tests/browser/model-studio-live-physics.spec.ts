@@ -181,9 +181,10 @@ test('adjust mode is one click away and each mode teaches its pointer', async ({
   await page.getByRole('button', { name: 'adjust', exact: true }).click();
   expect(await page.evaluate(() => window.voxelStudio!.stageMode()))
     .toBe('adjust');
-  // On a recorded scene Adjust cannot move models; the hint owns that
-  // honestly instead of leaving the mode looking broken.
-  await expect(hint).toContainText("a recorded scene's models cannot be moved");
+  // The chain poses its own rings — each leans along the catenary tangent, so
+  // the authored transform is a fallback nobody sees and a drag would appear
+  // to do nothing. Adjust says so rather than offering an edit it will drop.
+  await expect(hint).toContainText('this scene poses its own models');
 
   await page.getByRole('button', { name: 'interact', exact: true }).click();
   expect(await page.evaluate(() => window.voxelStudio!.stageMode()))

@@ -2,6 +2,7 @@ import {
   chainLinkPlaneV1,
   CHAIN_LINK_COUNT_V1,
 } from './chain-layout.js';
+import { chainLiveSpawnPosesV1 } from './chain-replay-binding.js';
 import {
   BALL_DROP_BALL_IDS_V1,
   BALL_DROP_DROP_Y_V1,
@@ -22,6 +23,10 @@ export const LIVE_PHYSICS_PROFILES_V1:
 Readonly<Record<string, LivePhysicsProfileV1>> = Object.freeze({
   'studio:scene:chain-links': {
     sceneId: 'studio:scene:chain-links',
+    // The chain computes its own starting curve, so the live world no longer
+    // needs a recording to open from: each ring leans along the catenary
+    // tangent, which is the only reason the links thread instead of colliding.
+    poses: chainLiveSpawnPosesV1(),
     bodies: [
       // The two end links are held by the piers; everything between hangs
       // free, exactly as in the recorded run. The piers themselves need no

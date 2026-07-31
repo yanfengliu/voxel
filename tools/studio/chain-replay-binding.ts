@@ -79,4 +79,45 @@ export function chainCatenaryPoseV1(
   };
 }
 
+/**
+ * Where every link starts in the live world.
+ *
+ * The links thread each other only because each ring leans along the curve's
+ * tangent at its own position. Spawning them axis-aligned pushes ring through
+ * ring, and the solver resolves that by throwing the chain apart — so these
+ * poses are what makes a live chain a chain rather than a pile.
+ *
+ * Both the height and the lean are scaled by the same dip, which is what
+ * "starts held above its resting curve" means: a flatter catenary that gravity
+ * then pulls down into the real one. The anchors are never dipped, because
+ * they are where the curve is pinned.
+ *
+ * This is the analytic form of the frozen literals in the chain fixture's
+ * `CHAIN_RECORDED_START_POSES_V1`, which its own test pins to this same curve
+ * to twelve decimals. Studio computes rather than imports them: `tools/studio`
+ * never reaches into `fixtures/`, because the browser bundle must not pull a
+ * solver in behind it.
+ */
+export function chainLiveSpawnPosesV1(): Readonly<Record<string, {
+  readonly centre: readonly [number, number, number];
+  readonly rotation: readonly [number, number, number, number];
+}>> {
+  const poses: Record<string, {
+    readonly centre: readonly [number, number, number];
+    readonly rotation: readonly [number, number, number, number];
+  }> = {};
+  for (let index = 0; index < CHAIN_LINK_COUNT_V1; index += 1) {
+    const pose = chainCatenaryPoseV1(index);
+    const anchored = index === 0 || index === CHAIN_LINK_COUNT_V1 - 1;
+    const dip = anchored ? 1 : CHAIN_REPLAY_START_DIP;
+    const angle = pose.angle * dip;
+    poses[`link-${String(index).padStart(2, '0')}`] = {
+      centre: [pose.x, pose.y * dip, 0],
+      // A lean about the axis out of the chain's hanging plane.
+      rotation: [0, 0, Math.sin(angle / 2), Math.cos(angle / 2)],
+    };
+  }
+  return Object.freeze(poses);
+}
+
 export { CHAIN_INNER_RADIUS_V1, CHAIN_OUTER_RADIUS_V1 };

@@ -2,7 +2,6 @@ import {
   VOXEL_SCENE_SCHEMA_V1,
   VOXEL_SCENE_SCHEMA_V2,
   VOXEL_SCENE_SCHEMA_V3,
-  VOXEL_SCENE_SCHEMA_V4,
   type ScenePlacementV1,
   type ScenePointLightV3,
   type SceneSchemaV3,
@@ -16,10 +15,8 @@ import {
 import {
   chainCatenaryPoseV1,
   CHAIN_GRAIN_V1,
-  CHAIN_REPLAY_DURATION_MS,
   CHAIN_REPLAY_START_DIP,
 } from './chain-replay-binding.js';
-import { CHAIN_POSE_REPLAY_ID } from './generated-chain-replay.js';
 import {
   BALL_DROP_BALL_COUNT_V1,
   BALL_DROP_BALL_GRAIN_V1,
@@ -243,7 +240,7 @@ function createChainLinkStudyScene(): SceneV1 {
   const anchorX = chainCatenaryPoseV1(CHAIN_LINK_COUNT_V1 - 1).x;
   const pierX = anchorX + CHAIN_OUTER_RADIUS_V1 * CHAIN_GRAIN_V1 + 1.3;
   return {
-    schemaVersion: VOXEL_SCENE_SCHEMA_V4,
+    schemaVersion: VOXEL_SCENE_SCHEMA_V3,
     id: 'studio:scene:chain-links',
     label: 'Chain link study',
     summary: 'Eleven steel rings, each turned ninety degrees from its '
@@ -251,13 +248,9 @@ function createChainLinkStudyScene(): SceneV1 {
       + 'joins them - the solver world contains no constraint at all - so they '
       + 'are held together only by being solid rings that thread each other. '
       + 'The links start held above their resting curve; gravity pulls them '
-      + 'down into a catenary, then a sideways push sets the middle swinging '
-      + 'and it settles back. Voxel presents the recorded poses and simulates '
-      + 'nothing.',
-    poseReplay: {
-      id: CHAIN_POSE_REPLAY_ID,
-      durationMs: CHAIN_REPLAY_DURATION_MS,
-    },
+      + 'down into a catenary, and dragging one sets the chain swinging. It '
+      + 'runs live in the browser, so what you see is being solved as you '
+      + 'watch it, not played back.',
     placements: [
       ...([['west', -pierX], ['east', pierX]] as const)
         .flatMap(([side, x]) => [-8, 2].map((lift) => ({

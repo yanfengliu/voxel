@@ -262,8 +262,20 @@ function describeVoxelSize(voxelSize: number, size: readonly [number, number, nu
   return `${num(voxelSize)} per voxel · ${num(sx * voxelSize)} × ${num(sy * voxelSize)} × ${num(sz * voxelSize)} units`;
 }
 
-function isConsumerReplayScene(scene: SceneV1 | null): boolean {
-  return scene?.schemaVersion === VOXEL_SCENE_SCHEMA_V4;
+/**
+ * True when the scene, not the author, decides where its models stand — a
+ * consumer replay, or a live profile that spawns them at solved poses.
+ *
+ * Editing is switched off for both, for one reason: the pose the editor would
+ * write is not the pose that gets presented, so a drag would appear to do
+ * nothing. The chain is the clear case — its rings are spawned leaning along
+ * the catenary tangent, a rotation no placement can express, so the authored
+ * transform is only a fallback nobody ever sees.
+ */
+function isSelfPosedScene(scene: SceneV1 | null): boolean {
+  if (scene === null) return false;
+  if (scene.schemaVersion === VOXEL_SCENE_SCHEMA_V4) return true;
+  return Object.keys(LIVE_PHYSICS_PROFILES_V1[scene.id]?.poses ?? {}).length > 0;
 }
 
 function replayEventStatusSuffix(event: ScenePoseReplayEventV1): string {
@@ -405,7 +417,7 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
   const sceneStageHint = 'click a model to select · drag it to move · '
     + 'middle-drag to turn · right-drag or WASD to move view · scroll to zoom';
   const replaySceneStageHint = 'drag to turn · right-drag or WASD to move view · scroll to zoom · '
-    + 'play or scrub the consumer replay · a recorded scene\'s models cannot be moved';
+    + 'this scene poses its own models, so they cannot be moved by hand';
   const interactStageHint = 'drag a moving part to pull it, release to let go · '
     + 'nothing is recorded · middle-drag to turn · right-drag or WASD to move view · scroll to zoom';
   const interactSpawnStageHint =
@@ -1026,6 +1038,7 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
     stageMode: () => liveInteract.mode(),
     setStageMode: (mode) => { liveInteract.setMode(mode); },
     livePhysics: () => liveInteract.state(),
+    settleLive: (steps) => { liveInteract.settleSteps(steps); },
     scene: () => sceneOpen,
     selectScenePlacement(id) { selectPlacement(id); return selectedPlacementId; },
     selectedScenePlacement: () => selectedPlacementId,
@@ -1745,7 +1758,7 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
     const count = scene.placements.length;
     const lightCount = scene.lights?.length ?? 0;
     const hasMotion = sceneSession?.hasMotion() === true;
-    const replayReadOnly = isConsumerReplayScene(scene);
+    const replayReadOnly = isSelfPosedScene(scene);
     const replay = replayReadOnly ? sceneSession?.poseReplayStatus() : null;
     const latest = replay?.sample?.latestEvent;
     const replaySuffix = replayReadOnly
@@ -1767,7 +1780,7 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
   }
 
   function syncSceneStageHint(scene: SceneV1): void {
-    const replayReadOnly = isConsumerReplayScene(scene);
+    const replayReadOnly = isSelfPosedScene(scene);
     const lightCount = scene.lights?.length ?? 0;
     const hasMotion = sceneSession?.hasMotion() === true;
     // In Interact the left button belongs to the live solver, so the hint
@@ -1863,7 +1876,7 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
     const lightCount = scene.lights?.length ?? 0;
     const hasMotion = sceneSession?.hasMotion() === true;
     playerBar.setSceneMode(true, hasMotion);
-    const replayReadOnly = isConsumerReplayScene(scene);
+    const replayReadOnly = isSelfPosedScene(scene);
     if (replayReadOnly) {
       selectedPlacementId = null;
       sceneEditor.clearLightSelection();
@@ -2025,7 +2038,7 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
   // the ground; in model mode, turn the view, and a clean click pins a note.
   // Middle button turns the view; right button pans it; wheel zooms.
   function recomputeSceneBoxes(): void {
-    sceneBoxes = sceneOpen !== null && !isConsumerReplayScene(sceneOpen)
+    sceneBoxes = sceneOpen !== null && !isSelfPosedScene(sceneOpen)
       ? placementWorldBoxesV1(sceneOpen, sceneRecipes, sceneParts)
       : [];
   }
@@ -2048,7 +2061,7 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
    */
   function selectPlacement(id: string | null): void {
     sceneEditor.clearLightSelection();
-    if (sceneOpen !== null && isConsumerReplayScene(sceneOpen)) {
+    if (sceneOpen !== null && isSelfPosedScene(sceneOpen)) {
       selectedPlacementId = null;
       showSelection();
       if (id !== null) {
@@ -2091,7 +2104,7 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
         `Scene '${next.id}' cannot be edited because no rendered scene is open; open it before editing.`,
       );
     }
-    if (isConsumerReplayScene(previous) || isConsumerReplayScene(next)) {
+    if (isSelfPosedScene(previous) || isSelfPosedScene(next)) {
       const replayScene = previous.schemaVersion === VOXEL_SCENE_SCHEMA_V4 ? previous : next;
       throw replaySceneEditError(
         replayScene,
@@ -2333,7 +2346,7 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
     // boxes describe only the trace's static source. Picking or moving those
     // boxes would select stale geometry, so every left drag remains a camera
     // orbit in this read-only view.
-    if (isConsumerReplayScene(sceneOpen)) { gesture = 'orbit'; return; }
+    if (isSelfPosedScene(sceneOpen)) { gesture = 'orbit'; return; }
     // Left in a scene selects the model under the cursor and starts dragging it.
     const picked = pickPlacement(event);
     selectPlacement(picked);
@@ -2601,7 +2614,7 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
    * reads the flag on each move, so nothing else needs to redraw here.
    */
   function setSnapToGrid(on: boolean): boolean {
-    if (sceneOpen !== null && isConsumerReplayScene(sceneOpen)) {
+    if (sceneOpen !== null && isSelfPosedScene(sceneOpen)) {
       throw replaySceneEditError(
         sceneOpen,
         `turning snap to grid ${on ? 'on' : 'off'}`,

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { createStudioCatalog } from './catalog.js';
+import { LIVE_PHYSICS_PROFILES_V1 } from './live-physics-profiles.js';
 import { sceneOverlapsV1 } from './scene-overlap.js';
 import { createStudioScenes } from './scenes.js';
 import { catalogPartsV1, catalogRecipesV1 } from './studio-library.js';
@@ -8,11 +9,17 @@ import { catalogPartsV1, catalogRecipesV1 } from './studio-library.js';
 /**
  * A scene builder does not reject overlapping placements, so the built-in
  * scenes are pinned clean here: two models may touch but never fill the same
- * world cells, which is what z-fights on screen. Pose-replay tracks can carry
- * arbitrary rotations that authored quarter-turn placements cannot express,
- * so their authored fallback transforms are not judged as presented poses;
- * scene-surface-fights.test.ts judges those at their recorded poses instead,
- * where the owner twice saw a moving surface flicker against still scenery.
+ * world cells, which is what z-fights on screen.
+ *
+ * Two kinds of placement are exempt for one reason: their presented pose
+ * carries a rotation an authored quarter-turn placement cannot express, so
+ * judging the authored transform would be judging something nobody sees. A
+ * pose-replay track is one; a live-physics profile pose is the other, and the
+ * chain is why the distinction matters — its rings clear each other only once
+ * each leans along the catenary tangent, and the authored fallback that cannot
+ * lean does overlap. Both are judged where they are actually posed:
+ * scene-surface-fights.test.ts at recorded poses, and the live-physics browser
+ * spec asserts the live chain stays threaded through settling and dragging.
  */
 describe('the studio scenes', () => {
   const catalog = createStudioCatalog();
@@ -23,14 +30,17 @@ describe('the studio scenes', () => {
     const replay = 'poseReplay' in scene
       ? catalog.scenePoseReplays?.[scene.poseReplay.id]
       : undefined;
-    const replayed = new Set(replay?.tracks.map(({ placementId }) => placementId) ?? []);
-    const authoredScene = replay === undefined
+    const posed = new Set([
+      ...(replay?.tracks.map(({ placementId }) => placementId) ?? []),
+      ...Object.keys(LIVE_PHYSICS_PROFILES_V1[scene.id]?.poses ?? {}),
+    ]);
+    const authoredScene = posed.size === 0
       ? scene
       : {
           ...scene,
-          placements: scene.placements.filter(({ id }) => !replayed.has(id)),
+          placements: scene.placements.filter(({ id }) => !posed.has(id)),
         };
-    const scope = replay === undefined ? 'placements' : 'non-replayed placements';
+    const scope = posed.size === 0 ? 'placements' : 'placements posed only by the scene';
     it(`${scene.id} ${scope} place no two models in the same space`, () => {
       if ('poseReplay' in scene) {
         expect(replay, `Scene '${scene.id}' must resolve pose replay '${scene.poseReplay.id}'.`)

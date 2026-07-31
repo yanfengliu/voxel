@@ -347,6 +347,13 @@ export interface VoxelStudioHarnessV1 {
     readonly positions: Readonly<Record<string, readonly [number, number, number]>>;
   };
   /**
+   * Advances the live world by an exact number of fixed ticks and redraws.
+   * A live scene has no timeline to scrub, so this is how a driver reaches a
+   * reproducible moment for an assertion or a screenshot. Throws a named
+   * error when the open scene has no live world.
+   */
+  settleLive(steps: number): void;
+  /**
    * The physics playground's transport, cases, spawn, and inspector — the
    * panel's own capabilities as callable plain-data methods. Methods that
    * need a live playground scene throw a named error without one.
@@ -592,6 +599,13 @@ export interface HarnessHostV1 {
     readonly stepped: number;
     readonly positions: Readonly<Record<string, readonly [number, number, number]>>;
   };
+  /**
+   * Advances the live world by an exact number of fixed ticks and redraws.
+   * A live scene has no timeline to scrub, so this is how a driver reaches a
+   * reproducible moment for an assertion or a screenshot. Throws a named
+   * error when the open scene has no live world.
+   */
+  settleLive(steps: number): void;
   /** The scene on the stage right now, or null in model mode. */
   scene(): SceneV1 | null;
   /** Selects a placement (or clears with null); returns what is now selected. */
@@ -1133,6 +1147,7 @@ export function createStudioHarness(host: HarnessHostV1): VoxelStudioHarnessV1 {
     stageMode: () => host.stageMode(),
     setStageMode: (mode) => { host.setStageMode(mode); },
     livePhysics: () => host.livePhysics(),
+    settleLive: (steps) => { host.settleLive(steps); },
     playground: createPlaygroundHarness(host.playgroundHost),
     sceneState: () => host.scene(),
     selectPlacement(id) {

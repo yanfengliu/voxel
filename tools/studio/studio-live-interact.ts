@@ -193,6 +193,40 @@ export class StudioLiveInteract {
     return this.#mode;
   }
 
+  /**
+   * Advances the live world by an exact number of fixed ticks and presents the
+   * result, independent of wall clock.
+   *
+   * A live scene has no timeline to scrub, so this is how a driver reaches a
+   * reproducible moment: the solver is deterministic for a given step count,
+   * which is what a visual baseline needs and what `step(elapsedMs)` cannot
+   * promise, since the frames it receives depend on the machine it runs on.
+   *
+   * The world is left paused, and stays paused until the driver asks for
+   * motion again. Without that the frame loop would keep stepping between the
+   * settle and whatever reads the result, and the exact state just reached
+   * would be gone before it could be asserted on or photographed.
+   */
+  settleSteps(steps: number): void {
+    if (!Number.isSafeInteger(steps) || steps < 0) {
+      throw new Error(
+        `Cannot settle the live world by ${String(steps)} steps: expected a whole number of `
+        + 'fixed ticks, zero or more.',
+      );
+    }
+    const session = this.#session;
+    if (session === null) {
+      throw new Error(
+        'Cannot settle the live world: this scene has no live physics profile, so no world '
+        + 'was built. Open a scene whose profile declares bodies.',
+      );
+    }
+    session.setPaused(true);
+    for (let step = 0; step < steps; step += 1) session.stepOnce();
+    this.#hooks.acceptPoses(session.poses());
+    this.#hooks.redraw();
+  }
+
   state(): StudioLiveInteractStateV1 {
     const session = this.#session;
     const base = {
