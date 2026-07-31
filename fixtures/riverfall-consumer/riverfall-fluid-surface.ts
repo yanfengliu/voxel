@@ -13,7 +13,7 @@ import type {
 } from './riverfall-fluid-evidence.js';
 import {
   canonicalRiverfallFluidJsonV1,
-} from './riverfall-fluid-config.js';
+} from '../../tools/studio/riverfall-fluid-config.js';
 import {
   closeRiverfallSurfaceSignalLoopV1,
   writeRiverfallSurfaceAngularVelocitiesV1,

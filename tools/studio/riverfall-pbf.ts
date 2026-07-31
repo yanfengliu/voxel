@@ -1,6 +1,6 @@
 import {
   mapValidatedRiverfallFluidCoordinateV1,
-} from '../../tools/studio/riverfall-fluid-domain.js';
+} from './riverfall-fluid-domain.js';
 import {
   riverfallFluidReachStartDistancesV1,
   type RiverfallFluidConfigV1,

@@ -2,17 +2,17 @@ import {
   RIVERFALL_FLUID_DOMAIN_V1,
   riverfallFluidDomainLengthV1,
   type RiverfallFluidDomainV1,
-} from '../../tools/studio/riverfall-fluid-domain.js';
+} from './riverfall-fluid-domain.js';
 import {
   MAX_POSE_REPLAY_FRAMES,
   MAX_POSE_REPLAY_SAMPLES,
-} from '../../tools/studio/scene-pose-replay.js';
+} from './scene-pose-replay.js';
 import {
   RIVERFALL_SURFACE_BASE_NORMAL_OFFSET,
   RIVERFALL_SURFACE_CELL_COUNT,
   RIVERFALL_SURFACE_MODEL_ID,
   RIVERFALL_SURFACE_SEAM_MODEL_ID,
-} from '../../tools/studio/riverfall-surface-grid.js';
+} from './riverfall-surface-grid.js';
 
 export const RIVERFALL_FLUID_SOLVER_NAME =
   'voxel-fixture/riverfall-pbf-2d';
@@ -416,7 +416,10 @@ function canonicalize(value: unknown, path: string): CanonicalJson {
       `${path}[${String(index)}]`,
     ));
   }
-  if (typeof value === 'object' && value !== null) {
+  // Null was returned by the first branch, so anything object-typed here is a
+  // real object. (The redundant null guard only surfaced once this file moved
+  // out of fixtures/ and met type-checked lint.)
+  if (typeof value === 'object') {
     const record = value as Readonly<Record<string, unknown>>;
     const result: Record<string, CanonicalJson> = {};
     for (const key of Object.keys(record).sort()) {

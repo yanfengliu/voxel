@@ -2,10 +2,10 @@ import { createHash, type Hash } from 'node:crypto';
 
 import {
   canonicalRiverfallFluidJsonV1,
-} from './riverfall-fluid-config.js';
+} from '../../tools/studio/riverfall-fluid-config.js';
 import type {
   RiverfallFluidStateV1,
-} from './riverfall-pbf.js';
+} from '../../tools/studio/riverfall-pbf.js';
 import type {
   RiverfallFluidTraceDiagnosticsV1,
   RiverfallFluidTraceSummaryV1,

@@ -5,7 +5,7 @@ import {
   createRiverfallFluidConfigV1,
   type RiverfallFluidAblationV1,
   type RiverfallFluidCausalRuleV1,
-} from './riverfall-fluid-config.js';
+} from '../../tools/studio/riverfall-fluid-config.js';
 import {
   assertRiverfallFluidCanonicalTraceAcceptedV1,
 } from './riverfall-fluid-acceptance.js';

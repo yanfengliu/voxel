@@ -15,8 +15,8 @@ import {
   RIVERFALL_FLUID_WITNESS_COUNT,
   riverfallFluidReachStartDistancesV1,
   type RiverfallFluidAblationV1,
-} from './riverfall-fluid-config.js';
-import { createInitialRiverfallFluidStateV1 } from './riverfall-pbf.js';
+} from '../../tools/studio/riverfall-fluid-config.js';
+import { createInitialRiverfallFluidStateV1 } from '../../tools/studio/riverfall-pbf.js';
 
 describe('Riverfall fluid canonical input', () => {
   it('is JSON-safe, key-order stable, and carries every solver boundary', () => {

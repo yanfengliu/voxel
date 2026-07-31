@@ -13,7 +13,7 @@ import {
   RIVERFALL_FLUID_PARTICLE_COUNT,
   RIVERFALL_FLUID_WITNESS_COUNT,
   riverfallFluidReachStartDistancesV1,
-} from './riverfall-fluid-config.js';
+} from '../../tools/studio/riverfall-fluid-config.js';
 import {
   assertRiverfallFluidCanonicalTraceAcceptedV1,
 } from './riverfall-fluid-acceptance.js';
@@ -30,7 +30,7 @@ import {
   reflectRiverfallFluidWallVelocityV1,
   riverfallFluidStripPenetrationV1,
   stepRiverfallFluidV1,
-} from './riverfall-pbf.js';
+} from '../../tools/studio/riverfall-pbf.js';
 import {
   simulateRiverfallFluidV1,
 } from './riverfall-fluid-simulation.js';

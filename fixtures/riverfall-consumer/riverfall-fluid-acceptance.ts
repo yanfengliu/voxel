@@ -3,10 +3,10 @@ import {
 } from '../../tools/studio/riverfall-fluid-domain.js';
 import {
   RIVERFALL_FLUID_PARTICLE_COUNT,
-} from './riverfall-fluid-config.js';
+} from '../../tools/studio/riverfall-fluid-config.js';
 import {
   riverfallFluidStripPenetrationV1,
-} from './riverfall-pbf.js';
+} from '../../tools/studio/riverfall-pbf.js';
 import type {
   RiverfallFluidTraceDiagnosticsV1,
   RiverfallFluidTraceSummaryV1,

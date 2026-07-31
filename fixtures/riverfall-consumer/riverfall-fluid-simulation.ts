@@ -9,7 +9,7 @@ import {
   RIVERFALL_FLUID_WITNESS_COUNT,
   type RiverfallFluidConfigOverridesV1,
   type RiverfallFluidConfigV1,
-} from './riverfall-fluid-config.js';
+} from '../../tools/studio/riverfall-fluid-config.js';
 import {
   createInitialRiverfallFluidStateV1,
   createRiverfallFluidWorkspaceV1,
@@ -17,7 +17,7 @@ import {
   stepRiverfallFluidV1,
   type RiverfallFluidStateV1,
   type RiverfallFluidStepDiagnosticsV1,
-} from './riverfall-pbf.js';
+} from '../../tools/studio/riverfall-pbf.js';
 import {
   finalRiverfallFluidTraceHashV1,
 } from './riverfall-fluid-trace-hash.js';

@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
   createRiverfallFluidConfigV1,
   RIVERFALL_FLUID_PARTICLE_COUNT,
-} from '../../fixtures/riverfall-consumer/riverfall-fluid-config.js';
+} from './riverfall-fluid-config.js';
 import {
   createMachineWorksPurposeGraphV1,
 } from './machine-works-purpose-graph.js';

@@ -1,7 +1,7 @@
 import type {
   RiverfallFluidSurfaceTraceV1,
 } from './riverfall-fluid-surface.js';
-import { canonicalRiverfallFluidJsonV1 } from './riverfall-fluid-config.js';
+import { canonicalRiverfallFluidJsonV1 } from '../../tools/studio/riverfall-fluid-config.js';
 import { encodeReplayChannelsV1 } from '../replay-codegen.js';
 
 export function riverfallFluidReplaySourceV1(

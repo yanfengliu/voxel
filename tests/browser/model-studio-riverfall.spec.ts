@@ -11,7 +11,7 @@ import {
   RIVERFALL_FLUID_RECORD_STEP_MS,
   RIVERFALL_FLUID_SOLVER_NAME,
   RIVERFALL_FLUID_SOLVER_VERSION,
-} from '../../fixtures/riverfall-consumer/riverfall-fluid-config.js';
+} from '../../tools/studio/riverfall-fluid-config.js';
 import {
   RIVERFALL_SURFACE_CELL_COUNT,
   RIVERFALL_SURFACE_MODEL_ID,
