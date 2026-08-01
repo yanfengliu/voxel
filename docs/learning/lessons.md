@@ -73,3 +73,33 @@ The split, measured separately: the PBF solver costs **2.97 ms per 5 ms substep*
 The remap started at 8.05 ms and is now 6.23 ms, from one change: it was collecting every candidate particle for a cell into an array, sorting the whole array, and keeping the nearest eight. With 321 cells against 288 witnesses that is 321 sorts a frame of a list that is 97% discarded. Keeping the best eight by insertion instead produces the identical selection — the ordering was (distance, then particle index), which is exactly the order particles arrive in for ties — and the byte-for-byte replay pin proved the output did not move by a single float. That pin is what made the optimisation safe to attempt at all.
 
 What is left is the solver, and the honest lever is its substep. `substepMs` is 5, chosen for the recorded lane where wall-clock cost did not matter. Doubling it to 10 would halve the per-frame solver cost, but it changes the integration, so it changes the recorded trace, and PBF stability at a coarser substep has to be re-measured rather than assumed — density error, boundary correction, and the acceptance gates all bound behaviour that a longer substep degrades. Do not simply raise it to make the frame fit; that is the same mistake as widening a penetration tolerance.
+
+**Corrected 2026-07-31, the same day it was written.** The last paragraph's conclusion was wrong, and so was the entry's headline. The substep was never the lever, and the fluid was never the blocker. A profile taken instead of assumed found the frame was mostly waste, and removing it took the frame to 4.32 ms with the integration untouched — see the entry below. The warning about `substepMs` stands on its own merits and is why it was not touched; but it was offered here as the way forward, and it was not. What this entry got wrong is instructive: its numbers came from timing two things and subtracting, which attributes every cost to whichever half you did not measure directly.
+
+## The Riverfall frame was three-quarters waste, and none of it was where subtraction said
+
+**Anchor:** 2026-07-31. `RiverfallLiveSurfaceV1.advance(1/60)` measured at 14.21 ms before and 5.2–7.3 ms after by the same mean-of-300 harness, 4.32 ms by a min-of-batches estimator. All 62 Riverfall tests pass throughout, including the byte-for-byte replay hash, and the new neighbour search was checked against the old one across 159,888 pairs for identical set, order, and distance.
+
+The entry above concluded the fluid solver was the blocker and the substep was the lever. Both were wrong, and the method that produced them is the lesson: it timed the whole frame, timed the solver, and called the difference "the remap". A subtraction cannot tell you *which part* of the remainder is expensive, so it silently attributed 6.23 ms to the mapping loop that had just been optimised. Timed directly, that loop costs **1.19 ms** for all 321 cells.
+
+Three real costs, found by profiling the parts rather than the halves:
+
+**Rebuilding static geometry every frame — the largest single cost in the scene.** `smoothRiverfallSurfaceSignalsV1` called `riverfallSurfaceNeighborsV1(cells)` once per frame. That function derives cell adjacency from `baseTranslation`, which never moves, at a cost of 321 × 321 = 103,041 distance computations and 321 intermediate arrays. It was larger than the fluid solver it existed to present. Caching it by cell list is the entire fix. Look for this shape: a pure function of immutable data called from a per-frame path.
+
+**The neighbour search was 68% of a substep and almost none of it was searching.** 1.878 ms of a 2.758 ms substep, rebuilt five times per substep. Per build it allocated ~2,880 strings to key a hash map, called the domain sampler ~6,600 times — each call allocating a result object and scanning the reach list with a closure — allocated an object per accepted pair, and comparison-sorted them. About 300 ns per pair, nearly all of it garbage. A counting sort into a flat cell table writing into reused typed arrays took the substep to 0.898 ms.
+
+**92,448 throwaway arrays a frame.** The mapping loop built a three-element tuple per particle per cell to hold numbers used once, and spread a tuple into `Math.hypot`.
+
+The pattern across all three: **the arithmetic was never the cost — allocation and repetition were.** Nothing here needed a cheaper algorithm in the mathematical sense; the same operations in the same order, without the garbage, were enough.
+
+Two things made it safe to be aggressive. The byte-for-byte replay pin means any numerical drift fails loudly, so "did I change the physics?" is answered by a test rather than by reasoning — which is why `Math.hypot` was kept over the faster `sqrt(a*a+b*b)` and distances were stored as `Float64Array` rather than `Float32Array`. And the equivalence check against the old neighbour builder caught ordering mistakes the pin would have caught later and less specifically.
+
+Finally, on measuring: **a single timing run on a loaded machine is worthless, and will invert your conclusion.** The same suite took 27 s and then 44 s minutes apart; a remap change measured as 9.51 ms then 14.07 ms with nothing between them but load. Use the minimum over several batches — the least-disturbed run is the closest to the truth — and never compare a mean baseline against a min result.
+
+## The live Riverfall runs out of surface coverage before it runs out of budget
+
+**Anchor:** 2026-07-31. Benchmarking `advance(1/60)` over roughly 3,000 frames — about 50 simulated seconds — throws from `riverfallSurfaceSignalV1`: cell `surface-river-00-00` found 1 visible particle inside the 10-unit compact support where 2 are required, nearest distance 8.095457.
+
+Found by accident, while a profiler ran the river far longer than any test does. The recorded lane is finite and never reaches this state, so nothing in the suite covers it; the solver is provably bit-identical to before the optimisation work, so this is pre-existing rather than introduced.
+
+It matters because a live scene has no end. Whatever the remaining budget is, a scene that throws after a minute of play is not converted. This is now the blocker for taking Riverfall off the recorded lane, in place of the frame cost that was assumed to be the blocker — and it is undiagnosed: it is not yet known whether the particle distribution drifts, recycles unevenly, or simply thins at that cell under a state the short recording never visits.

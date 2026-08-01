@@ -6,13 +6,18 @@ import {
   type RiverfallFluidConfigV1,
 } from './riverfall-fluid-config.js';
 import {
-  buildRiverfallFluidNeighborPairsInternalV1,
   isRiverfallFluidParticleVisibleV1,
   projectRiverfallFluidIntoStripV1,
   reflectRiverfallFluidWallVelocityV1,
   riverfallFluidStripPenetrationV1,
   sampleFastRiverfallFluidDomainV1,
 } from './riverfall-pbf-support.js';
+import {
+  buildRiverfallFluidNeighborsV1,
+  createRiverfallFluidNeighborScratchV1,
+  type RiverfallFluidNeighborScratchV1,
+  type RiverfallFluidNeighborsV1,
+} from './riverfall-neighbor-grid.js';
 export {
   buildBruteForceRiverfallFluidNeighborPairsV1,
   buildStableRiverfallFluidNeighborPairsV1,
@@ -73,6 +78,29 @@ export interface RiverfallFluidWorkspaceV1 {
   readonly boundaryNormalS: Float32Array;
   readonly boundaryNormalU: Float32Array;
 }
+/**
+ * One neighbour scratch per workspace, created on first use.
+ *
+ * It lives here rather than in the workspace constructor because the grid
+ * module needs the domain helpers the workspace constructor lives beside,
+ * and a workspace that built its own grid would make those two modules
+ * import each other. A WeakMap keyed by workspace keeps two fluids — the
+ * headless twin and the live scene — on separate scratch.
+ */
+const NEIGHBOR_SCRATCH =
+  new WeakMap<RiverfallFluidWorkspaceV1, RiverfallFluidNeighborScratchV1>();
+
+function neighborScratchFor(
+  workspace: RiverfallFluidWorkspaceV1,
+  count: number,
+): RiverfallFluidNeighborScratchV1 {
+  const existing = NEIGHBOR_SCRATCH.get(workspace);
+  if (existing !== undefined) return existing;
+  const created = createRiverfallFluidNeighborScratchV1(count);
+  NEIGHBOR_SCRATCH.set(workspace, created);
+  return created;
+}
+
 function f32(value: number): number {
   return Math.fround(value);
 }
@@ -87,7 +115,7 @@ function kernelGradientScale(distance: number, radius: number): number {
   return -24 / (Math.PI * radius ** 8) * squared ** 2;
 }
 function calculateDensities(
-  pairs: readonly RiverfallFluidNeighborPairV1[],
+  neighbors: RiverfallFluidNeighborsV1,
   config: RiverfallFluidConfigV1,
   workspace: RiverfallFluidWorkspaceV1,
 ): void {
@@ -96,42 +124,49 @@ function calculateDensities(
     config.density.smoothingRadius,
   );
   workspace.density.fill(f32(selfDensity));
-  for (const pair of pairs) {
+  const { left, right, distance, count } = neighbors;
+  for (let pair = 0; pair < count; pair += 1) {
     const contribution = config.particles.mass * kernel(
-      pair.distance,
+      distance[pair]!,
       config.density.smoothingRadius,
     );
-    workspace.density[pair.left]! += f32(contribution);
-    workspace.density[pair.right]! += f32(contribution);
+    workspace.density[left[pair]!]! += f32(contribution);
+    workspace.density[right[pair]!]! += f32(contribution);
   }
 }
 function solveDensityIteration(
-  pairs: readonly RiverfallFluidNeighborPairV1[],
+  neighbors: RiverfallFluidNeighborsV1,
   config: RiverfallFluidConfigV1,
   workspace: RiverfallFluidWorkspaceV1,
 ): number {
-  calculateDensities(pairs, config, workspace);
+  calculateDensities(neighbors, config, workspace);
+  const pairLeft = neighbors.left;
+  const pairRight = neighbors.right;
+  const pairDistance = neighbors.distance;
+  const pairCount = neighbors.count;
   workspace.gradientS.fill(0);
   workspace.gradientU.fill(0);
   workspace.denominator.fill(0);
   const rest = config.density.restAreaDensity;
-  for (const pair of pairs) {
-    const ds = workspace.predictedS[pair.left]!
-      - workspace.predictedS[pair.right]!;
-    const du = workspace.predictedU[pair.left]!
-      - workspace.predictedU[pair.right]!;
+  for (let pair = 0; pair < pairCount; pair += 1) {
+    const leftIndex = pairLeft[pair]!;
+    const rightIndex = pairRight[pair]!;
+    const ds = workspace.predictedS[leftIndex]!
+      - workspace.predictedS[rightIndex]!;
+    const du = workspace.predictedU[leftIndex]!
+      - workspace.predictedU[rightIndex]!;
     const scale = config.particles.mass
-      * kernelGradientScale(pair.distance, config.density.smoothingRadius)
+      * kernelGradientScale(pairDistance[pair]!, config.density.smoothingRadius)
       / rest;
     const gs = scale * ds;
     const gu = scale * du;
-    workspace.gradientS[pair.left]! += f32(gs);
-    workspace.gradientU[pair.left]! += f32(gu);
-    workspace.gradientS[pair.right]! -= f32(gs);
-    workspace.gradientU[pair.right]! -= f32(gu);
+    workspace.gradientS[leftIndex]! += f32(gs);
+    workspace.gradientU[leftIndex]! += f32(gu);
+    workspace.gradientS[rightIndex]! -= f32(gs);
+    workspace.gradientU[rightIndex]! -= f32(gu);
     const squared = gs * gs + gu * gu;
-    workspace.denominator[pair.left]! += f32(squared);
-    workspace.denominator[pair.right]! += f32(squared);
+    workspace.denominator[leftIndex]! += f32(squared);
+    workspace.denominator[rightIndex]! += f32(squared);
   }
   for (let index = 0; index < workspace.lambda.length; index += 1) {
     const sumGradient = workspace.gradientS[index]! ** 2
@@ -150,20 +185,22 @@ function solveDensityIteration(
   }
   workspace.correctionS.fill(0);
   workspace.correctionU.fill(0);
-  for (const pair of pairs) {
-    const ds = workspace.predictedS[pair.left]!
-      - workspace.predictedS[pair.right]!;
-    const du = workspace.predictedU[pair.left]!
-      - workspace.predictedU[pair.right]!;
+  for (let pair = 0; pair < pairCount; pair += 1) {
+    const leftIndex = pairLeft[pair]!;
+    const rightIndex = pairRight[pair]!;
+    const ds = workspace.predictedS[leftIndex]!
+      - workspace.predictedS[rightIndex]!;
+    const du = workspace.predictedU[leftIndex]!
+      - workspace.predictedU[rightIndex]!;
     const scale = (
-      workspace.lambda[pair.left]! + workspace.lambda[pair.right]!
+      workspace.lambda[leftIndex]! + workspace.lambda[rightIndex]!
     ) * config.particles.mass
-      * kernelGradientScale(pair.distance, config.density.smoothingRadius)
+      * kernelGradientScale(pairDistance[pair]!, config.density.smoothingRadius)
       / rest;
-    workspace.correctionS[pair.left]! += f32(scale * ds);
-    workspace.correctionU[pair.left]! += f32(scale * du);
-    workspace.correctionS[pair.right]! -= f32(scale * ds);
-    workspace.correctionU[pair.right]! -= f32(scale * du);
+    workspace.correctionS[leftIndex]! += f32(scale * ds);
+    workspace.correctionU[leftIndex]! += f32(scale * du);
+    workspace.correctionS[rightIndex]! -= f32(scale * ds);
+    workspace.correctionU[rightIndex]! -= f32(scale * du);
   }
   let maximumCorrection = 0;
   for (let index = 0; index < workspace.predictedS.length; index += 1) {
@@ -269,25 +306,31 @@ export function stepRiverfallFluidV1(
     state.lateralVelocity[index] = f32(velocityU);
   }
 
+  const scratch = neighborScratchFor(workspace, count);
+  const neighbors = scratch.neighbors;
   for (let iteration = 0; iteration < config.density.iterations; iteration += 1) {
-    const pairs = buildRiverfallFluidNeighborPairsInternalV1(
+    buildRiverfallFluidNeighborsV1(
       workspace.predictedS,
       workspace.predictedU,
       config,
-      false,
+      scratch,
     );
     maximumBoundaryCorrection = Math.max(
       maximumBoundaryCorrection,
-      solveDensityIteration(pairs, config, workspace),
+      solveDensityIteration(neighbors, config, workspace),
     );
   }
-  const pairs = buildRiverfallFluidNeighborPairsInternalV1(
+  buildRiverfallFluidNeighborsV1(
     workspace.predictedS,
     workspace.predictedU,
     config,
-    false,
+    scratch,
   );
-  calculateDensities(pairs, config, workspace);
+  calculateDensities(neighbors, config, workspace);
+  const pairLeft = neighbors.left;
+  const pairRight = neighbors.right;
+  const pairDistance = neighbors.distance;
+  const pairCount = neighbors.count;
   let impactCount = 0;
   let impactImpulse = 0;
   let lipAttachmentCount = 0;
@@ -364,23 +407,25 @@ export function stepRiverfallFluidV1(
 
   workspace.viscosityS.fill(0);
   workspace.viscosityU.fill(0);
-  for (const pair of pairs) {
-    const deltaS = state.longitudinalVelocity[pair.right]!
-      - state.longitudinalVelocity[pair.left]!;
-    const deltaU = state.lateralVelocity[pair.right]!
-      - state.lateralVelocity[pair.left]!;
+  for (let pair = 0; pair < pairCount; pair += 1) {
+    const leftIndex = pairLeft[pair]!;
+    const rightIndex = pairRight[pair]!;
+    const deltaS = state.longitudinalVelocity[rightIndex]!
+      - state.longitudinalVelocity[leftIndex]!;
+    const deltaU = state.lateralVelocity[rightIndex]!
+      - state.lateralVelocity[leftIndex]!;
     const inverseDensity = 0.5 * (
-      1 / Math.max(workspace.density[pair.left]!, 1e-6)
-      + 1 / Math.max(workspace.density[pair.right]!, 1e-6)
+      1 / Math.max(workspace.density[leftIndex]!, 1e-6)
+      + 1 / Math.max(workspace.density[rightIndex]!, 1e-6)
     );
     const weight = config.viscosity.xsphCoefficient
       * config.particles.mass
-      * kernel(pair.distance, config.density.smoothingRadius)
+      * kernel(pairDistance[pair]!, config.density.smoothingRadius)
       * inverseDensity;
-    workspace.viscosityS[pair.left]! += f32(deltaS * weight);
-    workspace.viscosityU[pair.left]! += f32(deltaU * weight);
-    workspace.viscosityS[pair.right]! -= f32(deltaS * weight);
-    workspace.viscosityU[pair.right]! -= f32(deltaU * weight);
+    workspace.viscosityS[leftIndex]! += f32(deltaS * weight);
+    workspace.viscosityU[leftIndex]! += f32(deltaU * weight);
+    workspace.viscosityS[rightIndex]! -= f32(deltaS * weight);
+    workspace.viscosityU[rightIndex]! -= f32(deltaU * weight);
   }
   for (let index = 0; index < count; index += 1) {
     const visible = isRiverfallFluidParticleVisibleV1(
@@ -417,19 +462,19 @@ export function stepRiverfallFluidV1(
     }
   }
   let relativeSpeedSum = 0;
-  for (const pair of pairs) {
+  for (let pair = 0; pair < pairCount; pair += 1) {
     relativeSpeedSum += Math.hypot(
-      state.longitudinalVelocity[pair.right]!
-        - state.longitudinalVelocity[pair.left]!,
-      state.lateralVelocity[pair.right]!
-        - state.lateralVelocity[pair.left]!,
+      state.longitudinalVelocity[pairRight[pair]!]!
+        - state.longitudinalVelocity[pairLeft[pair]!]!,
+      state.lateralVelocity[pairRight[pair]!]!
+        - state.lateralVelocity[pairLeft[pair]!]!,
     );
   }
 
   const neighborCounts = new Uint16Array(count);
-  for (const pair of pairs) {
-    neighborCounts[pair.left]! += 1;
-    neighborCounts[pair.right]! += 1;
+  for (let pair = 0; pair < pairCount; pair += 1) {
+    neighborCounts[pairLeft[pair]!]! += 1;
+    neighborCounts[pairRight[pair]!]! += 1;
   }
   const densityErrors: number[] = [];
   let visibleParticles = 0;
@@ -451,7 +496,7 @@ export function stepRiverfallFluidV1(
   return {
     visibleParticles,
     hiddenParticles,
-    neighborPairs: pairs.length,
+    neighborPairs: pairCount,
     minimumNeighbors: Number.isFinite(minimumNeighbors) ? minimumNeighbors : 0,
     maximumDensityError: Math.max(0, ...densityErrors),
     p95DensityError: percentile95(densityErrors),
@@ -460,7 +505,7 @@ export function stepRiverfallFluidV1(
     maximumBoundaryCorrection,
     maximumResidualPenetration,
     meanNeighborRelativeSpeed:
-      pairs.length === 0 ? 0 : relativeSpeedSum / pairs.length,
+      pairCount === 0 ? 0 : relativeSpeedSum / pairCount,
     lipAttachmentCount,
     lipAttachmentImpulse,
     impactCount,

@@ -43,16 +43,6 @@ export interface RiverfallSurfaceParticleFrameV1 {
   readonly visible: Uint8Array;
 }
 
-function worldDistanceSquared(
-  cell: RiverfallSurfaceCellV1,
-  particle: readonly [number, number, number],
-): number {
-  const dx = particle[0] - cell.baseTranslation[0];
-  const dy = particle[1] - cell.baseTranslation[1];
-  const dz = particle[2] - cell.baseTranslation[2];
-  return dx * dx + dy * dy + dz * dz;
-}
-
 export function riverfallFluidSurfaceKernelWeightV1(
   distance: number,
   radius: number,
@@ -80,14 +70,6 @@ export interface RiverfallSurfaceSignalSampleV1 {
   readonly localOccupancy: number;
   readonly supportCount: number;
   readonly nearestDistance: number;
-}
-
-interface SurfaceParticleCandidate {
-  readonly particle: number;
-  readonly distance: number;
-  readonly weight: number;
-  readonly tracer: number;
-  readonly speed: number;
 }
 
 /**
@@ -123,6 +105,37 @@ export function riverfallSurfaceTracerValuesV1(
   });
 }
 
+/**
+ * The nearest-particle run for one cell, as parallel primitives.
+ *
+ * Reused across cells and frames. A cell keeps at most
+ * `maximumInfluenceParticles` particles — eight on the shipped
+ * configuration — and returns only aggregates, so nothing here outlives
+ * the call that fills it. Holding the run as objects meant an array plus
+ * up to eight objects per cell, 321 times a frame, all of it garbage.
+ */
+interface SurfaceSelectionScratchV1 {
+  readonly distance: Float64Array;
+  readonly weight: Float64Array;
+  readonly tracer: Float64Array;
+  readonly speed: Float64Array;
+}
+
+let SELECTION_SCRATCH: SurfaceSelectionScratchV1 | null = null;
+
+function selectionScratch(keep: number): SurfaceSelectionScratchV1 {
+  const existing = SELECTION_SCRATCH;
+  if (existing !== null && existing.distance.length >= keep) return existing;
+  const created: SurfaceSelectionScratchV1 = {
+    distance: new Float64Array(keep),
+    weight: new Float64Array(keep),
+    tracer: new Float64Array(keep),
+    speed: new Float64Array(keep),
+  };
+  SELECTION_SCRATCH = created;
+  return created;
+}
+
 export function riverfallSurfaceSignalV1(
   particles: RiverfallSurfaceParticleFrameV1,
   cell: RiverfallSurfaceCellV1,
@@ -141,47 +154,64 @@ export function riverfallSurfaceSignalV1(
   const particleCount = config.particles.witnessCount;
   const radius = config.presentation.support.radius;
   const keep = config.presentation.support.maximumInfluenceParticles;
-  const selected: SurfaceParticleCandidate[] = [];
+  const scratch = selectionScratch(keep);
+  let selectedCount = 0;
   let supportCount = 0;
+  // The kernel validates its radius on every call. Doing it once here lets
+  // the loop below skip the call entirely for the far majority of
+  // particles, which is the same answer — the kernel returns zero outside
+  // its support and the loop discards a zero weight — without paying four
+  // finiteness tests 288 times per cell.
+  if (!Number.isFinite(radius) || radius <= 0) {
+    riverfallFluidSurfaceKernelWeightV1(0, radius);
+  }
+  const translations = particles.translations;
+  const velocities = particles.linearVelocities;
+  const baseX = cell.baseTranslation[0];
+  const baseY = cell.baseTranslation[1];
+  const baseZ = cell.baseTranslation[2];
+  const maximumSpeed = config.particles.maximumSpeed;
   for (let particle = 0; particle < particleCount; particle += 1) {
     if (particles.visible[particle] === 0) continue;
     const offset = particle * 3;
-    const position = [
-      particles.translations[offset]!,
-      particles.translations[offset + 1]!,
-      particles.translations[offset + 2]!,
-    ] as const;
-    const distance = Math.sqrt(worldDistanceSquared(cell, position));
+    // Read straight out of the flat arrays. Building a three-element
+    // tuple here cost 321 cells times 288 witnesses — 92,448 throwaway
+    // arrays every frame — to hold numbers that are used once.
+    const dx = translations[offset]! - baseX;
+    const dy = translations[offset + 1]! - baseY;
+    const dz = translations[offset + 2]! - baseZ;
+    const distance = Math.sqrt(dx * dx + dy * dy + dz * dz);
     if (distance < nearestDistance) nearestDistance = distance;
+    // A non-finite distance still reaches the kernel below and still
+    // throws there; this only short-circuits the ordinary far case.
+    if (distance >= radius) continue;
     const weight = riverfallFluidSurfaceKernelWeightV1(distance, radius);
     if (weight === 0) continue;
     supportCount += 1;
     // Particles arrive in increasing index, so an equal distance already
     // held wins the tie and this one is pushed no further forward.
-    if (selected.length >= keep
-      && distance >= selected[selected.length - 1]!.distance) continue;
-    const velocity = [
-      particles.linearVelocities[offset]!,
-      particles.linearVelocities[offset + 1]!,
-      particles.linearVelocities[offset + 2]!,
-    ] as const;
-    const entry: SurfaceParticleCandidate = {
-      particle,
-      distance,
-      weight,
-      tracer: tracerValues[particle]!,
-      speed: Math.min(
-        1,
-        Math.hypot(...velocity) / config.particles.maximumSpeed,
-      ),
-    };
-    let slot = selected.length < keep ? selected.length : keep - 1;
-    if (selected.length < keep) selected.push(entry); else selected[slot] = entry;
-    while (slot > 0 && selected[slot - 1]!.distance > distance) {
-      selected[slot] = selected[slot - 1]!;
-      selected[slot - 1] = entry;
+    if (selectedCount >= keep
+      && distance >= scratch.distance[selectedCount - 1]!) continue;
+    const vx = velocities[offset]!;
+    const vy = velocities[offset + 1]!;
+    const vz = velocities[offset + 2]!;
+    // Math.hypot with three arguments, not spread from a tuple: the
+    // spread allocates and is markedly slower, and the value is identical.
+    const speed = Math.min(1, Math.hypot(vx, vy, vz) / maximumSpeed);
+    const tracer = tracerValues[particle]!;
+    let slot = selectedCount < keep ? selectedCount : keep - 1;
+    if (selectedCount < keep) selectedCount += 1;
+    while (slot > 0 && scratch.distance[slot - 1]! > distance) {
+      scratch.distance[slot] = scratch.distance[slot - 1]!;
+      scratch.weight[slot] = scratch.weight[slot - 1]!;
+      scratch.tracer[slot] = scratch.tracer[slot - 1]!;
+      scratch.speed[slot] = scratch.speed[slot - 1]!;
       slot -= 1;
     }
+    scratch.distance[slot] = distance;
+    scratch.weight[slot] = weight;
+    scratch.tracer[slot] = tracer;
+    scratch.speed[slot] = speed;
   }
   const required = config.presentation.support.minimumParticles;
   if (supportCount < required) {
@@ -202,10 +232,10 @@ export function riverfallSurfaceSignalV1(
   let weightedTracer = 0;
   let weightedSpeed = 0;
   let totalWeight = 0;
-  for (const candidate of selected) {
-    weightedTracer += candidate.weight * candidate.tracer;
-    weightedSpeed += candidate.weight * candidate.speed;
-    totalWeight += candidate.weight;
+  for (let index = 0; index < selectedCount; index += 1) {
+    weightedTracer += scratch.weight[index]! * scratch.tracer[index]!;
+    weightedSpeed += scratch.weight[index]! * scratch.speed[index]!;
+    totalWeight += scratch.weight[index]!;
   }
   if (!(totalWeight > 0)) {
     throw new Error(
@@ -227,7 +257,37 @@ export function riverfallSurfaceSignalV1(
   };
 }
 
+/**
+ * Cell adjacency, computed once per cell list.
+ *
+ * Which cells neighbour which is a property of the surface grid's fixed
+ * geometry: it is derived from `baseTranslation`, which never moves. The
+ * smoothing pass asked for it once per frame anyway, and answering cost
+ * a full 321-by-321 sweep — 103,041 distance computations and 321
+ * intermediate arrays — to rebuild a table that was already identical to
+ * the one built for the previous frame. Measured, that single call was
+ * the largest cost in the whole live remap, larger than the fluid solver
+ * it was presenting.
+ *
+ * Keyed by the cell list itself, so a different grid gets a different
+ * table and nothing is shared between two surfaces by accident.
+ */
+const NEIGHBOR_CACHE = new WeakMap<
+  readonly RiverfallSurfaceCellV1[],
+  readonly (readonly number[])[]
+>();
+
 export function riverfallSurfaceNeighborsV1(
+  cells: readonly RiverfallSurfaceCellV1[],
+): readonly (readonly number[])[] {
+  const cached = NEIGHBOR_CACHE.get(cells);
+  if (cached !== undefined) return cached;
+  const computed = computeRiverfallSurfaceNeighbors(cells);
+  NEIGHBOR_CACHE.set(cells, computed);
+  return computed;
+}
+
+function computeRiverfallSurfaceNeighbors(
   cells: readonly RiverfallSurfaceCellV1[],
 ): readonly (readonly number[])[] {
   return cells.map((cell, cellIndex) => cells.flatMap(
