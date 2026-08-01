@@ -558,7 +558,7 @@ test('camera, viewport, and later animation-frame failures roll back without kil
       "Scene 'studio:scene:lighting-1000' paused at its last successfully presented time",
     );
     await expect(page.getByRole('button', { name: /Play/ })).toBeVisible();
-    await expect(page.getByRole('button', { name: 'Scene animation', exact: true }))
+    await expect(page.getByRole('button', { name: 'Scene simulation', exact: true }))
       .toHaveAttribute('aria-pressed', 'true');
     expect(await page.evaluate(() => ({
       animation: window.voxelStudio!.sceneAnimation(),

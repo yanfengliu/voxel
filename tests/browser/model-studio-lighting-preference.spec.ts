@@ -48,14 +48,14 @@ test('lighting changes illumination without changing light-source movement', asy
   await page.evaluate((id) => { window.voxelStudio!.openScene(id); }, DENSE_LIGHTING_SCENE);
 
   const lightToggle = page.getByRole('button', { name: 'Lighting', exact: true });
-  const animationToggle = page.getByRole('button', { name: 'Scene animation', exact: true });
+  const animationToggle = page.getByRole('button', { name: 'Scene simulation', exact: true });
   await expect(lightToggle).toHaveText('lighting off');
   await expect(lightToggle).toHaveAttribute('aria-pressed', 'false');
-  await expect(animationToggle).toHaveText('animation enabled');
+  await expect(animationToggle).toHaveText('simulation on');
   await expect(animationToggle).toHaveAttribute('aria-pressed', 'true');
   await expect(page.getByRole('button', { name: /Pause/ })).toBeVisible();
   await expect(page.locator('.stagehint')).toContainText(
-    'lighting off · dim source handles do not illuminate models · animation enabled',
+    'lighting off · dim source handles do not illuminate models · simulation on',
   );
   await expect(page.locator('[data-library-detail-kind="scene"]')).toContainText(
     '1000 · 1000 moving sources',
@@ -144,9 +144,9 @@ test('the scene-animation button persists across scenes and reloads', async ({ p
   await mount(page);
   await page.evaluate((id) => { window.voxelStudio!.openScene(id); }, DENSE_LIGHTING_SCENE);
 
-  const animationToggle = page.getByRole('button', { name: 'Scene animation', exact: true });
+  const animationToggle = page.getByRole('button', { name: 'Scene simulation', exact: true });
   await animationToggle.click();
-  await expect(animationToggle).toHaveText('animation disabled');
+  await expect(animationToggle).toHaveText('simulation off');
   await expect(animationToggle).toHaveAttribute('aria-pressed', 'false');
   await expect(page.getByRole('button', { name: /Play/ })).toBeVisible();
   expect(await page.evaluate(() => window.voxelStudio!.playerState().playing)).toBe(false);
@@ -202,17 +202,17 @@ test('the scene-animation button persists across scenes and reloads', async ({ p
     animation: false,
     player: { playing: false },
   });
-  const persistedToggle = page.getByRole('button', { name: 'Scene animation', exact: true });
-  await expect(persistedToggle).toHaveText('animation disabled');
+  const persistedToggle = page.getByRole('button', { name: 'Scene simulation', exact: true });
+  await expect(persistedToggle).toHaveText('simulation off');
   await expect(page.locator('.stagehint')).toContainText(
-    'animation disabled · scene held at the current time',
+    'simulation off · scene held at the current time',
   );
   await expect(page.locator('[data-library-detail-kind="scene"]')).toContainText(
     'AnimationDisabled · scene held at its current time',
   );
 
   await persistedToggle.click();
-  await expect(persistedToggle).toHaveText('animation enabled');
+  await expect(persistedToggle).toHaveText('simulation on');
   await expect(page.getByRole('button', { name: /Pause/ })).toBeVisible();
   expect(await storedPrefs(page)).toMatchObject({ sceneAnimation: true });
   const moving = await canvas.screenshot({ animations: 'disabled' });
@@ -320,8 +320,8 @@ test('the persisted animation choice also controls animated model scenes', async
     hasMotion: true,
   });
 
-  const animationToggle = page.getByRole('button', { name: 'Scene animation', exact: true });
-  await expect(animationToggle).toHaveText('animation disabled');
+  const animationToggle = page.getByRole('button', { name: 'Scene simulation', exact: true });
+  await expect(animationToggle).toHaveText('simulation off');
   const canvas = page.locator('.scene-canvas');
   const heldTime = await page.evaluate(() => window.voxelStudio!.playerState().timeMs);
   await page.waitForTimeout(200);
@@ -334,10 +334,10 @@ test('the persisted animation choice also controls animated model scenes', async
   expect((await canvas.screenshot({ animations: 'disabled' })).equals(moving)).toBe(false);
 
   await page.getByRole('button', { name: /Pause/ }).click();
-  await expect(animationToggle).toHaveText('animation disabled');
+  await expect(animationToggle).toHaveText('simulation off');
   expect(await storedPrefs(page)).toMatchObject({ sceneAnimation: false });
   await page.getByRole('button', { name: /Play/ }).click();
-  await expect(animationToggle).toHaveText('animation enabled');
+  await expect(animationToggle).toHaveText('simulation on');
   expect(await storedPrefs(page)).toMatchObject({ sceneAnimation: true });
 });
 
@@ -392,8 +392,8 @@ test('animation toggles preserve the presented phase while lighting stays indepe
     resumed.player.timeMs - expectedWrappedMs + resumed.player.periodMs
   ) % resumed.player.periodMs;
   expect(resumedAdvanceMs).toBeLessThanOrEqual(resumed.synchronousElapsedMs + 1);
-  await expect(page.getByRole('button', { name: 'Scene animation', exact: true }))
-    .toHaveText('animation enabled');
+  await expect(page.getByRole('button', { name: 'Scene simulation', exact: true }))
+    .toHaveText('simulation on');
   await page.waitForTimeout(100);
   await page.getByRole('button', { name: /Pause/ }).click();
   const advanced = await page.evaluate(() => ({

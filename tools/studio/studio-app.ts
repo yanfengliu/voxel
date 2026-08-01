@@ -2989,7 +2989,7 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
           + `${String(lastShownMs)} ms because a later frame was rejected. ${reason}`,
           { cause: frameFailure },
         ),
-        'Scene animation paused because a frame failed; the last successful frame remains visible.',
+        'The scene simulation paused because a frame failed; the last successful frame remains visible.',
       );
       return;
     }

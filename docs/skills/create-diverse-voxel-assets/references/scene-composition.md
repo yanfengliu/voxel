@@ -95,7 +95,7 @@ Capture and inspect:
 - the intended default camera and gameplay camera;
 - at least one rotated or adversarial view that exposes accidental spacing or intersections;
 - lighting on and off when lighting affects readability;
-- animation enabled and disabled when the scene has motion;
+- the simulation on and off when the scene has motion;
 - exact motion phases for synchronized elements;
 - selection, picking, and edit handles without stale overlays;
 - scale relationships and navigation clearances;

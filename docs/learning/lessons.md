@@ -126,6 +126,16 @@ What is left is the flow: water has to re-enter the river steadily rather than i
 
 The general shape, worth more than the specifics: **a coverage floor that a statistical fix cannot lift is a geometry or a flow problem wearing a sampling problem's clothes.** The tell was that the failing cells were always the same five, and always the ones at the edge of the simulated region.
 
+**The flow fix, found and measured the same day.** Three changes together take the worst cell across all 321 from zero to five, which is the first time it has had margin:
+
+**Water in the hidden return was excluded from the density solve.** `buildRiverfallFluidNeighborsV1` skipped every particle the surface cannot see, so the pipe was a conveyor rather than a body of water: each parcel was assigned the pump's speed and none pushed on any other, and whatever spacing the pond discharged with came out of the source unchanged. Letting the pipe interact is what lets it absorb a burst. This is the largest of the three.
+
+**The source was visible for one unit of a twelve-unit rise.** Water becomes visible only in `source-emergence`, and a parcel crossed that one unit at pump speed in 0.05 s — so the head of the river was almost never occupied by visible water, whatever the count. Lengthening the visible rise to 4.5 units gives the first tile row water it can actually see.
+
+**Then the water: 576 parcels at half mass.** On its own this does nothing (measured above); on top of the two changes it lifts the floor from one to five.
+
+Alone, the first two take the failure from 13 seconds of play to 45. Getting past a minute also needs the domain's river to start at z −32 instead of −29, and that is where it stops being self-contained: `riverfall-fluid-domain.test.ts` pins simulated water inside the drawn river footprint, which ends at −31.5. So the drawn river has to grow with it — a longer recipe, a seventeenth tile row, 326 cells instead of 321, and every pinned count and baseline behind that. That is the remaining work, and it is bounded rather than unknown.
+
 ## The live Riverfall runs out of surface coverage before it runs out of budget
 
 **Anchor:** 2026-07-31. Benchmarking `advance(1/60)` over roughly 3,000 frames — about 50 simulated seconds — throws from `riverfallSurfaceSignalV1`: cell `surface-river-00-00` found 1 visible particle inside the 10-unit compact support where 2 are required, nearest distance 8.095457.

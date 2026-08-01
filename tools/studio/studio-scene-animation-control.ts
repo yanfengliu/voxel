@@ -5,18 +5,25 @@ export interface StudioSceneAnimationControlV1 {
   sync(on: boolean): void;
 }
 
-/** One explicit, persisted scene-animation choice shared by every scene. */
+/**
+ * One explicit, persisted choice about whether a scene advances, shared by
+ * every scene.
+ *
+ * It says "simulation", not "animation", because nothing here is a recording:
+ * a scene that moves is a scene being solved, and calling that an animation
+ * invites a reader to think a file is being played. The word is the owner's.
+ */
 export function createStudioSceneAnimationControl(): StudioSceneAnimationControlV1 {
   const control = element('button', 'toggle');
-  control.setAttribute('aria-label', 'Scene animation');
+  control.setAttribute('aria-label', 'Scene simulation');
 
   function sync(on: boolean): void {
-    control.textContent = `animation ${on ? 'enabled' : 'disabled'}`;
+    control.textContent = `simulation ${on ? 'on' : 'off'}`;
     control.setAttribute('aria-pressed', String(on));
     control.classList.toggle('on', on);
     control.title = on
-      ? 'Automatic scene animation is enabled independently of lighting. Play/Pause or bare Space reports whether it is currently advancing; exact inspection may pause it transiently.'
-      : 'Automatic scene animation is disabled. Animated models and moving light sources stay at the currently presented time.';
+      ? 'The scene advances on its own, independently of lighting. Play/Pause or bare Space reports whether it is currently running; exact inspection may pause it transiently.'
+      : 'The scene is held still. Moving models and moving light sources stay at the currently presented time.';
   }
 
   sync(true);
@@ -24,7 +31,7 @@ export function createStudioSceneAnimationControl(): StudioSceneAnimationControl
 }
 
 export function sceneAnimationStatusSuffix(hasMotion: boolean, on: boolean): string {
-  return hasMotion ? ` · animation ${on ? 'enabled' : 'disabled'}` : '';
+  return hasMotion ? ` · simulation ${on ? 'on' : 'off'}` : '';
 }
 
 export function sceneAnimationStageHint(
@@ -34,6 +41,6 @@ export function sceneAnimationStageHint(
 ): string {
   if (!hasMotion) return base;
   return base + (on
-    ? ' · animation enabled · Space toggles Play/Pause'
-    : ' · animation disabled · scene held at the current time · Space toggles Play/Pause');
+    ? ' · simulation on · Space toggles Play/Pause'
+    : ' · simulation off · scene held at the current time · Space toggles Play/Pause');
 }
