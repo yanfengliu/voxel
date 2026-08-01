@@ -106,6 +106,22 @@ The release is what is rate-sensitive. The sling's two cup walls exist to "delay
 
 Measuring what that costs: flipping `PLAYGROUND_TIMESTEP_S_V1` to 1/60 fails 10 checks across `fixtures/physics-playground`, and one of them is worse than a threshold — the counter-run that proves bearing friction is load-bearing ("without bearing friction the machine never stops swinging") **passes** at 60 Hz, so the law loses its demonstrated failure. A counter-run that stops discriminating is not a smaller problem than a scenario that fails.
 
+## A look toggle moves a paused live scene, and three plausible causes were not it
+
+**Anchor:** 2026-08-01. Riverfall, solver paused, scene animation off, camera untouched: two consecutive canvas screenshots are byte-identical, and one `setLit(false)` / `setLit(true)` round trip — ending lit, exactly where it started — produces a different frame. Reproduced on Riverfall, not reproducible on the chain.
+
+Found by accident. A motion measurement that toggled the look between reads reported that the river was perfectly still, which was not believable, and chasing why cost more than the defect is worth. Recording it so the next attempt starts past the three explanations that are already excluded.
+
+**Not the transport.** Riverfall's kelp carries authored model motion, so with scene animation enabled two consecutive screenshots differ on their own and any comparison across a toggle is meaningless. With `setSceneAnimation(false)` the stage is stable, and the toggle still changes the frame.
+
+**Not the camera.** `setLit` runs `clampSceneViewV1`, which is allowed to move the view for dense lit perspective, and that was the most promising explanation. Measured: yaw, pitch, view height and centre are identical either side of the round trip.
+
+**Not the solver.** Step count and body positions are unchanged across the toggle. Whatever moves, it is the presentation.
+
+The mechanism is visible in the code but the obvious fix did not work, which is why this is a finding rather than a repair. `SceneSession.#accept` — the path every look change takes — rebuilds the runtime snapshot from the authored scene document and hands it to `acceptSnapshot`, discarding every live pose delta accepted since. On a running scene the next frame repaints over it and nobody sees it; on a paused one the authored frame stays until the solver runs again. Making `#accept` remember the last accepted live poses and re-apply them when the live lane owns them **did not change the observed frame**, with `stageMode()` confirmed as `interact` at the moment of the toggle, so either the restore is not reached or the rebuilt delta is not what moves the tiles. That attempt is not in the tree.
+
+Two general points worth more than the defect. A measurement that changes a setting between samples is measuring the setting as much as the subject — the toggle here was incidental to the question being asked and turned out to dominate the answer. And "the frame changed" is not "the thing I am watching changed": three separate mechanisms could each have produced this frame difference, and ruling them out one at a time is what turned an unbelievable result into a bounded finding.
+
 ## Doubling the water does not fix a river that bunches
 
 **Anchor:** 2026-08-01. Per-cell support counted directly over 3,600 frames at 288, 576 and 1,152 particles. The worst cell is `surface-river-00-00` in every case, and its floor is zero in every case. `riverfall-live-surface.test.ts` now pins the failure at under 1,800 frames.
