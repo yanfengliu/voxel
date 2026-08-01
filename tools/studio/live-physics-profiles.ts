@@ -2,6 +2,7 @@ import {
   MACHINE_WORKS_LIVE_PROFILE_V1,
 } from './machine-works-live-profile.js';
 import { WINDMILL_LIVE_PROFILE_V1 } from './windmill-live-profile.js';
+import { RIVERFALL_LIVE_PROFILE_V1 } from './riverfall-live-profile.js';
 import {
   chainLinkPlaneV1,
   CHAIN_LINK_COUNT_V1,
@@ -27,6 +28,7 @@ export const LIVE_PHYSICS_PROFILES_V1:
 Readonly<Record<string, LivePhysicsProfileV1>> = Object.freeze({
   [WINDMILL_LIVE_PROFILE_V1.sceneId]: WINDMILL_LIVE_PROFILE_V1,
   [MACHINE_WORKS_LIVE_PROFILE_V1.sceneId]: MACHINE_WORKS_LIVE_PROFILE_V1,
+  [RIVERFALL_LIVE_PROFILE_V1.sceneId]: RIVERFALL_LIVE_PROFILE_V1,
   'studio:scene:chain-links': {
     sceneId: 'studio:scene:chain-links',
     // The chain computes its own starting curve, so the live world no longer

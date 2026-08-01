@@ -1,12 +1,10 @@
 import { RIVERFALL_WATER_OPACITY_V1 } from './riverfall-surface-grid.js';
 import {
   createRiverfallFlowPlacementsV1,
-  RIVERFALL_FLOW_DURATION_MS,
-  RIVERFALL_POSE_REPLAY_ID,
   RIVERFALL_SCENE_ID,
 } from './riverfall-flow.js';
 import {
-  VOXEL_SCENE_SCHEMA_V4,
+  VOXEL_SCENE_SCHEMA_V3,
   type ScenePlacementV1,
   type SceneV1,
 } from './scene.js';
@@ -100,23 +98,24 @@ export const RIVERFALL_RELATIONSHIPS_V1: readonly RiverfallRelationshipV1[] = [
 
 export function createRiverfallScene(): SceneV1 {
   return {
-    schemaVersion: VOXEL_SCENE_SCHEMA_V4,
+    schemaVersion: VOXEL_SCENE_SCHEMA_V3,
     id: RIVERFALL_SCENE_ID,
     label: 'Riverfall canyon',
     summary: 'A high river runs between tree-lined banks, spills over a framed cliff, churns into '
-      + 'a pond, and drains through its front bank. A deterministic consumer-owned 2D PBF trace '
-      + 'is reconstructed with compact local support onto one blue tile field covering the river, '
-      + 'lip, fall, pond, and outflow. A speed-modulated presentation carrier makes the complete '
-      + 'sheet legible; it is not a solved volumetric or free-surface height simulation.',
+      + 'a pond, and drains through its front bank. The water is solved in this browser as you '
+      + 'watch it: a 2D position-based fluid steps at the shared fixed rate, and every frame '
+      + 'its particles are reconstructed with compact local support onto one blue tile field '
+      + 'covering the river, lip, fall, pond, and outflow. The river is simulated ten units '
+      + 'further upstream than it is drawn, so the first tile has water on every side of it and '
+      + 'the head cannot run dry; nothing is rendered over that lead-in. A speed-modulated '
+      + 'presentation carrier makes the complete sheet legible; it is not a solved volumetric or '
+      + 'free-surface height simulation, and the tiles are a presentation of the fluid rather '
+      + 'than bodies of their own.',
     placements: [
       ...STRUCTURE_PLACEMENTS,
       ...RIVERFALL_PLANT_PLACEMENTS_V1,
       ...RIVERFALL_TREE_PLACEMENTS_V1,
       ...createRiverfallFlowPlacementsV1(),
     ],
-    poseReplay: {
-      id: RIVERFALL_POSE_REPLAY_ID,
-      durationMs: RIVERFALL_FLOW_DURATION_MS,
-    },
   };
 }

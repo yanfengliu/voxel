@@ -1,21 +1,6 @@
 import { addPaletteColor, createEmptyModel, setMotion, setVoxel } from './edit.js';
 import { createHouseholdPhysicalBook } from './household-physical-assets.js';
 import {
-  CHAIN_POSE_REPLAY,
-  CHAIN_POSE_REPLAY_ID,
-} from './generated-chain-replay.js';
-import {
-  MACHINE_WORKS_POSE_REPLAY,
-  MACHINE_WORKS_POSE_REPLAY_ID,
-} from './generated-machine-works-replay.js';
-import {
-  RIVERFALL_POSE_REPLAY,
-  RIVERFALL_POSE_REPLAY_ID,
-} from './riverfall-flow.js';
-import {
-  WINDMILL_POSE_REPLAY,
-} from './generated-windmill-replay.js';
-import {
   ARCH_VOID_CONTRAST_RECIPES,
   ASYMMETRIC_HYBRID_CONTRAST_RECIPES,
   BRANCHING_ORGANIC_CONTRAST_RECIPES,
@@ -32,9 +17,6 @@ import { createWindmillPhysicalBook } from './windmill-physical-assets.js';
 import {
   createWindmillProductionPhysicalBook,
 } from './windmill-production-physical.js';
-import {
-  WINDMILL_REPLAY_TRACE_BINDING_V1,
-} from './windmill-replay-trace-binding.js';
 import { WINDMILL_SCENE_ID } from './windmill-layout.js';
 import { buildRecipe, type PartShelfV1, type RecipeBookV1, type RecipeV1 } from './recipe.js';
 import type { SceneV1 } from './scene.js';
@@ -551,12 +533,13 @@ export function createStudioCatalog(): StudioCatalogV1 {
     // Example scenes: the shelf's own models arranged together, so the scene
     // view opens on something real rather than an empty world.
     scenes: createStudioScenes(),
-    scenePoseReplays: {
-      [CHAIN_POSE_REPLAY_ID]: CHAIN_POSE_REPLAY,
-      [MACHINE_WORKS_POSE_REPLAY_ID]: MACHINE_WORKS_POSE_REPLAY,
-      [RIVERFALL_POSE_REPLAY_ID]: RIVERFALL_POSE_REPLAY,
-      [WINDMILL_REPLAY_TRACE_BINDING_V1.replayId]: WINDMILL_POSE_REPLAY,
-    },
+    // No pose replays. Every scene on this shelf solves in the browser, so
+    // there is nothing for the catalog to hand the replay lane — and shipping
+    // four megabytes of traces nothing references would be dead payload in
+    // every page load. The committed traces survive as determinism fixtures
+    // that the consumer generation suites pin, and the browser rigs that want
+    // held poses import them directly. `catalog.test.ts` fails if a scene ever
+    // arrives back on the recorded lane.
     sceneOpeningViews: {
       [WINDMILL_SCENE_ID]: 'occupied-world-bounds',
       // The drop rig is tall: rail high above bucket. Default framing crops

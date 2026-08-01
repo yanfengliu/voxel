@@ -34,8 +34,16 @@ export const RIVERFALL_FLOW_FIXED_TIMESTEP_MS =
   RIVERFALL_POSE_REPLAY.provenance.fixedTimestepMs;
 export const RIVERFALL_FLOW_DURATION_MS =
   scenePoseReplayDurationMsV1(RIVERFALL_POSE_REPLAY);
+/**
+ * How many tiles the surface is made of, taken from the authored grid.
+ *
+ * It used to be read off the committed trace, which made the scene's shape a
+ * property of a recording. The grid is the authority now; the trace is a
+ * determinism fixture that has to agree with it, which `riverfall-flow.test.ts`
+ * checks in that direction.
+ */
 export const RIVERFALL_FLUID_SURFACE_CELL_COUNT =
-  RIVERFALL_POSE_REPLAY.tracks.length;
+  RIVERFALL_SURFACE_CELLS_V1.length;
 
 export function riverfallFlowPlacementIdV1(index: number): string {
   if (
@@ -45,33 +53,38 @@ export function riverfallFlowPlacementIdV1(index: number): string {
   ) {
     throw new Error(
       `Cannot name Riverfall surface cell ${String(index)}; expected an integer from 0 through `
-      + `${String(RIVERFALL_FLUID_SURFACE_CELL_COUNT - 1)}.`,
+      + `${String(RIVERFALL_FLUID_SURFACE_CELL_COUNT - 1)}. The surface has `
+      + `${String(RIVERFALL_FLUID_SURFACE_CELL_COUNT)} authored tiles; if that `
+      + 'number changed, the grid in riverfall-surface-grid.ts is the authority '
+      + 'and the committed trace has to be regenerated to match it.',
     );
   }
-  return RIVERFALL_POSE_REPLAY.tracks[index]!.placementId;
+  return RIVERFALL_SURFACE_CELLS_V1[index]!.id;
 }
 
 /**
- * Fallback placement origins match replay frame zero. The initial replay delta
- * supplies the fixed vertical orientation for waterfall cells.
+ * Where each surface tile is authored to stand, before the fluid moves it.
+ *
+ * These come from the authored grid, not from a recording's opening frame. The
+ * live surface poses every tile from the fluid on the first step it takes, so
+ * an authored anchor is what the scene *is* rather than what it happened to
+ * look like at the start of one run — and a scene that reads its own geometry
+ * out of a trace cannot be said to be solving anything.
+ *
+ * The half-unit drop is the placement convention: a placement anchors a model's
+ * base, and a cell's translation is its centre. This is the fallback the stage
+ * draws in the moment before the live world comes up; from the first step on,
+ * every tile is posed by the fluid.
  */
 export function createRiverfallFlowPlacementsV1(): readonly ScenePlacementV1[] {
-  return RIVERFALL_POSE_REPLAY.tracks.map((track, index) => {
-    const cell = RIVERFALL_SURFACE_CELLS_V1[index];
-    if (cell?.id !== track.placementId) {
-      throw new Error(
-        `Cannot create Riverfall surface placement ${String(index)}; replay id '${
-          track.placementId
-        }' does not match authored cell '${cell?.id ?? 'missing'}'. Regenerate the replay.`,
-      );
-    }
+  return RIVERFALL_SURFACE_CELLS_V1.map((cell, index) => {
     return {
       id: riverfallFlowPlacementIdV1(index),
       model: cell.model,
       at: [
-        track.translations[0]!,
-        track.translations[1]! - 0.5,
-        track.translations[2]!,
+        cell.baseTranslation[0],
+        cell.baseTranslation[1] - 0.5,
+        cell.baseTranslation[2],
       ],
       // The moving tiles are the same water as the standing bodies, so they
       // share the one scene-wide opacity; an opaque tile over translucent

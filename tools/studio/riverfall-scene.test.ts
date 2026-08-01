@@ -6,6 +6,7 @@ import {
   RIVERFALL_FLUID_SURFACE_PRESENTATION,
   RIVERFALL_POSE_REPLAY,
 } from './riverfall-flow.js';
+import { RIVERFALL_LIVE_PROFILE_V1 } from './riverfall-live-profile.js';
 import { RIVERFALL_RECIPES } from './riverfall-recipes.js';
 import {
   createRiverfallScene,
@@ -60,7 +61,7 @@ describe('Riverfall system scene', () => {
     }
   });
 
-  it('is a valid honest V4 composition with a bounded surface-fluid claim', () => {
+  it('is a valid live composition with a bounded surface-fluid claim', () => {
     expect(validateSceneV1(scene)).toEqual([]);
     expect(scene.label).toBe('Riverfall canyon');
     expect(scene.summary ?? '').toContain('reconstructed with compact local support');
@@ -68,7 +69,26 @@ describe('Riverfall system scene', () => {
     expect(scene.summary ?? '').toContain(
       'not a solved volumetric or free-surface height simulation',
     );
-    expect(scene.schemaVersion).toBe('studio.scene/4');
+    // The water is solved in the browser, so the scene carries no recording
+    // and says so where a reader will look.
+    expect(scene.schemaVersion).toBe('studio.scene/3');
+    expect(scene).not.toHaveProperty('poseReplay');
+    expect(scene.summary ?? '').toContain('solved in this browser as you watch it');
+    expect(scene.summary ?? '').toContain('nothing is rendered over that lead-in');
+  });
+
+  it('hands every surface tile to the live lane rather than to the author', () => {
+    // The fluid owns the tiles: the profile says so, which is what makes the
+    // scene read-only and what keeps the authored-overlap check from judging a
+    // tile for sinking into the underfill it is designed to sink into.
+    const posed = Object.keys(RIVERFALL_LIVE_PROFILE_V1.poses ?? {});
+    expect(posed).toHaveLength(RIVERFALL_SURFACE_CELLS_V1.length);
+    expect(new Set(posed))
+      .toEqual(new Set(RIVERFALL_SURFACE_CELLS_V1.map(({ id }) => id)));
+    expect(RIVERFALL_LIVE_PROFILE_V1.sceneId).toBe(scene.id);
+    // No bodies: a tile is a presentation of the fluid, never a body that
+    // could collide with something.
+    expect(RIVERFALL_LIVE_PROFILE_V1.bodies).toEqual([]);
   });
 
   it('uses one coherent blue palette for underfill and simulated surface cells', () => {

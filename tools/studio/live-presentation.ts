@@ -5,6 +5,8 @@ import {
 } from './live-physics.js';
 import { MachineWorksLiveControllerV1 } from './machine-works-live.js';
 import { MACHINE_WORKS_LIVE_SCENE_ID_V1 } from './machine-works-live-profile.js';
+import { RiverfallLiveSurfaceV1 } from './riverfall-live-surface.js';
+import { RIVERFALL_LIVE_PROFILE_V1 } from './riverfall-live-profile.js';
 import { WindmillLiveProductionV1 } from './windmill-live-production.js';
 import { WINDMILL_PLACEMENT_IDS_V1 } from './windmill-layout.js';
 import { WINDMILL_SCENE_ID } from './windmill-layout.js';
@@ -75,10 +77,38 @@ function createMachineWorksDriver(): LiveScenePresentationDriverV1 {
   };
 }
 
+/**
+ * The river, stepped once per solver tick.
+ *
+ * Riverfall's live world holds no bodies, so this driver is the whole of its
+ * motion: it advances a position-based fluid by one fixed step for every step
+ * the session took, and returns a pose for each of the 321 surface tiles the
+ * fluid reconstructs.
+ *
+ * Advanced by the session's own step count rather than once per call, for the
+ * same reason the machine is: a frame carries whole ticks but not always the
+ * same number of them, and a river stepped once per frame would run at the
+ * frame rate instead of at the lane's.
+ */
+function createRiverfallSurfaceDriver(): LiveScenePresentationDriverV1 {
+  const surface = new RiverfallLiveSurfaceV1();
+  let advancedSteps = 0;
+  return {
+    observe: (session) => {
+      const stepped = session.state().stepped;
+      for (; advancedSteps < stepped; advancedSteps += 1) {
+        surface.advance(LIVE_TIMESTEP_SECONDS_V1);
+      }
+    },
+    poses: () => surface.poses(),
+  };
+}
+
 const FACTORIES: Readonly<Record<string, () => LiveScenePresentationDriverV1>> =
   Object.freeze({
     [WINDMILL_SCENE_ID]: createWindmillProductionDriver,
     [MACHINE_WORKS_LIVE_SCENE_ID_V1]: createMachineWorksDriver,
+    [RIVERFALL_LIVE_PROFILE_V1.sceneId]: createRiverfallSurfaceDriver,
   });
 
 /** A fresh driver for this scene, or null when the scene stages nothing. */

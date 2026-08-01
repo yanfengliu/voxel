@@ -3,7 +3,6 @@ import { describe, expect, it } from 'vitest';
 import { CONTRAST_FAMILY_SCENE_IDS_V1 } from './contrast-scenes.js';
 import { createStudioCatalog } from './catalog.js';
 import { createStudioRecipeBook } from './recipes.js';
-import { validateScenePoseReplayV1OrV2 } from './scene-pose-replay.js';
 import {
   createWindmillPhysicalBook,
   WINDMILL_PHYSICAL_ASSET_SET_V1,
@@ -102,22 +101,34 @@ describe('the studio shelf', () => {
     });
   });
 
-  it('links every V4 scene to one valid catalog replay for that exact scene', () => {
+  it('ships no scene that plays back a recording, and no recording to play', () => {
+    // The owner's rule as a gate rather than as prose: every scene here
+    // computes its motion in the browser. `studio.scene/4` still exists for a
+    // consumer that hands Studio an immutable trace, and Studio still plays
+    // one — `model-studio-scene-replay.spec.ts` proves that lane on a scene the
+    // test supplies — but nothing on this shelf uses it.
+    //
+    // The second half matters as much as the first: a catalog that still
+    // published traces nothing referenced would ship megabytes of dead payload
+    // into every page load, and would leave the lane one line away from
+    // returning.
     const catalog = createStudioCatalog();
-    const replayScenes = (catalog.scenes ?? []).filter(
-      (scene) => scene.schemaVersion === 'studio.scene/4',
-    );
-    expect(replayScenes).not.toHaveLength(0);
-    for (const scene of replayScenes) {
-      const replay = catalog.scenePoseReplays?.[scene.poseReplay.id];
-      expect(replay, scene.poseReplay.id).toBeDefined();
-      if (replay === undefined) {
-        throw new Error(`Catalog V4 scene '${scene.id}' is missing replay '${scene.poseReplay.id}'.`);
-      }
-      expect(validateScenePoseReplayV1OrV2(replay), scene.poseReplay.id).toEqual([]);
-      expect(replay.sceneId).toBe(scene.id);
-      expect(replay.frameCount * replay.provenance.fixedTimestepMs)
-        .toBeCloseTo(scene.poseReplay.durationMs, 8);
-    }
+    const recorded = (catalog.scenes ?? [])
+      .filter((scene) => scene.schemaVersion === 'studio.scene/4')
+      .map((scene) => scene.id);
+    expect(
+      recorded,
+      `these catalog scenes play back a recording: ${recorded.join(', ')}. `
+      + 'Scenes simulate live; give the scene a live physics profile and a '
+      + 'presentation driver instead, as the mill, the machine, the chain and '
+      + 'the river do.',
+    ).toEqual([]);
+    expect(
+      catalog.scenePoseReplays,
+      'the catalog carries pose replays no scene references. Committed traces '
+      + 'survive as determinism fixtures that the consumer suites pin and the '
+      + 'browser rigs import directly; the catalog does not need to ship them.',
+    ).toBeUndefined();
   });
+
 });

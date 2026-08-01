@@ -10,10 +10,8 @@ const STUDIO_ROOT = resolve('tools/studio');
 const DINING_SCENE_ID = 'studio:scene:dining';
 const VILLAGE_SCENE_ID = 'studio:scene:village';
 const RIVERFALL_SCENE_ID = 'studio:scene:riverfall';
-const RIVERFALL_REPLAY_ID = 'studio:pose-replay:riverfall-flow';
 const SCENE_ANNOTATIONS_KEY = 'voxel-studio-scene-annotations/1';
 const SCENE_ANNOTATIONS_QUARANTINE_KEY = 'voxel-studio-scene-annotations-quarantine/1';
-const HASH_PATTERN = /^sha256:[0-9a-f]{64}$/;
 
 let server: ViteDevServer | undefined;
 let studioOrigin = '';
@@ -638,7 +636,7 @@ test('malformed persisted annotations are quarantined and explained in the scene
   expect(errors).toEqual([]);
 });
 
-test('Riverfall pins preserve replay provenance, hide outside their captured view, restore it, and send request v2', async ({ page }) => {
+test('Riverfall pins hide outside their captured view, restore it, and send request v2', async ({ page }) => {
   const errors = collectPageErrors(page);
   await page.setViewportSize({ width: 1280, height: 800 });
   await loadScene(page, RIVERFALL_SCENE_ID);
@@ -660,15 +658,15 @@ test('Riverfall pins preserve replay provenance, hide outside their captured vie
       selectedPlacementId: studio.selectedPlacement(),
       animation: studio.sceneAnimation(),
       replay: draw.scenePoseReplay,
+      live: studio.livePhysics().available,
     };
   });
-  expect(captureEvidence.replay).toMatchObject({
-    replayId: RIVERFALL_REPLAY_ID,
-    sceneId: RIVERFALL_SCENE_ID,
-    sample: { wrappedTimeMs: 1_100, frameA: 44, frameB: 45, alpha: 0 },
-  });
-  expect(captureEvidence.replay?.provenance.inputHash).toMatch(HASH_PATTERN);
-  expect(captureEvidence.replay?.provenance.finalHash).toMatch(HASH_PATTERN);
+  // The river solves in the browser, so a pin here captures a camera and a
+  // look rather than a moment in a recording. There is no replay provenance to
+  // preserve, and asserting its absence is what keeps this test honest about
+  // which lane the scene is on.
+  expect(captureEvidence.replay).toBeNull();
+  expect(captureEvidence.live).toBe(true);
 
   const panel = await openNotes(page);
   await panel.getByLabel(/Scene brief/).fill('Review the evolved waterfall and pond flow.');
@@ -740,13 +738,16 @@ test('Riverfall pins preserve replay provenance, hide outside their captured vie
     lit: captureEvidence.lit,
     edges: captureEvidence.edges,
     selectedPlacementId: captureEvidence.selectedPlacementId,
-    replay: {
-      id: RIVERFALL_REPLAY_ID,
-      inputHash: captureEvidence.replay?.provenance.inputHash,
-      finalHash: captureEvidence.replay?.provenance.finalHash,
-    },
   });
-  expect(pin.timeMs).toBeCloseTo(pressedPlayer.timeMs, 0);
+  // A pin on a live scene records no replay identity, because there is no
+  // recording to identify. Everything else a pin restores — camera, look,
+  // selection — is unchanged.
+  expect(pin).not.toHaveProperty('replay');
+  // A live scene has no timeline, so a pin's time is the stage clock at the
+  // moment of capture rather than a position in a recording. It only has to be
+  // a real, finite, non-negative instant that the pin can restore.
+  expect(Number.isFinite(pin.timeMs)).toBe(true);
+  expect(pin.timeMs).toBeGreaterThanOrEqual(0);
   expect(pin.viewport.width).toBeGreaterThan(0);
   expect(pin.viewport.height).toBeGreaterThan(0);
   expect(captureEvidence.animation).toBe(true);
@@ -799,7 +800,12 @@ test('Riverfall pins preserve replay provenance, hide outside their captured vie
   expect(restored.edges).toBe(pin.edges);
   expect(restored.animation).toBe(true);
   expect(restored.player.playing).toBe(false);
-  expect(restored.player.timeMs).toBeCloseTo(pin.timeMs, 0);
+  // What a pin restores on a live scene is the camera, the look and the
+  // selection — everything above. It does not restore a moment, because the
+  // river has no timeline to seek back to: the water is wherever its own
+  // solver has reached. The pin still carries the stage clock it was taken at,
+  // which is what the marker and the request are keyed on.
+  expect(Number.isFinite(restored.player.timeMs)).toBe(true);
   await expect(page.locator('.scene-annotation-marker')).toHaveCount(1);
 
   await page.evaluate(() => {
@@ -839,7 +845,12 @@ test('Riverfall pins preserve replay provenance, hide outside their captured vie
   }));
   expect(restored.animation).toBe(true);
   expect(restored.player.playing).toBe(false);
-  expect(restored.player.timeMs).toBeCloseTo(pin.timeMs, 0);
+  // What a pin restores on a live scene is the camera, the look and the
+  // selection — everything above. It does not restore a moment, because the
+  // river has no timeline to seek back to: the water is wherever its own
+  // solver has reached. The pin still carries the stage clock it was taken at,
+  // which is what the marker and the request are keyed on.
+  expect(Number.isFinite(restored.player.timeMs)).toBe(true);
   await expect(page.locator('.scene-annotation-marker')).toHaveCount(1);
 
   const canvasBeforeResize = await page.locator('.scene-canvas').evaluate((canvas: HTMLCanvasElement) => ({
@@ -912,11 +923,10 @@ test('Riverfall pins preserve replay provenance, hide outside their captured vie
   expect(sent).toMatchObject({
     schemaVersion: 'studio.request/2',
     words: 'Review the evolved waterfall and pond flow.',
-    pins: [{ sceneId: RIVERFALL_SCENE_ID, id: pin.id, replay: pin.replay }],
+    pins: [{ sceneId: RIVERFALL_SCENE_ID, id: pin.id }],
     scene: {
       id: RIVERFALL_SCENE_ID,
-      schemaVersion: 'studio.scene/4',
-      poseReplay: { id: RIVERFALL_REPLAY_ID },
+      schemaVersion: 'studio.scene/3',
     },
     capture: {
       timeMs: pin.timeMs,
@@ -926,9 +936,10 @@ test('Riverfall pins preserve replay provenance, hide outside their captured vie
       lit: pin.lit,
       edges: pin.edges,
       selectedPlacementId: pin.selectedPlacementId,
-      replay: pin.replay,
     },
   });
+  expect(sent.scene).not.toHaveProperty('poseReplay');
+  expect(sent.capture).not.toHaveProperty('replay');
   expect(JSON.stringify(sent)).not.toContain('translationsBase64');
   expect(errors).toEqual([]);
 });

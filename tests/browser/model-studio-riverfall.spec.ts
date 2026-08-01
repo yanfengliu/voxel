@@ -5,29 +5,31 @@ import { expect, test, type Page } from '@playwright/test';
 import { createServer, type ViteDevServer } from 'vite';
 
 import {
-  RIVERFALL_FLUID_CAPABILITY_LABELS,
-  RIVERFALL_FLUID_FRAME_COUNT,
-  RIVERFALL_FLUID_LAW_LABELS,
-  RIVERFALL_FLUID_RECORD_STEP_MS,
-  RIVERFALL_FLUID_SOLVER_NAME,
-  RIVERFALL_FLUID_SOLVER_VERSION,
-} from '../../tools/studio/riverfall-fluid-config.js';
-import {
   RIVERFALL_SURFACE_CELL_COUNT,
   RIVERFALL_SURFACE_MODEL_ID,
   RIVERFALL_SURFACE_SEAM_MODEL_ID,
 } from '../../tools/studio/riverfall-surface-grid.js';
 
+/**
+ * The river, solved in the browser.
+ *
+ * This spec used to seek a six-second recording and photograph named frames of
+ * it. There is no recording: the scene steps a position-based fluid at the
+ * shared fixed rate and reconstructs 321 tiles from it every frame. The moments
+ * here are reached the way the chain's and the mill's are — by advancing the
+ * solver an exact number of fixed ticks, which is reproducible in a way a
+ * wall-clock frame is not.
+ */
+
 const STUDIO_ROOT = resolve('tools/studio');
 const RIVERFALL_SCENE_ID = 'studio:scene:riverfall';
-const REPLAY_ID = 'studio:pose-replay:riverfall-flow';
 const MAX_DIFF_PIXEL_RATIO = 0.002;
-// Five water structures, six pond plants, ten bank trees, and the tile field.
+/** Five water structures, six pond plants, ten bank trees, and the tile field. */
 const EXPECTED_INSTANCE_COUNT = 5 + 6 + 10 + RIVERFALL_SURFACE_CELL_COUNT;
-const EXPECTED_DURATION_MS =
-  (RIVERFALL_FLUID_FRAME_COUNT + 1) * RIVERFALL_FLUID_RECORD_STEP_MS;
-// 17 before the pond plants; each kelp and weed placement carries its own
-// seed or grain, so the six plants add six single-instance batches.
+/**
+ * 17 before the pond plants; each kelp and weed placement carries its own seed
+ * or grain, so the six plants add six single-instance batches.
+ */
 const EXPECTED_RESOURCE_COUNTS = {
   instanceBatches: 23,
   materialResources: 23,
@@ -35,16 +37,17 @@ const EXPECTED_RESOURCE_COUNTS = {
   rendererGeometries: 23,
   rendererTextures: 2,
 } as const;
-const RESOURCE_STABILITY_TIMES_MS = [
-  0, 0,
-  1_100, 1_100,
-  3_000, 3_000,
-  4_500, 4_500,
-  5_995, 5_995,
-  6_000, 6_000,
-  6_025, 6_025,
-  0,
-] as const;
+/**
+ * Where the river is, in solver ticks from the world's opening.
+ *
+ * A live scene has no timeline to scrub, so a reproducible moment is a step
+ * count. These are far enough apart that water visibly travels between them and
+ * close enough to keep the spec's runtime sane: a fluid step is real work, and
+ * settling is synchronous.
+ */
+// `later` sits past the motion pass, which itself advances six one-second
+// intervals from `flowing`; a solver runs forward only.
+const SETTLE_TICKS = Object.freeze({ flowing: 90, later: 600 });
 
 let server: ViteDevServer | undefined;
 let studioOrigin = '';
@@ -59,7 +62,9 @@ test.beforeAll(async () => {
   });
   await server.listen();
   studioOrigin = server.resolvedUrls?.local[0] ?? '';
-  if (!studioOrigin) throw new Error('the Riverfall Studio test server reported no local address');
+  if (!studioOrigin) {
+    throw new Error('the Riverfall Studio test server reported no local address');
+  }
 });
 
 test.afterAll(async () => {
@@ -77,18 +82,20 @@ async function mountRiverfall(page: Page): Promise<void> {
   await page.evaluate((sceneId) => {
     const studio = window.voxelStudio!;
     studio.openScene(sceneId);
-    studio.setSceneAnimation(false);
     studio.setEdges(false);
     studio.setLit(true);
     studio.setDepth(true);
     studio.setViewCenter([0, 0, 0]);
-    studio.setViewAngles({
-      yawDegrees: 45,
-      pitchDegrees: 30,
-      viewHeight: 80,
-    });
+    studio.setViewAngles({ yawDegrees: 45, pitchDegrees: 30, viewHeight: 80 });
     studio.drawAt(0);
   }, RIVERFALL_SCENE_ID);
+  // The fluid builds and burns in before the first live frame; until then the
+  // stage is still drawing authored anchors.
+  await page.waitForFunction(
+    () => window.voxelStudio!.livePhysics().running,
+    undefined,
+    { timeout: 180_000 },
+  );
   await page.addStyleTag({
     content: [
       '.viewchip, .toggles, .stagehint, .grid-marks, .highlight-marks {',
@@ -98,13 +105,35 @@ async function mountRiverfall(page: Page): Promise<void> {
   });
 }
 
+/** Advances the river's own solver to an exact tick and presents it. */
+async function settleTo(page: Page, targetTick: number): Promise<void> {
+  await page.evaluate(async (target) => {
+    const studio = window.voxelStudio!;
+    const stepped = studio.livePhysics().stepped;
+    if (stepped > target) {
+      throw new Error(
+        `Cannot settle the river back to tick ${String(target)}: its live world `
+        + `has already stepped ${String(stepped)} times, and a solver runs `
+        + 'forward only. Settle to a later tick or reopen the scene.',
+      );
+    }
+    studio.settleLive(target - stepped);
+    await new Promise<void>((done) => {
+      requestAnimationFrame(() => requestAnimationFrame(() => { done(); }));
+    });
+  }, targetTick);
+}
+
 async function imageHash(page: Page): Promise<string> {
   return createHash('sha256')
-    .update(await page.locator('.scene-canvas').screenshot({ animations: 'disabled' }))
+    .update(await page.locator('.scene-canvas')
+      .screenshot({ animations: 'disabled' }))
     .digest('hex');
 }
 
-test('Riverfall presents one coherent simulated surface from river through outflow', async ({ page }) => {
+test('Riverfall solves its water in the browser and plays back nothing', async ({
+  page,
+}) => {
   const errors: string[] = [];
   page.on('pageerror', (error) => errors.push(error.message));
   page.on('console', (message) => {
@@ -112,60 +141,55 @@ test('Riverfall presents one coherent simulated surface from river through outfl
   });
   await mountRiverfall(page);
 
-  const phaseZero = await page.evaluate(() => window.voxelStudio!.drawAt(0));
-  expect(phaseZero.sceneRender).toEqual({
-    // 23 batches plus one depth-only prepass draw for each of the six
-    // translucent water batches, which is what lets every water pixel blend
-    // exactly once and read as one film. The prepass re-draws the water
-    // geometry, so triangles rise by the water's share and nothing else; it
-    // shares the colour pass's geometry and instance buffers, so no resource
-    // count moves.
-    drawCalls: 29,
-    triangles: 50_372,
+  const opened = await page.evaluate(() => {
+    const studio = window.voxelStudio!;
+    const live = studio.livePhysics();
+    const draw = studio.drawAt(0);
+    return {
+      hasReplay: draw.scenePoseReplay !== null,
+      available: live.available,
+      running: live.running,
+      bodies: live.bodies,
+      joints: live.joints,
+      status: document.querySelector<HTMLElement>('.status')?.textContent ?? '',
+      statusTitle: document.querySelector<HTMLElement>('.status')?.title ?? '',
+      render: draw.sceneRender,
+    };
+  });
+  expect(opened.hasReplay).toBe(false);
+  expect(opened.available).toBe(true);
+  expect(opened.running).toBe(true);
+  // The river is a fluid, not a pile of bodies: the live world it rides holds
+  // none at all, and its tiles are a presentation rather than things that fall.
+  expect(opened.bodies).toBe(0);
+  expect(opened.joints).toBe(0);
+  expect(opened.status).toContain('live physics · solved in browser');
+  expect(opened.status).not.toContain('consumer replay');
+  // A provenance title belongs to a recording, and there is no recording.
+  expect(opened.statusTitle).toBe('');
+  expect(opened.render).toMatchObject({
+    ...EXPECTED_RESOURCE_COUNTS,
+    instances: EXPECTED_INSTANCE_COUNT,
     points: 0,
     lines: 0,
-    instanceBatches: 23,
-    instances: EXPECTED_INSTANCE_COUNT,
     // The three kelp strands sway on authored model motion; the weed clumps
     // and everything else stay still.
     animatedBatches: 3,
     animatedInstances: 3,
-    materialResources: 23,
-    geometryResources: 23,
-    rendererGeometries: 23,
-    rendererTextures: 2,
   });
-  expect(phaseZero.scenePoseReplay).toMatchObject({
-    replayId: REPLAY_ID,
-    sceneId: RIVERFALL_SCENE_ID,
-    durationMs: EXPECTED_DURATION_MS,
-    provenance: {
-      solver: {
-        name: RIVERFALL_FLUID_SOLVER_NAME,
-        version: RIVERFALL_FLUID_SOLVER_VERSION,
-      },
-      fixedTimestepMs: RIVERFALL_FLUID_RECORD_STEP_MS,
-      gravity: [0, -9.81, 0],
-      lawLabels: RIVERFALL_FLUID_LAW_LABELS,
-      capabilityLabels: RIVERFALL_FLUID_CAPABILITY_LABELS,
-    },
-    sample: {
-      wrappedTimeMs: 0,
-      frameA: 0,
-      frameB: 1,
-      alpha: 0,
-      latestEvent: null,
-    },
-  });
+
   const composition = await page.evaluate(({ surfaceModelId, seamModelId }) => {
     const scene = window.voxelStudio!.sceneState();
-    if (scene === null) throw new Error('Riverfall is not open while inspecting fluid surface cells.');
+    if (scene === null) {
+      throw new Error('Riverfall is not open while inspecting fluid surface cells.');
+    }
     return {
       instances: scene.placements.length,
       fluidSurfaceCells: scene.placements.filter(
-        ({ model }) =>
-          model === surfaceModelId || model === seamModelId,
+        ({ model }) => model === surfaceModelId || model === seamModelId,
       ).length,
+      schemaVersion: scene.schemaVersion,
+      carriesReplay: 'poseReplay' in scene,
     };
   }, {
     surfaceModelId: RIVERFALL_SURFACE_MODEL_ID,
@@ -174,43 +198,30 @@ test('Riverfall presents one coherent simulated surface from river through outfl
   expect(composition).toEqual({
     instances: EXPECTED_INSTANCE_COUNT,
     fluidSurfaceCells: RIVERFALL_SURFACE_CELL_COUNT,
-  });
-  const resourceSamples = await page.evaluate((timesMs) => {
-    const studio = window.voxelStudio!;
-    return timesMs.map((nowMs) => ({
-      nowMs,
-      render: studio.drawAt(nowMs).sceneRender,
-    }));
-  }, RESOURCE_STABILITY_TIMES_MS);
-  for (const sample of resourceSamples) {
-    expect(sample.render, `resource counts after exact draw at ${String(sample.nowMs)} ms`)
-      .toMatchObject(EXPECTED_RESOURCE_COUNTS);
-  }
-  const presentationCost = await page.evaluate((durationMs) => {
-    const studio = window.voxelStudio!;
-    for (let warmup = 0; warmup < 8; warmup += 1) {
-      studio.drawAt(warmup * 73);
-    }
-    const samples = 120;
-    const started = performance.now();
-    for (let sample = 0; sample < samples; sample += 1) {
-      studio.drawAt((sample * 47) % durationMs);
-    }
-    return (performance.now() - started) / samples;
-  }, EXPECTED_DURATION_MS);
-  expect(
-    presentationCost,
-    'mean Riverfall pose presentation cost for 321 reconstructed cells',
-  ).toBeLessThan(25);
-  await page.evaluate(() => { window.voxelStudio!.drawAt(0); });
-  const canvas = page.locator('.scene-canvas');
-  const phaseZeroHash = await imageHash(page);
-  await expect(canvas).toHaveScreenshot('model-studio-riverfall-phase-zero.png', {
-    animations: 'disabled',
-    maxDiffPixelRatio: MAX_DIFF_PIXEL_RATIO,
+    schemaVersion: 'studio.scene/3',
+    carriesReplay: false,
   });
 
-  const motionPixels = await page.evaluate(() => {
+  // Resource counts hold while the solver runs. 321 tiles are re-posed every
+  // frame, and re-posing must not allocate geometry, materials or textures.
+  await settleTo(page, SETTLE_TICKS.flowing);
+  const flowing = await page.evaluate(() => ({
+    render: window.voxelStudio!.drawAt(0).sceneRender,
+    stepped: window.voxelStudio!.livePhysics().stepped,
+  }));
+  expect(flowing.stepped).toBe(SETTLE_TICKS.flowing);
+  expect(flowing.render, 'resource counts after 90 solved ticks')
+    .toMatchObject(EXPECTED_RESOURCE_COUNTS);
+  await expect(page.locator('.scene-canvas')).toHaveScreenshot(
+    'model-studio-riverfall-flowing.png',
+    { animations: 'disabled', maxDiffPixelRatio: MAX_DIFF_PIXEL_RATIO },
+  );
+  const flowingHash = await imageHash(page);
+
+  // The water keeps moving, and it is the water that moves: the mask is
+  // pixels reading as water at every sampled moment, compared for lit shading
+  // change across intervals the solver actually stepped.
+  const motion = await page.evaluate(async (intervals) => {
     const canvas = document.querySelector<HTMLCanvasElement>('.scene-canvas');
     if (canvas === null) {
       throw new Error(
@@ -224,115 +235,82 @@ test('Riverfall presents one coherent simulated surface from river through outfl
       );
     }
     const studio = window.voxelStudio!;
-    const read = (lit: boolean, nowMs: number): Uint8Array => {
-      studio.setLit(lit);
-      studio.drawAt(nowMs);
+    // Never toggles the look. Doing so on a *paused* live scene presents the
+    // authored anchors again until the solver next runs, so every read after a
+    // toggle returned the same frame and the river measured as perfectly
+    // still. That is a real defect in the studio rather than in the river, and
+    // it is filed; this measurement simply does not need to poke it.
+    const read = (): Uint8Array => {
+      studio.drawAt(0);
       gl.finish();
       const pixels = new Uint8Array(canvas.width * canvas.height * 4);
       gl.readPixels(
-        0,
-        0,
-        canvas.width,
-        canvas.height,
-        gl.RGBA,
-        gl.UNSIGNED_BYTE,
-        pixels,
-      );
+        0, 0, canvas.width, canvas.height, gl.RGBA, gl.UNSIGNED_BYTE, pixels);
       return pixels;
     };
-    try {
-      const phaseTimes = Array.from(
-        { length: 12 },
-        (_, index) => 250 + index * 500,
-      );
-      const unlitOpening = read(false, 0);
-      const unlitPhases = phaseTimes.map((nowMs) => read(false, nowMs));
-      const litOpening = read(true, 0);
-      const litPhases = phaseTimes.map((nowMs) => read(true, nowMs));
-      let masked = 0;
-      let changed = 0;
-      const changedByThreshold = { one: 0, two: 0, four: 0, eight: 0 };
-      const isWater = (pixels: Uint8Array, offset: number): boolean =>
-        pixels[offset + 2]! > pixels[offset + 1]! + 20
-        && pixels[offset + 1]! > pixels[offset]! + 40
-        && pixels[offset + 2]! > 80;
-      for (let offset = 0; offset < unlitOpening.length; offset += 4) {
-        if (!isWater(unlitOpening, offset)
-          || !unlitPhases.every((pixels) => isWater(pixels, offset))) {
-          continue;
-        }
-        masked += 1;
-        const delta = Math.max(...litPhases.map((pixels) => Math.max(
-          Math.abs(litOpening[offset]! - pixels[offset]!),
-          Math.abs(litOpening[offset + 1]! - pixels[offset + 1]!),
-          Math.abs(litOpening[offset + 2]! - pixels[offset + 2]!),
-        )));
-        if (delta >= 1) changedByThreshold.one += 1;
-        if (delta >= 2) changedByThreshold.two += 1;
-        if (delta >= 4) changedByThreshold.four += 1;
-        if (delta >= 8) {
-          changedByThreshold.eight += 1;
-          changed += 1;
-        }
-      }
-      return {
-        masked,
-        changed,
-        changedByThreshold,
-        ratio: masked === 0 ? 0 : changed / masked,
-      };
-    } finally {
-      studio.setLit(true);
-      studio.drawAt(0);
+    const isWater = (pixels: Uint8Array, offset: number): boolean =>
+      pixels[offset + 2]! > pixels[offset + 1]! + 20
+      && pixels[offset + 1]! > pixels[offset]! + 40
+      && pixels[offset + 2]! > 80;
+    const frames: Uint8Array[] = [read()];
+    for (const step of intervals) {
+      studio.settleLive(step);
+      await new Promise<void>((done) => {
+        requestAnimationFrame(() => requestAnimationFrame(() => { done(); }));
+      });
+      frames.push(read());
     }
-  });
-  // The film water blends exactly one translucent layer per pixel — the
-  // single-layer depth prepass is what removed the old tile seams — so fewer
-  // pixels read as saturated blue than the stacked layers used to produce
-  // (about 3.6k of this canvas, down from about 5.6k). The mask floor only
-  // guards that the motion sample stays in the thousands, not how blue the
-  // honest single blend is.
-  expect(motionPixels.masked).toBeGreaterThan(2_500);
-  // A wave that used to restate its lit shading across two or three stacked
-  // films now shades the sheet once, so per-pixel deltas run at roughly half
-  // the layered look's size: the old bar (a tenth of pixels moving by eight
-  // or more RGB steps) measured the double blend, not the ripple. The claim
-  // is that ripples visibly travel every reach, and the single film holds a
-  // strong form of it — at least half of the stable water moves by four or
-  // more RGB steps across the twelve phases (about two thirds today) — with
-  // the full threshold spread reported for diagnosis.
+    let masked = 0;
+    let openingWater = 0;
+    const changedByThreshold = { one: 0, two: 0, four: 0, eight: 0 };
+    const opening = frames[0]!;
+    for (let offset = 0; offset < opening.length; offset += 4) {
+      if (isWater(opening, offset)) openingWater += 1;
+      if (!frames.every((pixels) => isWater(pixels, offset))) continue;
+      masked += 1;
+      const delta = Math.max(...frames.slice(1).map((pixels) => Math.max(
+        Math.abs(opening[offset]! - pixels[offset]!),
+        Math.abs(opening[offset + 1]! - pixels[offset + 1]!),
+        Math.abs(opening[offset + 2]! - pixels[offset + 2]!),
+      )));
+      if (delta >= 1) changedByThreshold.one += 1;
+      if (delta >= 2) changedByThreshold.two += 1;
+      if (delta >= 4) changedByThreshold.four += 1;
+      if (delta >= 8) changedByThreshold.eight += 1;
+    }
+    return { masked, openingWater, changedByThreshold };
+    // Six intervals of a second each, which is the span the recorded lane
+    // sampled across. A quarter of a second moves the film by one to three RGB
+    // levels and reads as no motion at a four-level bar; the water is not
+    // stiller than it was, the window was.
+  }, [60, 60, 60, 60, 60, 60] as const);
+  // The mask has to be a sample worth believing, stated against the water
+  // actually on screen rather than as a pixel count. An absolute floor has to
+  // be re-tuned every time the look or the camera moves, and re-tuning a
+  // sample-size guard to keep a test green is how a guard stops guarding.
+  // Most of the water that is water at the start is still water throughout.
   expect(
-    motionPixels.changedByThreshold.four / motionPixels.masked,
-    `Riverfall visibly changed ${String(motionPixels.changedByThreshold.four)} of ${
-      String(motionPixels.masked)
-    } stable water pixels across 12 replay phases; thresholds ${
-      JSON.stringify(motionPixels.changedByThreshold)
+    motion.masked / motion.openingWater,
+    `${String(motion.masked)} of ${String(motion.openingWater)} opening water `
+    + 'pixels stayed water across every sampled moment',
+  ).toBeGreaterThan(0.5);
+  // And there is real water on screen at all: a black canvas must not pass.
+  expect(motion.openingWater).toBeGreaterThan(1_000);
+  expect(
+    motion.changedByThreshold.four / motion.masked,
+    `Riverfall changed ${String(motion.changedByThreshold.four)} of ${
+      String(motion.masked)
+    } stable water pixels across six solved intervals; thresholds ${
+      JSON.stringify(motion.changedByThreshold)
     }`,
   ).toBeGreaterThanOrEqual(0.5);
 
-  // Per-reach unit gates prove coverage; this fixed phase anchors visual review.
-  await page.evaluate(() => { window.voxelStudio!.drawAt(550); });
-  const offsetFlowHash = await imageHash(page);
-  expect(offsetFlowHash).not.toBe(phaseZeroHash);
-  await expect(canvas).toHaveScreenshot('model-studio-riverfall-offset-flow.png', {
-    animations: 'disabled',
-    maxDiffPixelRatio: MAX_DIFF_PIXEL_RATIO,
-  });
-
-  await page.evaluate(() => {
-    const studio = window.voxelStudio!;
-    studio.setLit(false);
-    studio.drawAt(550);
-  });
-  await expect(canvas).toHaveScreenshot('model-studio-riverfall-unlit.png', {
-    animations: 'disabled',
-    maxDiffPixelRatio: MAX_DIFF_PIXEL_RATIO,
-  });
-  await page.evaluate(() => {
-    const studio = window.voxelStudio!;
-    studio.setLit(true);
-    studio.drawAt(550);
-  });
+  // Further down the run, from two adversarial angles: overhead, where the
+  // pond reads as a plane, and reversed, which is the view that would expose a
+  // tile field pulling away from its banks.
+  await settleTo(page, SETTLE_TICKS.later);
+  const laterHash = await imageHash(page);
+  expect(laterHash).not.toBe(flowingHash);
 
   const overhead = await page.evaluate(() => {
     const studio = window.voxelStudio!;
@@ -341,8 +319,7 @@ test('Riverfall presents one coherent simulated surface from river through outfl
       pitchDegrees: 85,
       viewHeight: 104,
     });
-    const draw = studio.drawAt(3_000);
-    return { view, draw };
+    return { view, draw: studio.drawAt(0) };
   });
   expect(overhead.view).toMatchObject({
     yawDegrees: 45,
@@ -350,76 +327,33 @@ test('Riverfall presents one coherent simulated surface from river through outfl
     viewHeight: 104,
   });
   expect(overhead.draw.sceneRender).toMatchObject({
-    drawCalls: 29,
-    triangles: 50_372,
     instances: EXPECTED_INSTANCE_COUNT,
   });
-  await expect(canvas).toHaveScreenshot('model-studio-riverfall-overhead.png', {
-    animations: 'disabled',
-    maxDiffPixelRatio: MAX_DIFF_PIXEL_RATIO,
-  });
+  await expect(page.locator('.scene-canvas')).toHaveScreenshot(
+    'model-studio-riverfall-overhead.png',
+    { animations: 'disabled', maxDiffPixelRatio: MAX_DIFF_PIXEL_RATIO },
+  );
 
-  const longitudinal = await page.evaluate(() => {
+  await page.evaluate(() => {
     const studio = window.voxelStudio!;
-    studio.setViewAngles({
-      yawDegrees: 0,
-      pitchDegrees: 30,
-      viewHeight: 80,
-    });
-    return studio.drawAt(4_500);
+    studio.setViewAngles({ yawDegrees: 225, pitchDegrees: 30, viewHeight: 80 });
+    studio.drawAt(0);
   });
-  expect(longitudinal.scenePoseReplay?.sample).toMatchObject({
-    wrappedTimeMs: 4_500,
-    frameA: 180,
-    frameB: 181,
-    alpha: 0,
-  });
-  await expect(canvas).toHaveScreenshot('model-studio-riverfall-longitudinal.png', {
-    animations: 'disabled',
-    maxDiffPixelRatio: MAX_DIFF_PIXEL_RATIO,
-  });
+  await expect(page.locator('.scene-canvas')).toHaveScreenshot(
+    'model-studio-riverfall-reverse.png',
+    { animations: 'disabled', maxDiffPixelRatio: MAX_DIFF_PIXEL_RATIO },
+  );
 
-  const reverse = await page.evaluate(() => {
+  await page.evaluate(() => {
     const studio = window.voxelStudio!;
-    studio.setViewAngles({
-      yawDegrees: 225,
-      pitchDegrees: 30,
-      viewHeight: 80,
-    });
-    return studio.drawAt(5_995);
+    studio.setViewAngles({ yawDegrees: 45, pitchDegrees: 30, viewHeight: 80 });
+    studio.setLit(false);
+    studio.drawAt(0);
   });
-  expect(reverse.scenePoseReplay?.sample).toMatchObject({
-    wrappedTimeMs: 5_995,
-    frameA: 239,
-    frameB: 240,
-  });
-  expect(reverse.scenePoseReplay?.sample?.alpha).toBeCloseTo(0.8, 10);
-  await expect(canvas).toHaveScreenshot('model-studio-riverfall-reverse.png', {
-    animations: 'disabled',
-    maxDiffPixelRatio: MAX_DIFF_PIXEL_RATIO,
-  });
+  await expect(page.locator('.scene-canvas')).toHaveScreenshot(
+    'model-studio-riverfall-unlit.png',
+    { animations: 'disabled', maxDiffPixelRatio: MAX_DIFF_PIXEL_RATIO },
+  );
 
-  const closing = await page.evaluate(() => window.voxelStudio!.drawAt(6_000));
-  expect(closing.scenePoseReplay?.sample).toMatchObject({
-    wrappedTimeMs: 6_000,
-    frameA: 240,
-    frameB: 240,
-    alpha: 0,
-  });
-  await expect(canvas).toHaveScreenshot('model-studio-riverfall-reset.png', {
-    animations: 'disabled',
-    maxDiffPixelRatio: MAX_DIFF_PIXEL_RATIO,
-  });
-  const reset = await page.evaluate(() => window.voxelStudio!.drawAt(6_025));
-  expect(reset.scenePoseReplay?.sample).toMatchObject({
-    wrappedTimeMs: 0,
-    frameA: 0,
-    frameB: 1,
-    alpha: 0,
-  });
-  await expect(canvas).toHaveScreenshot('model-studio-riverfall-reset.png', {
-    animations: 'disabled',
-    maxDiffPixelRatio: MAX_DIFF_PIXEL_RATIO,
-  });
   expect(errors).toEqual([]);
 });

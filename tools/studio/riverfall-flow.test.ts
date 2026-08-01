@@ -138,19 +138,26 @@ describe('Riverfall generated fluid replay', () => {
     )).toEqual([true, true, true, true]);
   });
 
-  it('matches every fallback origin to its frame-zero replay translation', () => {
+  it('anchors every fallback origin on its authored cell, not on a recording', () => {
+    // The direction of this check is the whole point. It used to require each
+    // authored anchor to equal the trace's opening frame, which made the
+    // scene's own geometry a property of one recorded run. The authored grid is
+    // the authority now: an anchor is the cell's centre, and the fluid poses
+    // every tile from the first step it takes.
     const byId = snapshotTranslations();
     const placements = createRiverfallFlowPlacementsV1();
     expect(placements).toHaveLength(RIVERFALL_FLUID_SURFACE_CELL_COUNT);
-    for (const track of RIVERFALL_POSE_REPLAY.tracks) {
-      expect(byId.get(track.placementId)).toBeDefined();
-      expect(byId.get(track.placementId)![0])
-        .toBeCloseTo(track.translations[0]!, 5);
-      expect(byId.get(track.placementId)![1])
-        .toBeCloseTo(track.translations[1]!, 5);
-      expect(byId.get(track.placementId)![2])
-        .toBeCloseTo(track.translations[2]!, 5);
+    for (const cell of RIVERFALL_SURFACE_CELLS_V1) {
+      const anchor = byId.get(cell.id);
+      expect(anchor, `cell '${cell.id}' has no authored anchor`).toBeDefined();
+      expect(anchor![0]).toBeCloseTo(cell.baseTranslation[0], 5);
+      expect(anchor![1]).toBeCloseTo(cell.baseTranslation[1], 5);
+      expect(anchor![2]).toBeCloseTo(cell.baseTranslation[2], 5);
     }
+    // The trace still has to describe the same surface, which is what makes it
+    // a determinism fixture for this scene rather than for some other one.
+    expect(RIVERFALL_POSE_REPLAY.tracks.map(({ placementId }) => placementId))
+      .toEqual(RIVERFALL_SURFACE_CELLS_V1.map(({ id }) => id));
   });
 
   it('uses every authored surface id exactly once and diagnoses bad indices', () => {

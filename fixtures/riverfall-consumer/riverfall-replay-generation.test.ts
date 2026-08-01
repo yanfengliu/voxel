@@ -42,6 +42,12 @@ describe('Riverfall committed fluid replay', () => {
       if (UPDATE) writeFileSync(fileURLToPath(OUTPUT_URL), generated);
       expect(readFileSync(OUTPUT_URL, 'utf8')).toBe(generated);
     },
-    60_000,
+    // Sized against the work this test does, not against whatever else the
+    // suite is running: it burns the fluid in for 3,200 substeps, records 240
+    // frames of 576 particles through five substeps each, reconstructs 321
+    // tiles per frame, and then compares a five-megabyte string. Standalone
+    // that is about fifty seconds, and the old sixty-second budget expired
+    // under a full run — which reads as a determinism failure and is not one.
+    600_000,
   );
 });
