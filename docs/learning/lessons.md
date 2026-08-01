@@ -134,7 +134,15 @@ The general shape, worth more than the specifics: **a coverage floor that a stat
 
 **Then the water: 576 parcels at half mass.** On its own this does nothing (measured above); on top of the two changes it lifts the floor from one to five.
 
-Alone, the first two take the failure from 13 seconds of play to 45. Getting past a minute also needs the domain's river to start at z −32 instead of −29, and that is where it stops being self-contained: `riverfall-fluid-domain.test.ts` pins simulated water inside the drawn river footprint, which ends at −31.5. So the drawn river has to grow with it — a longer recipe, a seventeenth tile row, 326 cells instead of 321, and every pinned count and baseline behind that. That is the remaining work, and it is bounded rather than unknown.
+Alone, the first two take the failure from 13 seconds of play to 45.
+
+**Corrected the same day: the second of those three is illegal, and there is no clean subset.** Lengthening the visible source was measured against coverage and never against the domain's own rules, and the rules say no — `sourceRise.end[1] + clearance` must equal the drawn river's top, because the rise passes through opaque rock, and water shown inside rock is a worse defect than the one being fixed. Every other combination was then measured, and each one moves the failure rather than removing it:
+
+- **Pipe interaction alone, at 288 particles, is a regression:** 4 seconds, against 13 without it. Spreading the water evenly makes the river uniformly thin, where before it had dense clumps that happened to cover cells. It only pays with more water underneath it.
+- **Dropping the dead first tile row** — the drawn river reaches z −32 while no water is simulated behind z −29, so the row centred at −31 is drawn over nothing — reaches 30 seconds and then fails on the next row. Whichever row is first sits at the water's edge with half its support ball outside the water, so the problem relocates rather than closing.
+- **Slowing the inlet** so the head holds water starves mid-river instead: 7 seconds, failing at cell 04-07.
+
+So there is no self-contained fix to land, and the remaining decision is not a numerical one. The package is pipe interaction plus 576 parcels at half mass plus a choice about the river's head — shorten the drawn river to where water actually starts, move the spring upstream so water enters behind the first drawn tile, or accept one fewer tile row — and every version changes what the scene looks like, which makes it the owner's call rather than a tuning step. The measurements above are what each is worth.
 
 ## The live Riverfall runs out of surface coverage before it runs out of budget
 
