@@ -26,10 +26,10 @@ import {
   WINDMILL_PRODUCTION_TRACK_IDS_V1,
 } from '../../tools/studio/windmill-production-layout.js';
 import {
+  WINDMILL_MOVING_PLACEMENT_IDS,
   WINDMILL_PLACEMENT_IDS,
   WINDMILL_REPLAY_ID,
   WINDMILL_SCENE_ID,
-  WINDMILL_TRACK_IDS,
   inspectWindmillPurposeEvidence,
   mountWindmillStudio,
   readGeneratedWindmillEvidence,
@@ -64,16 +64,13 @@ export async function verifyWindmillSelectedPhysicalProof(
   const purpose = await inspectWindmillPurposeEvidence(page);
 
   expect(mounted.scene).toMatchObject({
-    schemaVersion: 'studio.scene/4',
+    schemaVersion: 'studio.scene/3',
     id: WINDMILL_SCENE_ID,
     label: 'Wind-powered trip mill',
-    poseReplay: {
-      id: WINDMILL_REPLAY_ID,
-      durationMs: WINDMILL_REPLAY_DURATION_MS,
-    },
   });
+  expect(mounted.scene).not.toHaveProperty('poseReplay');
   expect(mounted.placementIds).toEqual(WINDMILL_PLACEMENT_IDS);
-  expect(mounted.trackIds).toEqual(WINDMILL_TRACK_IDS);
+  expect(mounted.movingPlacementIds).toEqual(WINDMILL_MOVING_PLACEMENT_IDS);
   expect(mounted.privateCanvases).toBe(2);
   expect(mounted.defaultCamera.center[1]).toBe(0);
   const movedCenter = await setWindmillViewCenter(page, [
@@ -100,7 +97,7 @@ export async function verifyWindmillSelectedPhysicalProof(
     playback: 'once',
     frameCount: WINDMILL_REPLAY_FRAME_COUNT,
     durationMs: WINDMILL_REPLAY_DURATION_MS,
-    trackIds: WINDMILL_TRACK_IDS,
+    trackIds: WINDMILL_MOVING_PLACEMENT_IDS,
     provenance: {
       solver: { name: '@dimforge/rapier3d-compat', version: '0.19.3' },
       fixedTimestepMs: 1000 / 60,
@@ -394,14 +391,18 @@ export async function verifyWindmillSelectedPhysicalProof(
     'windmill:system-purpose:flour-accumulation-rule',
   ]);
 
+  // What the readout says about the mill, and what it must never say. The
+  // scene is editable — its live profile overrides no opening pose, so
+  // dragging a model in Adjust and rebuilding the world is coherent — but it
+  // is solved, and neither the status nor the editor may call it a recording.
   const root = page.locator('[data-windmill-focused]');
   await root.locator('[data-studio-tab="edit"]').click();
   await expect(root.getByText(
-    'This scene is driven by a consumer-supplied pose replay and is read-only in Studio.',
+    'This scene is driven by a consumer-supplied pose replay',
     { exact: false },
-  )).toBeVisible();
-  await expect(root.locator('.scene-editor')).toBeHidden();
-  const rejected = await page.evaluate(() => {
+  )).toBeHidden();
+  await expect(root.locator('.scene-editor')).toBeVisible();
+  const readout = await page.evaluate(() => {
     const focused = window as Window & {
       windmillFocused?: {
         readonly harness: NonNullable<Window['voxelStudio']>;
@@ -411,41 +412,11 @@ export async function verifyWindmillSelectedPhysicalProof(
     if (harness === undefined) {
       throw new Error('the focused Windmill mount disappeared');
     }
-    const before = structuredClone(harness.sceneState());
-    if (before === null) {
-      throw new Error('the focused Windmill scene state is absent');
-    }
-    let selectError = '';
-    let editError = '';
-    try {
-      harness.selectPlacement('windmill-rotor');
-    } catch (error) {
-      selectError = String(error);
-    }
-    try {
-      harness.editScene({
-        ...before,
-        placements: before.placements.map((placement) =>
-          placement.id === 'windmill-rotor'
-            ? {
-                ...placement,
-                at: [
-                  placement.at[0] + 1,
-                  placement.at[1],
-                  placement.at[2],
-                ],
-              }
-            : placement),
-      });
-    } catch (error) {
-      editError = String(error);
-    }
+    const live = harness.livePhysics();
     return {
-      before,
-      after: harness.sceneState(),
-      selected: harness.selectedPlacement(),
-      selectError,
-      editError,
+      available: live.available,
+      running: live.running,
+      hasReplay: harness.drawAt(0).scenePoseReplay !== null,
       status:
         document.querySelector('[data-windmill-focused] .status')
           ?.textContent ?? '',
@@ -454,15 +425,12 @@ export async function verifyWindmillSelectedPhysicalProof(
       )?.title ?? '',
     };
   });
-  expect(rejected.after).toEqual(rejected.before);
-  expect(rejected.selected).toBeNull();
-  expect(rejected.selectError).toContain('is read-only in Studio');
-  expect(rejected.editError)
-    .toContain('would diverge authored scene data or selection');
-  expect(rejected.status).toContain('consumer replay');
-  expect(rejected.status).toContain('read-only');
-  expect(rejected.statusTitle).toContain('@dimforge/rapier3d-compat 0.19.3');
-  expect(rejected.statusTitle).toContain('input sha256:');
-  expect(rejected.statusTitle).toContain('final sha256:');
+  expect(readout.available).toBe(true);
+  expect(readout.running).toBe(true);
+  expect(readout.hasReplay).toBe(false);
+  expect(readout.status).toContain('live physics · solved in browser');
+  expect(readout.status).not.toContain('consumer replay');
+  // A provenance title belongs to a recording, and there is no recording.
+  expect(readout.statusTitle).toBe('');
   expect(errors).toEqual([]);
 }

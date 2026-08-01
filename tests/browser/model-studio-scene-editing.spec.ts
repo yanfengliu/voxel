@@ -435,28 +435,18 @@ test('the studio announces surface conflicts for every scene it opens or edits',
   await page.goto(studioOrigin, { waitUntil: 'load' });
   await page.waitForFunction(() => typeof window.voxelStudio === 'object');
 
-  // The re-layout cleared this scene's still-lane debts, and the
-  // moving-vs-moving lane added on 2026-07-30 then found the one thing no gate
-  // had looked at: the product dents the collection bucket as it lands. It is
-  // pinned exactly rather than tolerated, here and in
-  // scene-conflict-report.test.ts, so the announcer is shown speaking that one
-  // line on screen and nothing else.
+  // The densest scene the shelf carries, checked on open. It used to announce
+  // two lines about recorded poses — a landing dent and the tilted pairs no
+  // pairwise test could judge — and both were properties of the recording. The
+  // machine solves live now and carries no recorded poses at all, so what has
+  // to be shown here is the announcer running the check on a heavy scene and
+  // reporting it clean, with the line kept off screen.
   await page.evaluate(() => { window.voxelStudio!.openScene('studio:scene:contrast-machines'); });
   await page.waitForFunction(() =>
     window.voxelStudio!.sceneSurfaceConflicts()?.status === 'ready');
   const machine = await page.evaluate(() => window.voxelStudio!.sceneSurfaceConflicts());
-  expect(machine?.conflicts[0]).toBe(
-    'collection-bucket (moving) and product-base (moving) co-exist in the same space '
-    + '(at least 0.029 world units deep)',
-  );
-  // The belt slats tilt as they wrap the drums, and two tilted recorded poses
-  // have no pairwise space test yet — the line says so instead of implying
-  // those pairs were judged clean.
-  expect(machine?.conflicts[1]).toMatch(
-    /^\d+ moving pairs could not be judged for shared space while both poses are tilted: /,
-  );
-  expect(machine?.conflicts).toHaveLength(2);
-  await expect(page.locator('.scene-conflicts')).toBeVisible();
+  expect(machine?.conflicts, machine?.conflicts.join(' | ')).toEqual([]);
+  await expect(page.locator('.scene-conflicts')).toBeHidden();
 
   // A clean editable scene stays quiet; committing a placement into another's
   // space makes the report speak immediately, and undo silences it again.

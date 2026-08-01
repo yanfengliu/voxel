@@ -195,6 +195,30 @@ test('held WASD moves continuously in camera-relative directions, stops on relea
     window.voxelStudio!.setViewAngles({ yawDegrees: 0, pitchDegrees: 30 });
   });
 
+  const finalState = await page.evaluate(() => ({
+    scene: window.voxelStudio!.sceneState(),
+    selected: window.voxelStudio!.selectedPlacement(),
+  }));
+  expect(finalState.scene).toEqual(originalScene);
+  expect(finalState.selected).toBeNull();
+
+  // Camera keys and the scene transport are separate owners of the keyboard,
+  // and holding one must not stall the other. Machine Works cannot make that
+  // point any more: it solves live, so it has no timeline to run. The claim
+  // needs a scene with authored motion, and the studio is asked which one has
+  // it rather than a scene id being guessed here.
+  const animatedSceneId = await page.evaluate(() => {
+    for (const info of window.voxelStudio!.scenes()) {
+      window.voxelStudio!.openScene(info.id);
+      if (window.voxelStudio!.sceneHasMotion()) return info.id;
+    }
+    throw new Error('the catalog offers no scene with authored motion');
+  });
+  expect(animatedSceneId).toBeTruthy();
+  await page.evaluate(() => {
+    window.voxelStudio!.setViewAngles({ yawDegrees: 0, pitchDegrees: 30 });
+    window.voxelStudio!.setViewCenter([0, 0, 0]);
+  });
   const playbackStart = await viewCenter(page);
   await page.evaluate(() => {
     const harness = window.voxelStudio!;
@@ -212,13 +236,6 @@ test('held WASD moves continuously in camera-relative directions, stops on relea
     await page.keyboard.up('w');
     await page.evaluate(() => { window.voxelStudio!.pause(); });
   }
-
-  const finalState = await page.evaluate(() => ({
-    scene: window.voxelStudio!.sceneState(),
-    selected: window.voxelStudio!.selectedPlacement(),
-  }));
-  expect(finalState.scene).toEqual(originalScene);
-  expect(finalState.selected).toBeNull();
   await expect(page.locator('.view-error')).toBeHidden();
   expect(errors).toEqual([]);
 });

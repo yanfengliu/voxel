@@ -20,7 +20,6 @@ import {
   measureMachineWorksHandoffEvidence,
   mountMachineWorksSubset,
   type BrowserReplayModule,
-  type BrowserReplaySamplerModule,
   type BrowserCatalogModule,
   type BrowserStudioModule,
 } from './machine-works-browser-support.js';
@@ -35,7 +34,6 @@ interface BrowserRuntimeModule {
 
 const STUDIO_ROOT = resolve('tools/studio');
 const MACHINE_WORKS_SCENE_ID = 'studio:scene:contrast-machines';
-const REPLAY_DURATION_MS = 30_000;
 const CORE_DESCENDING_TIME_MS = 330 * MACHINE_WORKS_FIXED_STEP_MS;
 const CAP_DESCENDING_TIME_MS = 600 * MACHINE_WORKS_FIXED_STEP_MS;
 const CORE_SEATED_TIME_MS = MACHINE_WORKS_TICKS.coreAttached * MACHINE_WORKS_FIXED_STEP_MS;
@@ -46,8 +44,16 @@ const CAP_SEATED_TIME_MS = MACHINE_WORKS_TICKS.assembled * MACHINE_WORKS_FIXED_S
 const CAP_RETRACTED_TIME_MS = (
   MACHINE_WORKS_TICKS.assembled + 60
 ) * MACHINE_WORKS_FIXED_STEP_MS;
-const CONTACT_EVENT_TIME_MS = 20_866.666666666668;
-const COLLECTED_EVENT_TIME_MS = 23_866.666666666668;
+/**
+ * Where the live machine is in its own cycle, in solver ticks.
+ *
+ * Measured from the live profile: the carrier is well clear of the entry by
+ * three seconds, the product is welded and riding by twelve, and the tip has
+ * dropped it in the bucket and everything has settled by twenty-eight.
+ */
+const CARRIER_UNDER_WAY_TICKS = 180;
+const ASSEMBLED_TICKS = 720;
+const COLLECTED_TICKS = 1_680;
 const OUTPUT_DOCK_TIME_MS = MACHINE_WORKS_TICKS.released * MACHINE_WORKS_FIXED_STEP_MS;
 const CORE_PICKUP_CAMERA = {
   center: groundOrbitCenterForSubject([-8.2, 17, 0], 335, 40),
@@ -128,6 +134,64 @@ async function mountMachineWorks(page: Page): Promise<void> {
     harness.setSceneAnimation(false);
     harness.drawAt(0);
   }, MACHINE_WORKS_SCENE_ID);
+  // The live world builds asynchronously, and until it does the stage is still
+  // drawing authored poses. Pause it the instant it exists: the frame loop
+  // starts on its own, and ticks that slip by between here and the first
+  // settle are the difference between a reproducible state and a nearly
+  // reproducible one.
+  await page.waitForFunction(() => window.voxelStudio!.livePhysics().running);
+  await page.evaluate(() => { window.voxelStudio!.settleLive(0); });
+}
+
+/**
+ * Advances the machine's own solver to an exact tick.
+ *
+ * A live scene has no timeline to seek, so a reproducible moment is a step
+ * count. The target is absolute and the arithmetic happens in the page: a
+ * delta computed out here is stale by whatever the frame loop ran during the
+ * round trip. Settling also pauses the world, which is what lets the next
+ * screenshot photograph the state just reached instead of whatever the loop
+ * moved on to.
+ */
+async function settleMachineWorksTo(page: Page, targetTick: number): Promise<void> {
+  await page.evaluate(async (target) => {
+    const harness = window.voxelStudio!;
+    const stepped = harness.livePhysics().stepped;
+    if (stepped > target) {
+      throw new Error(
+        `Cannot settle Machine Works back to tick ${String(target)}: its live `
+        + `world has already stepped ${String(stepped)} times, and a solver `
+        + 'runs forward only.',
+      );
+    }
+    harness.settleLive(target - stepped);
+    await new Promise<void>((settle) => {
+      requestAnimationFrame(() => requestAnimationFrame(() => { settle(); }));
+    });
+  }, targetTick);
+}
+
+/**
+ * Points the camera at a subject the solver placed, rather than at a spot
+ * chosen in advance. The machine is long and its product is small, so a fixed
+ * wide view photographs the machine and says nothing about what it made.
+ */
+async function frameLiveSubject(
+  page: Page,
+  subject: readonly [number, number, number],
+  yawDegrees: number,
+  pitchDegrees: number,
+  viewHeight: number,
+): Promise<void> {
+  await page.evaluate(({ center, view }) => {
+    const harness = window.voxelStudio!;
+    harness.setViewCenter(center);
+    harness.setViewAngles(view);
+    harness.drawAt(0);
+  }, {
+    center: groundOrbitCenterForSubject(subject, yawDegrees, pitchDegrees),
+    view: { yawDegrees, pitchDegrees, viewHeight },
+  });
 }
 
 const imageHash = async (page: Page): Promise<string> =>
@@ -135,7 +199,7 @@ const imageHash = async (page: Page): Promise<string> =>
     .update(await page.locator('.scene-canvas').screenshot({ animations: 'disabled' }))
     .digest('hex');
 
-test('Machine Works presents its minimal phase flags and belt plus every committed event before resetting at 30 seconds', async ({ page }) => {
+test('Machine Works drives its belt, assembles a product, and drops it in the bucket, solved live', async ({ page }) => {
   const errors: string[] = [];
   page.on('pageerror', (error) => errors.push(error.message));
   page.on('console', (message) => {
@@ -149,233 +213,100 @@ test('Machine Works presents its minimal phase flags and belt plus every committ
       '}',
     ].join('\n'),
   });
+
+  const opened = await page.evaluate(() => {
+    const harness = window.voxelStudio!;
+    const live = harness.livePhysics();
+    return {
+      hasReplay: harness.drawAt(0).scenePoseReplay !== null,
+      available: live.available,
+      bodies: live.bodies,
+      joints: live.joints,
+      status: document.querySelector<HTMLElement>('.status')?.textContent ?? '',
+      statusTitle: document.querySelector<HTMLElement>('.status')?.title ?? '',
+      render: harness.drawAt(0).sceneRender,
+    };
+  });
+  // The claim this scene makes now: solved here, not decoded. A recording's
+  // provenance title belongs to a recording, so a live scene carries none.
+  expect(opened.hasReplay).toBe(false);
+  expect(opened.available).toBe(true);
+  expect(opened.status).toContain('live physics · solved in browser');
+  expect(opened.status).not.toContain('consumer replay');
+  expect(opened.statusTitle).toBe('');
+  expect(opened.render).toMatchObject({
+    instances: MACHINE_WORKS_CONVEYOR_V1.slatCount + 16,
+    animatedBatches: 0,
+    animatedInstances: 0,
+  });
+
+  const openingHash = await imageHash(page);
   await expect(page.locator('.scene-canvas')).toHaveScreenshot(
     'model-studio-machine-works-guides.png',
     { animations: 'disabled', maxDiffPixelRatio: 0.002 },
   );
 
-  const replay = await page.evaluate(async () => {
-    const replayUrl = new URL('generated-machine-works-replay.ts', window.location.href).href;
-    const replayModule = await import(replayUrl) as unknown as BrowserReplayModule;
-    const source = replayModule.MACHINE_WORKS_POSE_REPLAY;
-    return {
-      frameCount: source.frameCount,
-      trackCount: source.tracks.length,
-      fixedTimestepMs: source.provenance.fixedTimestepMs,
-      durationMs: source.frameCount * source.provenance.fixedTimestepMs,
-      events: source.events.map((event) => ({
-        id: event.id,
-        type: event.type,
-        timeMs: event.timeMs,
-        placementId: event.placementId,
-      })),
-    };
-  });
-
-  expect(replay).toMatchObject({
-    frameCount: 1_800,
-    trackCount: 71,
-    fixedTimestepMs: 1_000 / 60,
-    events: [
-      {
-        id: 'machine-works:assembled',
-        type: 'assembled',
-        timeMs: 11_666.666666666668,
-        placementId: 'product-base',
-      },
-      {
-        id: 'machine-works:released',
-        type: 'released',
-        timeMs: 18_333.333333333336,
-        placementId: 'assembly-carriage',
-      },
-      {
-        id: 'machine-works:contact',
-        type: 'contact',
-        placementId: 'product-base',
-      },
-      {
-        id: 'machine-works:collected',
-        type: 'collected',
-        placementId: 'product-base',
-      },
-    ],
-  });
-  expect(replay.durationMs).toBeCloseTo(REPLAY_DURATION_MS, 9);
-  expect(replay.events[2]?.timeMs).toBe(CONTACT_EVENT_TIME_MS);
-  expect(replay.events[3]?.timeMs).toBe(COLLECTED_EVENT_TIME_MS);
-
-  const phaseHashes = [await imageHash(page)];
-  await page.evaluate(() => window.voxelStudio!.drawAt(3_000));
-  phaseHashes.push(await imageHash(page));
+  // The belt drives: the carrier leaves the entry under contact and friction,
+  // and the drums it rides turn. Nothing here is commanded into place.
+  const opening = await page.evaluate(() =>
+    window.voxelStudio!.livePhysics().positions);
+  await settleMachineWorksTo(page, CARRIER_UNDER_WAY_TICKS);
+  const underWay = await page.evaluate(() => ({
+    stepped: window.voxelStudio!.livePhysics().stepped,
+    positions: window.voxelStudio!.livePhysics().positions,
+  }));
+  expect(underWay.stepped).toBe(CARRIER_UNDER_WAY_TICKS);
+  expect(underWay.positions['assembly-carriage']![0])
+    .toBeGreaterThan(opening['assembly-carriage']![0] + 1);
+  const beltDrivingHash = await imageHash(page);
+  expect(beltDrivingHash).not.toBe(openingHash);
   await expect(page.locator('.scene-canvas')).toHaveScreenshot(
     'model-studio-machine-works-belt-driving.png',
     { animations: 'disabled', maxDiffPixelRatio: 0.002 },
   );
-  const defaultCamera = await page.evaluate(() => ({
-    view: window.voxelStudio!.viewState(),
-    center: window.voxelStudio!.viewCenter(),
-  }));
-  await page.evaluate(() => {
-    const harness = window.voxelStudio!;
-    harness.setViewCenter([-27.5, 0, 5]);
-    harness.setViewAngles({ yawDegrees: 340, pitchDegrees: 35, viewHeight: 20 });
-    harness.drawAt(0);
-  });
-  const cogPhaseAtRest = await imageHash(page);
+
+  // Assembled: core over base, cap over core, all three riding together.
+  await settleMachineWorksTo(page, ASSEMBLED_TICKS);
+  const assembled = await page.evaluate(() =>
+    window.voxelStudio!.livePhysics().positions);
+  expect(assembled['product-core']![1])
+    .toBeGreaterThan(assembled['product-base']![1]);
+  expect(assembled['product-cap']![1])
+    .toBeGreaterThan(assembled['product-core']![1]);
+  for (const id of ['product-core', 'product-cap'] as const) {
+    expect(Math.abs(assembled[id]![0] - assembled['product-base']![0]),
+      `${id} rides over the base`).toBeLessThan(1);
+  }
+  // Framed on the carrier itself, from where it actually is. The wide view
+  // draws the whole machine and the stack in it is a few pixels tall, which
+  // proves the machine exists and nothing about the product.
+  await frameLiveSubject(page, assembled['product-base']!, 335, 35, 30);
+  const assembledHash = await imageHash(page);
   await expect(page.locator('.scene-canvas')).toHaveScreenshot(
-    'model-studio-machine-works-drive-cog-phase-zero.png',
+    'model-studio-machine-works-live-assembled.png',
     { animations: 'disabled', maxDiffPixelRatio: 0.002 },
   );
-  await page.evaluate(() => {
-    window.voxelStudio!.drawAt(3_000);
-  });
-  const cogPhaseUnderDrive = await imageHash(page);
+
+  // Collected: the carrier tips and gravity drops the welded product into the
+  // bucket, which is where it stays.
+  await settleMachineWorksTo(page, COLLECTED_TICKS);
+  const collected = await page.evaluate(() =>
+    window.voxelStudio!.livePhysics().positions);
+  for (const id of ['product-base', 'product-core', 'product-cap'] as const) {
+    expect(collected[id]![1], `${id} fell out of the carrier`)
+      .toBeLessThan(assembled[id]![1] - 1);
+    expect(collected[id]![1], `${id} did not fall through the world`)
+      .toBeGreaterThan(0);
+  }
+  // Framed on the bucket, because that is the claim.
+  await frameLiveSubject(page, collected['product-base']!, 320, 62, 26);
+  const collectedHash = await imageHash(page);
   await expect(page.locator('.scene-canvas')).toHaveScreenshot(
-    'model-studio-machine-works-drive-cog-phase-moving.png',
+    'model-studio-machine-works-live-collected.png',
     { animations: 'disabled', maxDiffPixelRatio: 0.002 },
   );
-  expect(cogPhaseUnderDrive).not.toBe(cogPhaseAtRest);
-  const phaseEvidence = await page.evaluate(async () => {
-    const replayUrl = new URL('generated-machine-works-replay.ts', window.location.href).href;
-    const samplerUrl = new URL('scene-pose-replay-sampling.ts', window.location.href).href;
-    const replayModule = await import(replayUrl) as unknown as BrowserReplayModule;
-    const samplerModule = await import(samplerUrl) as unknown as BrowserReplaySamplerModule;
-    const sample = (timeMs: number) => {
-      const placements = samplerModule.sampleValidatedScenePoseReplayV1(
-        replayModule.MACHINE_WORKS_POSE_REPLAY,
-        timeMs,
-      ).placements;
-      const placement = (id: string) => {
-        const found = placements.find(({ placementId }) => placementId === id);
-        if (found === undefined) {
-          throw new Error(`Machine Works focused phase evidence could not find '${id}'.`);
-        }
-        return found;
-      };
-      return {
-        west: placement('belt-drive-west').quaternion,
-        east: placement('belt-drive-east').quaternion,
-        exposedPhaseFlags: [
-          placement('belt-cog-west-near').quaternion,
-          placement('belt-cog-west-far').quaternion,
-          placement('belt-cog-east-near').quaternion,
-          placement('belt-cog-east-far').quaternion,
-        ],
-        slat: placement('belt-slat-01').translation,
-      };
-    };
-    return { atRest: sample(0), underDrive: sample(3_000) };
-  });
-  const quaternionDot = (
-    left: readonly number[],
-    right: readonly number[],
-  ): number => left.reduce((sum, component, index) =>
-    sum + component * right[index]!, 0);
-  expect(Math.abs(quaternionDot(
-    phaseEvidence.atRest.west,
-    phaseEvidence.underDrive.west,
-  ))).toBeLessThan(0.999);
-  for (const sample of [phaseEvidence.atRest, phaseEvidence.underDrive]) {
-    expect(Math.abs(quaternionDot(sample.west, sample.east))).toBeCloseTo(1, 5);
-    sample.exposedPhaseFlags.forEach((flag, index) => {
-      expect(flag).toEqual(index < 2 ? sample.west : sample.east);
-    });
-  }
-  expect(Math.hypot(
-    phaseEvidence.underDrive.slat[0] - phaseEvidence.atRest.slat[0],
-    phaseEvidence.underDrive.slat[1] - phaseEvidence.atRest.slat[1],
-    phaseEvidence.underDrive.slat[2] - phaseEvidence.atRest.slat[2],
-  )).toBeGreaterThan(0.1);
-  await page.evaluate(({ view, center }) => {
-    const harness = window.voxelStudio!;
-    harness.setViewCenter(center);
-    harness.setViewAngles(view);
-    harness.drawAt(0);
-  }, defaultCamera);
-  const restoredPhaseZeroHash = await imageHash(page);
-  for (const event of replay.events) {
-    const evidence = await page.evaluate((sample) => {
-      const frame = window.voxelStudio!.drawAt(sample.timeMs);
-      const status = document.querySelector<HTMLElement>('.status');
-      return {
-        replay: frame.scenePoseReplay,
-        render: frame.sceneRender,
-        statusText: status?.textContent ?? '',
-        statusTitle: status?.title ?? '',
-      };
-    }, event);
-
-    expect(evidence.replay?.durationMs).toBe(REPLAY_DURATION_MS);
-    expect(evidence.replay).toMatchObject({
-      replayId: 'studio:pose-replay:machine-works',
-      sceneId: MACHINE_WORKS_SCENE_ID,
-      provenance: {
-        solver: { name: '@dimforge/rapier3d-compat', version: '0.19.3' },
-        fixedTimestepMs: 1_000 / 60,
-        gravity: [0, -9.81, 0],
-        inputHash: expect.stringMatching(/^sha256:[a-f0-9]{64}$/),
-        finalHash: expect.stringMatching(/^sha256:[a-f0-9]{64}$/),
-      },
-      sample: {
-        wrappedTimeMs: event.timeMs,
-        latestEvent: event,
-      },
-    });
-    expect(evidence.render).toMatchObject({
-      instances: MACHINE_WORKS_CONVEYOR_V1.slatCount + 16,
-      animatedBatches: 0,
-      animatedInstances: 0,
-    });
-    expect(evidence.render?.instanceBatches).toBeGreaterThan(0);
-    expect(evidence.render?.drawCalls).toBeGreaterThan(0);
-    expect(evidence.render?.triangles).toBeGreaterThan(0);
-    expect(evidence.statusText).toContain('consumer replay');
-    expect(evidence.statusText).toContain('read-only');
-    expect(evidence.statusText).toContain(
-      `${event.type} ${(event.timeMs / 1_000).toFixed(2)} s`,
-    );
-    expect(evidence.statusTitle).toContain('@dimforge/rapier3d-compat 0.19.3');
-    expect(evidence.statusTitle).toContain('input sha256:');
-    expect(evidence.statusTitle).toContain('final sha256:');
-    phaseHashes.push(await imageHash(page));
-    await expect(page.locator('.scene-canvas')).toHaveScreenshot(
-      `model-studio-machine-works-${event.type}.png`,
-      { animations: 'disabled', maxDiffPixelRatio: 0.002 },
-    );
-  }
-  expect(new Set(phaseHashes).size).toBe(phaseHashes.length);
-
-  const held = await page.evaluate((timeMs) =>
-    window.voxelStudio!.drawAt(timeMs).scenePoseReplay, REPLAY_DURATION_MS - 1);
-  const heldHash = await imageHash(page);
-  expect(held?.sample).toMatchObject({
-    wrappedTimeMs: REPLAY_DURATION_MS - 1,
-    frameA: 1_799,
-    frameB: 1_799,
-    alpha: 0,
-    latestEvent: { id: 'machine-works:collected', type: 'collected' },
-  });
-
-  const reset = await page.evaluate((timeMs) => {
-    const replayStatus = window.voxelStudio!.drawAt(timeMs).scenePoseReplay;
-    return {
-      replayStatus,
-      statusText: document.querySelector<HTMLElement>('.status')?.textContent ?? '',
-    };
-  }, REPLAY_DURATION_MS);
-  const resetHash = await imageHash(page);
-  expect(reset.replayStatus?.sample).toEqual({
-    playbackTimeMs: 0,
-    wrappedTimeMs: 0,
-    frameA: 0,
-    frameB: 1,
-    alpha: 0,
-    latestEvent: null,
-  });
-  expect(reset.statusText).toContain('replay staged');
-  expect(heldHash).not.toBe(phaseHashes[0]);
-  expect(resetHash).toBe(restoredPhaseZeroHash);
+  expect(new Set([openingHash, beltDrivingHash, assembledHash, collectedHash]).size)
+    .toBe(4);
   expect(errors).toEqual([]);
 });
 
@@ -686,33 +617,48 @@ test('Machine Works diagnostic projection exposes the internal slat and stepped-
   const diagnosticEvidence = await page.evaluate(async (sceneId) => {
     const studioUrl = new URL('studio-app.ts', window.location.href).href;
     const catalogUrl = new URL('catalog.ts', window.location.href).href;
+    const replayUrl =
+      new URL('generated-machine-works-replay.ts', window.location.href).href;
     const { mountStudio } = await import(studioUrl) as unknown as BrowserStudioModule;
     const { createStudioCatalog } = await import(catalogUrl) as unknown as BrowserCatalogModule;
+    const { MACHINE_WORKS_POSE_REPLAY: sourceReplay } =
+      await import(replayUrl) as unknown as BrowserReplayModule;
     const sourceCatalog = createStudioCatalog();
     const sourceScene = sourceCatalog.scenes?.find(({ id }) => id === sceneId);
-    if (sourceScene?.schemaVersion !== 'studio.scene/4') {
+    if (sourceScene === undefined) {
       throw new Error(
-        `Machine Works diagnostic expected V4 scene '${sceneId}' in the live catalog.`,
+        `Machine Works diagnostic expected scene '${sceneId}' in the live catalog.`,
       );
     }
-    const replayId = sourceScene.poseReplay.id;
-    const sourceReplay = sourceCatalog.scenePoseReplays?.[replayId];
-    if (sourceReplay === undefined) {
-      throw new Error(
-        `Machine Works diagnostic expected pose replay '${replayId}' in the live catalog.`,
-      );
-    }
+    // A held projection, staged by this test from the committed determinism
+    // trace. The shelf's machine solves live; this rig exists because the wrap
+    // it photographs is a thing to look at rather than a thing to watch.
+    const replayId = 'studio:pose-replay:machine-works';
+    // Its own id, so the shelf machine's live profile does not attach and
+    // start solving under a projection meant to be held still.
+    const diagnosticSceneId = 'studio:scene:machine-works-drum-wrap-rig';
     const placements = sourceScene.placements.filter(({ model }) =>
       model === 'studio:machine-works:conveyor-slat'
         || model === 'studio:machine-works:drive-drum');
     const placementIds = new Set(placements.map(({ id }) => id));
-    const diagnosticScene = { ...sourceScene, placements };
+    const diagnosticScene = {
+      ...sourceScene,
+      schemaVersion: 'studio.scene/4' as const,
+      id: diagnosticSceneId,
+      placements,
+      poseReplay: {
+        id: replayId,
+        durationMs:
+          sourceReplay.frameCount * sourceReplay.provenance.fixedTimestepMs,
+      },
+    };
     const diagnosticCatalog: StudioCatalogV1 = {
       ...sourceCatalog,
       scenes: [diagnosticScene],
       scenePoseReplays: {
         [replayId]: {
           ...sourceReplay,
+          sceneId: diagnosticSceneId,
           tracks: sourceReplay.tracks.filter(({ placementId }) =>
             placementIds.has(placementId)),
           events: [],
@@ -794,10 +740,16 @@ test('Machine Works diagnostic projection exposes the internal slat and stepped-
 test('Machine Works rejects authored selection and edits while a real left drag only orbits', async ({ page }) => {
   await mountMachineWorks(page);
   await page.locator('[data-studio-tab="edit"]').click();
+  // Read-only because the solver decides where these bodies sit, not because
+  // anything is being decoded. Both notes exist; only the live one belongs here.
   await expect(page.getByText(
-    'This scene is driven by a consumer-supplied pose replay and is read-only in Studio.',
+    'This scene poses its own models from a live physics profile and is read-only in Studio.',
     { exact: false },
   )).toBeVisible();
+  await expect(page.getByText(
+    'This scene is driven by a consumer-supplied pose replay',
+    { exact: false },
+  )).toBeHidden();
   await expect(page.locator('.scene-editor')).toBeHidden();
   await expect(page.locator('.toggles .toggle').filter({ hasText: 'snap to grid' })).toBeHidden();
 
@@ -834,9 +786,10 @@ test('Machine Works rejects authored selection and edits while a real left drag 
   expect(rejected.selected).toBeNull();
   expect(rejected.after).toEqual(rejected.before);
   expect(rejected.selectError).toContain(
-    "Scene 'studio:scene:contrast-machines' is driven by consumer pose replay "
-    + "'studio:pose-replay:machine-works' and is read-only in Studio",
+    "Scene 'studio:scene:contrast-machines' poses its own models from a live "
+    + 'physics profile and is read-only in Studio',
   );
+  expect(rejected.selectError).not.toContain('pose replay');
   expect(rejected.selectError).toContain("selecting authored placement 'product-base'");
   expect(rejected.editError).toContain('is read-only in Studio');
   expect(rejected.editError).toContain('would diverge authored scene data or selection');
@@ -863,9 +816,7 @@ test('Machine Works rejects authored selection and edits while a real left drag 
   expect(afterDrag.outlineLines).toBe(0);
   expect(afterDrag.view.yawDegrees).not.toBe(rejected.view.yawDegrees);
   expect(afterDrag.view.pitchDegrees).not.toBe(rejected.view.pitchDegrees);
-  await page.evaluate(() => {
-    window.voxelStudio!.drawAt(4_333.333333333334);
-  });
+  await settleMachineWorksTo(page, CARRIER_UNDER_WAY_TICKS);
   await page.addStyleTag({
     content: [
       '.viewchip, .toggles, .stagehint, .grid-marks, .highlight-marks {',
@@ -877,11 +828,10 @@ test('Machine Works rejects authored selection and edits while a real left drag 
     'model-studio-machine-works-guides-side.png',
     { animations: 'disabled', maxDiffPixelRatio: 0.002 },
   );
-  await page.evaluate((collectedTimeMs) => {
-    const harness = window.voxelStudio!;
-    harness.setViewAngles({ yawDegrees: 45, pitchDegrees: 65 });
-    harness.drawAt(collectedTimeMs);
-  }, COLLECTED_EVENT_TIME_MS);
+  await page.evaluate(() => {
+    window.voxelStudio!.setViewAngles({ yawDegrees: 45, pitchDegrees: 65 });
+  });
+  await settleMachineWorksTo(page, COLLECTED_TICKS);
   await expect(page.locator('.scene-canvas')).toHaveScreenshot(
     'model-studio-machine-works-collected-overhead.png',
     { animations: 'disabled', maxDiffPixelRatio: 0.002 },
@@ -893,7 +843,7 @@ test('disposing a private Machine Works mount releases both render runtimes and 
   await page.waitForFunction(() => typeof window.voxelStudio === 'object');
   const runtimePath = `/@fs/${resolve('src/three/index.ts').replaceAll('\\', '/')}`;
 
-  const evidence = await page.evaluate(async ({ runtimeModulePath, sceneId, collectedTimeMs }) => {
+  const evidence = await page.evaluate(async ({ runtimeModulePath, sceneId }) => {
     const studioUrl = new URL('studio-app.ts', window.location.href).href;
     const catalogUrl = new URL('catalog.ts', window.location.href).href;
     const { mountStudio } = await import(studioUrl) as unknown as BrowserStudioModule;
@@ -923,7 +873,7 @@ test('disposing a private Machine Works mount releases both render runtimes and 
       });
       studio.harness.openScene(sceneId);
       studio.harness.setSceneAnimation(false);
-      const live = studio.harness.drawAt(collectedTimeMs);
+      const live = studio.harness.drawAt(0);
       const privateCanvasCount = root.querySelectorAll('canvas').length;
       studio.dispose();
       const afterFirstDispose = {
@@ -948,13 +898,12 @@ test('disposing a private Machine Works mount releases both render runtimes and 
   }, {
     runtimeModulePath: runtimePath,
     sceneId: MACHINE_WORKS_SCENE_ID,
-    collectedTimeMs: COLLECTED_EVENT_TIME_MS,
   });
 
-  expect(evidence.live.scenePoseReplay?.sample?.latestEvent).toMatchObject({
-    id: 'machine-works:collected',
-    type: 'collected',
-  });
+  // A live scene decodes nothing, so the frame this disposal test drew carries
+  // no replay status. It still has to be a real drawn frame, which is what the
+  // resource counts below establish.
+  expect(evidence.live.scenePoseReplay).toBeNull();
   expect(evidence.live.sceneRender?.materialResources).toBeGreaterThan(0);
   expect(evidence.live.sceneRender?.geometryResources).toBeGreaterThan(0);
   expect(evidence.live.sceneRender?.rendererGeometries).toBeGreaterThan(0);

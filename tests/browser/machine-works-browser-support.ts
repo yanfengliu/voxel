@@ -50,6 +50,24 @@ export interface MachineWorksSubsetOptions {
 }
 
 const MACHINE_WORKS_SCENE_ID = 'studio:scene:contrast-machines';
+/**
+ * The determinism trace these close-up rigs pose their parts from.
+ *
+ * It is the same id the fixture generates, and deliberately not read from the
+ * catalog: the shelf's machine solves live and ships no recording, so a rig
+ * that wants held poses reads the committed trace itself.
+ */
+const MACHINE_WORKS_RIG_REPLAY_ID = 'studio:pose-replay:machine-works';
+/**
+ * The rig's own scene id, deliberately not the shelf machine's.
+ *
+ * Sharing the machine's id also shares its live physics profile: the studio
+ * would build a solver world, start a frame loop, and suspend the replay pose
+ * lane, so these close-ups would photograph a running machine instead of the
+ * held instant they are about. Borrowing the placements is fine; borrowing the
+ * identity is not.
+ */
+const MACHINE_WORKS_RIG_SCENE_ID = 'studio:scene:machine-works-held-rig';
 // The committed replay is Float32-packed; one-thousandth-world-unit authored
 // coincidence can accumulate a few additional microunits after port rotation.
 export const MACHINE_WORKS_PORT_COINCIDENCE_TOLERANCE = 0.0011;
@@ -122,21 +140,27 @@ export async function mountMachineWorksSubset(
   page: Page,
   options: MachineWorksSubsetOptions,
 ): Promise<{ readonly placementIds: readonly string[]; readonly trackIds: readonly string[] }> {
-  return page.evaluate(async ({ sceneId, subset }) => {
+  return page.evaluate(async ({ sceneId, rigSceneId, replayId, subset }) => {
     const studioUrl = new URL('studio-app.ts', window.location.href).href;
     const catalogUrl = new URL('catalog.ts', window.location.href).href;
+    const replayUrl =
+      new URL('generated-machine-works-replay.ts', window.location.href).href;
     const { mountStudio } = await import(studioUrl) as unknown as BrowserStudioModule;
     const { createStudioCatalog } = await import(catalogUrl) as unknown as BrowserCatalogModule;
+    const { MACHINE_WORKS_POSE_REPLAY: sourceReplay } =
+      await import(replayUrl) as unknown as BrowserReplayModule;
     const sourceCatalog = createStudioCatalog();
     const sourceScene = sourceCatalog.scenes?.find(({ id }) => id === sceneId);
-    if (sourceScene?.schemaVersion !== 'studio.scene/4') {
-      throw new Error(`Machine Works focused evidence needs V4 scene '${sceneId}'.`);
+    if (sourceScene === undefined) {
+      throw new Error(`Machine Works focused evidence needs scene '${sceneId}'.`);
     }
-    const replayId = sourceScene.poseReplay.id;
-    const sourceReplay = sourceCatalog.scenePoseReplays?.[replayId];
-    if (sourceReplay === undefined) {
-      throw new Error(`Machine Works focused evidence needs replay '${replayId}'.`);
-    }
+    // The shelf's machine solves live, and this rig is not it. These are
+    // close-up geometry proofs — does the pickup face actually contact, does
+    // the key enter empty socket clearance — and they need the parts held
+    // still at named instants, which a running solver cannot offer. So the rig
+    // stages its own private scene from the committed determinism trace: the
+    // placements come from the live scene, the poses from the fixture. No
+    // catalog scene is involved in playing anything back.
     const selectedIds = new Set(subset.placementIds);
     const selectedTrackIds = new Set(subset.trackedPlacementIds);
     const placements = sourceScene.placements.filter(({ id }) => selectedIds.has(id));
@@ -150,12 +174,27 @@ export async function mountMachineWorksSubset(
         + `${String(placements.length)} and ${String(tracks.length)}.`,
       );
     }
-    const focusedScene = { ...sourceScene, placements };
+    const focusedScene = {
+      ...sourceScene,
+      schemaVersion: 'studio.scene/4' as const,
+      id: rigSceneId,
+      placements,
+      poseReplay: {
+        id: replayId,
+        durationMs:
+          sourceReplay.frameCount * sourceReplay.provenance.fixedTimestepMs,
+      },
+    };
     const focusedCatalog: StudioCatalogV1 = {
       ...sourceCatalog,
       scenes: [focusedScene],
       scenePoseReplays: {
-        [replayId]: { ...sourceReplay, tracks, events: [] },
+        [replayId]: {
+          ...sourceReplay,
+          sceneId: rigSceneId,
+          tracks,
+          events: [],
+        },
       },
     };
     const root = document.createElement('div');
@@ -178,7 +217,12 @@ export async function mountMachineWorksSubset(
       placementIds: placements.map(({ id }) => id),
       trackIds: tracks.map(({ placementId }) => placementId),
     };
-  }, { sceneId: MACHINE_WORKS_SCENE_ID, subset: options });
+  }, {
+    sceneId: MACHINE_WORKS_SCENE_ID,
+    rigSceneId: MACHINE_WORKS_RIG_SCENE_ID,
+    replayId: MACHINE_WORKS_RIG_REPLAY_ID,
+    subset: options,
+  });
 }
 
 export async function disposeMachineWorksSubset(page: Page): Promise<void> {

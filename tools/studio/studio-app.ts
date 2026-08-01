@@ -274,6 +274,23 @@ function isSelfPosedScene(scene: SceneV1 | null): boolean {
 }
 
 /**
+ * True for a scene the solver runs in this browser.
+ *
+ * Deliberately a different question from `isSelfPosedScene`, which asks
+ * whether the authored placements still mean anything and so decides
+ * read-only. A scene can be solved live and still be editable — the mill is:
+ * its profile overrides no opening pose, so dragging a model in Adjust and
+ * rebuilding the world is a coherent thing to do. Conflating the two left the
+ * mill's readout saying nothing at all about being solved, which is the one
+ * thing about it worth saying.
+ */
+function isLiveSolvedScene(scene: SceneV1 | null): boolean {
+  return scene !== null
+    && scene.schemaVersion !== VOXEL_SCENE_SCHEMA_V4
+    && LIVE_PHYSICS_PROFILES_V1[scene.id] !== undefined;
+}
+
+/**
  * True only for a scene that plays back a recording. Self-posed is not
  * the same thing: a live-physics scene computes its opening poses and
  * then solves every frame in the browser, and labelling that a replay
@@ -1786,7 +1803,7 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
     const lightCount = scene.lights?.length ?? 0;
     const hasMotion = sceneSession?.hasMotion() === true;
     const recorded = isRecordedReplayScene(scene);
-    const liveSolved = !recorded && isSelfPosedScene(scene);
+    const liveSolved = isLiveSolvedScene(scene);
     const replay = recorded ? sceneSession?.poseReplayStatus() : null;
     const latest = replay?.sample?.latestEvent;
     const replaySuffix = recorded

@@ -16,8 +16,16 @@ import {
 } from '../../tools/studio/windmill-production-layout.js';
 
 export const WINDMILL_REPLAY_ID = WINDMILL_POSE_REPLAY_ID;
-/** Replay track order: the four recorded bodies, then the authored props. */
-export const WINDMILL_TRACK_IDS = Object.freeze([
+/**
+ * What moves on screen, in the order the scene poses it: the four solved
+ * bodies, then the props the production driver stages over them.
+ *
+ * These used to be a recording's track ids. The mill is solved in the browser
+ * now, so the same list is the union of what the live profile builds and what
+ * the presentation driver poses — which is the honest thing to assert about a
+ * live scene, and still the exact set a viewer sees move.
+ */
+export const WINDMILL_MOVING_PLACEMENT_IDS = Object.freeze([
   ...Object.values(WINDMILL_PLACEMENT_IDS_V1),
   ...WINDMILL_PRODUCTION_TRACK_IDS_V1,
 ]);
@@ -69,10 +77,9 @@ export async function mountWindmillStudio(
     );
   }
   await page.waitForFunction(() => typeof window.voxelStudio === 'object');
-  return page.evaluate(async ({
+  const mounted = await page.evaluate(async ({
     sceneId,
-    replayId,
-    expectedTrackIds,
+    expectedMovingIds,
     extraOrbitingLightPeriodMs,
   }) => {
     const studioUrl = new URL('studio-app.ts', window.location.href).href;
@@ -90,9 +97,18 @@ export async function mountWindmillStudio(
       );
     }
     const catalogScene = catalogScenes.find(({ id }) => id === sceneId);
-    if (catalogScene?.schemaVersion !== 'studio.scene/4') {
+    if (catalogScene === undefined) {
       throw new Error(
-        `Focused Windmill browser evidence needs V4 scene '${sceneId}' in the live catalog.`,
+        `Focused Windmill browser evidence needs scene '${sceneId}' in the live catalog.`,
+      );
+    }
+    // The mill solves in the browser, so its scene carries no replay. Saying
+    // so here rather than only in a spec means a scene that slid back onto
+    // the recorded lane fails at the mount, naming itself.
+    if (catalogScene.schemaVersion === 'studio.scene/4') {
+      throw new Error(
+        `Focused Windmill browser evidence needs the live scene '${sceneId}', but the `
+        + `catalog scene plays back replay '${catalogScene.poseReplay.id}'.`,
       );
     }
     if (extraOrbitingLightPeriodMs !== null
@@ -107,8 +123,11 @@ export async function mountWindmillStudio(
       ? catalogScene
       : {
           ...catalogScene,
+          schemaVersion: 'studio.scene/3' as const,
           lights: [
-            ...(catalogScene.lights ?? []),
+            ...(catalogScene.schemaVersion === 'studio.scene/3'
+              ? catalogScene.lights ?? []
+              : []),
             {
               id: 'light:windmill-mixed-window-proof',
               kind: 'point' as const,
@@ -134,27 +153,12 @@ export async function mountWindmillStudio(
             scenes: catalogScenes.map((entry) =>
               entry.id === sceneId ? scene : entry),
           };
-    if (scene.poseReplay.id !== replayId) {
-      throw new Error(
-        `Windmill scene '${sceneId}' references replay '${scene.poseReplay.id}', expected '${replayId}'.`,
-      );
-    }
-    const replay = catalog.scenePoseReplays?.[replayId];
-    if (replay === undefined) {
-      throw new Error(
-        `Focused Windmill browser evidence needs generated replay '${replayId}' in the live catalog.`,
-      );
-    }
     const placementIds = scene.placements.map(({ id }) => id);
-    const trackIds = replay.tracks.map(({ placementId }) => placementId);
     const missingPlacements =
-      expectedTrackIds.filter((id) => !placementIds.includes(id));
-    const missingTracks =
-      expectedTrackIds.filter((id) => !trackIds.includes(id));
-    if (missingPlacements.length > 0 || missingTracks.length > 0) {
+      expectedMovingIds.filter((id) => !placementIds.includes(id));
+    if (missingPlacements.length > 0) {
       throw new Error(
-        `Windmill scene/replay is missing placements [${missingPlacements.join(', ')}] `
-        + `and tracks [${missingTracks.join(', ')}].`,
+        `Windmill scene is missing placements [${missingPlacements.join(', ')}].`,
       );
     }
 
@@ -185,7 +189,7 @@ export async function mountWindmillStudio(
       return {
         scene: structuredClone(scene),
         placementIds,
-        trackIds,
+        movingPlacementIds: expectedMovingIds,
         defaultCamera,
         initial,
         player: studio.harness.playerState(),
@@ -199,10 +203,84 @@ export async function mountWindmillStudio(
     }
   }, {
     sceneId: WINDMILL_SCENE_ID,
-    replayId: WINDMILL_REPLAY_ID,
-    expectedTrackIds: WINDMILL_TRACK_IDS,
+    expectedMovingIds: WINDMILL_MOVING_PLACEMENT_IDS,
     extraOrbitingLightPeriodMs:
       options.extraOrbitingLightPeriodMs ?? null,
+  });
+  // The live world builds asynchronously; until it exists the stage is still
+  // drawing authored poses and nothing a caller settles would mean anything.
+  await page.waitForFunction(() =>
+    (window as FocusedWindow).windmillFocused?.harness.livePhysics().running
+      === true);
+  // Pause it the instant it exists. The frame loop starts on its own, and a
+  // few wall-clock ticks between here and the first settle are exactly the
+  // difference between a reproducible tick count and a nearly-reproducible one.
+  const openingTick = await page.evaluate(() => {
+    const harness = (window as FocusedWindow).windmillFocused!.harness;
+    harness.settleLive(0);
+    return harness.livePhysics().stepped;
+  });
+  return { ...mounted, openingTick };
+}
+
+/**
+ * Advances the mill's own solver to an exact tick, then lets the stage present
+ * that state.
+ *
+ * A live scene has no timeline to seek, so this is how a browser proof reaches
+ * a reproducible moment: the solver is deterministic for a given step count,
+ * which a wall-clock frame count is not.
+ *
+ * The target is absolute rather than a delta, and the arithmetic happens in
+ * the page. The frame loop is still running when the first settle arrives, so
+ * a delta computed out here would be stale by however many ticks ran during
+ * the round trip — which is exactly how a hammer phase drifts off its cycle.
+ */
+export async function settleWindmillTo(
+  page: Page,
+  targetTick: number,
+): Promise<void> {
+  await page.evaluate(async (target) => {
+    const harness = (window as FocusedWindow).windmillFocused?.harness;
+    if (harness === undefined) {
+      throw new Error(
+        'Cannot settle the Windmill: the focused Studio mount is absent.',
+      );
+    }
+    const stepped = harness.livePhysics().stepped;
+    if (stepped > target) {
+      throw new Error(
+        `Cannot settle the Windmill back to tick ${String(target)}: its live `
+        + `world has already stepped ${String(stepped)} times, and a solver `
+        + 'runs forward only. Settle to a later tick or remount the scene.',
+      );
+    }
+    harness.settleLive(target - stepped);
+    await new Promise<void>((settle) => {
+      requestAnimationFrame(() => requestAnimationFrame(() => { settle(); }));
+    });
+  }, targetTick);
+}
+
+/** The mill's live world, for assertions about what is solved rather than posed. */
+export async function windmillLiveState(page: Page) {
+  return page.evaluate(() => {
+    const harness = (window as FocusedWindow).windmillFocused?.harness;
+    if (harness === undefined) {
+      throw new Error(
+        'Cannot read the Windmill live world: the focused Studio mount is absent.',
+      );
+    }
+    const live = harness.livePhysics();
+    return {
+      available: live.available,
+      running: live.running,
+      bodies: live.bodies,
+      joints: live.joints,
+      stepped: live.stepped,
+      positions: live.positions,
+      hasReplay: harness.drawAt(0).scenePoseReplay !== null,
+    };
   });
 }
 
@@ -333,34 +411,6 @@ export async function setWindmillViewCenter(
     }
     return harness.setViewCenter(candidate);
   }, center);
-}
-
-export async function probeWindmillMixedMotionWindow(
-  page: Page,
-  replayDurationMs: number,
-) {
-  return page.evaluate((durationMs) => {
-    const harness = (window as FocusedWindow).windmillFocused?.harness;
-    if (harness === undefined) {
-      throw new Error(
-        'Cannot probe mixed Windmill motion: the focused Studio mount is absent.',
-      );
-    }
-    const scene = harness.sceneState();
-    if (scene?.schemaVersion !== 'studio.scene/4') {
-      throw new Error(
-        'Cannot probe mixed Windmill motion: the focused scene is not V4.',
-      );
-    }
-    const requestedTimeMs = durationMs + 1_000;
-    const draw = harness.drawAt(requestedTimeMs);
-    return {
-      requestedTimeMs,
-      player: harness.playerState(),
-      replayTimeMs:
-        draw.scenePoseReplay?.sample?.playbackTimeMs ?? null,
-    };
-  }, replayDurationMs);
 }
 
 export async function deleteWindmillAndProbeModelLoop(page: Page) {

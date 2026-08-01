@@ -79,6 +79,22 @@ interface BrowserProductionPurposeModule {
   }[];
 }
 
+interface BrowserGeneratedReplayModule {
+  readonly WINDMILL_POSE_REPLAY_ID: string;
+  readonly WINDMILL_POSE_REPLAY: {
+    readonly events: readonly {
+      readonly id: string;
+      readonly type: string;
+      readonly timeMs: number;
+      readonly placementId: string;
+      readonly otherPlacementId: string;
+      readonly point: readonly [number, number, number];
+      readonly normal: readonly [number, number, number];
+      readonly normalImpulse: number;
+    }[];
+  };
+}
+
 interface BrowserProductionLayoutModule {
   readonly WINDMILL_PRODUCTION_PLACEMENT_IDS_V1: {
     readonly building: string;
@@ -119,10 +135,20 @@ export async function inspectWindmillPurposeEvidence(page: Page) {
       unknown as BrowserProductionLayoutModule;
     const catalog = createStudioCatalog();
     const scene = catalog.scenes?.find(({ id }) => id === sceneId);
-    const replay = catalog.scenePoseReplays?.[replayId];
-    if (scene?.schemaVersion !== 'studio.scene/4' || replay === undefined) {
+    if (scene === undefined) {
+      throw new Error(`Cannot inspect Windmill purpose: scene '${sceneId}' is absent.`);
+    }
+    // The mill's contact evidence comes from the committed determinism trace,
+    // imported here rather than read from the catalog: the shelf's scene
+    // solves live and ships no recording, and the exhaustive-search proof this
+    // ledger is bound to is a property of that trace either way.
+    const replayUrl =
+      new URL('generated-windmill-replay.ts', window.location.href).href;
+    const { WINDMILL_POSE_REPLAY: replay, WINDMILL_POSE_REPLAY_ID: traceId } =
+      await import(replayUrl) as unknown as BrowserGeneratedReplayModule;
+    if (traceId !== replayId) {
       throw new Error(
-        `Cannot inspect Windmill purpose: scene '${sceneId}' or replay is absent.`,
+        `Windmill purpose evidence expected trace '${replayId}', found '${traceId}'.`,
       );
     }
     const placement = (id: string) => {

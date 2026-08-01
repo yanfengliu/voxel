@@ -5,8 +5,7 @@ import { expect, test, type Page, type TestInfo } from '@playwright/test';
 import { createServer, type ViteDevServer } from 'vite';
 
 import {
-  WINDMILL_REPLAY_DURATION_MS,
-  WINDMILL_REPLAY_FRAME_COUNT,
+  WINDMILL_PLACEMENT_IDS_V1,
 } from '../../tools/studio/windmill-layout.js';
 import {
   deleteWindmillAndProbeModelLoop,
@@ -14,10 +13,8 @@ import {
   drawWindmillAt,
   mountWindmillStudio,
   oppositeWindmillCamera,
-  probeWindmillMixedMotionWindow,
-  readGeneratedWindmillEvidence,
-  seekAndPlayWindmill,
-  windmillPlayerState,
+  settleWindmillTo,
+  windmillLiveState,
   type WindmillCameraV1,
 } from './windmill-browser-support.js';
 import {
@@ -30,6 +27,28 @@ import {
 
 const STUDIO_ROOT = resolve('tools/studio');
 const OPPOSITE_EVIDENCE_PITCH_DEGREES = 45;
+
+/**
+ * Where the mill is in its own cycle, in solver ticks from the world's start.
+ *
+ * A live scene has no timeline to scrub, so a reproducible moment is a step
+ * count: the solver is deterministic for a given number of fixed ticks. These
+ * come from tracing the live profile's hammer — it strikes the anvil at ticks
+ * 1, 111, 247, 383, 519, 655 and on at a steady 136-tick beat, so this is the
+ * third full cycle, past the opening transient.
+ *
+ * The rest, lift and strike below are asserted against the hammer's own
+ * height, so a mill whose rhythm moves fails by name here rather than as an
+ * unexplained screenshot difference.
+ */
+const HAMMER_PHASE_TICKS = Object.freeze({
+  atRest: 300,
+  lifted: 350,
+  striking: 383,
+});
+/** Hammer centre height at rest on the anvil, and at the top of its lift. */
+const HAMMER_REST_Y = 0.875;
+const HAMMER_LIFT_Y = 0.905;
 
 let server: ViteDevServer | undefined;
 let studioOrigin = '';
@@ -70,19 +89,15 @@ async function mount(page: Page) {
   return mountWindmillStudio(page, studioOrigin);
 }
 
-async function canvasImage(page: Page): Promise<Buffer> {
-  return page.locator('[data-windmill-focused] .scene-canvas')
-    .screenshot({ animations: 'disabled' });
-}
-
 async function capture(
   page: Page,
   testInfo: TestInfo,
   name: string,
-  timeMs: number,
   camera: WindmillCameraV1,
 ) {
-  const draw = await drawWindmillAt(page, timeMs, camera);
+  // Time zero, always: the mill's moment comes from how far its own solver has
+  // been advanced, never from a clock the stage is asked to seek.
+  const draw = await drawWindmillAt(page, 0, camera);
   const image = await page.locator('[data-windmill-focused] .scene-canvas')
     .screenshot({ animations: 'disabled' });
   const footprint = await inspectWindmillPngFootprint(page, image);
@@ -107,135 +122,26 @@ test('the live scene binds one selected physical proof to purpose-complete geome
   await verifyWindmillSelectedPhysicalProof(page, studioOrigin);
 });
 
-test('real Space pauses, resumes, holds the finite trace, and restarts it', async ({
+test('the mill solves in the browser and plays back nothing', async ({
   page,
 }) => {
   await mount(page);
-  const generated = await readGeneratedWindmillEvidence(page);
-  const stage = page.locator('[data-windmill-focused] .canvas-wrap');
-  await stage.click({ position: { x: 8, y: 8 } });
-
-  expect(await windmillPlayerState(page)).toMatchObject({
-    playing: true,
-    periodMs: WINDMILL_REPLAY_DURATION_MS,
-  });
-  await page.waitForTimeout(80);
-  await page.keyboard.press('Space');
-  const paused = await windmillPlayerState(page);
-  expect(paused.playing).toBe(false);
-  await page.waitForTimeout(120);
-  expect((await windmillPlayerState(page)).timeMs).toBe(paused.timeMs);
-  await page.keyboard.press('Space');
-  const resumed = await windmillPlayerState(page);
-  expect(resumed.playing).toBe(true);
-  await page.waitForTimeout(120);
-  expect((await windmillPlayerState(page)).timeMs).toBeGreaterThan(
-    resumed.timeMs,
-  );
-
-  await page.keyboard.press('Space');
-  expect((await windmillPlayerState(page)).playing).toBe(false);
-  const opening = await drawWindmillAt(page, 0);
-  const openingImage = await canvasImage(page);
-  const openingHash = createHash('sha256').update(openingImage).digest('hex');
-  expect(opening.scenePoseReplay?.playback).toBe('once');
-  expect(opening.scenePoseReplay?.sample).toMatchObject({
-    playbackTimeMs: 0,
-    frameA: 0,
-    frameB: 1,
-    alpha: 0,
-    latestEvent: null,
-  });
-
-  for (const kind of ['cam-contact', 'anvil-impact'] as const) {
-    const contact = generated.contacts.find((event) => event.kind === kind);
-    const event = generated.events.find(({ id }) => id === contact?.id);
-    if (contact === undefined || event?.type !== 'contact') {
-      throw new Error(
-        `Generated Windmill replay has no paired '${kind}' contact event.`,
-      );
-    }
-    const frame = await drawWindmillAt(page, event.timeMs);
-    expect(frame.scenePoseReplay?.sample?.latestEvent).toMatchObject({
-      id: event.id,
-      type: 'contact',
-      placementId: event.placementId,
-      otherPlacementId: event.otherPlacementId,
-      normalImpulse: event.normalImpulse,
-    });
-    await expect(page.locator('[data-windmill-focused] .status'))
-      .toContainText(`contact ${(event.timeMs / 1_000).toFixed(2)} s`);
-  }
-
-  const held = await drawWindmillAt(page, generated.durationMs - 1);
-  const heldImage = await canvasImage(page);
-  const heldHash = createHash('sha256').update(heldImage).digest('hex');
-  expect(held.scenePoseReplay?.sample?.frameA)
-    .toBe(WINDMILL_REPLAY_FRAME_COUNT - 1);
-  expect(held.scenePoseReplay?.sample?.frameB)
-    .toBe(WINDMILL_REPLAY_FRAME_COUNT - 1);
-  const terminal = await drawWindmillAt(page, generated.durationMs);
-  const terminalImage = await canvasImage(page);
-  expect(terminal.scenePoseReplay?.sample).toMatchObject({
-    playbackTimeMs: generated.durationMs,
-    frameA: WINDMILL_REPLAY_FRAME_COUNT - 1,
-    frameB: WINDMILL_REPLAY_FRAME_COUNT - 1,
-    alpha: 0,
-  });
-  expect(terminal.scenePoseReplay?.sample).not.toHaveProperty('wrappedTimeMs');
-  expect(heldHash).not.toBe(openingHash);
-  const heldTerminalDiff = await compareWindmillPngs(
-    page,
-    heldImage,
-    terminalImage,
-  );
-  expect(
-    heldTerminalDiff.differingPixels / heldTerminalDiff.totalPixels,
-  ).toBeLessThan(0.001);
-  expect(heldTerminalDiff.maximumChannelDelta).toBeLessThanOrEqual(4);
-  expect(await windmillPlayerState(page)).toMatchObject({
-    playing: false,
-    timeMs: generated.durationMs,
-  });
+  const live = await windmillLiveState(page);
+  // The claim this scene now makes: solved here, not decoded.
+  expect(live.hasReplay).toBe(false);
+  expect(live.available).toBe(true);
+  expect(live.running).toBe(true);
+  // Frame, rotor, hammer and anvil: the four bodies the mill is made of, and
+  // the two ideal revolute constraints that carry the shaft and the lever.
+  expect(live.bodies).toBe(4);
+  expect(live.joints).toBe(2);
   await expect(page.locator('[data-windmill-focused] .status'))
-    .toContainText('one shot');
-
-  await seekAndPlayWindmill(page, generated.durationMs - 20);
-  await expect.poll(
-    async () => (await windmillPlayerState(page)).playing,
-  ).toBe(false);
-  expect(await windmillPlayerState(page)).toMatchObject({
-    timeMs: generated.durationMs,
-    periodMs: generated.durationMs,
-  });
-  await page.keyboard.press('Space');
-  await expect.poll(
-    async () => (await windmillPlayerState(page)).playing,
-  ).toBe(true);
-  await expect.poll(
-    async () => (await windmillPlayerState(page)).timeMs,
-  ).toBeLessThan(generated.durationMs / 2);
-  await page.keyboard.press('Space');
-  expect((await windmillPlayerState(page)).playing).toBe(false);
+    .toContainText('live physics · solved in browser');
+  await expect(page.locator('[data-windmill-focused] .status'))
+    .not.toContainText('consumer replay');
 });
 
-test('finite replay timing composes with longer scene motion', async ({
-  page,
-}) => {
-  const longerPeriodMs = WINDMILL_REPLAY_DURATION_MS + 2_000;
-  await mountWindmillStudio(page, studioOrigin, {
-    extraOrbitingLightPeriodMs: longerPeriodMs,
-  });
-  const probe = await probeWindmillMixedMotionWindow(
-    page,
-    WINDMILL_REPLAY_DURATION_MS,
-  );
-  expect(probe.player.periodMs).toBe(longerPeriodMs);
-  expect(probe.player.timeMs).toBe(Math.round(probe.requestedTimeMs));
-  expect(probe.replayTimeMs).toBe(WINDMILL_REPLAY_DURATION_MS);
-});
-
-test('deleting a finite replay scene restores cyclic model playback', async ({
+test('deleting the open scene restores cyclic model playback', async ({
   page,
 }) => {
   await mount(page);
@@ -249,7 +155,6 @@ test('lift, release, and impact remain legible from intended and opposite views'
   page,
 }, testInfo) => {
   const mounted = await mount(page);
-  const generated = await readGeneratedWindmillEvidence(page);
   const openingCamera = mounted.defaultCamera as WindmillCameraV1;
   const defaultCamera: WindmillCameraV1 = {
     center: openingCamera.center,
@@ -282,34 +187,43 @@ test('lift, release, and impact remain legible from intended and opposite views'
     ].join('\n'),
   });
 
+  // Reached by advancing the mill's own solver, not by seeking a timeline.
   const phases = [
-    { name: 'cam-lift', timeMs: generated.phaseTimes.liftMs },
-    { name: 'released-apex', timeMs: generated.phaseTimes.apexMs },
-    { name: 'anvil-impact', timeMs: generated.phaseTimes.impactMs },
+    { name: 'cam-lift', tick: HAMMER_PHASE_TICKS.atRest, resting: true },
+    { name: 'released-apex', tick: HAMMER_PHASE_TICKS.lifted, resting: false },
+    { name: 'anvil-impact', tick: HAMMER_PHASE_TICKS.striking, resting: true },
   ] as const;
   const defaultCaptures: string[] = [];
   const oppositeCaptures: string[] = [];
   const defaultImages: Buffer[] = [];
   const oppositeImages: Buffer[] = [];
   for (const phase of phases) {
+    await settleWindmillTo(page, phase.tick);
+    // The hammer really is where this phase says it is. Without this an
+    // altered rhythm would show up only as a screenshot that stopped
+    // differing, which says nothing about what moved.
+    const live = await windmillLiveState(page);
+    expect(live.stepped).toBe(phase.tick);
+    const hammerY = live.positions[WINDMILL_PLACEMENT_IDS_V1.hammer]?.[1] ?? 0;
+    if (phase.resting) {
+      expect(hammerY, `${phase.name} hammer height`)
+        .toBeLessThan(HAMMER_LIFT_Y);
+    } else {
+      expect(hammerY, `${phase.name} hammer height`)
+        .toBeGreaterThan(HAMMER_REST_Y);
+    }
     const primary = await capture(
       page,
       testInfo,
       `${phase.name}-default`,
-      phase.timeMs,
       defaultCamera,
     );
     const adversarial = await capture(
       page,
       testInfo,
       `${phase.name}-opposite`,
-      phase.timeMs,
       oppositeCamera,
     );
-    expect(primary.draw.scenePoseReplay?.sample?.playbackTimeMs)
-      .toBeCloseTo(phase.timeMs, 8);
-    expect(adversarial.draw.scenePoseReplay?.sample?.playbackTimeMs)
-      .toBeCloseTo(phase.timeMs, 8);
     for (const captured of [primary, adversarial]) {
       expect(captured.bytes).toBeGreaterThan(1_000);
       expect(captured.draw.sceneRender).toMatchObject({
@@ -345,8 +259,7 @@ test('lift, release, and impact remain legible from intended and opposite views'
 test('wheat delivery and flour accumulation read from the interior view', async ({
   page,
 }, testInfo) => {
-  await mount(page);
-  const generated = await readGeneratedWindmillEvidence(page);
+  const mounted = await mount(page);
   await page.addStyleTag({
     content: [
       '[data-windmill-focused] .viewchip,',
@@ -364,23 +277,21 @@ test('wheat delivery and flour accumulation read from the interior view', async 
     center: [2.5, 0, 1.35],
     view: { yawDegrees: 58, pitchDegrees: 30, viewHeight: 2.6 },
   };
-  const impacts = generated.contacts
-    .filter(({ kind }) => kind === 'anvil-impact')
-    .map(({ tick }) => tick
-      * generated.recordProfile.solverStepSeconds * 1_000);
-  expect(impacts).toHaveLength(5);
+  // The queue waits until the mill has struck twice and a beat can be
+  // measured, so these are the opening, a few blows in, and long after: the
+  // live hammer strikes on a 136-tick beat from tick 111.
   const moments = [
-    { name: 'opening-queue-full', timeMs: 0 },
-    { name: 'third-sack-at-anvil', timeMs: impacts[2]! },
-    { name: 'settled-flour-heaped', timeMs: 11_900 },
+    { name: 'opening-queue-full', tick: mounted.openingTick },
+    { name: 'third-sack-at-anvil', tick: 520 },
+    { name: 'settled-flour-heaped', tick: 1_400 },
   ] as const;
   const images: Buffer[] = [];
   for (const moment of moments) {
+    await settleWindmillTo(page, moment.tick);
     const captured = await capture(
       page,
       testInfo,
       `production-${moment.name}`,
-      moment.timeMs,
       interiorCamera,
     );
     expect(captured.draw.sceneRender).toMatchObject({ instances: 12 });

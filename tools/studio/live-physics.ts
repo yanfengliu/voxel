@@ -753,8 +753,20 @@ export class LivePhysicsSessionV1 {
     return this.#timeScale;
   }
 
-  /** Advances by wall-clock time at a fixed internal step, applying the grab spring. */
-  step(elapsedMs: number): void {
+  /**
+   * Advances by wall-clock time at a fixed internal step, applying the grab
+   * spring.
+   *
+   * `onStep` runs after every fixed step, and anything that watches or commands
+   * the world has to use it rather than working after the whole frame. A frame
+   * carries whole ticks but not always the same number of them, so a watcher
+   * called once per frame sees a batch — and a controller that commands
+   * kinematic targets after three ticks instead of before each one produces a
+   * different machine. That is a frame-rate dependence in the machine's own
+   * behaviour, and it showed up as a live scene reaching a visibly different
+   * state at the same tick count on two runs of the same test.
+   */
+  step(elapsedMs: number, onStep?: () => void): void {
     this.#assertLive();
     if (this.#paused) return;
     this.#accumulatorS = Math.min(
@@ -768,6 +780,7 @@ export class LivePhysicsSessionV1 {
       this.#applyRollingResistance();
       this.#world.step();
       this.#stepped += 1;
+      onStep?.();
     }
   }
 

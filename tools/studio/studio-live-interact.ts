@@ -449,7 +449,16 @@ export class StudioLiveInteract {
       this.#frameElapsedMs = elapsed;
       try {
         const before = performance.now();
-        session.step(elapsed);
+        // Observed on every fixed tick, exactly as a deterministic settle
+        // observes it. A driver that watches or commands the world must see
+        // the same ticks in the same order whichever way time arrives, or the
+        // scene is a different machine at 30 frames a second than at 60.
+        session.step(elapsed, () => {
+          this.#presentation?.observe(
+            session,
+            session.state().stepped * LIVE_TIMESTEP_SECONDS_V1,
+          );
+        });
         this.#stepCostMs = performance.now() - before;
         this.#hooks.acceptPoses(this.#posesWithPresentation(session));
         this.#hooks.redraw();
