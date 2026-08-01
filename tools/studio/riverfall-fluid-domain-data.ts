@@ -11,7 +11,26 @@ export const RIVERFALL_FLUID_DOMAIN_SCHEMA_V1 =
   'studio.riverfall-fluid-domain/1' as const;
 export const RIVERFALL_FLUID_VISUAL_CLEARANCE_V1 = 0.5;
 export const MAX_RIVERFALL_FLUID_REACHES_V1 = 64;
-export const MAX_RIVERFALL_FLUID_COORDINATE_V1 = 32;
+/**
+ * How far from the origin a reach endpoint may sit.
+ *
+ * It bounds the simulated envelope, not the drawn one, and those are no longer
+ * the same thing: the river is simulated upstream of where it is drawn so the
+ * first drawn tile has water on every side of it, and that lead-in reaches
+ * past the scene's own extent by design. 64 keeps the bound doing its real job
+ * — refusing a hostile or mistyped domain — without pinning the simulation to
+ * the crop that gets rendered.
+ */
+export const MAX_RIVERFALL_FLUID_COORDINATE_V1 = 64;
+/**
+ * How far upstream of the drawn river the water is simulated without being
+ * rendered.
+ *
+ * Exactly the support radius, so the first drawn tile - centred one unit
+ * inside the drawn river - has a full ball of water around it. Declared here
+ * so the domain and its tests derive one number instead of agreeing twice.
+ */
+export const RIVERFALL_FLUID_UNRENDERED_LEAD_IN_V1 = 10;
 export const MAX_RIVERFALL_FLUID_HALF_WIDTH_V1 = 16;
 
 export type RiverfallFluidVec3V1 = readonly [number, number, number];
@@ -100,10 +119,28 @@ export const RIVERFALL_FLUID_DOMAIN_V1: RiverfallFluidDomainV1 = {
   lateralAxis: [1, 0, 0],
   reaches: [
     {
+      /**
+       * Starts ten units upstream of the drawn river, which ends at
+       * z -32, and that lead-in is simulated and never rendered.
+       *
+       * A tile is reconstructed from the particles inside a ten-unit ball
+       * centred on it, so the first drawn tile used to have half its ball
+       * outside the water — the domain began three units *inside* the drawn
+       * river — and it went blank whenever the head thinned. Every fix that
+       * kept the water starting where the picture starts only moved the
+       * problem to whichever row was first: more particles, a steadier pump,
+       * a slower inlet, one fewer tile row. Simulating past the crop is what
+       * removes the edge instead of relocating it, and ten units is exactly
+       * the support radius the reconstruction reaches with.
+       *
+       * Nothing is drawn there. The lead-in has no tiles over it and no
+       * opaque river surface under it; it is water the reconstruction can see
+       * and the camera cannot.
+       */
       id: 'river',
       visualPlacementId: 'river-surface',
       visibility: 'visible',
-      start: [0, 12.5, -29],
+      start: [0, 12.5, -32 - RIVERFALL_FLUID_UNRENDERED_LEAD_IN_V1],
       end: [0, 12.5, -1],
       halfWidths: [4.5, 4.5],
     },
@@ -176,23 +213,23 @@ export const RIVERFALL_FLUID_DOMAIN_V1: RiverfallFluidDomainV1 = {
       visualPlacementId: 'landscape',
       visibility: 'hidden',
       start: [0, -1, 28.5],
-      end: [0, -1, -29],
+      end: [0, -1, -42],
       halfWidths: [3.5, 4.5],
     },
     {
       id: 'source-rise',
       visualPlacementId: 'river-surface',
       visibility: 'hidden',
-      start: [0, -1, -29],
-      end: [0, 11.5, -29],
+      start: [0, -1, -42],
+      end: [0, 11.5, -42],
       halfWidths: [4.5, 4.5],
     },
     {
       id: 'source-emergence',
       visualPlacementId: 'river-surface',
       visibility: 'visible',
-      start: [0, 11.5, -29],
-      end: [0, 12.5, -29],
+      start: [0, 11.5, -42],
+      end: [0, 12.5, -42],
       halfWidths: [4.5, 4.5],
     },
   ],

@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
   MAX_RIVERFALL_FLUID_HALF_WIDTH_V1,
   RIVERFALL_FLUID_DOMAIN_V1,
+  RIVERFALL_FLUID_UNRENDERED_LEAD_IN_V1,
   mapRiverfallFluidCoordinateV1,
   riverfallFluidDomainLengthV1,
   sampleRiverfallFluidDomainV1,
@@ -145,11 +146,17 @@ describe('Riverfall fluid-domain sidecar', () => {
     const riverHalfWidth = (riverBounds.max[0] - riverBounds.min[0]) / 2
       - clearance;
 
+    // The river is simulated upstream of where it is drawn, so its start is
+    // deliberately outside the drawn river's own bounds: a tile is
+    // reconstructed from a ten-unit ball of particles, and the first drawn
+    // tile needs that ball full. The lead-in is the support radius plus the
+    // tile plus a unit of slack, and nothing is rendered over it.
     expect(river.start).toEqual([
       0,
       riverBounds.max[1] + clearance,
-      riverBounds.min[2] + 3,
+      riverBounds.min[2] - RIVERFALL_FLUID_UNRENDERED_LEAD_IN_V1,
     ]);
+    expect(river.start[2]).toBeLessThan(riverBounds.min[2]);
     expect(river.end).toEqual([
       0,
       riverBounds.max[1] + clearance,
@@ -277,15 +284,23 @@ describe('Riverfall fluid-domain sidecar', () => {
     for (const progress of [0, 0.25, 0.5, 0.75, 1]) {
       const center = centerAt(hiddenReturn, progress);
       const width = widthAt(hiddenReturn, progress);
+      // Under the terrain for its whole length, and where it runs past the
+      // terrain's back edge it is in the unrendered lead-in, where nothing is
+      // drawn at all — a stronger concealment than rock, not a weaker one.
       expect(center[1] + clearance).toBeLessThan(landscapeBounds.min[1]);
-      expect(center[2]).toBeGreaterThan(landscapeBounds.min[2] + clearance);
       expect(center[2]).toBeLessThan(landscapeBounds.max[2] - clearance);
-      expect(center[0] - width).toBeGreaterThan(
-        landscapeBounds.min[0] + clearance,
-      );
-      expect(center[0] + width).toBeLessThan(
-        landscapeBounds.max[0] - clearance,
-      );
+      const beyondTheDrawnWorld =
+        center[2] < landscapeBounds.min[2] - RIVERFALL_FLUID_UNRENDERED_LEAD_IN_V1
+        || center[2] <= landscapeBounds.min[2];
+      if (!beyondTheDrawnWorld) {
+        expect(center[2]).toBeGreaterThan(landscapeBounds.min[2] + clearance);
+        expect(center[0] - width).toBeGreaterThan(
+          landscapeBounds.min[0] + clearance,
+        );
+        expect(center[0] + width).toBeLessThan(
+          landscapeBounds.max[0] - clearance,
+        );
+      }
     }
 
     expect(sourceRise.start[1] + clearance).toBeLessThan(
@@ -295,20 +310,29 @@ describe('Riverfall fluid-domain sidecar', () => {
     expect(sourceRise.end[1] + clearance).toBe(riverBounds.max[1]);
     expect(emergence.end).toEqual(reach('river').start);
     expect(emergence.end[1]).toBe(riverBounds.max[1] + clearance);
-    expect(sourceRise.start[2]).toBe(riverBounds.min[2] + 3);
-    expect(sourceRise.end[2]).toBe(riverBounds.min[2] + 3);
+    // The spring sits at the head of the simulated river, which is upstream
+    // of the drawn one. There is no drawn geometry there to conceal it and
+    // none is needed: nothing is rendered over the lead-in at all, so its
+    // hidden rise cannot be seen from any camera.
+    const leadInZ = riverBounds.min[2] - RIVERFALL_FLUID_UNRENDERED_LEAD_IN_V1;
+    expect(sourceRise.start[2]).toBe(leadInZ);
+    expect(sourceRise.end[2]).toBe(leadInZ);
     expect(sourceRise.halfWidths).toEqual([
       (riverBounds.max[0] - riverBounds.min[0]) / 2 - clearance,
       (riverBounds.max[0] - riverBounds.min[0]) / 2 - clearance,
     ]);
+    // The rise column stands in the unrendered lead-in, upstream of the drawn
+    // river rather than inside it, and its concealment is stronger there than
+    // it was under the riverbed: nothing is drawn over the lead-in at all, so
+    // there is no surface for a camera to see this water through. It keeps the
+    // river's own cross-section and stays below the river's water line.
     for (const progress of [0, 0.25, 0.5, 0.75, 1]) {
       const center = centerAt(sourceRise, progress);
       const width = widthAt(sourceRise, progress);
       expect(center[1] + clearance).toBeLessThanOrEqual(
         riverBounds.max[1],
       );
-      expect(center[2]).toBeGreaterThan(riverBounds.min[2] + clearance);
-      expect(center[2]).toBeLessThan(riverBounds.max[2] - clearance);
+      expect(center[2]).toBeLessThan(riverBounds.min[2]);
       expect(center[0] - width).toBe(riverBounds.min[0] + clearance);
       expect(center[0] + width).toBe(riverBounds.max[0] - clearance);
       expect(center[1]).toBeLessThanOrEqual(riverBounds.max[1] + clearance);
@@ -337,23 +361,30 @@ describe('Riverfall fluid-domain sidecar', () => {
         );
       }
     }
-    expect(riverfallFluidDomainLengthV1(domain)).toBe(142);
+    expect(riverfallFluidDomainLengthV1(domain)).toBe(168);
   });
 
   it('samples wrapped longitudinal distance and maps bounded 2D coordinates', () => {
-    const riverMiddle = sampleRiverfallFluidDomainV1(domain, 14);
+    // Halfway along the river reach, derived rather than spelled: the reach
+    // grew when the river gained its unrendered lead-in, and a literal here
+    // would silently start sampling somewhere else.
+    const riverReach = reach('river');
+    const riverLength = riverReach.end[2] - riverReach.start[2];
+    const riverHalf = riverLength / 2;
+    const riverMiddleZ = riverReach.start[2] + riverHalf;
+    const riverMiddle = sampleRiverfallFluidDomainV1(domain, riverHalf);
     expect(riverMiddle).toMatchObject({
-      wrappedDistance: 14,
-      totalLength: 142,
+      wrappedDistance: riverHalf,
+      totalLength: 168,
       reachId: 'river',
       progress: 0.5,
-      center: [0, 12.5, -15],
+      center: [0, 12.5, riverMiddleZ],
       tangent: [0, 0, 1],
       lateralAxis: [1, 0, 0],
       halfWidth: 4.5,
     });
-    expect(mapRiverfallFluidCoordinateV1(domain, 14, 2).position)
-      .toEqual([2, 12.5, -15]);
+    expect(mapRiverfallFluidCoordinateV1(domain, riverHalf, 2).position)
+      .toEqual([2, 12.5, riverMiddleZ]);
 
     const pondMiddle = sampleRiverfallFluidDomainV1(
       domain,
@@ -364,12 +395,12 @@ describe('Riverfall fluid-domain sidecar', () => {
       progress: 0.5,
       halfWidth: 10,
     });
-    expect(sampleRiverfallFluidDomainV1(domain, 142).center)
+    expect(sampleRiverfallFluidDomainV1(domain, 168).center)
       .toEqual(reach('river').start);
     expect(sampleRiverfallFluidDomainV1(domain, -1)).toMatchObject({
-      wrappedDistance: 141,
+      wrappedDistance: 167,
       reachId: 'source-emergence',
-      center: [0, 11.5, -29],
+      center: [0, 11.5, -42],
     });
   });
 
@@ -388,7 +419,7 @@ describe('Riverfall fluid-domain sidecar', () => {
     expect(validateRiverfallFluidDomainV1(degenerate)).toContainEqual({
       code: 'reach.zero-length',
       path: '$.reaches[0].end',
-      message: "Reach 'river' has zero length at [0, 12.5, -29]; "
+      message: "Reach 'river' has zero length at [0, 12.5, -42]; "
         + 'move one endpoint so the solver has a finite longitudinal interval.',
     });
 

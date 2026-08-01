@@ -225,8 +225,20 @@ export function riverfallSurfaceSignalV1(
           : 'none'
       }), but the canonical presentation requires at least ${
         String(required)
-      }. Extend the simulated domain or increase particle coverage without `
-      + 'falling back to distant extrapolation.',
+      }. This is a coverage gap, not a tuning threshold: reconstructing a tile `
+      + `from water that is not under it is the thing the minimum exists to `
+      + `forbid, so do not lower it and do not widen the radius. Two fixes are `
+      + `known to work and one is measured to fail. Check first whether this `
+      + `cell sits at the edge of the simulated water — if it does, the fluid `
+      + `domain has to reach past the drawn crop (see `
+      + `RIVERFALL_FLUID_UNRENDERED_LEAD_IN_V1, which exists for exactly this `
+      + `reason), because raising the particle count alone was measured at 288, `
+      + `576 and 1,152 and left the edge cell's floor at zero every time. `
+      + `Otherwise the whole loop is too thin and needs more parcels at `
+      + `proportionally lower mass, so the rest density the solver targets `
+      + `does not move. If the failure appeared within the first second or so `
+      + `of play, suspect the burn-in instead: a longer loop needs a longer `
+      + 'warm-up before frame zero is a filled river.',
     );
   }
   let weightedTracer = 0;

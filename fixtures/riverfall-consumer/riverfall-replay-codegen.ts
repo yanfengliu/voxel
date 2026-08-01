@@ -4,6 +4,32 @@ import type {
 import { canonicalRiverfallFluidJsonV1 } from '../../tools/studio/riverfall-fluid-config.js';
 import { encodeReplayChannelsV1 } from '../replay-codegen.js';
 
+/**
+ * Rounds a diagnostic tree to nine significant digits.
+ *
+ * These are measurements of a float32 solver state, which carries about seven
+ * significant digits, so a double's seventeen are ten digits of noise — and one
+ * of them was worse than noise. `23.495193481445312` is exactly representable
+ * and round-trips, but its seventeen-significant-digit form is not what
+ * `toPrecision(17)` prints, which is the comparison `no-loss-of-precision`
+ * makes, so the generated file failed lint on a number that was correct.
+ *
+ * Integers are left alone: a frame or particle count is exact, and rounding one
+ * would be a real loss. Only the config's own authored values are hashed, and
+ * they do not pass through here, so the input hash is untouched.
+ */
+function roundedDiagnosticsV1(value: unknown): unknown {
+  if (typeof value === 'number') {
+    return Number.isInteger(value) ? value : Number(value.toPrecision(9));
+  }
+  if (Array.isArray(value)) return value.map(roundedDiagnosticsV1);
+  if (value !== null && typeof value === 'object') {
+    return Object.fromEntries(Object.entries(value)
+      .map(([key, entry]) => [key, roundedDiagnosticsV1(entry)]));
+  }
+  return value;
+}
+
 export function riverfallFluidReplaySourceV1(
   trace: RiverfallFluidSurfaceTraceV1,
 ): string {
@@ -41,9 +67,11 @@ export function riverfallFluidReplaySourceV1(
     'export const RIVERFALL_FLUID_SURFACE_PRESENTATION = '
       + `${canonicalRiverfallFluidJsonV1(trace.config.presentation)} as const;`,
     'export const RIVERFALL_FLUID_SURFACE_SUPPORT = '
-      + `${canonicalRiverfallFluidJsonV1(trace.supportDiagnostics)} as const;`,
+      + `${canonicalRiverfallFluidJsonV1(
+        roundedDiagnosticsV1(trace.supportDiagnostics))} as const;`,
     'export const RIVERFALL_FLUID_CAUSAL_EVIDENCE = '
-      + `${canonicalRiverfallFluidJsonV1(trace.causalEvidence)} as const;`,
+      + `${canonicalRiverfallFluidJsonV1(
+        roundedDiagnosticsV1(trace.causalEvidence))} as const;`,
     'export const RIVERFALL_POSE_REPLAY = decodeInterleavedScenePoseReplayV1(',
     `${JSON.stringify(encoded)});`,
     '',

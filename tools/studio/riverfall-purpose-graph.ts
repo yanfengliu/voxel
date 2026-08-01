@@ -38,7 +38,7 @@ export const RIVERFALL_BOUND_ABLATIONS_V1 = Object.freeze([
 ] as const);
 
 /** Particle count the fixture holds fixed, which is why water mass is closed. */
-export const RIVERFALL_CLOSED_PARTICLE_COUNT_V1 = 288;
+export const RIVERFALL_CLOSED_PARTICLE_COUNT_V1 = 576;
 
 const NEED = Object.freeze({
   flowing: 'riverfall:need:water-reads-as-flowing',

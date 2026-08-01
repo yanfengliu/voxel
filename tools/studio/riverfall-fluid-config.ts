@@ -21,7 +21,23 @@ export const RIVERFALL_FLUID_SCENE_ID = 'studio:scene:riverfall';
 export const RIVERFALL_FLUID_REPLAY_ID =
   'studio:pose-replay:riverfall-flow';
 
-export const RIVERFALL_FLUID_PARTICLE_COUNT = 288;
+/**
+ * How many parcels of water the river is made of.
+ *
+ * 288 was enough for a finite recording and not enough for a river that runs:
+ * the loop is longer now that it is simulated past the drawn crop, and 288
+ * spread over it leaves the middle reaches thin enough to lose a cell's
+ * support within six seconds. 576 holds a worst case of ten visible particles
+ * per cell against the two the reconstruction requires, measured across all
+ * 321 cells over a full minute of play, where 432 holds only three.
+ *
+ * Each parcel therefore carries half the mass: the same water cut finer, not
+ * twice as much water. Density here is the sum of neighbouring masses through
+ * the smoothing kernel, so doubling the count at unit mass doubles the
+ * measured density and puts the density error twenty times over its
+ * acceptance gate.
+ */
+export const RIVERFALL_FLUID_PARTICLE_COUNT = 576;
 export const RIVERFALL_FLUID_WITNESS_COUNT =
   RIVERFALL_FLUID_PARTICLE_COUNT;
 export const RIVERFALL_FLUID_FRAME_COUNT = 240;
@@ -216,7 +232,11 @@ export function createRiverfallFluidConfigV1(
 ): RiverfallFluidConfigV1 {
   const ablation = overrides.ablation ?? 'baseline';
   const frameCount = overrides.frameCount ?? RIVERFALL_FLUID_FRAME_COUNT;
-  const burnInSubsteps = overrides.burnInSubsteps ?? 800;
+  // Sixteen seconds of warm-up, not four. Frame zero has to be a filled loop,
+  // and the loop got longer when the river gained its unrendered lead-in: at
+  // the old 800 substeps the drawn river was still filling when capture began,
+  // and the first tile lost its support inside a second.
+  const burnInSubsteps = overrides.burnInSubsteps ?? 3200;
   if (!RIVERFALL_FLUID_ABLATIONS.includes(ablation)) {
     throw new Error(
       `Cannot configure Riverfall fluid ablation ${JSON.stringify(ablation)}; `
@@ -327,8 +347,8 @@ export function createRiverfallFluidConfigV1(
       witnessStride:
         RIVERFALL_FLUID_PARTICLE_COUNT / RIVERFALL_FLUID_WITNESS_COUNT,
       seed: 0x51f15e,
-      mass: 1,
-      radius: 0.35,
+      mass: 0.5,
+      radius: 0.247,
       maximumSpeed: 24,
     },
     density: {

@@ -74,7 +74,7 @@ describe('Riverfall fluid canonical input', () => {
     expect(config.recording.substepsPerFrame * config.recording.substepMs)
       .toBe(config.recording.recordStepMs);
     expect(config.recording.frameCount * config.particles.witnessCount)
-      .toBe(69_120);
+      .toBe(138_240);
     expect((config.recording.frameCount + 1) * config.presentation.cellCount)
       .toBe(77_361);
   });
@@ -82,17 +82,17 @@ describe('Riverfall fluid canonical input', () => {
   it('indexes the exact fall, impact, pump, and closed-domain seams', () => {
     expect(riverfallFluidReachStartDistancesV1()).toEqual({
       river: 0,
-      lip: 28,
-      fall: 30.5,
-      'pond-expansion': 38.5,
-      'pond-basin': 45,
-      'pond-contraction': 57,
-      outflow: 64,
-      'outflow-submergence': 65.5,
-      sink: 66.5,
-      return: 71,
-      'source-rise': 128.5,
-      'source-emergence': 141,
+      lip: 41,
+      fall: 43.5,
+      'pond-expansion': 51.5,
+      'pond-basin': 58,
+      'pond-contraction': 70,
+      outflow: 77,
+      'outflow-submergence': 78.5,
+      sink: 79.5,
+      return: 84,
+      'source-rise': 154.5,
+      'source-emergence': 167,
     });
   });
 
@@ -168,8 +168,12 @@ describe('Riverfall fluid canonical input', () => {
     ) + 1;
     const particleSamples = frameCount * RIVERFALL_FLUID_WITNESS_COUNT;
     const surfaceSamples = (frameCount + 1) * RIVERFALL_SURFACE_CELL_COUNT;
+    // The bound is the larger of the two, and which one that is depends on
+    // the particle count: at 576 witnesses a frame carries more particle
+    // samples than surface cells, which was the other way round at 288.
+    const bound = Math.max(particleSamples, surfaceSamples);
     expect(() => createRiverfallFluidConfigV1({ frameCount })).toThrow(
-      `Cannot configure Riverfall fluid recording with ${String(surfaceSamples)} `
+      `Cannot configure Riverfall fluid recording with ${String(bound)} `
       + `output samples; ${String(frameCount)} frames require ${
         String(particleSamples)
       } particle witnesses and ${String(surfaceSamples)} surface cells, but `

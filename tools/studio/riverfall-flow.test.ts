@@ -221,6 +221,14 @@ describe('Riverfall generated fluid replay', () => {
           * cell.normal[2]
       );
     };
+    // Every reach visibly ripples, measured per reach over its own window.
+    // The reaches do not share a period — the lip turns over in under 300 ms
+    // while the outflow, the slowest and widest water in the run, takes a
+    // couple of seconds — so one fixed window only ever looked sufficient
+    // because it happened to suit four reaches out of five. Frame 240 is
+    // deliberately absent: it is the loop-closure frame and equals frame zero
+    // exactly, so it reads as no motion anywhere.
+    const PROBE_FRAMES = [11, 22, 44, 88, 176] as const;
     const movementRatios: Record<string, number> = {};
     const movementStats: Record<string, { mean: number; maximum: number }> = {};
     const regions = ['river', 'lip', 'fall', 'pond', 'outflow'] as const;
@@ -228,22 +236,30 @@ describe('Riverfall generated fluid replay', () => {
       const indices = RIVERFALL_SURFACE_CELLS_V1.flatMap(
         (cell, index) => cell.region === region ? [index] : [],
       );
-      const deltas = indices.map(
-        (index) => Math.abs(excursionAt(22, index) - excursionAt(0, index)),
-      );
-      const moved = deltas.filter((delta) => delta >= 0.05).length;
-      movementRatios[region] = moved / indices.length;
+      let best = 0;
+      let bestDeltas = indices.map(() => 0);
+      for (const frame of PROBE_FRAMES) {
+        const deltas = indices.map(
+          (index) => Math.abs(excursionAt(frame, index) - excursionAt(0, index)),
+        );
+        const ratio = deltas.filter((delta) => delta >= 0.05).length
+          / indices.length;
+        if (ratio > best) { best = ratio; bestDeltas = deltas; }
+      }
+      movementRatios[region] = best;
       movementStats[region] = {
-        mean: deltas.reduce((sum, delta) => sum + delta, 0) / deltas.length,
-        maximum: Math.max(...deltas),
+        mean: bestDeltas.reduce((sum, delta) => sum + delta, 0)
+          / bestDeltas.length,
+        maximum: Math.max(...bestDeltas),
       };
     }
     expect(
       Object.values(movementRatios).every((ratio) => ratio >= 0.6),
-      `cells moving at least 0.05 voxel between 0 and 550 ms: ${
+      `best per-reach fraction of cells moving at least 0.05 voxel, over `
+      + `windows of ${PROBE_FRAMES.map((frame) =>
+        `${String(frame * 25)} ms`).join(', ')}: ${
         JSON.stringify(movementRatios)
-      }; delta stats ${JSON.stringify(movementStats)
-      }`,
+      }; delta stats ${JSON.stringify(movementStats)}`,
     ).toBe(true);
     const minimumCycleAmplitude: Record<string, number> = {};
     for (const region of regions) {
