@@ -74,6 +74,15 @@ describe('the one solver rate', () => {
     // into the floor against a 0.02 m tolerance, and the station thresholds
     // and law damping rates were all calibrated at 240 Hz.
     //
+    // What the gap costs, measured 2026-08-01: flipping this constant to 1/60
+    // fails ten checks across `fixtures/physics-playground`, and one of them
+    // is worse than a threshold — the counter-run that proves bearing friction
+    // is load-bearing passes at 60 Hz, so the law loses its demonstrated
+    // failure. Meanwhile the browser, which does run at 60, has a trebuchet
+    // that throws its shot almost straight up and misses the wall by 23 m;
+    // `model-studio-physics-playground.spec.ts` pins that as the blocked
+    // behaviour it is. Both ends of the gap are now written down.
+    //
     // This asserts the gap is still exactly as recorded. When the playground
     // is fixed this test fails, and the fix is to delete this case and the
     // file's entry in RATE_EXEMPT_FILES — which is how the exception is

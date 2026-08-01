@@ -96,6 +96,36 @@ Two things made it safe to be aggressive. The byte-for-byte replay pin means any
 
 Finally, on measuring: **a single timing run on a loaded machine is worthless, and will invert your conclusion.** The same suite took 27 s and then 44 s minutes apart; a remap change measured as 9.51 ms then 14.07 ms with nothing between them but load. Use the minimum over several batches — the least-disturbed run is the closest to the truth — and never compare a mean baseline against a min result.
 
+## The trebuchet works at 240 Hz and does not work at 60 Hz, and only the browser runs it at 60
+
+**Anchor:** 2026-08-01. The same machine, through the same live path, with only `LIVE_TIMESTEP_SECONDS_V1` changed: at 240 Hz the ball flies to the wall and moves 12 of 33 bricks, the farthest by 6.32 m; at 60 Hz it goes almost straight up — apex 16.9 m against 14.5 — lands 31 m short of the wall at z −8.6, drifts 3.69 m off the firing plane, and moves nothing. `tests/browser/model-studio-physics-playground.spec.ts:328` and `:425` fail on exactly this.
+
+The playground's headless twin still runs at 1/240 — `solver-rate.test.ts` records that as delivery work with a stated blocker — and the browser session runs at the lane's 1/60. So the only lane that exercises this machine at the rate the owner actually watches is the browser lane, and there it is broken. Every headless scenario passes, because they all run at 240.
+
+The release is what is rate-sensitive. The sling's two cup walls exist to "delay separation by about 190 ticks, which is what aims the throw" — a delay tuned at 240 Hz. At 60 Hz the same geometry holds the ball into a later, steeper part of the whip. Removing the cup walls at 60 Hz straightens the shot completely (lateral drift 3.69 m → 0.21 m) and lands it at z −26.2, still 6 m short; the same machine without cup walls at 240 Hz overshoots past the wall and falls out of the world. There is no single geometry that satisfies both rates, which is the point: **the two lanes have to be one world before this machine can be tuned at all.**
+
+Measuring what that costs: flipping `PLAYGROUND_TIMESTEP_S_V1` to 1/60 fails 10 checks across `fixtures/physics-playground`, and one of them is worse than a threshold — the counter-run that proves bearing friction is load-bearing ("without bearing friction the machine never stops swinging") **passes** at 60 Hz, so the law loses its demonstrated failure. A counter-run that stops discriminating is not a smaller problem than a scenario that fails.
+
+## Doubling the water does not fix a river that bunches
+
+**Anchor:** 2026-08-01. Per-cell support counted directly over 3,600 frames at 288, 576 and 1,152 particles. The worst cell is `surface-river-00-00` in every case, and its floor is zero in every case. `riverfall-live-surface.test.ts` now pins the failure at under 1,800 frames.
+
+The entry below says the live Riverfall is blocked on surface coverage and that the cause is undiagnosed. It is diagnosed now, and it is not the particle count.
+
+Only five of the 321 cells ever fall below the two visible particles the reconstruction requires: the river's first row, at z −31. The fluid domain's river reach starts at z −29. **That row is drawn over water that is not simulated**, so it is reconstructed entirely from whatever is downstream, and its support swings between 0 and 37 as the closed loop bunches.
+
+Three things were measured and none of them worked:
+
+**Raising the count.** 288 threw at frame 784 of live play. 576 survived 3,600 — but only because at unit mass 576 particles double the measured density, which blows the density-error acceptance gate twenty-fold (6.73 against 0.3). The physically correct companion change is half the mass per parcel, same water cut finer; with that, 576 throws again at frame 1,869. 1,152 with quarter mass still floors at zero, and costs about three times the frame.
+
+**Extending the domain** upstream to z −32 so water exists under the first row is right in principle and made it worse: the same particles over a longer loop pulled three more rows to zero. The rows behind the first had a floor of exactly two — the bare minimum — so an eight percent dilution tipped them.
+
+**More than half the loop is hidden pipe.** Sink, return and source-rise are 80 of about 153 units, so most of the water is invisible to the surface at any instant, and raising the count raises the packet size rather than closing the gaps.
+
+What is left is the flow: water has to re-enter the river steadily rather than in slugs. That is a change to how the hidden return feeds the source, and it has to be re-validated against the causal acceptance rules that pin recycle count, fall speed and density error — which is why it is a piece of work rather than a constant.
+
+The general shape, worth more than the specifics: **a coverage floor that a statistical fix cannot lift is a geometry or a flow problem wearing a sampling problem's clothes.** The tell was that the failing cells were always the same five, and always the ones at the edge of the simulated region.
+
 ## The live Riverfall runs out of surface coverage before it runs out of budget
 
 **Anchor:** 2026-07-31. Benchmarking `advance(1/60)` over roughly 3,000 frames — about 50 simulated seconds — throws from `riverfallSurfaceSignalV1`: cell `surface-river-00-00` found 1 visible particle inside the 10-unit compact support where 2 are required, nearest distance 8.095457.
@@ -103,3 +133,5 @@ Finally, on measuring: **a single timing run on a loaded machine is worthless, a
 Found by accident, while a profiler ran the river far longer than any test does. The recorded lane is finite and never reaches this state, so nothing in the suite covers it; the solver is provably bit-identical to before the optimisation work, so this is pre-existing rather than introduced.
 
 It matters because a live scene has no end. Whatever the remaining budget is, a scene that throws after a minute of play is not converted. This is now the blocker for taking Riverfall off the recorded lane, in place of the frame cost that was assumed to be the blocker — and it is undiagnosed: it is not yet known whether the particle distribution drifts, recycles unevenly, or simply thins at that cell under a state the short recording never visits.
+
+**Diagnosed 2026-08-01**, in the entry above: the cell sits upstream of the simulated domain, the loop bunches, and no particle count lifts its floor off zero.

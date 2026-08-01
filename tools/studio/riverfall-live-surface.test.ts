@@ -96,6 +96,58 @@ describe('the live Riverfall surface', () => {
     expect(perStepMs).toBeLessThan(100);
   }, 300_000);
 
+  it('loses surface coverage before a minute of play, which is why Riverfall is not live yet', () => {
+    // The one thing standing between Riverfall and the live lane, stated as a
+    // check so it cannot be forgotten or misremembered.
+    //
+    // The surface needs at least two visible particles inside each cell's
+    // 10-unit compact support. Left running, the river's head goes dry and the
+    // scene throws. The recorded lane is finite and stops long before, so
+    // nothing in the suite reached this state until it was hunted for.
+    //
+    // What it is NOT: a particle count. Measured over 3,600 frames with the
+    // per-cell support counted directly, the only cells that ever fall short
+    // are the river's first row — the five tiles at z -31, which sit upstream
+    // of where the fluid domain starts at z -29 and so are reconstructed from
+    // water that is not beneath them. Their support swings between 0 and 37 as
+    // the closed loop bunches. Raising the count from 288 to 576 (with mass
+    // halved, which the density gate then requires) and again to 1,152 leaves
+    // that floor at zero and triples the frame cost; extending the domain
+    // upstream to cover the row dilutes the loop and pulls three more rows to
+    // zero. The loop bunches, and more water only makes bigger packets.
+    //
+    // What is left is the flow, not the budget: water has to re-enter the
+    // river steadily instead of in slugs, which is a change to how the hidden
+    // return feeds the source and has to be re-validated against the causal
+    // acceptance gates that pin recycle count, fall speed and density error.
+    //
+    // This case is written to FAIL when the river is fixed. When it does,
+    // delete it and assert the opposite: 3,600 frames with no throw.
+    const surface = new RiverfallLiveSurfaceV1();
+    let survived = 0;
+    let failure: unknown = null;
+    for (; survived < 3_600; survived += 1) {
+      try {
+        surface.advance(LIVE_TIMESTEP_SECONDS_V1);
+      } catch (thrown) {
+        failure = thrown;
+        break;
+      }
+    }
+    expect(
+      failure,
+      `The live Riverfall river survived ${String(survived)} frames without `
+      + 'losing coverage. If that is a fix rather than a fluke, delete this '
+      + 'case and assert that 3,600 frames pass, then take the scene live.',
+    ).not.toBeNull();
+    expect(String(failure)).toMatch(/surface-river-\d\d-00/);
+    expect(String(failure))
+      .toMatch(/visible solver particles inside the 10-unit compact support/);
+    // Measured at 784 frames; stated as a floor so an unrelated slowdown of
+    // the failure is not read as a repair.
+    expect(survived).toBeLessThan(1_800);
+  }, 600_000);
+
   it('rejects an impossible elapsed time by name', () => {
     const surface = new RiverfallLiveSurfaceV1();
     expect(() => { surface.advance(-1); })
