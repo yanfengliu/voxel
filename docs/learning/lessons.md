@@ -96,7 +96,7 @@ Two things made it safe to be aggressive. The byte-for-byte replay pin means any
 
 Finally, on measuring: **a single timing run on a loaded machine is worthless, and will invert your conclusion.** The same suite took 27 s and then 44 s minutes apart; a remap change measured as 9.51 ms then 14.07 ms with nothing between them but load. Use the minimum over several batches — the least-disturbed run is the closest to the truth — and never compare a mean baseline against a min result.
 
-## The trebuchet works at 240 Hz and does not work at 60 Hz, and only the browser runs it at 60
+## The trebuchet worked at 240 Hz and not at 60 Hz, and only the browser ran it at 60
 
 **Anchor:** 2026-08-01. The same machine, through the same live path, with only `LIVE_TIMESTEP_SECONDS_V1` changed: at 240 Hz the ball flies to the wall and moves 12 of 33 bricks, the farthest by 6.32 m; at 60 Hz it goes almost straight up — apex 16.9 m against 14.5 — lands 31 m short of the wall at z −8.6, drifts 3.69 m off the firing plane, and moves nothing. `tests/browser/model-studio-physics-playground.spec.ts:328` and `:425` fail on exactly this.
 
@@ -104,7 +104,49 @@ The playground's headless twin still runs at 1/240 — `solver-rate.test.ts` rec
 
 The release is what is rate-sensitive. The sling's two cup walls exist to "delay separation by about 190 ticks, which is what aims the throw" — a delay tuned at 240 Hz. At 60 Hz the same geometry holds the ball into a later, steeper part of the whip. Removing the cup walls at 60 Hz straightens the shot completely (lateral drift 3.69 m → 0.21 m) and lands it at z −26.2, still 6 m short; the same machine without cup walls at 240 Hz overshoots past the wall and falls out of the world. There is no single geometry that satisfies both rates, which is the point: **the two lanes have to be one world before this machine can be tuned at all.**
 
+**Resolved 2026-08-01, the same day.** Both lanes now step at the one shared rate, and the machine works at it. The conclusion above — that no single geometry satisfies both rates — was true and was the wrong thing to be solving: the fix was not a geometry that suits two rates but a repository with one. The cup walls that "aim the throw" by delaying release were tuned in ticks; removed, the ball leaves straight. See the three entries below for what the move actually cost, and note that the 10 failing checks named here were mostly not physics at all.
+
 Measuring what that costs: flipping `PLAYGROUND_TIMESTEP_S_V1` to 1/60 fails 10 checks across `fixtures/physics-playground`, and one of them is worse than a threshold — the counter-run that proves bearing friction is load-bearing ("without bearing friction the machine never stops swinging") **passes** at 60 Hz, so the law loses its demonstrated failure. A counter-run that stops discriminating is not a smaller problem than a scenario that fails.
+
+## The exemption outlived the problem, and hid three lanes while it did
+
+**Anchor:** 2026-08-01. `solver-rate.test.ts` carried one exemption and scanned one directory. Widened to the whole repository it found four lanes off the shared rate, not one: the playground twin, the chain consumer running a real Rapier world at a quarter rate, the windmill consumer at a sixteenth, and `studio-playground-panel.ts:459` printing `tick 240 Hz` to the owner while the solver ran at 60.
+
+The exemption was written honestly. It named its lane, stated its blocker, and carried a case designed to fail when the lane was fixed. It still went wrong in three ways worth separating.
+
+**Its stated blocker did not exist.** It said the stacking stations "rest about 0.05 m into the floor" at the coarser rate. Measured, they rest 0.00133 m into it — identical to five decimals at both rates, by Rapier's own narrow phase and by an independent geometric measure. Three attempts had been backed out trying to tune a solver against a number that was not measuring the solver. **An exemption records a diagnosis, and a diagnosis can be wrong; nothing about writing it down makes it true.** The comment had been read and trusted by every later session, this one included, for hours.
+
+**Its scan was narrower than its rule.** It searched `tools/studio` because that is where the drift had happened before. The rule was about every solver in the repository, and a fixture directory it never looked at held a world stepping at a different rate the whole time. A gate that enforces a rule over part of the codebase reads, in every summary and every commit message, as a gate that enforces the rule.
+
+**It could not see a rate that was not shaped like a rate.** It searched for `1 / 240`-style literals. The panel's `tick 240 Hz` display string was invisible to it, so the product told the owner the wrong number for as long as the exemption existed.
+
+The replacement is an exact set rather than a list of allowances: anything new fails, **and the set shrinking also fails**, which is what makes it delete itself. That shape was already in the repo — the old case was written to fail when its lane was fixed — and it is the part worth keeping.
+
+## A sampler denominated in ticks is a second variable
+
+**Anchor:** 2026-08-01. `PLAYGROUND_SNAPSHOT_STRIDE_V1 = 8`, commented "30 Hz sampling of a 240 Hz world". At 60 Hz it became 7.5 Hz sampling, and the checks reading its frames went on reporting as though nothing had changed.
+
+Three separate failures, all one cause, and none of them looked like sampling:
+
+**A landing read as a resting body.** The floor check reported 0.0342 m where the true per-tick peak was 0.16427 m and the resting depth was 0.00133 m. The reported number was neither — it was whatever instant the stride happened to land on, six ticks past the deepest. Restoring the sampling density made the reported number four times *worse*, which is the proof it had been under-sampling rather than the fix making anything worse.
+
+**A gate became arithmetically unreachable.** A touch-down comparison allowed 4% and read strided frames, so its measurable values were 0, 11.1%, 20%, 25% — nothing between 0 and 11.1%. Its own comment says the tolerance was chosen because "one sample is ~3%" over a ~260-tick fall; at the new rate the fall is ~66 ticks. The 240 Hz pass was also a 5-in-8 draw on grid phase rather than a physical result.
+
+**A real regression was hidden.** Solver energy injection during a violent whip is five times higher at the coarser step, over its budget. The wider sampling gaps let dissipation swamp it and the check reported green. Restoring honest sampling is what surfaced it.
+
+The general rule: **anything expressed in ticks is expressed in the rate**, and will silently mean something else the moment the rate moves. This repo had 58 authored scenario windows in ticks, a settle window, and this sampler. The one that mattered most was the sampler, because it changed what every other check could see.
+
+## A contact fix is geometry before it is numerics
+
+**Anchor:** 2026-08-01. On the falling station a body closes 0.1779 m in one step while Rapier's default prediction distance reaches 0.002 m ahead. Peak burial 0.16427 m; with soft continuous prediction, 0.00342 m.
+
+Years of solver-tuning instinct says a body sinking into the floor is a convergence problem. It was not, and the tell was sitting in the data: the one station that passed at the new rate closes 0.0015 m per step, which is the only station whose closing distance fits inside the default look-ahead. Solver iterations, allowed linear error, contact natural frequency and length unit were all swept and none of them moved it, because none of them changes *when the contact is found*.
+
+Two near-misses are worth as much as the fix:
+
+**Contact skin is an offset wearing a fix's clothes.** At 0.005 the burial is bit-identical to no fix at all; it improves the reported number only by lifting bodies off the ground, and by 0.01 the hover is visible. A fix that improves a measurement without changing the thing measured is the shape to distrust.
+
+**A global contact parameter is a law change every scene inherits.** A wider prediction distance fixes the drop and stops the Machine Works product ever coming to rest; a value chosen against the floor check alone drops the structures arch two metres while still passing the check that was supposed to be judging it. Scaling it per body's own voxel is worse still — that machine's larger parts are its slower ones, and the distance depends on speed. It belongs where friction and rolling resistance already live: declared by the content that needs it.
 
 ## A look toggle moves a paused live scene, and three plausible causes were not it
 
