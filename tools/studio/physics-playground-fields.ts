@@ -70,7 +70,7 @@ function fieldStation(
       label: suffix === 'stress'
         ? 'The stress field drops, stays finite, and reports timing'
         : `The ${suffix} field drops, settles, and stays finite`,
-      ticks: suffix === 'stress' ? 480 : 960,
+      seconds: suffix === 'stress' ? 2 : 4,
       checks: [
         { check: 'no-floor-penetration', floorTopY: FLOOR_TOP, toleranceMeters: 0.05 },
         // Small and medium must actually come to rest; the stress preset

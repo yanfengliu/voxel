@@ -1,3 +1,4 @@
+import { solverTicksForSecondsV1 } from '../../tools/studio/solver-rate.js';
 import { expect } from 'vitest';
 import {
   evaluatePlaygroundScenarioV1,
@@ -17,15 +18,36 @@ import {
 /**
  * The deterministic scenario runner.
  *
- * One scenario is one fresh world advanced a fixed number of 1/240 s ticks
- * with its case's scripted actions applied at their declared ticks. Frames
- * are sampled on a fixed stride and judged by the shared checks, so two
- * runs of the same scenario see the same world at the same ticks — wall
+ * One scenario is one fresh world advanced for a declared span of seconds,
+ * with its case's scripted actions applied at their declared seconds. Frames
+ * are sampled at a fixed interval in time and judged by the shared checks, so
+ * two runs of the same scenario see the same world at the same instants — wall
  * clocks never influence the simulation, only the timing report.
  */
 
-/** Snapshot every eighth tick: 30 Hz sampling of a 240 Hz world. */
-export const PLAYGROUND_SNAPSHOT_STRIDE_V1 = 8;
+/**
+ * How often the runner looks at the world, in seconds.
+ *
+ * In seconds rather than ticks, and the distinction is not pedantry. This was
+ * a stride of 8 ticks, described as "30 Hz sampling of a 240 Hz world" — true
+ * only at 240 Hz. Moving the lane to 60 Hz turned it into 7.5 Hz sampling
+ * without a line changing, and the checks went on reporting as though nothing
+ * had. It made a resting body look 25 times more buried than it is (a sampled
+ * instant of a landing, 0.05 m, against a true resting depth of 0.0013 m), it
+ * made a touch-down comparison quantise to 11% steps against a 4% gate, and it
+ * hid a real fivefold rise in solver energy injection behind gaps wide enough
+ * to swallow it.
+ *
+ * A sampler that changes what it measures when the rate moves is not a
+ * sampler, it is a second variable.
+ */
+export const PLAYGROUND_SNAPSHOT_INTERVAL_SECONDS_V1 = 1 / 30;
+
+/** Whole ticks between snapshots at the one shared rate. */
+export const PLAYGROUND_SNAPSHOT_STRIDE_V1 = Math.max(
+  1,
+  solverTicksForSecondsV1(PLAYGROUND_SNAPSHOT_INTERVAL_SECONDS_V1),
+);
 
 export interface PlaygroundRunOptionsV1 {
   /** Wall-clock sampler for the timing report; injectable for tests. */
@@ -109,9 +131,9 @@ export async function runPlaygroundScenarioV1(
     const frames: PlaygroundFrameV1[] = [world.snapshot()];
     let maxStepMs = 0;
     let totalStepMs = 0;
-    for (let tick = 0; tick < scenario.ticks; tick += 1) {
+    for (let tick = 0; tick < solverTicksForSecondsV1(scenario.seconds); tick += 1) {
       for (const action of actions) {
-        if (action.atTick === tick) applyAction(world, action);
+        if (solverTicksForSecondsV1(action.atSeconds) === tick) applyAction(world, action);
       }
       const before = now();
       world.step();
@@ -120,7 +142,7 @@ export async function runPlaygroundScenarioV1(
       totalStepMs += elapsed;
       if (
         world.tick % PLAYGROUND_SNAPSHOT_STRIDE_V1 === 0
-        || tick === scenario.ticks - 1
+        || tick === solverTicksForSecondsV1(scenario.seconds) - 1
       ) {
         frames.push(world.snapshot());
       }
@@ -132,7 +154,7 @@ export async function runPlaygroundScenarioV1(
       frames,
       {
         maxStepMs,
-        meanStepMs: scenario.ticks > 0 ? totalStepMs / scenario.ticks : 0,
+        meanStepMs: solverTicksForSecondsV1(scenario.seconds) > 0 ? totalStepMs / solverTicksForSecondsV1(scenario.seconds) : 0,
       },
     );
   } finally {
@@ -151,7 +173,8 @@ export function playgroundResultLineV1(
   return `${result.status.toUpperCase().padEnd(4)} ${result.scenarioId} — `
     + `${headline}; max step ${result.maxStepMs.toFixed(2)} ms, mean `
     + `${result.meanStepMs.toFixed(3)} ms, deepest floor dip `
-    + `${result.maxFloorPenetration.toFixed(4)} m`;
+    + `${result.maxFloorPenetration.toFixed(4)} m`
+    + `, deepest impact burial ${result.maxImpactBurial.toFixed(4)} m`;
 }
 
 /**

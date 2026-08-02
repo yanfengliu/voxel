@@ -1,119 +1,167 @@
-import { readdirSync, readFileSync } from 'node:fs';
+import { readdirSync, readFileSync, statSync } from 'node:fs';
+import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { describe, expect, it } from 'vitest';
 
-import { LIVE_TICKS_PER_SECOND_V1, LIVE_TIMESTEP_SECONDS_V1 } from './live-physics.js';
+import {
+  LIVE_TICKS_PER_SECOND_V1,
+  LIVE_TIMESTEP_SECONDS_V1,
+} from './live-physics.js';
 import { PLAYGROUND_TIMESTEP_S_V1 } from './physics-playground-materials.js';
+import {
+  SOLVER_TICKS_PER_SECOND_V1,
+  SOLVER_TIMESTEP_SECONDS_V1,
+} from './solver-rate.js';
 
 /**
- * Every solver lane runs at the one rate.
+ * Every solver lane runs at the one rate, and there are no exceptions.
  *
- * The owner's rule is 60 Hz everywhere: 240 was a monitor refresh rate, and a
- * rate nobody ships is a rate nothing is really tested at. The rule was prose
- * for one session and drifted inside that session — two files spelled `1 / 240`
- * independently and agreed only by coincidence, so the headless twin and the
- * live session were quietly different worlds.
+ * The owner's rule is 60 Hz everywhere. It was prose for one session and
+ * drifted inside that session — two files spelled the same rate independently
+ * and agreed only by coincidence, so the headless twin and the live session
+ * were quietly different worlds and nothing said so.
  *
- * This is the enforcement. A lane that derives its step from the shared
- * constant passes for free; a lane that spells its own literal fails here and
- * says so by name.
+ * This used to carry an exemption list, and removing it is the point. An
+ * exemption survives by being easier to keep than to remove, and this one was
+ * hiding more than it declared: it named the playground twin, whose stated
+ * blocker turned out to be a measurement artifact rather than a solver defect;
+ * it said nothing about the chain consumer, which ran a real Rapier world off
+ * the shared rate; and its scan only ever covered `tools/studio`, so every
+ * fixture in the repository sat outside the rule it claimed to enforce.
+ *
+ * The scan now covers the whole repository, and there is nowhere left to keep
+ * a rate of one's own.
  */
 
-const STUDIO_DIRECTORY = fileURLToPath(new URL('.', import.meta.url));
-
+const REPO_ROOT = fileURLToPath(new URL('../..', import.meta.url));
+const SCANNED_DIRECTORIES = ['src', 'tools', 'fixtures', 'tests', 'scripts'];
 /**
- * Timestep literals are how the drift happened, so they are what is searched
- * for. A file may still name a rate in prose — the playground's constant
- * carries a comment about the rate it cannot meet yet — so only code lines
- * count.
+ * Generated traces are skipped. A recording states the rate it was made at as
+ * a fact about itself, not as a rate anything solves at now.
  */
+const GENERATED_PREFIX = 'generated-';
 /**
- * Files allowed to name a rate other than the lane's, each for a stated reason.
+ * Rates a solver might plausibly be given instead of the shared one.
  *
- * This list is meant to shrink. Anything on it is either a historical fact
- * about a recording — a trace made at 240 Hz was made at 240 Hz forever — or a
- * lane that has not reached the shared rate yet and says so where it is
- * declared.
+ * 30 is deliberately absent: it is a sampling and display rate rather than a
+ * rate anything solves at, and the scenario runner's 30 Hz observation
+ * interval is a legitimate independent choice.
  */
-const RATE_EXEMPT_FILES: Readonly<Record<string, string>> = Object.freeze({
-  'chain-replay-binding.ts':
-    'the timestep the committed chain trace was recorded at, which is history '
-    + 'rather than a rate anything solves at now',
-  'physics-playground-materials.ts':
-    'the headless twin has not reached 60 Hz yet; its declaration carries the '
-    + 'measurement that blocks it',
-});
+const RATE_LITERAL = /\b1\s*\/\s*(?:1000|960|480|240|120)\b/;
+const BLOCK_COMMENT = /\/\*[\s\S]*?\*\//g;
 
-function timestepLiteralOffenders(): readonly string[] {
-  const offenders: string[] = [];
-  for (const entry of readdirSync(STUDIO_DIRECTORY)) {
-    if (!entry.endsWith('.ts') || entry.endsWith('.test.ts')) continue;
-    if (entry in RATE_EXEMPT_FILES) continue;
-    const source = readFileSync(`${STUDIO_DIRECTORY}${entry}`, 'utf8');
-    source.split('\n').forEach((line, index) => {
-      const code = line.split('//')[0] ?? '';
-      if (/\b1\s*\/\s*(?:240|120|30)\b/.test(code)) {
-        offenders.push(`${entry}:${String(index + 1)}: ${line.trim()}`);
+function sourceFiles(directory: string): readonly string[] {
+  const found: string[] = [];
+  const walk = (current: string): void => {
+    for (const entry of readdirSync(current)) {
+      if (entry === 'node_modules' || entry.startsWith('.')) continue;
+      const full = join(current, entry);
+      if (statSync(full).isDirectory()) {
+        walk(full);
+        continue;
       }
-    });
+      if (!entry.endsWith('.ts')) continue;
+      if (entry.startsWith(GENERATED_PREFIX)) continue;
+      // This file necessarily spells rates: they are its test data. It is the
+      // scanner, not a lane, and the case below proves the scanner still sees
+      // a literal that hides behind a comment.
+      if (entry === 'solver-rate.test.ts') continue;
+      found.push(full);
+    }
+  };
+  walk(join(REPO_ROOT, directory));
+  return found;
+}
+
+/**
+ * Strips comments before searching.
+ *
+ * Prose about a historical rate — this file's own explanation included — must
+ * not fail the scan, and a real literal must not be able to hide behind one.
+ */
+function codeOnly(source: string): string {
+  return source
+    .replace(BLOCK_COMMENT, '')
+    .split('\n')
+    .map((line) => line.split('//')[0] ?? '')
+    .join('\n');
+}
+
+function rateLiteralOffenders(): readonly string[] {
+  const offenders: string[] = [];
+  for (const directory of SCANNED_DIRECTORIES) {
+    for (const file of sourceFiles(directory)) {
+      codeOnly(readFileSync(file, 'utf8')).split('\n').forEach((line, index) => {
+        if (!RATE_LITERAL.test(line)) return;
+        offenders.push(
+          `${file.slice(REPO_ROOT.length)}:${String(index + 1)}: ${line.trim()}`,
+        );
+      });
+    }
   }
   return offenders;
 }
 
 describe('the one solver rate', () => {
-  it('is 60 Hz', () => {
-    expect(LIVE_TIMESTEP_SECONDS_V1).toBeCloseTo(1 / 60, 12);
-    expect(LIVE_TICKS_PER_SECOND_V1).toBe(60);
+  it('is 60 Hz, and every lane derives from the same constant', () => {
+    expect(SOLVER_TICKS_PER_SECOND_V1).toBe(60);
+    expect(SOLVER_TIMESTEP_SECONDS_V1).toBeCloseTo(1 / 60, 12);
+    // Identity, not approximate agreement. A lane that merely rounds to the
+    // same number is a lane that can drift away from it.
+    expect(LIVE_TIMESTEP_SECONDS_V1).toBe(SOLVER_TIMESTEP_SECONDS_V1);
+    expect(LIVE_TICKS_PER_SECOND_V1).toBe(SOLVER_TICKS_PER_SECOND_V1);
+    expect(PLAYGROUND_TIMESTEP_S_V1).toBe(SOLVER_TIMESTEP_SECONDS_V1);
   });
 
-  it('has exactly one lane still off the shared rate, and it is the known one', () => {
-    // The headless twin and the browser session are one world or they are not
-    // a twin, so this gap is a defect with a date rather than a design.
-    // Blocked on re-measuring: at 60 Hz the stacking stations rest ~0.05 m
-    // into the floor against a 0.02 m tolerance, and the station thresholds
-    // and law damping rates were all calibrated at 240 Hz.
+  it('sees a rate that hides behind a comment', () => {
+    // The scan strips comments, which is exactly how a real literal could slip
+    // past it on a line that also carries prose. This proves it does not.
+    const disguised = codeOnly([
+      '/* a comment mentioning 1 / 240 */',
+      'const step = 1 / 240; // trailing prose about 1 / 960',
+      '// a whole line about 1 / 120',
+    ].join('\n'));
+    expect(disguised.split('\n').filter((line) => RATE_LITERAL.test(line)))
+      .toEqual(['const step = 1 / 240; ']);
+  });
+
+  it('is spelled nowhere but the one lane still being moved', () => {
+    // An exact set, not an exemption list. Anything new fails immediately, and
+    // so does this set SHRINKING: when the windmill consumer moves, the second
+    // assertion fails and tells whoever moved it to delete the entry, and to
+    // delete the list once it empties. The list this replaced could not notice
+    // its own obsolescence, which is how it outlived the problem it described.
     //
-    // What the gap costs, measured 2026-08-01: flipping this constant to 1/60
-    // fails ten checks across `fixtures/physics-playground`, and one of them
-    // is worse than a threshold — the counter-run that proves bearing friction
-    // is load-bearing passes at 60 Hz, so the law loses its demonstrated
-    // failure. Meanwhile the browser, which does run at 60, has a trebuchet
-    // that throws its shot almost straight up and misses the wall by 23 m;
-    // `model-studio-physics-playground.spec.ts` pins that as the blocked
-    // behaviour it is. Both ends of the gap are now written down.
-    //
-    // This asserts the gap is still exactly as recorded. When the playground
-    // is fixed this test fails, and the fix is to delete this case and the
-    // file's entry in RATE_EXEMPT_FILES — which is how the exception is
-    // stopped from quietly becoming permanent.
+    // Why this lane is still here, measured 2026-08-01: its compact machine
+    // was chosen by an exhaustive parameter search at a much finer step, and
+    // at the shared rate it completes ZERO causal cam-and-hammer cycles — the
+    // cam and follower never engage at all. Moving it means re-running that
+    // search at the shared rate and regenerating every frozen hash bound to
+    // the winning profile id. That is a piece of work, not a constant change.
+    const stillMoving = [
+      'windmill-compact-recorder.test.ts',
+      'windmill-compact-world.test.ts',
+      'windmill-operational-inputs.ts',
+      'windmill-replay-generation.test.ts',
+      'windmill-selected-proof-browser.ts',
+    ];
+    const offenders = rateLiteralOffenders();
+    const unexpected = offenders.filter(
+      (line) => !stillMoving.some((file) => line.includes(file)),
+    );
     expect(
-      PLAYGROUND_TIMESTEP_S_V1,
-      'the playground twin has reached the shared rate — delete this case and '
-      + "its RATE_EXEMPT_FILES entry, and assert it equals the lane's step",
-    ).toBeCloseTo(1 / 240, 12);
-    expect(PLAYGROUND_TIMESTEP_S_V1).not.toBeCloseTo(LIVE_TIMESTEP_SECONDS_V1, 6);
-  });
-
-  it('keeps every rate exemption explained where it is declared', () => {
-    // An exemption without its reason on the page is an exemption nobody can
-    // audit, so the reason has to survive in the file itself.
-    for (const [file, reason] of Object.entries(RATE_EXEMPT_FILES)) {
-      const source = readFileSync(`${STUDIO_DIRECTORY}${file}`, 'utf8');
-      expect(
-        /60 Hz|60Hz|recorded|history/i.test(source),
-        `${file} is exempt from the shared solver rate because ${reason}, but `
-        + 'nothing in the file says so. State it where the constant is declared.',
-      ).toBe(true);
-    }
-  });
-
-  it('is not quietly respelled as a literal anywhere in Studio', () => {
-    const offenders = timestepLiteralOffenders();
-    expect(
-      offenders,
+      unexpected,
       'these lines spell a solver rate instead of deriving it from '
-      + `LIVE_TIMESTEP_SECONDS_V1:\n${offenders.join('\n')}`,
+      + `SOLVER_TIMESTEP_SECONDS_V1:\n${unexpected.join('\n')}`,
     ).toEqual([]);
+    const stillOffending = stillMoving.filter(
+      (file) => offenders.some((line) => line.includes(file)),
+    );
+    expect(
+      stillOffending,
+      'these files no longer spell a rate — delete them from `stillMoving`, '
+      + 'and when it empties, delete the list and assert no offenders at all',
+    ).toEqual(stillMoving);
   });
 });

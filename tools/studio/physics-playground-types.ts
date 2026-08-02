@@ -119,7 +119,7 @@ export interface PlaygroundBodyDefV1 {
 export type PlaygroundActionV1 =
   | {
     readonly kind: 'spawn';
-    readonly atTick: number;
+    readonly atSeconds: number;
     readonly placementId: string;
     readonly centre: readonly [number, number, number];
     readonly velocity?: readonly [number, number, number];
@@ -129,17 +129,17 @@ export type PlaygroundActionV1 =
     /** Releases a joint — the trebuchet's trigger rope. The joined bodies
      * stay; only the constraint vanishes. */
     readonly kind: 'detach-joint';
-    readonly atTick: number;
+    readonly atSeconds: number;
     readonly jointId: string;
   }
   | {
     readonly kind: 'remove';
-    readonly atTick: number;
+    readonly atSeconds: number;
     readonly placementId: string;
   }
   | {
     readonly kind: 'impulse';
-    readonly atTick: number;
+    readonly atSeconds: number;
     readonly placementId: string;
     readonly impulse: readonly [number, number, number];
   };
@@ -194,7 +194,7 @@ export type PlaygroundCheckRefV1 =
      * Defaults to a quarter second, which is longer than the interval
      * between a swing's turning points at any speed these scenes reach.
      */
-    readonly settledForTicks?: number;
+    readonly settledForSeconds?: number;
     /**
      * Only these bodies must settle; omitted means every dynamic body.
      * A machine on frictionless hinges never fully stops — the
@@ -216,8 +216,8 @@ export type PlaygroundCheckRefV1 =
     readonly check: 'flight-follows-known-forces';
     readonly placementId: string;
     /** The airborne window to test, in ticks. */
-    readonly fromTick: number;
-    readonly toTick: number;
+    readonly fromSeconds: number;
+    readonly toSeconds: number;
     /** Air drag acting on the body, so the prediction can include it. */
     readonly airDrag: number;
     /** Allowed speed error in m/s across the window. */
@@ -232,7 +232,7 @@ export type PlaygroundCheckRefV1 =
     readonly check: 'impulse-response';
     readonly placementId: string;
     /** The tick the scenario's impulse action fires on. */
-    readonly atTick: number;
+    readonly atSeconds: number;
     readonly impulse: readonly [number, number, number];
     /** Allowed fraction of the predicted velocity change. */
     readonly toleranceFraction: number;
@@ -262,8 +262,8 @@ export type PlaygroundCheckRefV1 =
      */
     readonly check: 'momentum-conserved';
     readonly placementIds: readonly string[];
-    readonly fromTick: number;
-    readonly toTick: number;
+    readonly fromSeconds: number;
+    readonly toSeconds: number;
     /** Allowed drift as a fraction of the opening momentum magnitude. */
     readonly toleranceFraction: number;
   }
@@ -277,7 +277,7 @@ export type PlaygroundCheckRefV1 =
      * machine delivered — the trebuchet's ball hits 14.6 m/s on landing
      * and leaves the sling at 6.6 m/s.
      */
-    readonly throughTick?: number;
+    readonly throughSeconds?: number;
   }
   | { readonly check: 'rotated-at-least'; readonly placementId: string; readonly minDegrees: number }
   | { readonly check: 'rotated-at-most'; readonly placementId: string; readonly maxDegrees: number };
@@ -295,8 +295,15 @@ export interface PlaygroundScenarioV1 {
   readonly omit?: readonly string[];
   /** Ramp-angle override in degrees for stations with a 'ramp-angle' slope. */
   readonly angleDegrees?: number;
-  /** Fixed solver ticks the scenario runs (240 per simulated second). */
-  readonly ticks: number;
+  /**
+   * How long the scenario runs, in seconds of simulated time.
+   *
+   * Seconds, never ticks. A tick count silently means a different span the
+   * moment the solver rate moves — every window in this file was authored at
+   * 240 Hz, and at 60 Hz each covered four times the time it was written for,
+   * which turned physical claims into claims about numbers nobody re-read.
+   */
+  readonly seconds: number;
   readonly checks: readonly PlaygroundCheckRefV1[];
 }
 
@@ -324,6 +331,12 @@ export interface PlaygroundStationV1 {
   readonly slopes: readonly PlaygroundSlopeV1[];
   readonly joints?: readonly PlaygroundJointV1[];
   readonly cases: readonly PlaygroundCaseV1[];
+  /**
+   * Internal PGS passes this station's world uses, when it needs more than the
+   * default. Declared by content whose constraints do violent work; see
+   * SOLVER_WHIP_PGS_ITERATIONS_V1 for why it is not global.
+   */
+  readonly internalPgsIterations?: number;
   readonly scenarios: readonly PlaygroundScenarioV1[];
   /** Present only on the ramp station. */
   readonly rampAngles?: readonly number[];

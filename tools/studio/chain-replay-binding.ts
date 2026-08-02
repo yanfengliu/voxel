@@ -18,30 +18,17 @@ export const CHAIN_GRAIN_V1 = 0.25;
 export const CHAIN_SLACK_V1 = 0.75;
 export const CHAIN_REPLAY_START_DIP = 0.5;
 
-/** 240 Hz solver, every fourth step recorded, so playback is 60 fps. */
-export const CHAIN_REPLAY_TIMESTEP_V1 = 1 / 240;
-export const CHAIN_REPLAY_STEP_STRIDE = 4;
-/** Five seconds of falling, then six of swinging. */
-export const CHAIN_REPLAY_SETTLE_STEPS = 1_200;
-export const CHAIN_REPLAY_PUSH_STEPS = 1_440;
-export const CHAIN_REPLAY_PUSH_IMPULSE = 60;
-
-/** Milliseconds between recorded frames. */
-export const CHAIN_REPLAY_FRAME_MS =
-  CHAIN_REPLAY_TIMESTEP_V1 * CHAIN_REPLAY_STEP_STRIDE * 1_000;
-
-/** One frame at rest, then one per recorded step. */
-export const CHAIN_REPLAY_FRAME_COUNT = 1
-  + (CHAIN_REPLAY_SETTLE_STEPS + CHAIN_REPLAY_PUSH_STEPS)
-    / CHAIN_REPLAY_STEP_STRIDE;
-
 /**
- * Derived, never written by hand: the scene reference and the trace must agree
- * exactly or scrubbing wraps at the wrong time, which the scene validator
- * rejects outright.
+ * How long the chain is given to fall and to swing, in seconds.
+ *
+ * Seconds, not steps. These were step counts written for a 240 Hz solver, and
+ * a step count silently means a different span the moment the rate moves — the
+ * chain would have been given twenty seconds to settle instead of five without
+ * a line changing. The fixture converts them at the one shared rate.
  */
-export const CHAIN_REPLAY_DURATION_MS =
-  CHAIN_REPLAY_FRAME_COUNT * CHAIN_REPLAY_FRAME_MS;
+export const CHAIN_SETTLE_SECONDS_V1 = 5;
+export const CHAIN_SWING_SECONDS_V1 = 6;
+export const CHAIN_REPLAY_PUSH_IMPULSE = 60;
 
 /** The curve the chain settles onto, solved by bisection. */
 export function chainCatenaryV1(

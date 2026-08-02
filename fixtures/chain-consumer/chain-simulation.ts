@@ -1,8 +1,12 @@
 import RAPIER from '@dimforge/rapier3d-compat';
 
 import {
-  CHAIN_REPLAY_PUSH_STEPS,
-  CHAIN_REPLAY_SETTLE_STEPS,
+  SOLVER_TIMESTEP_SECONDS_V1,
+  solverTicksForSecondsV1,
+} from '../../tools/studio/solver-rate.js';
+import {
+  CHAIN_SETTLE_SECONDS_V1,
+  CHAIN_SWING_SECONDS_V1,
   CHAIN_REPLAY_START_DIP,
 } from '../../tools/studio/chain-replay-binding.js';
 import { CHAIN_RECORDED_START_POSES_V1 } from './chain-start-poses.js';
@@ -31,7 +35,7 @@ import { decomposeVoxelsV1 } from '../../tools/studio/voxel-colliders.js';
  */
 
 export const CHAIN_GRAIN_V1 = 0.25;
-export const CHAIN_TIMESTEP_V1 = 1 / 240;
+export const CHAIN_TIMESTEP_V1 = SOLVER_TIMESTEP_SECONDS_V1;
 export const CHAIN_GRAVITY_V1 = -9.81;
 
 /**
@@ -210,12 +214,14 @@ function neighbourGaps(poses: readonly ChainPoseV1[]): number {
 export async function runChainSimulationV1(
   options: ChainRunOptionsV1 = {},
 ): Promise<ChainRunResultV1> {
-  const settleSteps = options.settleSteps ?? CHAIN_REPLAY_SETTLE_STEPS;
+  const settleSteps = options.settleSteps
+    ?? solverTicksForSecondsV1(CHAIN_SETTLE_SECONDS_V1);
   const gravityScale = options.gravityScale ?? 1;
   const pushImpulse = options.pushImpulse ?? 0;
   // Long enough for the swing to decay; a short window measures mid-swing
   // and makes a returning chain look like one that stayed pushed.
-  const pushSteps = options.pushSteps ?? CHAIN_REPLAY_PUSH_STEPS;
+  const pushSteps = options.pushSteps
+    ?? solverTicksForSecondsV1(CHAIN_SWING_SECONDS_V1);
 
   await RAPIER.init();
   const world = new RAPIER.World({ x: 0, y: CHAIN_GRAVITY_V1 * gravityScale, z: 0 });

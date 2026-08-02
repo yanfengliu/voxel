@@ -3,6 +3,11 @@ import { modelOccupancyV1, decomposeVoxelsV1 } from './voxel-colliders.js';
 import type { StudioModelV1 } from './model.js';
 import { physicsLawValuesForV1 } from './physics-laws.js';
 import {
+  SOLVER_SOFT_CCD_PREDICTION_V1,
+  SOLVER_TICKS_PER_SECOND_V1,
+  SOLVER_TIMESTEP_SECONDS_V1,
+} from './solver-rate.js';
+import {
   applyLivePhysicsWindV1,
   type LivePhysicsWindPlanV1,
 } from './live-physics-wind.js';
@@ -43,6 +48,14 @@ import {
 
 export interface LivePhysicsBodyPlanV1 {
   readonly placementId: string;
+  /**
+   * How far ahead this body watches for contact, in world units. Declared by
+   * content that falls hard, because the distance a body closes in one step is
+   * what decides whether the solver sees a contact before or after the overlap
+   * already exists. See SOLVER_SOFT_CCD_PREDICTION_V1 for the measured value
+   * and for why it is speed-shaped rather than size-shaped.
+   */
+  readonly softCcdPrediction?: number;
   /**
    * How the solver treats this body. A kinematic body is moved by the scene
    * rather than by forces: it pushes everything it meets and nothing pushes
@@ -219,8 +232,8 @@ export interface LiveContactSampleV1 {
  * own clock instead of reading the wall, and so tests count in the lane's
  * ticks rather than in a number they hardcode.
  */
-export const LIVE_TIMESTEP_SECONDS_V1 = 1 / 60;
-export const LIVE_TICKS_PER_SECOND_V1 = Math.round(1 / LIVE_TIMESTEP_SECONDS_V1);
+export const LIVE_TIMESTEP_SECONDS_V1 = SOLVER_TIMESTEP_SECONDS_V1;
+export const LIVE_TICKS_PER_SECOND_V1 = SOLVER_TICKS_PER_SECOND_V1;
 const TIMESTEP_S = LIVE_TIMESTEP_SECONDS_V1;
 /** About 100 ms of catch-up: enough to ride out a hitch, not to time-travel. */
 const MAX_STEPS_PER_FRAME = 6;
@@ -350,6 +363,14 @@ export class LivePhysicsSessionV1 {
       .setLinvel(vx, vy, vz)
       .setAngvel({ x: wx, y: wy, z: wz });
     if (plan.ccd) description.setCcdEnabled(true);
+    // How far ahead this body watches for contact, when it declares one. A
+    // body that falls hard closes more ground in a step than the solver looks
+    // ahead by default, and is resolved already buried; a body that creeps
+    // along a belt does not, and would only nudge its neighbours from too far
+    // away. See SOLVER_SOFT_CCD_PREDICTION_V1.
+    if (plan.softCcdPrediction !== undefined) {
+      description.setSoftCcdPrediction(plan.softCcdPrediction);
+    }
     // Nothing moves through a vacuum.
     description.setLinearDamping(physicsLawValuesForV1(plan.material?.id).airDrag);
     const body = this.#world.createRigidBody(description);
@@ -486,6 +507,7 @@ export class LivePhysicsSessionV1 {
     const clampedX = Math.min(spawn.maxX, Math.max(spawn.minX, x));
     const body = this.#world.createRigidBody(
       this.#rapier.RigidBodyDesc.dynamic()
+        .setSoftCcdPrediction(SOLVER_SOFT_CCD_PREDICTION_V1)
         .setTranslation(clampedX, spawn.dropY, 0),
     );
     const collider = this.#world.createCollider(

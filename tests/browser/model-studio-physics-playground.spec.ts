@@ -325,7 +325,7 @@ test('a live-solved scene says so, and never calls itself a recording', async ({
   );
 });
 
-test('the fired trebuchet still misses the wall at the rate the browser runs', async ({ page }) => {
+test('the fired trebuchet knocks the brick wall down', async ({ page }) => {
   const errors: string[] = [];
   page.on('pageerror', (error) => errors.push(error.message));
   page.on('console', (message) => {
@@ -382,31 +382,17 @@ test('the fired trebuchet still misses the wall at the rate the browser runs', a
   const ball = await page.evaluate(() => window.voxelStudio!.playground
     .bodies().find((body) => body.placementId === 'ball')?.translation ?? []);
 
-  // This test used to assert the wall comes down, and it does — at 240 Hz,
-  // which is the only rate the headless twin runs and is not the rate this
-  // browser runs. `PLAYGROUND_TIMESTEP_S_V1` is still 1/240 while the live
-  // lane is 1/60, and `solver-rate.test.ts` records that gap as delivery work.
-  //
-  // Measured through the same live path with only the timestep changed: at
-  // 240 Hz the ball reaches the wall and moves 12 of 33 bricks, the farthest
-  // by 6.32 m, coming to rest at x -0.34. At 60 Hz the sling releases late,
-  // the shot goes almost straight up — apex 16.9 m against 14.5 — lands at
-  // z -8.6 about 23 m short of the wall, drifts 3.69 m off the firing plane,
-  // and moves nothing. The cup walls that aim the throw were sized against
-  // 240 Hz contact timing; no single geometry satisfies both rates, so the
-  // machine cannot be tuned until the two lanes are one world.
-  //
-  // So this pins what the owner actually sees, and is written to FAIL when
-  // the machine is fixed. When it does: delete this case, restore the
-  // wall-comes-down assertions from the git history, and re-measure.
-  expect(
-    knocked,
-    'the trebuchet reached the wall at 60 Hz — restore the wall-comes-down '
-    + 'assertions and delete this placeholder',
-  ).toBe(0);
+  // The wall comes down. This assertion was inverted for one commit, while
+  // the headless twin still ran at a different rate from this browser and the
+  // machine only worked there; it is restored now that both lanes solve at the
+  // one rate and the machine was retuned for it. Deliberately a loose bound on
+  // a chaotic quantity — a collapsing stack amplifies any difference in where
+  // the shot lands, and this lane measured 23 bricks displaced past a quarter
+  // metre. Eight is still something a merely chipped wall cannot produce, and
+  // the headless scenario carries the exact per-brick assertions.
+  expect(knocked, 'the wall should be knocked down, not chipped')
+    .toBeGreaterThanOrEqual(8);
   expect(ball, 'the ball body is missing from the live world').toHaveLength(3);
-  expect(ball[2], 'the shot fell short of the wall, as measured')
-    .toBeGreaterThan(-20);
 
   // Whatever it does, it must stay a finite world and reset cleanly.
   const finite = await page.evaluate(() => window.voxelStudio!.playground
@@ -435,6 +421,12 @@ test('the fired trebuchet still misses the wall at the rate the browser runs', a
 });
 
 test('the trebuchet holds cocked, fires downrange, and reset re-cocks it', async ({ page }) => {
+  // Sized against the work this test does rather than against what the machine
+  // used to cost: this station solves 33 bricks and a jointed machine with the
+  // whip's extra solver passes, and it waits out several seconds of simulated
+  // flight in real time. The default budget was set when the machine was
+  // cheaper, and expiring reads as a broken trebuchet rather than a slow one.
+  test.setTimeout(240_000);
   const errors: string[] = [];
   page.on('pageerror', (error) => errors.push(error.message));
   page.on('console', (message) => {
@@ -483,15 +475,10 @@ test('the trebuchet holds cocked, fires downrange, and reset re-cocks it', async
       .find((body) => body.placementId === 'ball'),
   }));
   expect(flight.joints).toBe(3);
-  // In the firing plane at 240 Hz — the ball comes to rest at x -0.34 — and
-  // not at the 60 Hz this browser runs, where the late release throws it
-  // 1.52 m sideways. Same defect as the wall it now misses; same fix. This
-  // is written to FAIL once the shot is straight again, so restore
-  // `toBeLessThan(1.5)` when it does.
-  expect(
-    Math.abs(flight.ball?.translation[0] ?? 9),
-    'the shot came back into the firing plane — restore the in-plane bound',
-  ).toBeGreaterThan(1.5);
+  // In the firing plane. It left it for one commit — the late release at this
+  // rate threw the ball 1.52 m sideways — and came back to 0.26 m once the
+  // sling's release-delaying cup walls came off.
+  expect(Math.abs(flight.ball?.translation[0] ?? 9)).toBeLessThan(1.5);
 
   // Reset rebuilds the cocked machine: the lashing is back and the ball
   // waits in the pouch again.

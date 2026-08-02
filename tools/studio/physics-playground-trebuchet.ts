@@ -1,4 +1,5 @@
 import type { RecipeV1 } from './recipe.js';
+import { SOLVER_WHIP_PGS_ITERATIONS_V1 } from './solver-rate.js';
 import {
   boxStep,
   playgroundRecipe,
@@ -89,12 +90,22 @@ export const TREBUCHET_TRIGGER_ROPE_V1 = 0.24;
  * The target wall. Its z is not a taste decision: it stands where the
  * shipped machine actually brings the ball down through y = 2.0 m, so
  * the ball meets it in its upper-middle course rather than clearing the
- * top or ploughing the base. It has moved twice, both times because the
- * universe gained a law and the shot got shorter: z -32.1 when joints
- * and air were frictionless, -30.2 once joint friction existed, -26.6
- * once air drag did. Each time the wall followed the shot. The
- * alternative — tuning the machine until it reached a wall placed by
+ * top or ploughing the base. It has moved four times, every time because
+ * the shot got shorter and the wall followed it: z -32.1 when joints and
+ * air were frictionless, -30.2 once joint friction existed, -26.6 once
+ * air drag did, and -24.5 once the lane settled at its one solver rate,
+ * the release-delaying cup walls came off the sling, and the whip got the
+ * solver passes its constraint work needs.
+ * The alternative — tuning the machine until it reached a wall placed by
  * habit — would have meant bending the machine to protect a number.
+ *
+ * The last move came with a change to the machine rather than instead of
+ * one: the cup walls that delayed release were tuned in ticks at the old
+ * rate and, left alone, turned a throw into a lob. With them gone, and with
+ * the whip's solver passes raised, the ball comes down through y = 2.0 m at
+ * z -24.48 doing 19.0 m/s, dead straight — 0.01 m of lateral wander against
+ * 1.34 m before. Every one of those three changes moved the landing point by
+ * metres, which is worth knowing before touching this machine again.
  *
  * One brick is 1.0 x 0.5 x 0.5 m. Courses alternate 5 and 4 bricks in a
  * running bond, so no vertical joint runs through two courses and the
@@ -102,7 +113,7 @@ export const TREBUCHET_TRIGGER_ROPE_V1 = 0.24;
  * are separate rigid bodies resting on each other, which is the whole
  * reason a hit scatters them without any fracture system.
  */
-export const TREBUCHET_WALL_Z_V1 = -26.75;
+export const TREBUCHET_WALL_Z_V1 = -24.5;
 export const TREBUCHET_WALL_COURSES_V1 = 6;
 const BRICK_W = 1;
 const BRICK_H = 0.5;
@@ -263,12 +274,20 @@ export function createTrebuchetSlingRecipe(): RecipeV1 {
       boxStep([2, 1, 4], [1, 3, 1], 'wood', 'Eye hook, bearing cheek'),
       boxStep([2, 2, 5], [1, 1, 8], 'wood', 'Link bar from eye to pouch'),
       boxStep([0, 1, 13], [5, 1, 4], 'wood', 'Pouch plate the ball rests on'),
-      // Measured, these two do not stop lateral escape — the revolute
-      // sling pivot already forbids it, and removing them leaves the
-      // ball's sideways wander under 9 cm. What they do is delay
-      // separation by about 190 ticks, which is what aims the throw.
-      boxStep([0, 2, 13], [1, 1, 4], 'wood', 'West cup wall, holding release late'),
-      boxStep([4, 2, 13], [1, 1, 4], 'wood', 'East cup wall, holding release late'),
+      // Two cup walls used to stand here, and their only job was to delay
+      // separation — measured at the time as about 190 ticks, "which is what
+      // aims the throw". They aimed it at one solver rate. At the shared rate
+      // the whip travels four times as far per step, so the same walls held
+      // the ball into a later, steeper part of the swing and turned the
+      // machine into a mortar: apex 16.7 m for 11.5 m of range, with the
+      // landing point moving 7.4 m for a single tick of release timing.
+      //
+      // Without them the ball leaves cleanly and straight — it comes down
+      // through wall height at z -19.05 doing 18.5 m/s, with 0.64 m of lateral
+      // wander, against 1.34 m with them. The revolute sling pivot already
+      // forbids lateral escape, which is why they were never load-bearing for
+      // that. A delay measured in ticks was a delay measured in the wrong
+      // unit.
       boxStep([1, 2, 16], [3, 2, 1], 'wood',
         'Tall tail rim: the steeper short-sling drag rolled the ball '
         + 'over a one-cell rim and left it on the floor'),
@@ -750,12 +769,16 @@ export function createTrebuchetStationV1(): PlaygroundStationV1 {
       + 'counter-run proves the energy law can fail.',
     bodies,
     slopes: [],
+    // The whip is the most violent constraint work in the playground, and at
+    // the default two passes the solver adds energy to it faster than a
+    // motorless machine is allowed to gain any.
+    internalPgsIterations: SOLVER_WHIP_PGS_ITERATIONS_V1,
     joints,
     cases: [
       {
         id: 'fire',
         label: 'fire',
-        actions: [{ kind: 'detach-joint', atTick: 30, jointId: 'trigger' }],
+        actions: [{ kind: 'detach-joint', atSeconds: 0.125, jointId: 'trigger' }],
       },
       {
         // Not offered as a thing to watch — it exists so the energy law
@@ -765,10 +788,10 @@ export function createTrebuchetStationV1(): PlaygroundStationV1 {
         id: 'kick',
         label: 'control: kick the ball',
         actions: [
-          { kind: 'detach-joint', atTick: 30, jointId: 'trigger' },
+          { kind: 'detach-joint', atSeconds: 0.125, jointId: 'trigger' },
           {
             kind: 'impulse',
-            atTick: 600,
+            atSeconds: 2.5,
             placementId: 'ball',
             impulse: [0, 4000, 0],
           },
@@ -779,7 +802,7 @@ export function createTrebuchetStationV1(): PlaygroundStationV1 {
       {
         id: 'treb-hold',
         label: 'Cocked and holding: the trigger rope carries the torque',
-        ticks: 720,
+        seconds: 3,
         checks: [
           {
             // 'frame' and 'anchor' are deliberately absent: both are
@@ -811,7 +834,7 @@ export function createTrebuchetStationV1(): PlaygroundStationV1 {
         // the field at a constant 4.3 m/s because Rapier models no
         // rolling resistance, and that is a documented engine finding,
         // not something this scenario is measuring.
-        ticks: 1500,
+        seconds: 6.25,
         checks: [
           // Swept angle, not final attitude: the arm passes 170 degrees.
           { check: 'rotated-at-least', placementId: 'arm', minDegrees: 100 },
@@ -823,7 +846,7 @@ export function createTrebuchetStationV1(): PlaygroundStationV1 {
             check: 'peak-speed-at-least',
             placementId: 'ball',
             minSpeed: 12,
-            throughTick: 500,
+            throughSeconds: 2.083333,
           },
           // No `crossed-plane` here: it reads the ball's final position,
           // and the ball rebounds off the wall and rolls back up the
@@ -838,8 +861,8 @@ export function createTrebuchetStationV1(): PlaygroundStationV1 {
           {
             check: 'flight-follows-known-forces',
             placementId: 'ball',
-            fromTick: 500,
-            toTick: 900,
+            fromSeconds: 2.083333,
+            toSeconds: 3.75,
             airDrag: 0.02,
             toleranceMetersPerSecond: 0.05,
           },
@@ -888,7 +911,7 @@ export function createTrebuchetStationV1(): PlaygroundStationV1 {
         id: 'treb-settles',
         label: 'The machine comes to rest after firing',
         caseId: 'fire',
-        ticks: 9600,
+        seconds: 40,
         checks: [
           {
             check: 'all-asleep-or-slow',
@@ -908,12 +931,12 @@ export function createTrebuchetStationV1(): PlaygroundStationV1 {
         id: 'treb-second-law',
         label: 'The kick moves the ball by force over mass, exactly',
         caseId: 'kick',
-        ticks: 700,
+        seconds: 2.916667,
         checks: [
           {
             check: 'impulse-response',
             placementId: 'ball',
-            atTick: 600,
+            atSeconds: 2.5,
             impulse: [0, 4000, 0],
             toleranceFraction: 0.02,
           },
@@ -929,7 +952,7 @@ export function createTrebuchetStationV1(): PlaygroundStationV1 {
         id: 'treb-energy-control',
         label: 'Control: a kicked ball breaks conservation of energy',
         caseId: 'kick',
-        ticks: 900,
+        seconds: 3.75,
         checks: [
           // Newton's second law, on the same kick this scenario uses to
           // prove energy cannot appear from nowhere. The impulse is
@@ -939,7 +962,7 @@ export function createTrebuchetStationV1(): PlaygroundStationV1 {
           {
             check: 'impulse-response',
             placementId: 'ball',
-            atTick: 600,
+            atSeconds: 2.5,
             impulse: [0, 2000, 0],
             toleranceFraction: 0.02,
           },
@@ -951,7 +974,7 @@ export function createTrebuchetStationV1(): PlaygroundStationV1 {
         label: 'Subtraction: no counterweight, the fire case is inert',
         caseId: 'fire',
         omit: ['cw'],
-        ticks: 720,
+        seconds: 3,
         checks: [
           { check: 'rotated-at-most', placementId: 'arm', maxDegrees: 15 },
           { check: 'moved-at-most', placementId: 'ball', maxTravelMeters: 0.4 },
@@ -963,7 +986,7 @@ export function createTrebuchetStationV1(): PlaygroundStationV1 {
         label: 'Subtraction: no sling, the swing carries nothing',
         caseId: 'fire',
         omit: ['sling'],
-        ticks: 1680,
+        seconds: 7,
         checks: [
           { check: 'rotated-at-least', placementId: 'arm', minDegrees: 100 },
           { check: 'moved-at-most', placementId: 'ball', maxTravelMeters: 1.2 },

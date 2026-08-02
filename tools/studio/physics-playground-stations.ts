@@ -106,7 +106,7 @@ function fallingStation(): PlaygroundStationV1 {
     scenarios: [{
       id: 'falling-settle',
       label: 'All four objects fall, land, and rest',
-      ticks: 720,
+      seconds: 3,
       checks: [
         { check: 'settles-on-floor', placementIds: droppers, floorTopY: FLOOR_TOP },
         { check: 'no-floor-penetration', floorTopY: FLOOR_TOP, toleranceMeters: 0.02 },
@@ -205,7 +205,7 @@ function rampStation(): PlaygroundStationV1 {
         id: 'ramp-10-all-hold',
         label: 'At 10 degrees every material except ice holds',
         angleDegrees: 10,
-        ticks: 720,
+        seconds: 3,
         checks: [
           { check: 'holds-still', placementIds: ['block-wood', 'block-stone', 'block-steel'], maxDriftMeters: 0.08 },
           { check: 'slides-downhill', placementIds: ['block-ice'], minTravelMeters: 0.5 },
@@ -217,7 +217,7 @@ function rampStation(): PlaygroundStationV1 {
         id: 'ramp-20-split',
         label: 'At 20 degrees ice and steel slide, wood and stone hold',
         angleDegrees: 20,
-        ticks: 720,
+        seconds: 3,
         checks: [
           { check: 'holds-still', placementIds: ['block-wood', 'block-stone'], maxDriftMeters: 0.08 },
           { check: 'slides-downhill', placementIds: ['block-ice', 'block-steel'], minTravelMeters: 0.5 },
@@ -229,7 +229,7 @@ function rampStation(): PlaygroundStationV1 {
         id: 'ramp-40-all-slide',
         label: 'At 40 degrees every material slides',
         angleDegrees: 40,
-        ticks: 720,
+        seconds: 3,
         checks: [
           {
             check: 'slides-downhill',
@@ -251,7 +251,7 @@ function rampStation(): PlaygroundStationV1 {
         id: 'ramp-berm-control',
         label: 'Without the berm, ice slides off the world',
         angleDegrees: 20,
-        ticks: 1440,
+        seconds: 6,
         omit: ['berm'],
         checks: [
           // Ice clears the floor edge at about 2.4 s and is in free fall
@@ -438,17 +438,17 @@ function launcherStation(): PlaygroundStationV1 {
       {
         id: 'light-into-heavy',
         label: 'Light wood into heavy steel',
-        actions: [{ kind: 'spawn', atTick: 0, placementId: 'proj-light', centre: muzzle(-4), velocity: [0, 0, -12] }],
+        actions: [{ kind: 'spawn', atSeconds: 0, placementId: 'proj-light', centre: muzzle(-4), velocity: [0, 0, -12] }],
       },
       {
         id: 'heavy-into-light',
         label: 'Heavy steel into light wood',
-        actions: [{ kind: 'spawn', atTick: 0, placementId: 'proj-heavy', centre: muzzle(-2), velocity: [0, 0, -12] }],
+        actions: [{ kind: 'spawn', atSeconds: 0, placementId: 'proj-heavy', centre: muzzle(-2), velocity: [0, 0, -12] }],
       },
       {
         id: 'equal-masses',
         label: 'Equal masses exchange momentum',
-        actions: [{ kind: 'spawn', atTick: 0, placementId: 'proj-equal', centre: muzzle(0), velocity: [0, 0, -12] }],
+        actions: [{ kind: 'spawn', atSeconds: 0, placementId: 'proj-equal', centre: muzzle(0), velocity: [0, 0, -12] }],
       },
       {
         // Two bodies meeting in open air, nothing else touching either.
@@ -465,14 +465,14 @@ function launcherStation(): PlaygroundStationV1 {
         actions: [
           {
             kind: 'spawn',
-            atTick: 0,
+            atSeconds: 0,
             placementId: 'proj-heavy',
             centre: [6, 9, 4],
             velocity: [0, 0, -14],
           },
           {
             kind: 'spawn',
-            atTick: 0,
+            atSeconds: 0,
             placementId: 'proj-equal',
             centre: [6, 9, -4],
             velocity: [0, 0, 10],
@@ -482,7 +482,7 @@ function launcherStation(): PlaygroundStationV1 {
       {
         id: 'fast-wall-ccd',
         label: 'Fast shot at the thin wall (CCD on)',
-        actions: [{ kind: 'spawn', atTick: 0, placementId: 'proj-fast', centre: [2, 1.2, 5.1], velocity: [0, 0, -300], ccd: true }],
+        actions: [{ kind: 'spawn', atSeconds: 0, placementId: 'proj-fast', centre: [2, 1.2, 5.1], velocity: [0, 0, -300], ccd: true }],
       },
       {
         // 300 m/s is 1.25 m per 1/240 s step, more than the 1.0 m
@@ -491,12 +491,12 @@ function launcherStation(): PlaygroundStationV1 {
         // never sees an overlap.
         id: 'fast-wall-noccd',
         label: 'Fast shot at the thin wall (CCD off)',
-        actions: [{ kind: 'spawn', atTick: 0, placementId: 'proj-fast-noccd', centre: [3.2, 1.2, 5.1], velocity: [0, 0, -300] }],
+        actions: [{ kind: 'spawn', atSeconds: 0, placementId: 'proj-fast-noccd', centre: [3.2, 1.2, 5.1], velocity: [0, 0, -300] }],
       },
       {
         id: 'stack-knockdown',
         label: 'Knock the pyramid down',
-        actions: [{ kind: 'spawn', atTick: 0, placementId: 'proj-stack', centre: muzzle(4.75), velocity: [0, 0, -15] }],
+        actions: [{ kind: 'spawn', atSeconds: 0, placementId: 'proj-stack', centre: muzzle(4.75), velocity: [0, 0, -15] }],
       },
     ],
     scenarios: [
@@ -504,7 +504,7 @@ function launcherStation(): PlaygroundStationV1 {
         id: 'launcher-light-heavy',
         label: 'Light projectile barely moves the heavy target',
         caseId: 'light-into-heavy',
-        ticks: 600,
+        seconds: 2.5,
         checks: [
           { check: 'moved-at-most', placementId: 'target-heavy', maxTravelMeters: 0.6 },
           { check: 'moved-at-least', placementId: 'proj-light', minTravelMeters: 3 },
@@ -515,7 +515,7 @@ function launcherStation(): PlaygroundStationV1 {
         id: 'launcher-heavy-light',
         label: 'Heavy projectile sends the light target flying',
         caseId: 'heavy-into-light',
-        ticks: 600,
+        seconds: 2.5,
         checks: [
           { check: 'moved-at-least', placementId: 'target-light', minTravelMeters: 2 },
           { check: 'all-finite' },
@@ -525,7 +525,7 @@ function launcherStation(): PlaygroundStationV1 {
         id: 'launcher-equal',
         label: 'Equal masses exchange momentum',
         caseId: 'equal-masses',
-        ticks: 600,
+        seconds: 2.5,
         checks: [
           { check: 'moved-at-least', placementId: 'target-equal', minTravelMeters: 1.5 },
           { check: 'all-finite' },
@@ -538,13 +538,13 @@ function launcherStation(): PlaygroundStationV1 {
         id: 'launcher-midair-momentum',
         label: 'Mid-air collision conserves momentum',
         caseId: 'head-on-midair',
-        ticks: 200,
+        seconds: 0.833333,
         checks: [
           {
             check: 'momentum-conserved',
             placementIds: ['proj-heavy', 'proj-equal'],
-            fromTick: 40,
-            toTick: 120,
+            fromSeconds: 0.166667,
+            toSeconds: 0.5,
             toleranceFraction: 0.01,
           },
           { check: 'all-finite' },
@@ -557,13 +557,13 @@ function launcherStation(): PlaygroundStationV1 {
         id: 'launcher-midair-one-body',
         label: 'Control: one body of the pair does not conserve momentum',
         caseId: 'head-on-midair',
-        ticks: 200,
+        seconds: 0.833333,
         checks: [
           {
             check: 'momentum-conserved',
             placementIds: ['proj-heavy'],
-            fromTick: 40,
-            toTick: 120,
+            fromSeconds: 0.166667,
+            toSeconds: 0.5,
             toleranceFraction: 0.01,
           },
         ],
@@ -572,7 +572,7 @@ function launcherStation(): PlaygroundStationV1 {
         id: 'launcher-ccd-stops',
         label: 'CCD stops the fast shot at the wall',
         caseId: 'fast-wall-ccd',
-        ticks: 480,
+        seconds: 2,
         checks: [
           { check: 'crossed-plane', placementId: 'proj-fast', axis: 2, threshold: -3.4, expect: 'stopped' },
           { check: 'all-finite' },
@@ -582,7 +582,7 @@ function launcherStation(): PlaygroundStationV1 {
         id: 'launcher-noccd-tunnels',
         label: 'Without CCD the fast shot tunnels (known artifact)',
         caseId: 'fast-wall-noccd',
-        ticks: 480,
+        seconds: 2,
         checks: [
           { check: 'crossed-plane', placementId: 'proj-fast-noccd', axis: 2, threshold: -3.4, expect: 'crossed' },
           { check: 'all-finite' },
@@ -592,7 +592,7 @@ function launcherStation(): PlaygroundStationV1 {
         id: 'launcher-stack',
         label: 'The pyramid scatters but stays finite',
         caseId: 'stack-knockdown',
-        ticks: 720,
+        seconds: 3,
         checks: [
           { check: 'moved-at-least', placementId: 'stack-05', minTravelMeters: 0.3 },
           { check: 'no-floor-penetration', floorTopY: FLOOR_TOP, toleranceMeters: 0.02 },
@@ -765,29 +765,29 @@ function structuresStation(): PlaygroundStationV1 {
       {
         id: 'load-lintel',
         label: 'Drop a weight on the lintel',
-        actions: [{ kind: 'spawn', atTick: 0, placementId: 'weight-a', centre: [0, 4.5, -3] }],
+        actions: [{ kind: 'spawn', atSeconds: 0, placementId: 'weight-a', centre: [0, 4.5, -3] }],
       },
       {
         id: 'load-beam',
         label: 'Drop a weight on the supported beam',
-        actions: [{ kind: 'spawn', atTick: 0, placementId: 'weight-a', centre: [4, 3.5, -3] }],
+        actions: [{ kind: 'spawn', atSeconds: 0, placementId: 'weight-a', centre: [4, 3.5, -3] }],
       },
       {
         id: 'load-cantilever-tip',
         label: 'Drop a weight on the cantilever tip',
-        actions: [{ kind: 'spawn', atTick: 0, placementId: 'weight-b', centre: [-1.9, 3, 1] }],
+        actions: [{ kind: 'spawn', atSeconds: 0, placementId: 'weight-b', centre: [-1.9, 3, 1] }],
       },
       {
         id: 'remove-mid-pier',
         label: 'Remove the bridge\'s middle pier',
-        actions: [{ kind: 'remove', atTick: 120, placementId: 'bridge-pier-mid' }],
+        actions: [{ kind: 'remove', atSeconds: 0.5, placementId: 'bridge-pier-mid' }],
       },
     ],
     scenarios: [
       {
         id: 'structures-stand',
         label: 'Everything stands under its own weight',
-        ticks: 960,
+        seconds: 4,
         checks: [
           {
             check: 'holds-still',
@@ -805,7 +805,7 @@ function structuresStation(): PlaygroundStationV1 {
         id: 'structures-bridge-collapse',
         label: 'Removing the middle pier drops both spans',
         caseId: 'remove-mid-pier',
-        ticks: 960,
+        seconds: 4,
         checks: [
           // A span's free end tilt-drops 0.75 m to the floor, moving the
           // plank's center about a quarter meter.
@@ -818,7 +818,7 @@ function structuresStation(): PlaygroundStationV1 {
         id: 'structures-lintel-load',
         label: 'The lintel carries a dropped weight',
         caseId: 'load-lintel',
-        ticks: 960,
+        seconds: 4,
         checks: [
           { check: 'moved-at-most', placementId: 'weight-a', maxTravelMeters: 3.2 },
           { check: 'holds-still', placementIds: ['arch-pillar-west', 'arch-pillar-east'], maxDriftMeters: 0.25 },

@@ -248,7 +248,7 @@ export function createRollingStationV1(): PlaygroundStationV1 {
       {
         id: 'rolling-inertia-race',
         label: 'The smooth ball beats both faceted cylinders, which do roll',
-        ticks: 1200,
+        seconds: 5,
         checks: [
           // On smooth rims the solid cylinder beats the hollow one. Voxel
           // rims are twelve-sided prisms, tip-rolling speed is
@@ -271,7 +271,7 @@ export function createRollingStationV1(): PlaygroundStationV1 {
       {
         id: 'rolling-grid-artifact',
         label: 'The ideal ball behaves alike on both tracks; the voxel sphere may not',
-        ticks: 900,
+        seconds: 3.75,
         checks: [
           { check: 'moved-at-least', placementId: 'sphere-ball-a', minTravelMeters: 4 },
           { check: 'moved-at-least', placementId: 'sphere-ball-b', minTravelMeters: 4 },
@@ -299,7 +299,7 @@ export function createRollingStationV1(): PlaygroundStationV1 {
         // is 884 m below the floor at the last frame, still doing 120 m/s.
         id: 'rolling-run-out',
         label: 'Every racer stops on the apron, and the smooth ball outrolls the voxel sphere',
-        ticks: 4800,
+        seconds: 20,
         checks: [
           // Measured leads at rest: 14.64 m along world x on the straight
           // track, and on the diagonal 8.81 m of world +z, which is the

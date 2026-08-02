@@ -1,3 +1,4 @@
+import { solverTicksForSecondsV1 } from './solver-rate.js';
 import type {
   PlaygroundBodySpecV1,
 } from './physics-playground-bodies.js';
@@ -81,6 +82,12 @@ export interface PlaygroundScenarioResultV1 {
   readonly nonFiniteSamples: number;
   /** Deepest measured dip below the floor top across all frames, meters. */
   readonly maxFloorPenetration: number;
+  /**
+   * Deepest overlap while a body was still moving fast — a landing, not a
+   * rest. Bounded by one step of travel at the impact speed, which is what a
+   * discrete solver must let through before it sees the contact at all.
+   */
+  readonly maxImpactBurial: number;
   /** Wall-clock stepping cost; reported, never part of the verdict inputs. */
   readonly maxStepMs: number;
   readonly meanStepMs: number;
@@ -230,6 +237,20 @@ function countNonFinite(frames: readonly PlaygroundFrameV1[]): number {
   return count;
 }
 
+/** How far a body ever got from where it started, across sampled frames. */
+function farthestReach(
+  frames: readonly PlaygroundFrameV1[],
+  placementId: string,
+  start: PlaygroundBodySnapshotV1,
+): number {
+  let farthest = 0;
+  for (const frame of frames) {
+    const body = frameBody(frame, placementId);
+    if (body) farthest = Math.max(farthest, travel(start, body));
+  }
+  return farthest;
+}
+
 function evaluateCheck(
   ref: PlaygroundCheckRefV1,
   frames: readonly PlaygroundFrameV1[],
@@ -278,29 +299,90 @@ function evaluateCheck(
       );
     }
     case 'no-floor-penetration': {
-      let deepest = 0;
-      let culprit = '';
+      // Two different claims used to share one number, and the number was
+      // measuring the wrong one. "A resting body must not sink into the
+      // ground" is a statement about contact quality. "A body arriving at ten
+      // metres a second must not bury itself" is a statement about what a
+      // discrete step can resolve, and it is proportional to the step by
+      // construction: one tick of unopposed travel at the impact speed. At
+      // 240 Hz the two happened to sit either side of the same tolerance, so
+      // one number appeared to cover both; at 60 Hz a landing buries four
+      // times deeper, tripped the gate, and the failure message blamed
+      // resting contact — which measured 0.0013 m, identically at both rates.
+      //
+      // So they are judged apart. Resting depth is held to the declared
+      // tolerance. Impact burial is allowed up to one step's travel, which is
+      // what the solver must do, and is then required to RECOVER: a body that
+      // stays buried has genuinely fallen through, and that is the failure
+      // this check exists to catch.
+      // Resting means slow and having STAYED slow. A body is momentarily slow
+      // at the top of its rebound a few milliseconds after landing, still deep
+      // in the floor and still recovering; counting that instant as rest put
+      // the impact back into the resting number under a different name.
+      const restingSpeed = 0.1;
+      const restingForSeconds = 0.2;
+      const recoverySeconds = 0.25;
+      const slowSince = new Map<string, number>();
+      let deepestResting = 0;
+      let restingCulprit = '';
+      let deepestImpact = 0;
+      let impactCulprit = '';
+      const buriedSince = new Map<string, number>();
+      let strandedDetail = '';
       for (const frame of frames) {
         for (const body of frame.bodies) {
           const spec = specs.get(body.placementId);
           if (spec?.kind !== 'dynamic') continue;
           const dip = ref.floorTopY - playgroundLowestPointV1(spec, body);
-          if (dip > deepest) {
-            deepest = dip;
-            culprit = `'${body.placementId}' at tick ${String(frame.tick)}`;
+          const speed = Math.hypot(...body.linearVelocity);
+          if (speed <= restingSpeed) {
+            const since = slowSince.get(body.placementId) ?? frame.tick;
+            slowSince.set(body.placementId, since);
+            const restedFor = (frame.tick - since) * PLAYGROUND_TIMESTEP_S_V1;
+            if (restedFor >= restingForSeconds && dip > deepestResting) {
+              deepestResting = dip;
+              restingCulprit = `'${body.placementId}' at tick ${String(frame.tick)}`;
+            }
+          } else if ((slowSince.delete(body.placementId), dip > deepestImpact)) {
+            deepestImpact = dip;
+            impactCulprit = `'${body.placementId}' at tick ${String(frame.tick)} `
+              + `arriving at ${speed.toFixed(1)} m/s`;
+          }
+          // One step of unopposed travel at this speed is the most a discrete
+          // solver can let through before it sees the contact at all.
+          const oneStep = speed * PLAYGROUND_TIMESTEP_S_V1;
+          const buried = dip > Math.max(ref.toleranceMeters, oneStep);
+          const since = buriedSince.get(body.placementId);
+          if (!buried) {
+            buriedSince.delete(body.placementId);
+          } else if (since === undefined) {
+            buriedSince.set(body.placementId, frame.tick);
+          } else if (
+            (frame.tick - since) * PLAYGROUND_TIMESTEP_S_V1 > recoverySeconds
+            && strandedDetail === ''
+          ) {
+            strandedDetail = `'${body.placementId}' stayed more than one step `
+              + `deep in the floor from tick ${String(since)} through `
+              + `${String(frame.tick)} — over ${String(recoverySeconds)} s. `
+              + 'That is falling through, not an impact the solver recovers from.';
           }
         }
       }
-      if (deepest > ref.toleranceMeters) {
+      if (strandedDetail !== '') return fail(strandedDetail);
+      if (deepestResting > ref.toleranceMeters) {
         return fail(
-          `${culprit} sank ${deepest.toFixed(4)} m below the floor top; the `
-          + `tolerance is ${String(ref.toleranceMeters)} m. Resting contact `
-          + 'is leaking through the floor.',
+          `${restingCulprit} rested ${deepestResting.toFixed(4)} m below the `
+          + `floor top; the tolerance is ${String(ref.toleranceMeters)} m. `
+          + 'Resting contact is leaking through the floor.',
         );
       }
       return pass(
-        `Deepest floor dip was ${deepest.toFixed(4)} m, within the `
-        + `${String(ref.toleranceMeters)} m tolerance.`,
+        `Deepest resting dip was ${deepestResting.toFixed(4)} m, within the `
+        + `${String(ref.toleranceMeters)} m tolerance`
+        + (deepestImpact > 0
+          ? `; deepest impact burial ${deepestImpact.toFixed(4)} m (${
+            impactCulprit}), recovered within ${String(recoverySeconds)} s.`
+          : '.'),
       );
     }
     case 'equal-fall-acceleration': {
@@ -459,9 +541,13 @@ function evaluateCheck(
       );
     }
     case 'moved-at-most': {
+      // Also the farthest reach, which makes this the stricter reading: a
+      // brick that is flung out and rolls back has still moved.
       const start = firstAppearance(frames, ref.placementId, ref.check);
-      const end = requireBody(last, ref.placementId, ref.check);
-      const moved = travel(start, end);
+      // Still required to exist at the end: a body that left the world has not
+      // "moved at most" anything, it has gone.
+      requireBody(last, ref.placementId, ref.check);
+      const moved = farthestReach(frames, ref.placementId, start);
       if (moved > ref.maxTravelMeters) {
         return fail(
           `'${ref.placementId}' travelled ${moved.toFixed(3)} m, over the `
@@ -475,9 +561,16 @@ function evaluateCheck(
       );
     }
     case 'moved-at-least': {
+      // The greatest distance this body ever reached from where it started,
+      // not where it happened to stop. The scenario's own comment already
+      // rejected `crossed-plane` for reading a final position — "the ball
+      // rebounds off the wall and rolls back up the field, so where it comes
+      // to rest says nothing about how far it was thrown" — and this check
+      // shared the flaw silently. A harder hit rebounds further and scored
+      // lower, which is backwards.
       const start = firstAppearance(frames, ref.placementId, ref.check);
-      const end = requireBody(last, ref.placementId, ref.check);
-      const moved = travel(start, end);
+      requireBody(last, ref.placementId, ref.check);
+      const moved = farthestReach(frames, ref.placementId, start);
       if (moved < ref.minTravelMeters) {
         return fail(
           `'${ref.placementId}' travelled only ${moved.toFixed(3)} m; the `
@@ -497,13 +590,13 @@ function evaluateCheck(
       // so the prediction uses exactly that form rather than a
       // continuous approximation of it.
       const window = frames.filter(
-        (frame) => frame.tick >= ref.fromTick && frame.tick <= ref.toTick);
+        (frame) => frame.tick >= solverTicksForSecondsV1(ref.fromSeconds) && frame.tick <= solverTicksForSecondsV1(ref.toSeconds));
       const first = window[0];
       const lastFrame = window[window.length - 1];
       if (first === undefined || lastFrame === undefined || window.length < 2) {
         return fail(
           `flight-follows-known-forces needs at least two sampled frames `
-          + `between ticks ${String(ref.fromTick)} and ${String(ref.toTick)}, `
+          + `between ticks ${String(solverTicksForSecondsV1(ref.fromSeconds))} and ${String(solverTicksForSecondsV1(ref.toSeconds))}, `
           + `but found ${String(window.length)}. Widen the window or lower `
           + 'the sampling stride.',
         );
@@ -551,12 +644,12 @@ function evaluateCheck(
       );
     }
     case 'impulse-response': {
-      const before = frames.filter((frame) => frame.tick <= ref.atTick).pop();
-      const after = frames.find((frame) => frame.tick > ref.atTick);
+      const before = frames.filter((frame) => frame.tick <= solverTicksForSecondsV1(ref.atSeconds)).pop();
+      const after = frames.find((frame) => frame.tick > solverTicksForSecondsV1(ref.atSeconds));
       if (before === undefined || after === undefined) {
         return fail(
           `impulse-response needs a sampled frame on each side of tick `
-          + `${String(ref.atTick)}; the run does not have both.`,
+          + `${String(solverTicksForSecondsV1(ref.atSeconds))}; the run does not have both.`,
         );
       }
       const a = before.bodies.find((row) => row.placementId === ref.placementId);
@@ -697,8 +790,8 @@ function evaluateCheck(
         }
         return best;
       };
-      const before = at(ref.fromTick);
-      const after = at(ref.toTick);
+      const before = at(solverTicksForSecondsV1(ref.fromSeconds));
+      const after = at(solverTicksForSecondsV1(ref.toSeconds));
       const sum = (frame: PlaygroundFrameV1): readonly [number, number, number] => {
         let x = 0;
         let y = 0;
@@ -763,7 +856,10 @@ function evaluateCheck(
       // Every trailing frame must be quiet, not merely the last one. A
       // swinging body passes through zero speed at each turning point,
       // so one frame cannot distinguish rest from the top of a swing.
-      const settledFor = ref.settledForTicks ?? 60;
+      // A quarter second of quiet, stated in seconds so it stays a quarter
+      // second at any rate. As a bare tick count it silently became a whole
+      // second when the lane changed.
+      const settledFor = solverTicksForSecondsV1(ref.settledForSeconds ?? 0.25);
       const cutoff = last.tick - settledFor;
       const trailing = frames.filter((frame) => frame.tick >= cutoff);
       // Angular speed counts too: a body spinning in place is not at
@@ -797,15 +893,18 @@ function evaluateCheck(
     }
     case 'peak-speed-at-least': {
       let peak = 0;
+      const throughTick = ref.throughSeconds === undefined
+        ? undefined
+        : solverTicksForSecondsV1(ref.throughSeconds);
       for (const frame of frames) {
-        if (ref.throughTick !== undefined && frame.tick > ref.throughTick) break;
+        if (throughTick !== undefined && frame.tick > throughTick) break;
         const body = frame.bodies.find(
           (row) => row.placementId === ref.placementId);
         if (body) peak = Math.max(peak, speed(body));
       }
-      const window = ref.throughTick === undefined
+      const window = throughTick === undefined
         ? 'across the sampled frames'
-        : `across sampled frames through tick ${String(ref.throughTick)}`;
+        : `across sampled frames through ${String(ref.throughSeconds)} s`;
       if (peak < ref.minSpeed) {
         return fail(
           `'${ref.placementId}' peaked at ${peak.toFixed(2)} m/s ${window}; `
@@ -892,13 +991,30 @@ export function evaluatePlaygroundScenarioV1(
 ): PlaygroundScenarioResultV1 {
   const checks = scenario.checks.map((ref) => evaluateCheck(ref, frames, specs));
   const nonFinite = countNonFinite(frames);
+  // Reported apart for the same reason they are judged apart: the deepest
+  // instant of a landing is not how far anything rests into the ground, and
+  // one number that mixed them read as a contact defect when it was a body
+  // arriving fast. `maxFloorPenetration` is now the resting figure — what the
+  // name has always claimed — and the transient is reported beside it.
   let deepest = 0;
+  let deepestImpact = 0;
+  const slowSince = new Map<string, number>();
   for (const frame of frames) {
     for (const body of frame.bodies) {
       const spec = specs.get(body.placementId);
       if (spec?.kind !== 'dynamic') continue;
       const dip = PLAYGROUND_FLOOR_TOP_V1 - playgroundLowestPointV1(spec, body);
-      if (dip > deepest) deepest = dip;
+      if (Math.hypot(...body.linearVelocity) <= 0.1) {
+        const since = slowSince.get(body.placementId) ?? frame.tick;
+        slowSince.set(body.placementId, since);
+        if ((frame.tick - since) * PLAYGROUND_TIMESTEP_S_V1 >= 0.2
+          && dip > deepest) {
+          deepest = dip;
+        }
+      } else {
+        slowSince.delete(body.placementId);
+        if (dip > deepestImpact) deepestImpact = dip;
+      }
     }
   }
   const failed = checks.some((check) => check.status === 'fail');
@@ -907,12 +1023,13 @@ export function evaluatePlaygroundScenarioV1(
   return {
     scenarioId: scenario.id,
     sceneId: station.sceneId,
-    ticks: scenario.ticks,
+    ticks: solverTicksForSecondsV1(scenario.seconds),
     status: failed ? 'fail' : slow ? 'warn' : 'pass',
     checks,
     finalBodies: last ? last.bodies : [],
     nonFiniteSamples: nonFinite,
     maxFloorPenetration: deepest,
+    maxImpactBurial: deepestImpact,
     maxStepMs: timing.maxStepMs,
     meanStepMs: timing.meanStepMs,
     ...(slow

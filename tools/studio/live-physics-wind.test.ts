@@ -2,6 +2,7 @@ import type * as RAPIER_TYPES from '@dimforge/rapier3d-compat';
 
 import { describe, expect, it } from 'vitest';
 
+import { SOLVER_TIMESTEP_SECONDS_V1 } from './solver-rate.js';
 import {
   applyLivePhysicsWindV1,
   type LivePhysicsWindPlanV1,
@@ -62,12 +63,13 @@ describe('the live wind lane', () => {
   it('pushes downwind at the plate, not at the body origin', () => {
     const recorded: RecordedImpulseV1[] = [];
     const body = fakeBody({ recorded });
-    applyLivePhysicsWindV1(planFor([0, 1.5, 0]), () => body, 1 / 240);
+    applyLivePhysicsWindV1(planFor([0, 1.5, 0]), () => body, SOLVER_TIMESTEP_SECONDS_V1);
 
     expect(recorded).toHaveLength(1);
     const only = recorded[0]!;
-    // 0.5 * 1.225 * 1.28 * 2 * 10 * |10| = 156.8 N, over one 1/240 s step.
-    expect(only.impulse.z).toBeCloseTo(156.8 / 240, 9);
+    // 0.5 * 1.225 * 1.28 * 2 * 10 * |10| = 156.8 N, over one fixed step.
+    expect(only.impulse.z)
+      .toBeCloseTo(156.8 * SOLVER_TIMESTEP_SECONDS_V1, 9);
     expect(only.impulse.x).toBeCloseTo(0, 12);
     expect(only.impulse.y).toBeCloseTo(0, 12);
     // Applied at the offset plate, which is what turns a rotor rather than
@@ -78,11 +80,11 @@ describe('the live wind lane', () => {
   it('pushes a plate already moving downwind less than a still one', () => {
     const still: RecordedImpulseV1[] = [];
     const moving: RecordedImpulseV1[] = [];
-    applyLivePhysicsWindV1(planFor([0, 1.5, 0]), () => fakeBody({ recorded: still }), 1 / 240);
+    applyLivePhysicsWindV1(planFor([0, 1.5, 0]), () => fakeBody({ recorded: still }), SOLVER_TIMESTEP_SECONDS_V1);
     applyLivePhysicsWindV1(
       planFor([0, 1.5, 0]),
       () => fakeBody({ linvel: { x: 0, y: 0, z: 6 }, recorded: moving }),
-      1 / 240,
+      SOLVER_TIMESTEP_SECONDS_V1,
     );
 
     expect(moving[0]!.impulse.z).toBeGreaterThan(0);
@@ -94,7 +96,7 @@ describe('the live wind lane', () => {
     applyLivePhysicsWindV1(
       planFor([0, 1.5, 0]),
       () => fakeBody({ linvel: { x: 0, y: 0, z: 10 }, recorded }),
-      1 / 240,
+      SOLVER_TIMESTEP_SECONDS_V1,
     );
     // No relative flow, no load — the runaway-rotor guard.
     expect(recorded[0]!.impulse.z).toBeCloseTo(0, 12);
@@ -102,7 +104,7 @@ describe('the live wind lane', () => {
 
   it('skips a plate whose body is not live yet', () => {
     expect(() => {
-      applyLivePhysicsWindV1(planFor([0, 1.5, 0]), () => undefined, 1 / 240);
+      applyLivePhysicsWindV1(planFor([0, 1.5, 0]), () => undefined, SOLVER_TIMESTEP_SECONDS_V1);
     }).not.toThrow();
   });
 });

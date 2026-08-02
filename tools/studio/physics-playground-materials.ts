@@ -1,3 +1,5 @@
+import { SOLVER_TIMESTEP_SECONDS_V1 } from './solver-rate.js';
+
 /**
  * The physics playground's material vocabulary and world constants.
  *
@@ -40,7 +42,7 @@ export const PLAYGROUND_GRAIN_V1 = 0.25;
  * re-measuring before this constant can move. Until then the drift is stated
  * here rather than hidden.
  */
-export const PLAYGROUND_TIMESTEP_S_V1 = 1 / 240;
+export const PLAYGROUND_TIMESTEP_S_V1 = SOLVER_TIMESTEP_SECONDS_V1;
 
 /** Straight-down gravity, meters per second squared. */
 export const PLAYGROUND_GRAVITY_V1 = -9.81;

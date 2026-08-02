@@ -126,10 +126,10 @@ describe('station definitions', () => {
         const world = PlaygroundWorldV1.create(entry, { rampAngleDegrees: 20 });
         try {
           const lastTick = Math.max(
-            ...testCase.actions.map((action) => action.atTick));
+            ...testCase.actions.map((action) => action.atSeconds));
           for (let tick = 0; tick <= lastTick; tick += 1) {
             const spawnedNow = testCase.actions
-              .filter((action) => action.atTick === tick)
+              .filter((action) => action.atSeconds === tick)
               .map((action) => {
                 if (action.kind === 'spawn') {
                   world.spawn(action.placementId, {

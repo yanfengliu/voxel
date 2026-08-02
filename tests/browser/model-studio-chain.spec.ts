@@ -110,7 +110,9 @@ test('the chain falls under gravity, solved live', async ({ page }) => {
       maxDiffPixelRatio: 0.002,
     });
 
-  // 1,200 ticks at 1/240 s is the five seconds of falling the chain needs.
+  // 1,200 fixed ticks is twenty seconds at the shared rate — far longer than
+  // the chain needs to reach its curve, and deliberately so: the picture below
+  // is of a settled chain, not of one still arriving.
   await settleTo(1_200, 0, 10);
   await expect(page.locator('.scene-canvas'))
     .toHaveScreenshot('model-studio-chain-hanging.png', {

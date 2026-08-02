@@ -456,7 +456,10 @@ export function createStudioPlaygroundPanel(
     const contacts = live.contactCount();
     const timing = deps.interact.timing();
     const lines = [
-      `tick 240 Hz  stepped ${String(state.stepped)}  `
+      // Derived, never spelled. This line said "240 Hz" to the owner's face
+      // while the solver ran at 60, and the rate gate could not see it because
+      // it only looks for rate-shaped literals in code, not display strings.
+      `tick ${String(LIVE_TICKS_PER_SECOND_V1)} Hz  stepped ${String(state.stepped)}  `
       + (state.paused ? 'paused' : `running ×${String(state.timeScale)}`),
       `bodies ${String(state.bodies)} (${String(activity.activeBodies)} awake)`
       + `  colliders ${String(state.colliders)}  contacts ${String(contacts)}`

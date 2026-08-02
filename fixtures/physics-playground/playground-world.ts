@@ -6,6 +6,7 @@ import {
   type PlaygroundBodySpecV1,
   type PlaygroundBuildOptionsV1,
 } from '../../tools/studio/physics-playground-bodies.js';
+import { SOLVER_SOFT_CCD_PREDICTION_V1 } from '../../tools/studio/solver-rate.js';
 import {
   PLAYGROUND_GRAVITY_V1,
   PLAYGROUND_TIMESTEP_S_V1,
@@ -86,6 +87,10 @@ export class PlaygroundWorldV1 {
   ): PlaygroundWorldV1 {
     const world = new RAPIER.World({ x: 0, y: PLAYGROUND_GRAVITY_V1, z: 0 });
     world.integrationParameters.dt = PLAYGROUND_TIMESTEP_S_V1;
+    if (station.internalPgsIterations !== undefined) {
+      world.integrationParameters.numInternalPgsIterations =
+        station.internalPgsIterations;
+    }
     const specs = playgroundBodySpecsV1(station, options);
     const built = new PlaygroundWorldV1(world, specs);
     for (const spec of specs.values()) {
@@ -134,7 +139,8 @@ export class PlaygroundWorldV1 {
     const centre = overrides?.centre ?? spec.centre;
     const description = (spec.kind === 'fixed'
       ? RAPIER.RigidBodyDesc.fixed()
-      : RAPIER.RigidBodyDesc.dynamic())
+      : RAPIER.RigidBodyDesc.dynamic()
+        .setSoftCcdPrediction(SOLVER_SOFT_CCD_PREDICTION_V1))
       .setTranslation(centre[0], centre[1], centre[2])
       .setRotation({
         x: spec.rotation[0],
