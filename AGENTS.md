@@ -8,7 +8,7 @@ Non-goals: not a simulation engine, ECS, game-rules library, UI framework, persi
 
 These non-goals describe the public renderer/runtime boundary. Private Studio authoring storage and explicit consumer fixtures may live in this repository, but renderer/core never owns durable consumer data or authoritative simulation.
 
-Voxel's own rules — its strengthenings of the fleet constitution and the rules it adds — live in [docs/policies/local-rules.md](docs/policies/local-rules.md). They bind alongside the constitution below and win where they overlap. Do not write them into that section: it is a verbatim copy of `loop-ops/FLEET.md` and `/sync-instructions` rewrites it wholesale, which silently deleted every one of them on 2026-08-01.
+Voxel's own rules — its strengthenings of the fleet constitution and the rules it adds — live in [docs/policies/local-rules.md](docs/policies/local-rules.md). They bind alongside the constitution below and win where they overlap. Do not write them into that section: it is a generated copy of `../fleet/FLEET.md` between `FLEET-CANON` markers. The fleet sync writes only inside those markers and refuses a block it did not write; the 2026-08-01 incident was caused by the retired heading-delimited sync.
 
 <!-- FLEET-CANON:BEGIN sha=83f56025463e generated from fleet/FLEET.md by `npm run sync-canon` — do not edit inside this block; this repo's own rules go in docs/policies/local-rules.md -->
 ## Fleet constitution
