@@ -2,7 +2,7 @@
 
 Voxel's own additions to, and strengthenings of, the fleet constitution in [AGENTS.md](../../AGENTS.md).
 
-They live here because the constitution section of AGENTS.md is a verbatim copy of `loop-ops/FLEET.md` that `/sync-instructions` rewrites wholesale. A local rule written into that section is deleted the next time anyone syncs the fleet — which is exactly what happened on 2026-08-01, when a routine canon propagation silently dropped every rule on this page. A repo-tracked file cannot be clobbered by a fleet sync, so this is where they belong.
+They live here because the constitution section of AGENTS.md is a verbatim copy of `fleet/FLEET.md` that `/sync-instructions` rewrites wholesale. A local rule written into that section is deleted the next time anyone syncs the fleet — which is exactly what happened on 2026-08-01, when a routine canon propagation silently dropped every rule on this page. A repo-tracked file cannot be clobbered by a fleet sync, so this is where they belong.
 
 These rules bind alongside the constitution and may only make it stricter. Where one restates a canon rule, the version here wins for this repository.
 
