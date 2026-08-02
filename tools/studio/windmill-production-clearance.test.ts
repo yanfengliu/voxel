@@ -15,6 +15,7 @@ import {
 import {
   synthesizeWindmillProductionTracksV1,
   windmillFlourPoseV1,
+  windmillSettledMilledImpactsV1,
   windmillWheatSackPoseV1,
 } from './windmill-production-kinematics.js';
 import {
@@ -377,6 +378,10 @@ describe('windmill production clearances against the committed replay', () => {
     (tick) => tick
       * WINDMILL_COMPACT_REPLAY_RECORD_PROFILE.solverStepSeconds,
   );
+  const milledSeconds = windmillSettledMilledImpactsV1(
+    impactsSeconds,
+    (WINDMILL_POSE_REPLAY.frameCount - 1) / 60,
+  );
 
   it('re-derives the committed production tracks from the live kinematics', () => {
     const synthesized = synthesizeWindmillProductionTracksV1(
@@ -392,6 +397,14 @@ describe('windmill production clearances against the committed replay', () => {
   });
 
   it('keeps the rotor drift far below the analytic band tolerance', () => {
+    // The swept bands treat the rotor as turning about a fixed axis, so the
+    // rotor's own origin has to be still enough for that to be true. The
+    // bound is a hundredth of the clearance those bands are measured
+    // against, not a number of its own: at the shared rate the recorded
+    // origin wanders 0.000216 m over the twelve seconds, which leaves 2.8x
+    // headroom. It was ten times stiller at 960 Hz, and a flat 1e-5 bound
+    // said so without ever saying what it was protecting.
+    const driftBound = CLEARANCE / 100;
     const track = trackByPlacement('windmill-rotor');
     const first = [
       track.translations[0]!,
@@ -401,7 +414,7 @@ describe('windmill production clearances against the committed replay', () => {
     for (let frame = 0; frame < WINDMILL_POSE_REPLAY.frameCount; frame += 1) {
       for (let axis = 0; axis < 3; axis += 1) {
         expect(Math.abs(track.translations[frame * 3 + axis]! - first[axis]!))
-          .toBeLessThan(1e-5);
+          .toBeLessThan(driftBound);
       }
     }
   });
@@ -531,8 +544,8 @@ describe('windmill production clearances against the committed replay', () => {
   });
 
   it('keeps the flour level laterally inside the bin cavity with its designed gap', () => {
-    const cavityMinX = 3.4375;
-    const cavityMaxX = 3.8125;
+    const cavityMinX = 3.5625;
+    const cavityMaxX = 3.9375;
     const cavityMinZ = 1.4375;
     const cavityMaxZ = 1.8125;
     const poses = framePoses(
@@ -552,24 +565,29 @@ describe('windmill production clearances against the committed replay', () => {
       );
     }
     // The declared rim datums: the level's top face starts one prop voxel
-    // (0.0625) below the rim at 0.375 and ends 0.125 — two prop voxels —
-    // proud of it after the five recorded impacts.
+    // (0.0625) below the rim at 0.375 and rises one sixth of a prop voxel
+    // per sack milled. Four of the mill's nine blows are answered by a
+    // sack in this window, so it ends 0.0875 proud of the rim.
     const first = poses[0]!;
     const last = poses[poses.length - 1]!;
     expect(first.y + FLOUR_HALF_Y).toBeCloseTo(0.3125, 6);
-    expect(last.y + FLOUR_HALF_Y).toBeCloseTo(0.5, 6);
+    expect(last.y + FLOUR_HALF_Y)
+      .toBeCloseTo(0.3125 + milledSeconds.length * 0.0375, 6);
   });
 
   it('matches the live pose functions at the recorded event times', () => {
-    for (const [index, impact] of impactsSeconds.entries()) {
+    // Only the answered blows: the mill strikes faster than a sack can be
+    // dragged clear, so the magazine skips the ones it cannot reach.
+    expect(milledSeconds.length).toBeLessThan(impactsSeconds.length);
+    for (const [index, impact] of milledSeconds.entries()) {
       const arrival = windmillWheatSackPoseV1(index, impact, impact);
       expect(arrival.translation[0]).toBeCloseTo(2.8125, 12);
       expect(arrival.translation[2]).toBeCloseTo(1.625, 12);
       expect(arrival.rollRadians).toBe(0);
     }
-    const before = windmillFlourPoseV1(impactsSeconds, 0);
-    const after = windmillFlourPoseV1(impactsSeconds, 12);
+    const before = windmillFlourPoseV1(milledSeconds, 0);
+    const after = windmillFlourPoseV1(milledSeconds, 12);
     expect(after.translation[1] - before.translation[1])
-      .toBeCloseTo(5 * 0.0375, 12);
+      .toBeCloseTo(milledSeconds.length * 0.0375, 12);
   });
 });

@@ -28,10 +28,14 @@ import { createWindmillRecipeBook } from '../../tools/studio/windmill-recipes.js
 import { createWindmillScene } from '../../tools/studio/windmill-scene.js';
 import {
   evaluateWindmillCompactCandidateAndRecordV1,
+  WINDMILL_COMPACT_RECORD_HERTZ_V1,
   type WindmillCompactRecordedEvaluationV1,
   type WindmillCompactReplaySelectionBindingV1,
 } from './windmill-compact-recorder.js';
 import { windmillReplaySourceV2 } from './windmill-replay-codegen.js';
+import {
+  SOLVER_TIMESTEP_SECONDS_V1,
+} from '../../tools/studio/solver-rate.js';
 
 const OUTPUT_URL = new URL(
   '../../tools/studio/generated-windmill-replay.ts',
@@ -97,9 +101,11 @@ describe('selected compact Windmill committed replay', () => {
   it('records four finite body-origin tracks from t=0 through t=12 seconds', () => {
     const { trace } = recorded;
     expect(trace.recordProfile).toMatchObject({
-      solverStepSeconds: 1 / 960,
-      recordStepSeconds: 1 / 60,
-      solverTicksPerRecordedFrame: 16,
+      solverStepSeconds: SOLVER_TIMESTEP_SECONDS_V1,
+      recordStepSeconds: 1 / WINDMILL_COMPACT_RECORD_HERTZ_V1,
+      solverTicksPerRecordedFrame: Math.round(
+        (1 / WINDMILL_COMPACT_RECORD_HERTZ_V1) / SOLVER_TIMESTEP_SECONDS_V1,
+      ),
       physicalDurationSeconds: 12,
       frameCount: 721,
     });

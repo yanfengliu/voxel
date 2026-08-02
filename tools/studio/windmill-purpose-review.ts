@@ -99,10 +99,14 @@ const RELOCATION_SPECS: readonly RelocationSpecV1[] = Object.freeze([
     boxKey: 'hammer-impact-toe',
     delta: Object.freeze([1, 0, 0] as const),
   }),
-  Object.freeze({
-    boxKey: 'anvil-impact-cap',
-    delta: Object.freeze([1, 0, 0] as const),
-  }),
+  // The anvil has no box-level relocation review. The head the shared-rate
+  // search promoted is a voxel taller, so its face reaches the ground and
+  // the anvil lost its column: 'anvil-impact-cap' is the whole asset, and
+  // moving an asset's only box moves the asset, which renders identically —
+  // measured as 0 of 525,920 changed pixels in both declared quarter views.
+  // The anvil's meaningful relocation is the whole-placement one,
+  // 'windmill:review:anvil-off-grounded-head-datum', which already exists.
+  //
   // Bounded representative production relocations: the ridge off its slope
   // bearings, the side wall off its wall line, and the tie cue off the sack
   // neck.

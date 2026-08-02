@@ -28,7 +28,7 @@ export type WindmillProductionMotionRuleIdV1 =
 /** The one honesty sentence every production surface repeats. */
 export const WINDMILL_PRODUCTION_HONESTY_V1 =
   'Wheat and flour motion is authored presentation kinematics keyed to the '
-  + 'five recorded hammer-anvil impacts; nothing simulates milling, grain, '
+  + 'answered hammer-anvil impacts; nothing simulates milling, grain, '
   + 'contact, or mass flow, and the consumer fixture still proves only '
   + 'wind, rotor, cam, hammer, and anvil dynamics.';
 
@@ -509,7 +509,8 @@ const SACK_SPECS: readonly RecordSpecV1[] = [
     needId: 'windmill:purpose:grain-infeed-mass',
     beneficiary: 'The visible grain-mass source and the milling story.',
     job: 'Is the unit of wheat the mill consumes: five placements form the '
-      + 'finite infeed magazine, one is delivered per recorded impact.',
+      + 'finite infeed magazine, one delivered per blow the magazine can '
+      + 'answer.',
     locationDatum: 'Queue slots along world z 0.875 east of the rear '
       + 'bearing, then the milling spot against the anvil west face.',
     removalFailure: 'Nothing visible enters the mill; the flour level rises '
@@ -588,7 +589,7 @@ const BIN_SPECS: readonly RecordSpecV1[] = [
     boxKey: 'bin-wall-west',
     needId: 'windmill:purpose:flour-level-rim',
     beneficiary: 'The readable flour level inside.',
-    job: 'Forms the rim segment against the anvil so the bin visibly '
+    job: 'Forms the rim segment nearest the anvil so the bin visibly '
       + 'receives from the milling side.',
     locationDatum: 'West bin edge, world x 3.3125..3.4375, one quarter '
       + 'voxel east of the anvil.',
@@ -639,8 +640,8 @@ const FLOUR_SPECS: readonly RecordSpecV1[] = [
     job: 'Is the read face of the flour level: its height against the bin '
       + 'rim is the one datum that says how much the mill has produced.',
     locationDatum: 'The top prop voxel of the level: its face starts one '
-      + 'prop voxel (0.0625) below the rim at 0.375 and ends 0.125 — two '
-      + 'prop voxels — proud of it across the five impacts.',
+      + 'prop voxel (0.0625) below the rim at 0.375 and rises one sixth of '
+      + 'a prop voxel per sack milled, ending proud of it.',
     removalFailure: 'The level loses its read face and the rise stops '
       + 'registering against the rim at the fixed cameras.',
     relocationFailure: 'Off the body the surface reads as a lid floating '
@@ -847,8 +848,9 @@ readonly WindmillProductionSystemPurposeV1[] = Object.freeze([
     beneficiary: 'The milled-output half of the production story.',
     job: 'The bin receives beside the anvil and the level inside it is the '
       + 'one visible measure of accumulated output.',
-    locationDatum: 'Bin centered at (3.625, 0, 1.625) against the anvil '
-      + 'east face; the level starts on the bin floor.',
+    locationDatum: 'Bin centered at (3.75, 0, 1.625), one building voxel '
+      + 'east of the anvil so the taller head clears its west wall; the '
+      + 'level starts on the bin floor.',
     removalFailure: 'Impacts have no visible product; the wheat sacks '
       + 'vanish into a mill that makes nothing.',
     relocationFailure: 'Away from the anvil the accumulation no longer '
@@ -865,11 +867,12 @@ readonly WindmillProductionSystemPurposeV1[] = Object.freeze([
       [WINDMILL_PRODUCTION_MOTION_RULE_IDS_V1.wheatDelivery],
     ),
     beneficiary: 'The wheat-to-anvil half of the production story.',
-    job: 'Slides sack k from its queue slot to the milling spot before '
-      + 'recorded impact k, then tips it spent into the discard row — all '
+    job: 'Slides sack k from its queue slot to the milling spot before the '
+      + 'k-th answered blow, then tips it spent into the discard row — all '
       + 'derived from the committed trace\'s impact ticks.',
-    locationDatum: 'Keyed to the five anvil-impact events of the committed '
-      + 'trace; paths run along z 0.875, x 2.8125, z 1.625, and z 2.03125.',
+    locationDatum: 'Keyed to the answered anvil-impact events of the '
+      + 'committed trace; paths run along z 0.875, x 2.8125, z 1.625, and '
+      + 'z 2.03125.',
     removalFailure: 'Sacks stand still forever; the infeed magazine and the '
       + 'flour level lose their causal reading against the impacts.',
     relocationFailure: 'Re-keyed to any other times the deliveries detach '
@@ -888,16 +891,16 @@ readonly WindmillProductionSystemPurposeV1[] = Object.freeze([
       [WINDMILL_PRODUCTION_MOTION_RULE_IDS_V1.flourAccumulation],
     ),
     beneficiary: 'The milled-output half of the production story.',
-    job: 'Raises the flour level one fixed step shortly after each recorded '
-      + 'impact, holding between impacts.',
-    locationDatum: 'Keyed to the same five anvil-impact events; each step '
-      + 'is 0.0375 world units over 0.4 seconds.',
+    job: 'Raises the flour level one fixed step shortly after each sack is '
+      + 'milled, holding between blows.',
+    locationDatum: 'Keyed to the same answered anvil-impact events; each '
+      + 'step is 0.0375 world units over 0.4 seconds.',
     removalFailure: 'The bin stays at its opening level and the mill '
-      + 'visibly produces nothing across all five impacts.',
+      + 'visibly produces nothing however long it runs.',
     relocationFailure: 'Steps keyed to other times or other amounts would '
       + 'claim output the recorded impacts do not attribute.',
-    smallestAdequateForm: 'One rigid level with five equal 0.0375 steps, '
-      + 'ending 0.125 world units proud of the rim.',
+    smallestAdequateForm: 'One rigid level with one equal 0.0375 step per '
+      + 'sack milled, ending proud of the rim.',
     evidence: 'Bound to the replay generation test\'s frame-zero and '
       + 'schedule gates, the clearance test\'s rim datums, and the browser '
       + 'flour-phase captures.',

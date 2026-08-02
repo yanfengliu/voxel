@@ -33,6 +33,12 @@ Strengthens the canon line `Steering compounds`: an exploratory question is not 
 
 - Steering compounds: when the user accepts or repeats a direction that generalizes past the immediate task, land it in the canon in that same session — here if it is fleet-wide, else the repo's AGENTS.md or lessons file — so the next run inherits it instead of relearning it, and say what was captured and where. Do not canonize exploratory questions as accepted decisions. (Established 2026-07-18.)
 
+## Physics and fluid simulation
+
+Voxel-only. No canon equivalent.
+
+- Read the readily available resources before building or explaining simulation behaviour yourself (owner rule, 2026-08-01). Physics and fluid dynamics are old, well-documented fields, and the solver in this repository is an open-source engine whose source is one fetch away. Search the literature and the engine's own docs and code for the method, the parameter, and the failure mode before writing a solver, a stability argument, or a tuning sweep. Do not reinvent a scheme that has a name, and do not explain a measured result with a mechanism you have not checked. Evidence: the same session measured that Rapier's per-body soft CCD was inert for a rotating cam and correctly guessed why, then in the same comment asserted that a 45 Hz contact natural frequency "cannot be represented" by a 1/60 s step — Rapier's own `erp = dt*w / (dt*w + 2*zeta)` saturates smoothly and has no such limit, and thirty seconds in `src/dynamics/integration_parameters.rs` would have said so. Cite the file or paper in the comment, so the next reader can check the claim instead of re-deriving it.
+
 ## Creative asset work
 
 Voxel-only. No canon equivalent.

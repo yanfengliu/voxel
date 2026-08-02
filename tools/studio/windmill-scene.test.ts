@@ -203,7 +203,10 @@ describe('selected compact windmill scene', () => {
     expect(WINDMILL_SCENE_SUMMARY)
       .toMatch(/Five wheat sacks queue at the visible infeed/);
     expect(WINDMILL_SCENE_SUMMARY)
-      .toMatch(/flour level in the outfeed bin rises one step after each/);
+      .toMatch(/flour level in the outfeed bin rises one step for each sack milled/);
+    expect(WINDMILL_SCENE_SUMMARY).toMatch(
+      /answers roughly every second blow and stops once the magazine is empty/,
+    );
     expect(WINDMILL_SCENE_SUMMARY).toMatch(
       /authored presentation kinematics keyed to the blows the hammer actually lands/,
     );

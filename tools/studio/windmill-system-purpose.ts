@@ -371,40 +371,41 @@ readonly WindmillRecipeContrastV1[] = Object.freeze([
   }),
   Object.freeze({
     recipeId: WINDMILL_RECIPE_IDS_V1.hammer,
-    analyzerNearestRecipeId: WINDMILL_PRODUCTION_RECIPE_IDS_V1.building,
+    analyzerNearestRecipeId: WINDMILL_RECIPE_IDS_V1.rotor,
     supplementalNeighborRecipeIds: Object.freeze([
-      WINDMILL_RECIPE_IDS_V1.rotor,
+      WINDMILL_PRODUCTION_RECIPE_IDS_V1.building,
       WINDMILL_RECIPE_IDS_V1.anvil,
     ]),
     axes: Object.freeze([
       Object.freeze({
-        axis: 'topology-negative-space',
+        axis: 'topology-silhouette',
         difference:
-          'A solid asymmetric follower-toe lever chain replaces a hollow post-and-plane shell whose only voids are two authored wall passages.',
+          'One asymmetric follower-toe lever chain hangs off a single end bearing; the rotor is two opposed plates balanced about a shaft through its middle.',
       }),
       Object.freeze({
         axis: 'supported-motion',
         difference:
-          'A journaled lever swings about a rear bearing; the building shell never moves.',
+          'The lever swings through a bounded arc and lands, driven by contact and gravity; the rotor turns continuously, driven by wind on its plates.',
       }),
     ]),
   }),
   Object.freeze({
     recipeId: WINDMILL_RECIPE_IDS_V1.anvil,
-    analyzerNearestRecipeId: WINDMILL_PRODUCTION_RECIPE_IDS_V1.wheatSack,
+    analyzerNearestRecipeId: WINDMILL_PRODUCTION_RECIPE_IDS_V1.flourHeap,
     supplementalNeighborRecipeIds: Object.freeze([
       WINDMILL_RECIPE_IDS_V1.hammer,
+      WINDMILL_PRODUCTION_RECIPE_IDS_V1.wheatSack,
     ]),
     axes: Object.freeze([
       Object.freeze({
-        axis: 'construction-grammar',
+        axis: 'scale-proportion',
         difference:
-          'Two purpose-separated fixed reaction boxes on the machine grain replace a fine-grain burlap body under a one-voxel tie cue.',
+          'One machine-grain reaction cube stands alone on the ground; the flour level is a wide fine-grain slab filling a bin cavity it never leaves.',
       }),
       Object.freeze({
         axis: 'supported-motion',
         difference:
-          'The anvil is the fixed output participant of a solved contact; the sack is a kinematic prop delivered and tipped by authored tracks.',
+          'The anvil is the fixed output participant of a solved contact; the flour level is a kinematic prop that only ever rises on authored tracks.',
       }),
     ]),
   }),
@@ -429,20 +430,21 @@ readonly WindmillRecipeContrastV1[] = Object.freeze([
   }),
   Object.freeze({
     recipeId: WINDMILL_PRODUCTION_RECIPE_IDS_V1.wheatSack,
-    analyzerNearestRecipeId: WINDMILL_RECIPE_IDS_V1.anvil,
+    analyzerNearestRecipeId: 'studio:machine-works:drive-cog',
     supplementalNeighborRecipeIds: Object.freeze([
+      WINDMILL_RECIPE_IDS_V1.anvil,
       WINDMILL_PRODUCTION_RECIPE_IDS_V1.flourHeap,
     ]),
     axes: Object.freeze([
       Object.freeze({
-        axis: 'scale-proportion',
+        axis: 'topology-negative-space',
         difference:
-          'A fine-grain plump body under a centered one-voxel tie reads as soft goods beside the anvil\'s two stacked machine-grain cubes.',
+          'A plump closed body under a centered one-voxel tie cue reads as soft goods; the drive cog is a toothed rim around an open hub bore.',
       }),
       Object.freeze({
         axis: 'supported-motion',
         difference:
-          'The sack slides, tips over its base edge, and lies spent on authored tracks; the anvil never moves.',
+          'The sack slides, tips over its base edge, and lies spent on authored tracks; the cog only ever turns about its bore.',
       }),
     ]),
   }),

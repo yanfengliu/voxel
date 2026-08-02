@@ -124,7 +124,7 @@ describe('windmill production line accountability', () => {
     );
     expect(honestyCarriers.length).toBeGreaterThanOrEqual(3);
     expect(WINDMILL_PRODUCTION_HONESTY_V1)
-      .toMatch(/keyed to the .*five recorded hammer-anvil impacts/);
+      .toMatch(/keyed to the .*answered hammer-anvil impacts/);
     expect(WINDMILL_PRODUCTION_HONESTY_V1)
       .toMatch(/nothing simulates milling, grain, contact, or mass flow/);
   });
@@ -207,11 +207,24 @@ describe('windmill production line accountability', () => {
       expect(track.angularVelocities)
         .toEqual(second[index]!.angularVelocities);
     });
+    // Fewer blows than sacks, and blows past the last sack, are both
+    // ordinary: the magazine answers what it can and the rest of the queue
+    // waits. Only a window in which not one blow can be answered is refused.
     expect(() => synthesizeWindmillProductionTracksV1(
       impacts.slice(0, 4),
       721,
       1 / 60,
-    )).toThrow(/received 4 recorded impact times for 5 authored wheat sacks/);
+    )).not.toThrow();
+    expect(() => synthesizeWindmillProductionTracksV1(
+      [...impacts, impacts[impacts.length - 1]! + 0.5],
+      721,
+      1 / 60,
+    )).not.toThrow();
+    expect(() => synthesizeWindmillProductionTracksV1(
+      [11.9],
+      721,
+      1 / 60,
+    )).toThrow(/not one blow could be answered by a sack/);
     expect(() => synthesizeWindmillProductionTracksV1(
       [...impacts.slice(0, 4), impacts[3]!],
       721,
@@ -222,10 +235,13 @@ describe('windmill production line accountability', () => {
       721,
       1 / 60,
     )).toThrow(/leave the queue at/);
+    // A five-second window against a mill whose first blow lands at 4.1 s:
+    // no sack can both reach the spot and settle in the spent row before it
+    // closes, so there is nothing to show rather than a sack frozen mid-drag.
     expect(() => synthesizeWindmillProductionTracksV1(
       impacts,
       301,
       1 / 60,
-    )).toThrow(/settles at .* after the finite observation ends/);
+    )).toThrow(/not one blow could be answered by a sack/);
   });
 });

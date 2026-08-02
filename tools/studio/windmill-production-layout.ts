@@ -17,7 +17,7 @@ import {
  * the recorded hammer-anvil impacts pound it, flour comes out — inside a mill
  * building whose open front corner keeps the interior visible from the
  * default camera. Wheat and flour motion is authored kinematics keyed to the
- * five recorded impacts (see windmill-production-kinematics.ts); it is not
+ * hammer's recorded blows (see windmill-production-kinematics.ts); it is not
  * simulated milling, grain flow, or contact.
  *
  * Every coordinate below is checked against the frozen candidate's real swept
@@ -222,12 +222,21 @@ export const WINDMILL_WHEAT_SACK_LAYOUT_V1 = anAsset(
   ],
 );
 
-/** The open-topped flour bin standing against the anvil's east face. */
+/**
+ * The open-topped flour bin, one building voxel east of the anvil.
+ *
+ * It used to stand hard against the anvil's east face at x 3.625. The
+ * promoted head is a voxel taller, so its impact toe swings a voxel lower
+ * and came within 0.0116 m of the bin's west wall against an authored
+ * 0.06 m clearance. Moving the bin one whole building voxel east — not a
+ * fraction of one, so it stays on its own lattice — takes that to
+ * 0.1366 m, and the bin is still the thing the anvil discharges into.
+ */
 export const WINDMILL_FLOUR_BIN_LAYOUT_V1 = anAsset(
   WINDMILL_PRODUCTION_RECIPE_IDS_V1.flourBin,
   [5, 3, 5],
   WINDMILL_BUILDING_GRAIN,
-  [3.625, 0, 1.625],
+  [3.75, 0, 1.625],
   [
     box('bin-floor', [0, 0, 0], [5, 1, 5], 'bin-plank'),
     box('bin-wall-north', [0, 1, 0], [5, 2, 1], 'bin-plank'),
@@ -242,8 +251,9 @@ export const WINDMILL_FLOUR_HEAP_LAYOUT_V1 = anAsset(
   WINDMILL_PRODUCTION_RECIPE_IDS_V1.flourHeap,
   [5, 3, 5],
   WINDMILL_PROP_GRAIN,
-  // Standing base rests on the bin floor top face at y = 0.125.
-  [3.625, 0.125, 1.625],
+  // Standing base rests on the bin floor top face at y = 0.125, and the
+  // level moves east with the bin that holds it.
+  [3.75, 0.125, 1.625],
   [
     box('flour-level-body', [0, 0, 0], [5, 2, 5], 'flour'),
     box('flour-level-surface', [0, 2, 0], [5, 1, 5], 'flour'),

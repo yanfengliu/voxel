@@ -31,6 +31,7 @@
     "fixtures/machine-works-consumer",
     "fixtures/physics-playground",
     "fixtures/riverfall-consumer",
+    "fixtures/windmill-consumer",
     "eslint.config.js",
     "playwright.config.ts",
     "vitest.config.ts"

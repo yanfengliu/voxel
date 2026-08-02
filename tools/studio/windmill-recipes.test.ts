@@ -8,6 +8,9 @@ import {
   createWindmillCompactCreativeV1,
 } from './windmill-compact-creative.js';
 import {
+  enumerateWindmillCompactGeometryV1,
+} from './windmill-compact-geometry-enumeration.js';
+import {
   WINDMILL_COMPACT_SELECTED_CANDIDATE_V1,
   WINDMILL_COMPACT_SELECTED_PARAMETER_KEY_V1,
   WINDMILL_COMPACT_SELECTED_PROOF_NOMINAL_EVALUATION_SHA256_V1,
@@ -198,8 +201,10 @@ describe('selected compact windmill recipes', () => {
       'hammer-right-beam',
       'hammer-impact-toe',
     ]));
+    // The promoted head is three voxels tall, so its face reaches the
+    // ground and the anvil is the cap alone — no column between them.
     expect(candidate.assets.anvil.boxes.map(({ key }) => key))
-      .toEqual(['anvil-column', 'anvil-impact-cap']);
+      .toEqual(['anvil-impact-cap']);
     expect(JSON.stringify({
       recipes: WINDMILL_RECIPES,
       purposes: WINDMILL_PURPOSE_LEDGER_V1,
@@ -208,9 +213,20 @@ describe('selected compact windmill recipes', () => {
   });
 
   it('binds every used color role to a named communication job', () => {
-    const usedRoles = new Set(Object.values(creative.assets).flatMap(
+    // Across the whole enumerated family, not just the promoted candidate.
+    // The generator emits `anvil-waist` only when the head is short enough
+    // to need a column under the anvil face, and the promoted head is not;
+    // scoping this to one candidate would call a live role an orphan.
+    const usedRoles = new Set(enumerateWindmillCompactGeometryV1().attempts
+      .flatMap((attempt) => attempt.outcome === 'candidate'
+        ? Object.values(
+          createWindmillCompactCreativeV1(attempt.candidate).assets,
+        ).flatMap((asset) => asset.boxes.map((box) => box.role))
+        : []));
+    const selectedRoles = new Set(Object.values(creative.assets).flatMap(
       (asset) => asset.boxes.map((box) => box.role),
     ));
+    expect([...selectedRoles].every((role) => usedRoles.has(role))).toBe(true);
     expect(Object.keys(WINDMILL_MATERIAL_PURPOSE_MAP_V1).sort())
       .toEqual([...usedRoles].sort());
     expect(new Set(WINDMILL_MATERIAL_PURPOSES_V1.map(({ id }) => id)).size)

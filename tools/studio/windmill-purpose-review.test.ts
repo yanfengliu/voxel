@@ -103,7 +103,6 @@ describe('selected windmill purpose review variants', () => {
       'hammer-follower-shoe',
       'hammer-pivot-core',
       'hammer-impact-toe',
-      'anvil-impact-cap',
       'building-roof-ridge',
       'building-side-wall',
       'sack-tie',
@@ -150,10 +149,18 @@ describe('selected windmill purpose review variants', () => {
     const book = createWindmillRecipeBook();
     for (const variant of recipeVariants) {
       const built = buildRecipe(variant.recipe, parts, book).model;
+      // Removing an asset's only box leaves nothing, and nothing is the
+      // right picture: it says the box IS the asset. The promoted head is
+      // a voxel taller than the 960 Hz one, so its anvil face sits on the
+      // ground and the anvil lost its column — 'anvil-impact-cap' is now
+      // the whole anvil. Every other variant must still build something,
+      // which is what catches a clipped boundary box.
+      const emptied = variant.reviewKind === 'simplification'
+        && variant.recipe.steps.length === 0;
       expect(
         built.voxels.some((slot) => slot !== 0),
         variant.id,
-      ).toBe(true);
+      ).toBe(!emptied);
     }
   });
 

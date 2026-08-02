@@ -8,6 +8,10 @@ import {
   windmillCandidatePassesV1,
 } from './windmill-candidate-ranking.js';
 import {
+  createSelectedWindmillCompactCandidateV1,
+} from '../../tools/studio/windmill-compact-selection.js';
+import {
+  evaluateWindmillCompactCandidateV1,
   evaluateWindmillCompactDefaultV1,
 } from './windmill-compact-evaluator.js';
 import {
@@ -49,7 +53,7 @@ describe('compact windmill default evaluator', () => {
     )).toBe(true);
     expect(() => {
       (evaluation.evidence.initialLoadBalance
-        .netForceWorldNewtons as number[])[0] = 99;
+        .netForceWorldNewtons as unknown as number[])[0] = 99;
     }).toThrow();
     expect(() => assertWindmillCompactCandidateResultV1(evaluation.result))
       .not.toThrow();
@@ -74,10 +78,17 @@ describe('compact windmill default evaluator', () => {
       .toBeLessThan(0.05);
   }, 15_000);
 
+  // A full passing horizon is a claim about the machine this repository
+  // promoted, not about the parameter grid's first tuple. The two cases
+  // below used to run the default candidate and passed because at 960 Hz
+  // the default happened to work too; at the shared rate it throws its
+  // hammer over the top (lift 1.92 m, clearance breached by 0.197 m) and
+  // no one ships it.
   it('runs the frozen full nominal horizon', async () => {
-    const evaluation = await evaluateWindmillCompactDefaultV1({
-      name: 'default-full-nominal',
-    });
+    const evaluation = await evaluateWindmillCompactCandidateV1(
+      createSelectedWindmillCompactCandidateV1(),
+      { name: 'selected-full-nominal' },
+    );
     expect(evaluation.evidence.ticks).toBe(12 * OPERATIONAL_TICKS_PER_SECOND);
     expect(evaluation.evidence.cycleRecords).toHaveLength(
       evaluation.evidence.completedCausalCycles,
@@ -139,7 +150,8 @@ describe('compact windmill default evaluator', () => {
   });
 
   it('removes only the disabled nose work and changes the physical output', async () => {
-    const nominal = await evaluateWindmillCompactDefaultV1({
+    const selected = createSelectedWindmillCompactCandidateV1();
+    const nominal = await evaluateWindmillCompactCandidateV1(selected, {
       name: 'dual-lobe-ablation-nominal',
     });
     for (const disabledCamNoseKey of
@@ -149,7 +161,7 @@ describe('compact windmill default evaluator', () => {
       expect(nominal.evidence
         .qualifiedCausalCyclesByNose[disabledCamNoseKey])
         .toBeGreaterThan(0);
-      const ablated = await evaluateWindmillCompactDefaultV1({
+      const ablated = await evaluateWindmillCompactCandidateV1(selected, {
         name: `dual-lobe-ablation-${disabledCamNoseKey}`,
         disabledCamNoseKey,
       });

@@ -26,22 +26,26 @@ import {
 } from './windmill-compact-evaluator-runtime.js';
 import {
   evaluateWindmillCompactCandidateAndRecordV1,
+  WINDMILL_COMPACT_RECORD_HERTZ_V1,
   type WindmillCompactRecordedEvaluationV1,
   type WindmillCompactReplaySelectionBindingV1,
 } from './windmill-compact-recorder.js';
 import { windmillReplaySourceV2 } from './windmill-replay-codegen.js';
+import {
+  SOLVER_TIMESTEP_SECONDS_V1,
+} from '../../tools/studio/solver-rate.js';
 
 const EXPECTED_SEARCH_EVALUATION_SHA256 =
-  '1e6e11771b4117d7e04fa121cc7f235201f6fc93af364cba647666ea1507544b';
+  'c72a66d4298203811b7b3798421e78fb6edf6205870a6d5af0f12e1ab36d86ea';
 
 const SELECTION_BINDING = Object.freeze({
   schema: 'fixture.windmill-compact-replay-selection-binding/1',
-  candidateParameterKey: 'r5-g1-s3-c3x1-a4-h2-q0',
+  candidateParameterKey: 'r5-g1-s3-c3x1-a4-h3-q0',
   enumerationFingerprint: 'fnv1a64:226ecbd8deb520d5',
   selectionManifestSha256:
-    '85d7c7fd18537553bb92ba70228ea68e23ac6599b145363103200cbaa0b5dea9',
+    '5a818962bb3b259b230f4eb3a417e599e845f0c4d6a916432ea7972cf8aaf1bc',
   searchEvidenceSha256:
-    'fd95af36716e02d13a880f8567ad2b538e8b7c26571775603070c1092a7ef0fc',
+    '27a8b6e31cc9e6f224c745f806b49449295defd05d76a8b2b6dfac5526edd6de',
   selectedSearchEvaluationSha256: EXPECTED_SEARCH_EVALUATION_SHA256,
   selectedProofNominalEvaluationSha256:
     WINDMILL_COMPACT_SELECTED_PROOF_NOMINAL_EVALUATION_SHA256_V1,
@@ -57,10 +61,20 @@ function selectedCandidate(): WindmillCompactCandidateV1 {
     camRadialLengthVoxels: 3,
     camHeightVoxels: 1,
     hammerRightArmLengthVoxels: 4,
-    hammerHeadHeightVoxels: 2,
+    hammerHeadHeightVoxels: 3,
     initialHeadAnvilClearanceVoxels: 0,
   });
 }
+
+/**
+ * Solver and record rate are the same 60 Hz now, so a recorded frame is
+ * one solver tick. Derived, because a literal here would go on meaning a
+ * sixteen-tick frame after the rate moved.
+ */
+const EXPECTED_SOLVER_TICKS_PER_RECORDED_FRAME =
+  Math.round(
+    (1 / WINDMILL_COMPACT_RECORD_HERTZ_V1) / SOLVER_TIMESTEP_SECONDS_V1,
+  );
 
 describe('compact Windmill same-kernel recorder', () => {
   let candidate: WindmillCompactCandidateV1;
@@ -95,12 +109,12 @@ describe('compact Windmill same-kernel recorder', () => {
     expect(recorded.evaluation).toEqual(unrecorded);
   }, 180_000);
 
-  it('records the exact 960 Hz to 60 Hz finite cadence and body origins', () => {
+  it('records the exact solver-to-60 Hz finite cadence and body origins', () => {
     const { trace } = recorded;
     expect(trace.recordProfile).toMatchObject({
-      solverStepSeconds: 1 / 960,
-      recordStepSeconds: 1 / 60,
-      solverTicksPerRecordedFrame: 16,
+      solverStepSeconds: SOLVER_TIMESTEP_SECONDS_V1,
+      recordStepSeconds: 1 / WINDMILL_COMPACT_RECORD_HERTZ_V1,
+      solverTicksPerRecordedFrame: EXPECTED_SOLVER_TICKS_PER_RECORDED_FRAME,
       physicalDurationSeconds: 12,
       frameCount: 721,
     });
@@ -189,7 +203,7 @@ describe('compact Windmill same-kernel recorder', () => {
 
   it('refuses to encode a channel mutated after its evidence hash', () => {
     const translations = new Float32Array(recorded.trace.translations);
-    translations[0] += 1;
+    translations[0] = translations[0]! + 1;
     expect(() => windmillReplaySourceV2({
       ...recorded.trace,
       translations,
@@ -243,7 +257,7 @@ describe('compact Windmill same-kernel recorder', () => {
       candidate,
       {
         name: 'observer-boundary',
-        durationSeconds: 1 / 960,
+        durationSeconds: SOLVER_TIMESTEP_SECONDS_V1,
       },
       {
         start(_effectiveRun, bodies): void {
@@ -256,7 +270,8 @@ describe('compact Windmill same-kernel recorder', () => {
           expect(Object.values(bodies.rotor)
             .some((value) => typeof value === 'function')).toBe(false);
           expect(() => {
-            (bodies.rotor.bodyOriginTranslation as number[])[0] = 99;
+            (bodies.rotor
+              .bodyOriginTranslation as unknown as number[])[0] = 99;
           }).toThrow(TypeError);
         },
         step({ bodies, cam, impact }): void {

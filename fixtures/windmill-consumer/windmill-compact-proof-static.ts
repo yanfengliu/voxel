@@ -143,11 +143,18 @@ function upperHeadFaceConnectedPath(
 export function createWindmillCompactUpperHeadMassEvidenceV1(
   candidate: WindmillCompactCandidateV1,
 ): WindmillCompactUpperHeadMassEvidenceV1 {
-  if (candidate.parameters.hammerHeadHeightVoxels !== 2) {
+  // The return mass is whatever sits above the one-voxel impact toe, so a
+  // one-voxel head has none to describe. Height is otherwise free: the
+  // interface check below is what pins the shape, and the promoted head
+  // grew from two voxels to three when the search was re-run at the
+  // shared solver rate.
+  if (candidate.parameters.hammerHeadHeightVoxels <= 1) {
     throw new Error(
       `Cannot derive selected windmill upper-head static contribution for `
-      + `'${candidate.parameterKey}': selected head height is `
-      + `${String(candidate.parameters.hammerHeadHeightVoxels)}, expected 2.`,
+      + `'${candidate.parameterKey}': head height is `
+      + `${String(candidate.parameters.hammerHeadHeightVoxels)} voxel, so the `
+      + 'head is the impact toe alone and carries no return mass above it. '
+      + 'Expected at least 2.',
     );
   }
   const box = candidate.assets.hammer.boxes.find(({ key }) =>
@@ -161,11 +168,9 @@ export function createWindmillCompactUpperHeadMassEvidenceV1(
   }
   const faceConnectedPath = upperHeadFaceConnectedPath(candidate);
   const compiled = compileWindmillCompactCandidateV1(candidate);
-  const colliderIndex = compiled.boxColliderIndices.hammer[box.key];
+  const colliderIndex = compiled.boxColliderIndices.hammer[box.key] ?? -1;
   const hammer = compiled.physicalAssets.hammer;
-  const collider = colliderIndex === undefined
-    ? undefined
-    : hammer.colliders[colliderIndex];
+  const collider = hammer.colliders[colliderIndex];
   if (collider === undefined) {
     throw new Error(
       `Cannot derive selected windmill upper-head static contribution: box `

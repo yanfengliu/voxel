@@ -34,8 +34,8 @@ const OPPOSITE_EVIDENCE_PITCH_DEGREES = 45;
  * A live scene has no timeline to scrub, so a reproducible moment is a step
  * count: the solver is deterministic for a given number of fixed ticks. These
  * come from tracing the live profile's hammer — it strikes the anvil at ticks
- * 1, 111, 247, 383, 519, 655 and on at a steady 136-tick beat, so this is the
- * third full cycle, past the opening transient.
+ * 112, 246, 384, 522, 661, 799 and on at a steady 138-tick beat, so this is
+ * the third full cycle, past the opening transient.
  *
  * The rest, lift and strike below are asserted against the hammer's own
  * height, so a mill whose rhythm moves fails by name here rather than as an
@@ -46,9 +46,15 @@ const HAMMER_PHASE_TICKS = Object.freeze({
   lifted: 350,
   striking: 383,
 });
-/** Hammer centre height at rest on the anvil, and at the top of its lift. */
-const HAMMER_REST_Y = 0.875;
-const HAMMER_LIFT_Y = 0.905;
+/**
+ * Two thresholds a quarter and three quarters of the way through the
+ * hammer body origin's own travel, traced live: it rests at 0.748096 and
+ * apexes at 0.793604. The origin sits near the pivot, so it moves a
+ * fortieth of what the head does — this is a rhythm check, not a lift
+ * measurement, and the head's 0.597 m lift is gated in the fixture.
+ */
+const HAMMER_REST_Y = 0.76;
+const HAMMER_LIFT_Y = 0.78;
 
 let server: ViteDevServer | undefined;
 let studioOrigin = '';

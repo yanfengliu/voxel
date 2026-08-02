@@ -45,6 +45,20 @@ function expectFinite(values: Float32Array): void {
   for (const value of values) expect(Number.isFinite(value)).toBe(true);
 }
 
+/**
+ * A budget for the two cases that run the whole fluid, sized against the
+ * work they do rather than against how loaded the machine is.
+ *
+ * Measured alone on 2026-08-01: the causal-evidence attestation takes
+ * 44.4 s and the named-cause ablation sweep 29.9 s. Both carried 60 s,
+ * and the attestation duly expired at 60 s inside a full `npm run verify`
+ * while passing on its own minutes later — the exact time bomb
+ * `docs/learning/lessons.md` records for the lighting and mesher-benchmark
+ * cases. Four times the measured work leaves the slow machine room to be
+ * slow without teaching anyone to rerun until green.
+ */
+const RIVERFALL_HEAVY_CASE_TIMEOUT_MS = 180_000;
+
 describe('Riverfall deterministic 2D PBF', () => {
   it('matches its stable spatial hash against a brute-force neighbor oracle', () => {
     const config = createRiverfallFluidConfigV1({
@@ -232,7 +246,7 @@ describe('Riverfall deterministic 2D PBF', () => {
       expect(observation.ablationFinalHash)
         .not.toBe(observation.baselineFinalHash);
     }
-  }, 60_000);
+  }, RIVERFALL_HEAVY_CASE_TIMEOUT_MS);
 
   it('attests the canonical replay trace with passing causal evidence', () => {
     const trace = simulateRiverfallFluidEvidenceV1();
@@ -518,5 +532,5 @@ describe('Riverfall deterministic 2D PBF', () => {
       'export const RIVERFALL_FLUID_SURFACE_SUPPORT = ',
     );
     expect(source.length).toBeLessThan(5_500_000);
-  }, 60_000);
+  }, RIVERFALL_HEAVY_CASE_TIMEOUT_MS);
 });

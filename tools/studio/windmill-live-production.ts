@@ -1,6 +1,8 @@
 import type { ScenePlacementPoseV1 } from './scene-pose-delta.js';
 import {
+  WINDMILL_SACK_SPOT_SECONDS_V1,
   windmillFlourPoseV1,
+  windmillMilledImpactsV1,
   windmillSackLeadSecondsV1,
   windmillWheatSackPoseV1,
 } from './windmill-production-kinematics.js';
@@ -84,14 +86,21 @@ export class WindmillLiveProductionV1 {
   /**
    * When sack `index` is milled: the blow that landed, or the one the mill's
    * beat says is coming.
+   *
+   * Blows are filtered through the magazine's own rule first, so a mill
+   * striking faster than a sack can be dragged clear answers every other
+   * blow rather than sliding two sacks through each other. Predictions past
+   * the last landed blow keep the same spacing, for the same reason.
    */
   #impactFor(index: number): number | null {
-    const observed = this.#impacts[index];
+    const milled = windmillMilledImpactsV1(this.#impacts);
+    const observed = milled[index];
     if (observed !== undefined) return observed;
     const beat = this.#beat();
-    if (beat === null) return null;
-    const last = this.#impacts[this.#impacts.length - 1]!;
-    return last + beat * (index - (this.#impacts.length - 1));
+    if (beat === null || milled.length === 0) return null;
+    const last = milled[milled.length - 1]!;
+    const stride = Math.max(beat, WINDMILL_SACK_SPOT_SECONDS_V1);
+    return last + stride * (index - (milled.length - 1));
   }
 
   /**
@@ -101,24 +110,30 @@ export class WindmillLiveProductionV1 {
    */
   poses(timeSeconds: number): ReadonlyMap<string, ScenePlacementPoseV1> {
     const poses = new Map<string, ScenePlacementPoseV1>();
-    SACK_IDS.forEach((placementId, index) => {
+    for (const [index, placementId] of SACK_IDS.entries()) {
       const impact = this.#impactFor(index);
-      if (impact === null) return;
+      if (impact === null) break;
       // A sack that could never have reached the anvil in time stays in the
       // queue. Its blow landed before the mill had a rhythm to anticipate,
       // which is the honest reading of a machine still starting up.
-      if (impact - windmillSackLeadSecondsV1(index) < MINIMUM_START_SECONDS) return;
+      //
+      // And so does everything behind it. The queue is a line along one
+      // lane, so a later sack that set off would slide straight through the
+      // one still standing in front of it.
+      if (impact - windmillSackLeadSecondsV1(index) < MINIMUM_START_SECONDS) {
+        break;
+      }
       const pose = windmillWheatSackPoseV1(index, impact, timeSeconds);
       poses.set(placementId, {
         translation: pose.translation,
         quaternion: quaternionOf(pose),
       });
-    });
+    }
     // One rise per sack milled, and there are five sacks. The recording had
     // exactly five blows so this never came up; a live mill strikes for as
     // long as the wind blows, and an uncapped level climbs out through the
     // roof — which is what it did, while every number still looked sane.
-    const milled = this.#impacts.slice(0, SACK_IDS.length);
+    const milled = windmillMilledImpactsV1(this.#impacts);
     const flour = windmillFlourPoseV1(milled, timeSeconds);
     poses.set(WINDMILL_PRODUCTION_PLACEMENT_IDS_V1.flourHeap, {
       translation: flour.translation,

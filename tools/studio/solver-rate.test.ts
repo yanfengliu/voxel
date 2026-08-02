@@ -31,7 +31,8 @@ import {
  * fixture in the repository sat outside the rule it claimed to enforce.
  *
  * The scan now covers the whole repository, and there is nowhere left to keep
- * a rate of one's own.
+ * a rate of one's own. The last lane to move was the windmill consumer proof,
+ * and it took an exhaustive re-search of the machine's geometry to move it.
  */
 
 const REPO_ROOT = fileURLToPath(new URL('../..', import.meta.url));
@@ -126,42 +127,17 @@ describe('the one solver rate', () => {
       .toEqual(['const step = 1 / 240; ']);
   });
 
-  it('is spelled nowhere but the one lane still being moved', () => {
-    // An exact set, not an exemption list. Anything new fails immediately, and
-    // so does this set SHRINKING: when the windmill consumer moves, the second
-    // assertion fails and tells whoever moved it to delete the entry, and to
-    // delete the list once it empties. The list this replaced could not notice
-    // its own obsolescence, which is how it outlived the problem it described.
-    //
-    // Why this lane is still here, measured 2026-08-01: its compact machine
-    // was chosen by an exhaustive parameter search at a much finer step, and
-    // at the shared rate it completes ZERO causal cam-and-hammer cycles — the
-    // cam and follower never engage at all. Moving it means re-running that
-    // search at the shared rate and regenerating every frozen hash bound to
-    // the winning profile id. That is a piece of work, not a constant change.
-    const stillMoving = [
-      'windmill-compact-recorder.test.ts',
-      'windmill-compact-world.test.ts',
-      'windmill-operational-inputs.ts',
-      'windmill-replay-generation.test.ts',
-      'windmill-selected-proof-browser.ts',
-    ];
+  it('is spelled nowhere at all', () => {
+    // There is no allowance left. This carried a five-file set while the
+    // windmill consumer proof was being moved — an exact set rather than an
+    // exemption list, so that emptying it failed the test and told whoever
+    // emptied it to delete the list. It emptied on 2026-08-01, when that
+    // proof's parameter search was re-run at the shared rate.
     const offenders = rateLiteralOffenders();
-    const unexpected = offenders.filter(
-      (line) => !stillMoving.some((file) => line.includes(file)),
-    );
     expect(
-      unexpected,
+      offenders,
       'these lines spell a solver rate instead of deriving it from '
-      + `SOLVER_TIMESTEP_SECONDS_V1:\n${unexpected.join('\n')}`,
+      + `SOLVER_TIMESTEP_SECONDS_V1:\n${offenders.join('\n')}`,
     ).toEqual([]);
-    const stillOffending = stillMoving.filter(
-      (file) => offenders.some((line) => line.includes(file)),
-    );
-    expect(
-      stillOffending,
-      'these files no longer spell a rate — delete them from `stillMoving`, '
-      + 'and when it empties, delete the list and assert no offenders at all',
-    ).toEqual(stillMoving);
   });
 });

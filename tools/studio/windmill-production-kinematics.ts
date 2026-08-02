@@ -17,16 +17,21 @@ import {
 
 /**
  * Authored kinematic tracks for the Windmill production line, synthesized
- * from the five recorded anvil-impact times and nothing else.
+ * from the recorded anvil-impact times and nothing else.
  *
  * Honesty boundary: these poses are presentation choreography keyed to the
  * committed consumer trace's impact events — the same pattern as Riverfall's
- * presentation constructs. Before recorded impact k, wheat sack k slides from
- * the visible infeed queue to the anvil-side milling spot; after it, the
- * spent sack tips over its own base edge, is set back behind the milling
- * line, and the flour level in the outfeed bin rises one step. Nothing here
- * simulates milling, grain, contact, friction, or mass flow, and no value
- * feeds back into the solver trace.
+ * presentation constructs. Before an answered blow, the next wheat sack
+ * slides from the visible infeed queue to the anvil-side milling spot; after
+ * it, the spent sack tips over its own base edge, is set back behind the
+ * milling line, and the flour level in the outfeed bin rises one step.
+ * Nothing here simulates milling, grain, contact, friction, or mass flow,
+ * and no value feeds back into the solver trace.
+ *
+ * Not every blow is answered. The magazine holds five sacks, and a sack
+ * cannot take the milling spot while the one before it is still being
+ * dragged clear — see `windmillMilledImpactsV1` for both rules and what
+ * they cost.
  *
  * Determinism boundary: every operation is IEEE-exact (+, -, *, /, sqrt) or
  * routed through the repository's fixed-polynomial trigonometry, so the
@@ -175,6 +180,30 @@ function lerpSmooth(
   return from + (to - from) * smoothstep(edge0, edge1, time);
 }
 
+/**
+ * Where sack `index` stands while it waits its turn.
+ *
+ * A sack whose blow never came stays here for the whole window. That is a
+ * pose the schedule cannot give, because a schedule needs a blow.
+ */
+export function windmillWheatSackQueuePoseV1(
+  index: number,
+): WindmillProductionPoseV1 {
+  const queueX = WINDMILL_WHEAT_QUEUE_XS_V1[index];
+  if (queueX === undefined) {
+    throw new Error(
+      `Cannot rest windmill wheat sack ${String(index + 1)} in the queue: the `
+      + `layout declares only ${String(WINDMILL_WHEAT_QUEUE_XS_V1.length)} `
+      + 'queue slots.',
+    );
+  }
+  return {
+    translation: [queueX, STAND_CENTER_Y, WINDMILL_WHEAT_QUEUE_Z_V1],
+    quaternion: [0, 0, 0, 1],
+    rollRadians: 0,
+  };
+}
+
 /** The full authored pose of sack `index` at `time` seconds. */
 export function windmillWheatSackPoseV1(
   index: number,
@@ -287,18 +316,74 @@ export interface WindmillProductionTrackV1 {
   readonly angularVelocities: Float32Array;
 }
 
+/**
+ * How long the milling spot is occupied by one sack: from its arrival just
+ * before the blow to the moment the spent sack has hopped back to the
+ * discard row. Derived from the authored choreography above, so it moves
+ * with it.
+ */
+export const WINDMILL_SACK_SPOT_SECONDS_V1 =
+  ARRIVE_LEAD_SECONDS
+  + DEPART_LAG_SECONDS
+  + ROLL_SECONDS
+  + (WINDMILL_DISCARD_ROW_Z_V1 - WINDMILL_MILL_SPOT_V1[1]) / SLIDE_SPEED;
+
+/**
+ * The blows this magazine can answer: one sack each, in order, and no more.
+ *
+ * Two rules, and both were latent until the mill got faster. A magazine
+ * holds what it holds, so blows past the last sack go unanswered — the live
+ * lane already worked that way, because a flour level keyed to blows rather
+ * than to sacks climbs out through the roof. And a sack cannot answer a blow
+ * that lands while the sack before it is still being tipped and dragged
+ * clear; that one used to be free, because the 960 Hz recording struck five
+ * times in twelve seconds. At the shared rate the same mill strikes nine
+ * times in the same twelve seconds — about 0.9 s apart against the
+ * choreography's own occupancy of roughly 1.12 s — so without this the
+ * sacks pass through each other.
+ *
+ * Neither rule is a cap on the mill. The hammer keeps striking; the mill
+ * simply has nothing under it, which is what an emptied magazine looks like.
+ */
+export function windmillMilledImpactsV1(
+  impactsSeconds: readonly number[],
+): readonly number[] {
+  const milled: number[] = [];
+  let spotFreeAt = Number.NEGATIVE_INFINITY;
+  for (const impact of impactsSeconds) {
+    if (milled.length >= WINDMILL_WHEAT_QUEUE_XS_V1.length) break;
+    if (impact - ARRIVE_LEAD_SECONDS < spotFreeAt) continue;
+    milled.push(impact);
+    spotFreeAt = impact + WINDMILL_SACK_SPOT_SECONDS_V1 - ARRIVE_LEAD_SECONDS;
+  }
+  return Object.freeze(milled);
+}
+
+/**
+ * The blows a finite recording can show all the way through: a sack that
+ * would still be sliding into the spent row when the window closes is left
+ * in the queue instead of freezing mid-drag.
+ *
+ * Only the recorded lane needs this. A live mill has no window to run out
+ * of, so it uses `windmillMilledImpactsV1` unaltered.
+ */
+export function windmillSettledMilledImpactsV1(
+  impactsSeconds: readonly number[],
+  durationSeconds: number,
+): readonly number[] {
+  const milled = [...windmillMilledImpactsV1(impactsSeconds)];
+  while (milled.length > 0
+    && sackSchedule(milled.length - 1, milled[milled.length - 1]!).slideEnd
+      > durationSeconds) {
+    milled.pop();
+  }
+  return milled;
+}
+
 function assertImpacts(
   impactsSeconds: readonly number[],
   durationSeconds: number,
 ): void {
-  if (impactsSeconds.length !== WINDMILL_WHEAT_QUEUE_XS_V1.length) {
-    throw new Error(
-      `Cannot synthesize windmill production tracks: received `
-      + `${String(impactsSeconds.length)} recorded impact times for `
-      + `${String(WINDMILL_WHEAT_QUEUE_XS_V1.length)} authored wheat sacks. `
-      + 'The infeed magazine is keyed one sack per qualified impact.',
-    );
-  }
   let previous = 0;
   for (const [cycle, impact] of impactsSeconds.entries()) {
     if (!Number.isFinite(impact) || impact <= previous) {
@@ -310,15 +395,20 @@ function assertImpacts(
     }
     previous = impact;
   }
-  for (const [index, impact] of impactsSeconds.entries()) {
-    const settled = sackSchedule(index, impact).slideEnd;
-    if (settled > durationSeconds) {
-      throw new Error(
-        `Cannot synthesize windmill production tracks: spent sack `
-        + `${String(index + 1)} settles at ${settled.toFixed(3)} s, after `
-        + `the finite observation ends at ${String(durationSeconds)} s.`,
-      );
-    }
+  if (windmillSettledMilledImpactsV1(
+    impactsSeconds,
+    durationSeconds,
+  ).length === 0) {
+    throw new Error(
+      `Cannot synthesize windmill production tracks: the mill struck `
+      + `${String(impactsSeconds.length)} times in `
+      + `${String(durationSeconds)} s and not one blow could be answered by a `
+      + 'sack that reaches the milling spot in time and settles in the spent '
+      + `row before the window closes. One sack needs `
+      + `${WINDMILL_SACK_SPOT_SECONDS_V1.toFixed(3)} s at the spot. Raising `
+      + 'the sack count is not the lever — the queue and discard rows are '
+      + 'authored to fit the bay.',
+    );
   }
 }
 
@@ -345,11 +435,21 @@ export function synthesizeWindmillProductionTracksV1(
       + `${String(frameSeconds)} seconds; expected a positive finite step.`,
     );
   }
-  assertImpacts(impactsSeconds, (frameCount - 1) * frameSeconds);
-  const poseAt = (track: number, time: number): WindmillProductionPoseV1 =>
-    track < WINDMILL_WHEAT_QUEUE_XS_V1.length
-      ? windmillWheatSackPoseV1(track, impactsSeconds[track]!, time)
-      : windmillFlourPoseV1(impactsSeconds, time);
+  const durationSeconds = (frameCount - 1) * frameSeconds;
+  assertImpacts(impactsSeconds, durationSeconds);
+  const milled = windmillSettledMilledImpactsV1(
+    impactsSeconds,
+    durationSeconds,
+  );
+  const poseAt = (track: number, time: number): WindmillProductionPoseV1 => {
+    if (track >= WINDMILL_WHEAT_QUEUE_XS_V1.length) {
+      return windmillFlourPoseV1(milled, time);
+    }
+    const impact = milled[track];
+    return impact === undefined
+      ? windmillWheatSackQueuePoseV1(track)
+      : windmillWheatSackPoseV1(track, impact, time);
+  };
   return WINDMILL_PRODUCTION_TRACK_IDS_V1.map((placementId, track) => {
     const translations = new Float32Array(frameCount * 3);
     const quaternions = new Float32Array(frameCount * 4);
@@ -385,7 +485,7 @@ export function synthesizeWindmillProductionTracksV1(
   });
 }
 
-/** The five recorded impact times in seconds, in cycle order. */
+/** The recorded impact times in seconds, in cycle order. */
 export function windmillImpactSecondsV1(
   events: readonly {
     readonly kind: string;

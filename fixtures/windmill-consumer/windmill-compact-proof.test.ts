@@ -38,7 +38,9 @@ describe('compact windmill promoted causal proof', () => {
     expect(evidence).toMatchObject({
       boxKey: 'hammer-head-mass',
       purposeId: 'windmill:purpose:hammer-head-return-mass',
-      occupiedVoxelCount: 1,
+      // The promoted head is three voxels: one impact toe plus two of
+      // return mass above it.
+      occupiedVoxelCount: 2,
       isImpactContactParticipant: false,
       faceConnectedPath: [
         {

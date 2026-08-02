@@ -4,6 +4,12 @@ import {
   WINDMILL_COMPACT_EVALUATOR_DECLARATION_V1,
 } from '../../fixtures/windmill-consumer/windmill-compact-evaluator-config.js';
 import {
+  WINDMILL_COMPACT_RECORD_HERTZ_V1,
+} from '../../fixtures/windmill-consumer/windmill-compact-recorder.js';
+import {
+  SOLVER_TIMESTEP_SECONDS_V1,
+} from '../../tools/studio/solver-rate.js';
+import {
   WINDMILL_COMPACT_SELECTION_ENUMERATION_FINGERPRINT_V1,
   WINDMILL_COMPACT_SELECTION_MANIFEST_SHA256_V1,
   WINDMILL_COMPACT_SELECTION_SEARCH_EVIDENCE_SHA256_V1,
@@ -37,6 +43,8 @@ import {
 } from './windmill-browser-support.js';
 
 const HASH_PATTERN = /^sha256:[a-f0-9]{64}$/;
+/** Blows the promoted mill lands in its twelve recorded seconds. */
+const WINDMILL_SELECTED_CAUSAL_CYCLES = 9;
 const LAW_LABELS = [
   'gravity:uniform-newtonian',
   'wind:two-sided-relative-velocity-flat-plate-drag',
@@ -124,9 +132,11 @@ export async function verifyWindmillSelectedPhysicalProof(
       selectionSha256: WINDMILL_COMPACT_SELECTION_SHA256_V1,
     },
     recordProfile: {
-      solverStepSeconds: 1 / 960,
-      recordStepSeconds: 1 / 60,
-      solverTicksPerRecordedFrame: 16,
+      solverStepSeconds: SOLVER_TIMESTEP_SECONDS_V1,
+      recordStepSeconds: 1 / WINDMILL_COMPACT_RECORD_HERTZ_V1,
+      solverTicksPerRecordedFrame: Math.round(
+        (1 / WINDMILL_COMPACT_RECORD_HERTZ_V1) / SOLVER_TIMESTEP_SECONDS_V1,
+      ),
       physicalDurationSeconds: WINDMILL_SIMULATION_DURATION_MS / 1_000,
       presentationDurationMs: WINDMILL_REPLAY_DURATION_MS,
       frameCount: WINDMILL_REPLAY_FRAME_COUNT,
@@ -142,15 +152,17 @@ export async function verifyWindmillSelectedPhysicalProof(
     failedGateIds: [],
     minimumCycles:
       WINDMILL_COMPACT_EVALUATOR_DECLARATION_V1.gates.minimumCausalCycles,
-    qualifyingCycles: 5,
+    qualifyingCycles: WINDMILL_SELECTED_CAUSAL_CYCLES,
   });
 
   expect(generated.evidence.failedGateIds).toEqual([]);
-  expect(generated.evidence.completedCausalCycles).toBe(5);
-  expect(generated.evidence.cycleRecords).toHaveLength(5);
+  expect(generated.evidence.completedCausalCycles)
+    .toBe(WINDMILL_SELECTED_CAUSAL_CYCLES);
+  expect(generated.evidence.cycleRecords)
+    .toHaveLength(WINDMILL_SELECTED_CAUSAL_CYCLES);
   expect(generated.evidence.qualifiedCausalCyclesByNose).toEqual({
-    'rotor-cam-nose': 2,
-    'rotor-opposed-cam-nose': 3,
+    'rotor-cam-nose': 5,
+    'rotor-opposed-cam-nose': 4,
   });
   expect(generated.evidence.effectiveRun).toMatchObject({
     durationSeconds: 12,
@@ -159,8 +171,11 @@ export async function verifyWindmillSelectedPhysicalProof(
     camContactEnabled: true,
     anvilContactEnabled: true,
     numericalProfile: {
-      id: 'dt960-f45-o8-p2-c1',
-      fixedStepSeconds: 1 / 960,
+      // Spelled out, not read off the profile: this is the pin that says
+      // which settings the promoted proof was measured under. `pd100` is
+      // the 0.10 m contact prediction distance the cam needs at this step.
+      id: 'dt60-f30-pd100-o8-p2-c1',
+      fixedStepSeconds: SOLVER_TIMESTEP_SECONDS_V1,
     },
   });
   const gates = WINDMILL_COMPACT_EVALUATOR_DECLARATION_V1.gates;
@@ -176,12 +191,20 @@ export async function verifyWindmillSelectedPhysicalProof(
     .toBeLessThanOrEqual(
       gates.maximumUnaccountedEnergyCreationAbsoluteJoules,
     );
-  expect(generated.contacts).toHaveLength(10);
+  expect(generated.contacts).toHaveLength(WINDMILL_SELECTED_CAUSAL_CYCLES * 2);
   expect(generated.contacts.filter(({ kind }) => kind === 'cam-contact'))
-    .toHaveLength(5);
+    .toHaveLength(WINDMILL_SELECTED_CAUSAL_CYCLES);
   expect(generated.contacts.filter(({ kind }) => kind === 'anvil-impact'))
-    .toHaveLength(5);
-  expect(generated.contacts.every(({ normalImpulse }) => normalImpulse > 0))
+    .toHaveLength(WINDMILL_SELECTED_CAUSAL_CYCLES);
+  // Every blow lands with an impulse. A cam contact is found up to a
+  // quarter of the nose's per-step travel before the surfaces touch — the
+  // solver's contact prediction distance is 0.10 m for this machine — so
+  // the first tick of one can carry a manifold and no push yet: three of
+  // the nine do. What must never be zero is the output.
+  expect(generated.contacts
+    .filter(({ kind }) => kind === 'anvil-impact')
+    .every(({ normalImpulse }) => normalImpulse > 0)).toBe(true);
+  expect(generated.contacts.every(({ normalImpulse }) => normalImpulse >= 0))
     .toBe(true);
   expect(generated.events.map(({ id }) => id))
     .toEqual(generated.contacts.map(({ id }) => id));
@@ -307,9 +330,13 @@ export async function verifyWindmillSelectedPhysicalProof(
     ]));
   expect(purpose.hammer.ports.map(({ key }) => key))
     .toContain('hammer-axis');
-  expect(purpose.contactEvents).toHaveLength(10);
+  expect(purpose.contactEvents)
+    .toHaveLength(WINDMILL_SELECTED_CAUSAL_CYCLES * 2);
   expect(purpose.contactEvents.every((event) =>
-    event.type === 'contact' && event.normalImpulse > 0)).toBe(true);
+    event.type === 'contact' && event.normalImpulse >= 0)).toBe(true);
+  expect(purpose.contactEvents.filter(({ normalImpulse }) =>
+    normalImpulse > 0).length)
+    .toBeGreaterThanOrEqual(WINDMILL_SELECTED_CAUSAL_CYCLES);
   for (const contact of generated.contacts) {
     const replayEvent = purpose.contactEvents.find(
       ({ id }) => id === contact.id,
@@ -350,7 +377,7 @@ export async function verifyWindmillSelectedPhysicalProof(
   expect(purpose.summary)
     .toMatch(/not simulated milling/);
   expect(purpose.production.honesty)
-    .toMatch(/keyed to the\s+.*five recorded hammer-anvil impacts/);
+    .toMatch(/keyed to the\s+.*answered hammer-anvil impacts/);
   expect(purpose.production.building.bodyTypes).toEqual(['fixed']);
   expect(purpose.production.flourBin.bodyTypes).toEqual(['fixed']);
   expect(purpose.production.firstSack.bodyTypes).toEqual(['kinematic']);

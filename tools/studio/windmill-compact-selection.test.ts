@@ -71,7 +71,7 @@ describe('compact windmill frozen selection', () => {
       .toMatchObject({
         shortEvaluatedCount: 144,
         fullEvaluatedCount: 144,
-        passingCount: 19,
+        passingCount: 16,
         selectedSearchEvaluationSha256:
           WINDMILL_COMPACT_SELECTED_SEARCH_EVALUATION_SHA256_V1,
         headHeightSearchCounts:
@@ -95,7 +95,7 @@ describe('compact windmill frozen selection', () => {
     expect(source).not.toMatch(/from ['"](?:node:|\.\.\/\.\.\/fixtures\/)/);
     expect(() => assertWindmillCompactSelectionV1({
       ...WINDMILL_COMPACT_SELECTION_V1,
-      passingCount: 18,
+      passingCount: WINDMILL_COMPACT_SELECTION_V1.passingCount - 1,
     })).toThrow(/must be frozen/);
   });
 

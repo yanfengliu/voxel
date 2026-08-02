@@ -136,7 +136,7 @@ Record<WindmillProductionRecipeIdV1, ProductionRecipeSpecV1>
     label: 'Flour bin',
     seed: 0x71c4_203,
     summary:
-      'An open-topped plank bin against the anvil\'s east face; the rising '
+      'An open-topped plank bin one voxel east of the anvil; the rising '
       + 'flour level is read against its rim.',
     tags: Object.freeze([
       'windmill', 'production-line', 'material-outfeed', 'container',

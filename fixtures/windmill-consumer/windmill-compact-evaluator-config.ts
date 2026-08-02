@@ -6,6 +6,39 @@ import {
 } from './windmill-compact-design-basis.js';
 
 const MAXIMUM_FORBIDDEN_PENETRATION_METERS = 0.002;
+const MAXIMUM_AXIS_TILT_RADIANS = 0.005;
+
+/**
+ * How fast the shaft direction may swing, derived rather than chosen.
+ *
+ * A shaft may not cross its whole permitted tilt envelope inside one
+ * solver step. That is the statement; the number follows from the tilt
+ * gate and the repository's one solver rate, so it moves with the rate
+ * instead of quietly meaning something else after it changes.
+ *
+ * It used to be a flat 0.05 rad/s, and that number was measured at a
+ * sixteenth of this step. Rebuilt at the shared rate it inverted: it
+ * began selecting against the machine working. The direction rate is a
+ * per-step angular response divided by the step, and for this mechanism
+ * the peak is the hammer landing on the anvil — remove the blow and it
+ * collapses. On one candidate at this rate: 0.06725 rad/s nominal with a
+ * 9.985 N*s strike, 0.01628 with anvil contact disabled after the first
+ * lift, and 0.00006 with the cam disabled so the hammer never rises at
+ * all. Over 144 candidates the anti-correlation is complete — every
+ * candidate under the old 0.05 was one whose hammer flew over the top
+ * and therefore never struck (lift 1.4 to 2.25 m, clearance breached by
+ * 0.12 to 0.25 m), and all sixteen candidates that ran a clean cycle
+ * failed on it alone.
+ *
+ * What the old gate was really defending is planarity, and that is
+ * measured directly and separately: axis tilt stays at 0.001121 rad
+ * against this 0.005 gate, and out-of-plane drift at 0.000121 m against
+ * 0.005, at the instant of that same 9.985 N*s blow. Those two are the
+ * binding claim; this one is the ceiling that stops a shaft being wrenched
+ * clean out of its plane within a step.
+ */
+const MAXIMUM_SHAFT_AXIS_DIRECTION_RATE_RADIANS_PER_SECOND =
+  MAXIMUM_AXIS_TILT_RADIANS / WINDMILL_FIXED_STEP_SECONDS;
 
 export const WINDMILL_COMPACT_EVALUATOR_DECLARATION_V1 = Object.freeze({
   schema: 'fixture.windmill-compact-evaluator/1',
@@ -66,8 +99,9 @@ export const WINDMILL_COMPACT_EVALUATOR_DECLARATION_V1 = Object.freeze({
     minimumContactImpulseNewtonSeconds: 0.005,
     maximumJointAnchorSeparationMeters: 0.005,
     maximumOutOfPlaneDriftMeters: 0.005,
-    maximumAxisTiltRadians: 0.005,
-    maximumShaftAxisDirectionRateRadiansPerSecond: 0.05,
+    maximumAxisTiltRadians: MAXIMUM_AXIS_TILT_RADIANS,
+    maximumShaftAxisDirectionRateRadiansPerSecond:
+      MAXIMUM_SHAFT_AXIS_DIRECTION_RATE_RADIANS_PER_SECOND,
     maximumForbiddenPenetrationMeters:
       MAXIMUM_FORBIDDEN_PENETRATION_METERS,
     maximumCamFollowerPenetrationMeters: 0.005,
@@ -105,7 +139,7 @@ export const WINDMILL_COMPACT_EVALUATOR_DECLARATION_V1 = Object.freeze({
       'cam-contact-and-qualifying-lift-remain-but-zero-completed-gravity-return-cycles',
     camContactDisabled: 'zero-completed-cycles-and-lift-below-minimum',
     individualCamNoseDisabled:
-      'zero-attributed-events-for-disabled-nose-other-nose-contact-remains-total-cycles-below-required-sustained-output-and-physical-output-changes',
+      'zero-attributed-events-for-disabled-nose-other-nose-contact-remains-total-cycles-strictly-fall-acceptance-rejects-single-lobe-coverage-and-physical-output-changes',
     anvilContactDisabled:
       'rest-support-contact-allowed-before-lift-then-zero-post-intervention-impact-contact-ticks-and-completed-cycles',
     oneSailRemoved:

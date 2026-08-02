@@ -255,8 +255,18 @@ export async function evaluateWindmillCompactCandidateAndRecordV1(
   name = 'proof:nominal',
 ): Promise<WindmillCompactRecordedEvaluationV1> {
   assertWindmillCompactReplaySelectionBindingV1(candidate, selection);
-  let profile: WindmillCompactRecordProfileV1 | null = null;
-  let channels: MutableChannelsV1 | null = null;
+  // A holder rather than two `let`s. The observer's callbacks are the only
+  // writers, and TypeScript does not reset a captured `let`'s narrowing for
+  // assignments made inside a nested function — so the guard after the run
+  // narrowed both to `never` and every read of them was an error. Reading
+  // the fields off an object, and destructuring them after the guard,
+  // narrows the way it reads. This file is only type-checked now that a
+  // browser proof imports it: `fixtures/windmill-consumer` is outside the
+  // tsconfig include list.
+  const recording: {
+    profile?: WindmillCompactRecordProfileV1;
+    channels?: MutableChannelsV1;
+  } = {};
   let recordedFrames = 0;
   const camSamples = new Map<string, WindmillCompactContactSampleV1>();
   const impactSamples = new Map<string, WindmillCompactContactSampleV1>();
@@ -268,37 +278,41 @@ export async function evaluateWindmillCompactCandidateAndRecordV1(
     },
     {
       start(effectiveRun, bodies): void {
-        if (profile !== null || channels !== null) {
+        if (recording.profile !== undefined
+          || recording.channels !== undefined) {
           throw new Error(
             `Cannot record compact windmill '${candidate.parameterKey}': `
             + 'evaluator observer started more than once.',
           );
         }
-        profile = createRecordProfile(
+        const startedProfile = createRecordProfile(
           effectiveRun.numericalProfile.fixedStepSeconds,
           effectiveRun.durationSeconds,
         );
         const trackCount =
           WINDMILL_COMPACT_REPLAY_PLACEMENT_IDS_V1.length;
-        channels = {
+        const startedChannels: MutableChannelsV1 = {
           translations: new Float32Array(
-            profile.frameCount * trackCount * 3,
+            startedProfile.frameCount * trackCount * 3,
           ),
           rotations: new Float32Array(
-            profile.frameCount * trackCount * 4,
+            startedProfile.frameCount * trackCount * 4,
           ),
           linearVelocities: new Float32Array(
-            profile.frameCount * trackCount * 3,
+            startedProfile.frameCount * trackCount * 3,
           ),
           angularVelocities: new Float32Array(
-            profile.frameCount * trackCount * 3,
+            startedProfile.frameCount * trackCount * 3,
           ),
         };
-        recordFrame(channels, recordedFrames, bodies);
+        recording.profile = startedProfile;
+        recording.channels = startedChannels;
+        recordFrame(startedChannels, recordedFrames, bodies);
         recordedFrames += 1;
       },
       step({ tick, bodies, activeCamNoseKey, cam, impact }): void {
-        if (profile === null || channels === null) {
+        const { profile, channels } = recording;
+        if (profile === undefined || channels === undefined) {
           throw new Error(
             `Cannot record compact windmill '${candidate.parameterKey}' at `
             + `tick ${String(tick)}: evaluator observer has not started.`,
@@ -320,17 +334,22 @@ export async function evaluateWindmillCompactCandidateAndRecordV1(
       },
     },
   );
-  if (profile === null || channels === null) {
+  const {
+    profile: recordedProfile,
+    channels: recordedChannels,
+  } = recording;
+  if (recordedProfile === undefined || recordedChannels === undefined) {
     throw new Error(
       `Cannot record compact windmill '${candidate.parameterKey}': evaluator `
       + 'completed without starting the recording observer.',
     );
   }
-  if (recordedFrames !== profile.frameCount) {
+  if (recordedFrames !== recordedProfile.frameCount) {
     throw new Error(
       `Cannot record compact windmill '${candidate.parameterKey}': captured `
       + `${String(recordedFrames)} frames, expected `
-      + `${String(profile.frameCount)} from the exact solver/record cadence.`,
+      + `${String(recordedProfile.frameCount)} from the exact solver/record `
+      + 'cadence.',
     );
   }
   const nominalEvaluationSha256 =
@@ -382,19 +401,19 @@ export async function evaluateWindmillCompactCandidateAndRecordV1(
   const inputHash = evaluation.result.provenance.effectiveInputSha256;
   const traceWithoutFinal = {
     schema: 'fixture.windmill-compact-recorded-trace/1' as const,
-    recordProfile: profile,
+    recordProfile: recordedProfile,
     placementIds: WINDMILL_COMPACT_REPLAY_PLACEMENT_IDS_V1,
-    translations: channels.translations,
-    rotations: channels.rotations,
-    linearVelocities: channels.linearVelocities,
-    angularVelocities: channels.angularVelocities,
+    translations: recordedChannels.translations,
+    rotations: recordedChannels.rotations,
+    linearVelocities: recordedChannels.linearVelocities,
+    angularVelocities: recordedChannels.angularVelocities,
     events,
     evaluation,
     selection,
     inputHash,
   };
   const provenanceWithoutFinal =
-    createWindmillCompactReplayProvenanceV1(profile, inputHash);
+    createWindmillCompactReplayProvenanceV1(recordedProfile, inputHash);
   const finalHash = windmillCompactRecordedTraceSha256V1({
     ...traceWithoutFinal,
     provenance: provenanceWithoutFinal,

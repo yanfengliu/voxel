@@ -280,12 +280,12 @@ describe('compact windmill physical compiler', () => {
       const axialZ = center[2]! - shaft[2];
       return {
         radial: [
-          sum.radial[0] + mass * radialX,
-          sum.radial[1] + mass * radialY,
+          sum.radial[0]! + mass * radialX,
+          sum.radial[1]! + mass * radialY,
         ],
         axialCouple: [
-          sum.axialCouple[0] + mass * axialZ * radialX,
-          sum.axialCouple[1] + mass * axialZ * radialY,
+          sum.axialCouple[0]! + mass * axialZ * radialX,
+          sum.axialCouple[1]! + mass * axialZ * radialY,
         ],
       };
     }, { radial: [0, 0], axialCouple: [0, 0] });

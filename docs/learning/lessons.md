@@ -52,6 +52,8 @@ The lighting test already carried a comment explaining that 20 s was chosen to "
 
 Any margin picked against what else happens to be running is consumed by the next heavy test anyone adds, and each expiry presents as a real failure until someone reruns and sees green. That teaches rerunning-until-green, which is how a suite stops being a gate. Size a timeout against the work the test itself does, generously, and let the machine be slow.
 
+**It happened again on 2026-08-01, to a third case, and this is how it should be handled.** `riverfall-fluid-simulation.test.ts`'s causal-evidence attestation expired at its 60 s budget inside a full `npm run verify`, on a diff that had changed nothing but comments since the same code passed the same gate twenty minutes earlier. Measured alone it takes 44.4 s, and its sibling ablation sweep 29.9 s — both were carrying 60 s, a 26% margin. The point is what *not* to do: rerunning until green would have worked, and would have left the bomb armed. Both now derive from one `RIVERFALL_HEAVY_CASE_TIMEOUT_MS` at four times the measured work, with the measurement written beside it. **A timeout that fires on a diff which cannot have caused it is not noise to rerun past; it is the defect reporting itself.**
+
 ## Test the obvious suspect before recording it as unexplored
 
 **Anchor:** 2026-07-31. Rapier's `lengthUnit` at 0.25, 0.5, 1 and 2, against the playground's 60 Hz floor-penetration failure. None changed it.
@@ -211,3 +213,55 @@ Found by accident, while a profiler ran the river far longer than any test does.
 It matters because a live scene has no end. Whatever the remaining budget is, a scene that throws after a minute of play is not converted. This is now the blocker for taking Riverfall off the recorded lane, in place of the frame cost that was assumed to be the blocker — and it is undiagnosed: it is not yet known whether the particle distribution drifts, recycles unevenly, or simply thins at that cell under a state the short recording never visits.
 
 **Diagnosed 2026-08-01**, in the entry above: the cell sits upstream of the simulated domain, the loop bunches, and no particle count lifts its floor off zero.
+
+## A gate can point the wrong way after the rate moves, and this one selected against the machine working
+
+**Anchor:** 2026-08-01. The windmill consumer proof at 60 Hz. Of 144 candidates, sixteen passed only after `maximumShaftAxisDirectionRateRadiansPerSecond` was re-derived; before that, zero passed and 103 failed on that gate alone.
+
+The gate said the shaft's direction may not swing faster than 0.05 rad/s. It was chosen at 960 Hz, where the promoted machine measured 0.0089. At 60 Hz the same machine measures 0.033 to 0.100, and the rule inverted: **every candidate that stayed under 0.05 was one whose hammer flew over the top and therefore never struck the anvil** — lift 1.4 to 2.25 m against a working 0.6 m, clearance breached by 0.12 to 0.25 m. All sixteen candidates that ran a clean cycle failed on it.
+
+What the number is actually measuring is a per-step angular response divided by the step, and for this mechanism the peak is the blow itself. Measured on one candidate at 60 Hz: 0.06725 rad/s nominal with a 9.985 N·s strike, 0.01628 with anvil contact disabled after the first lift, 0.00006 with the cam disabled so the hammer never rises. A factor of 1,100 between striking and not striking. At 960 Hz the same impulse is spread over sixteen steps, so the quotient is small; nothing about the mechanism is worse at the coarser rate.
+
+The claim the gate was defending — that this is a planar mechanism — is measured directly and separately, and both of those hold with room: axis tilt 0.001121 rad against a 0.005 gate, out-of-plane drift 0.000121 m against 0.005, at the instant of that same blow. So the replacement is derived rather than chosen: the axis may not cross its whole permitted tilt envelope inside one solver step, which is `maximumAxisTiltRadians / SOLVER_TIMESTEP_SECONDS_V1`. It moves with the rate by construction.
+
+The general shape, and it is not the same as "anything expressed in ticks is expressed in the rate": **a quantity denominated per second can still be a per-step quantity wearing a per-second name.** The tell is a threshold that starts rejecting the outcome it exists to protect. The evaluator declaration already carried the precedent one field away — `rawBodyOffAxisAngularSpeed` had long been excluded from acceptance because "it did not converge while pose constraints did", which is exactly what happened here to its pose-derived sibling.
+
+## Soft CCD does nothing for a rotating contact, and the prediction distance does it all
+
+**Anchor:** 2026-08-01. Cam-follower penetration on the windmill's promoted geometry, measured through the product's own evaluator.
+
+Penetration is one step of the contact's own travel, and it is linear in the step: 0.00457 m at 960 Hz, 0.0105 at 480, 0.0184 at 240, 0.0493 at 120, 0.0903 at 60, against a 0.005 m gate. The cam nose sits 0.75 m from the shaft and sweeps about 7 m/s, so it closes roughly 0.12 m in a 1/60 s step while Rapier looks 0.002 m ahead by default. The contact is found once the nose is already deep inside the follower.
+
+The lane's usual answer is per-body soft CCD — it is why `SOLVER_SOFT_CCD_PREDICTION_V1` exists, and it fixed the playground's falling stations. **Here it is inert:** 0.10, 0.25 and 0.50 m produce byte-identical runs, because Rapier drives soft CCD from a body's linear motion and this cam's centre barely moves while its nose sweeps. At 960 Hz it made penetration slightly worse, 0.00457 to 0.00509, which was enough to fail the gate on a machine that otherwise passed. Raising `maxCcdSubsteps` from 1 to 8 changed nothing at all, bit for bit, so full CCD never engages for this rotation either.
+
+What worked is the world's contact prediction distance, sized at one step of the nose's own travel: 0.10 m takes penetration from 0.0711 to 0.00129 m — better than the 960 Hz baseline. It is non-monotone, so it is worth sweeping rather than reasoning about: 0.05 gave 0.00452 and 0.25 gave 0.00606. The contact natural frequency also went back to Rapier's 30 Hz default from the 45 Hz the old search chose, and that one is a measurement, not a stability argument — see the correction below.
+
+The reusable part: **a fast rotating part is not a fast moving body, and the lever that catches one does not catch the other.** Check which motion the solver's own mechanism is reading before reaching for it.
+
+**Corrected the same day, by reading the engine instead of inferring it.** Two claims above were written from measurement alone and one of them was wrong. Rapier's narrow phase computes the soft-CCD prediction from `rb.linvel()` only, clamped to `soft_ccd_prediction / dt` (`src/geometry/narrow_phase.rs`), which is exactly why a cam whose body origin sits on the shaft is unaffected at any value — the inference was right and is now sourced. But the first draft also said a 45 Hz contact natural frequency "cannot be represented by a 1/60 s step at all". It can. Rapier's contact softness is `erp = dt*w / (dt*w + 2*zeta)` with a default damping ratio of 5 (`src/dynamics/integration_parameters.rs`), which saturates smoothly and has no step-size limit: at 1/60 s, 45 Hz gives erp 0.32 against 30 Hz's 0.24. Stiffer, not unstable. **A measurement tells you what happened; only the source tells you why, and a plausible mechanism invented to explain a real measurement is still an invention.** The owner's standing direction, given the same day: research the readily available resources before building or explaining physics behaviour yourself.
+
+## Freeze the declaration before the search, not after
+
+**Anchor:** 2026-08-01. The windmill's 144-candidate search was run three times at 60 Hz for one result. Nine minutes each.
+
+The second run was thrown away because the evaluator declaration changed after it: one string in `ablationExpectations` was reworded, and that string is inside `WINDMILL_COMPACT_EVALUATOR_DECLARATION_V1`, which is hashed into `evaluatorDeclarationSha256`, which is hashed into every candidate's `combinedEvaluationSha256`. The physics was identical and every measured number matched to the last decimal; only the hashes moved, and the whole evidence chain had to be regenerated anyway.
+
+Anything a search's evidence binds is frozen from the moment the search starts. For this fixture that is the evaluator declaration, the numerical profile, and the geometry generator — comments and docstrings are safe, and every declared value, including prose fields inside declaration objects, is not.
+
+## A whole consumer fixture sat outside the typecheck, and nothing said so
+
+**Anchor:** 2026-08-01. `tsconfig.json` listed `fixtures/machine-works-consumer`, `fixtures/physics-playground` and `fixtures/riverfall-consumer`, and not `fixtures/windmill-consumer`. Adding it surfaced nine errors, six of them in one function that had never been checked.
+
+They were found by accident: a browser proof needed one constant from `windmill-compact-recorder.ts`, and that import pulled the module into the graph for the first time. The six were all the same defect — TypeScript does not reset a captured `let`'s narrowing for assignments made inside a nested function, so `let profile = null` assigned only inside an observer callback stays `null`, the guard after the run narrows to `never`, and every later read is an error. Reading the fields off a holder object and destructuring them after the guard narrows the way it reads.
+
+`npm run lint` did cover the directory, so the gap was specific and quiet. The fix is one line of tsconfig; the lesson is that an include list is a claim about coverage that nothing checks.
+
+## A presentation rule that held by luck reads as a rule until the numbers change
+
+**Anchor:** 2026-08-01. The windmill's recorded lane demanded exactly five anvil impacts for its five wheat sacks. At the shared rate the same mill strikes nine times in the same twelve seconds.
+
+The live lane had already met this and solved it — it caps the flour at one rise per sack, with a comment saying an uncapped level climbs out through the roof, and that "the recording had exactly five blows so this never came up". The recorded lane never met it, so it kept a rule that was really a coincidence.
+
+A second rule was latent in the same place and neither lane had it. A sack cannot take the milling spot while the one before it is still being tipped and dragged clear: that takes about 1.12 s of authored choreography, and the new beat is about 0.9 s, so five sacks slid through each other. The fix is one shared function both lanes call — blows are answered in order, skipping any that land before the spot is free, and stopping at the magazine's capacity.
+
+Worth separating from the physics: none of this was a solver problem, and all of it was found by a clearance test measuring authored tracks against each other at every frame. **A presentation keyed to a measured event inherits that event's cadence, and a cadence is not a constant.**
