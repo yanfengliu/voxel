@@ -826,15 +826,15 @@ readonly WindmillProductionSystemPurposeV1[] = Object.freeze([
     subjectIds: WINDMILL_PRODUCTION_PLACEMENT_IDS_V1.wheatSacks,
     beneficiary: 'The visible grain-mass source.',
     job: 'Five sacks queue as the finite infeed magazine — one deterministic '
-      + 'rule, one sack per recorded impact, nearest slot delivered first.',
+      + 'rule, one sack per answered impact, nearest slot delivered first.',
     locationDatum: 'Queue slots at world x 2.5 down to 1.25 in steps of '
       + '0.3125, z 0.875, between the rotor wall and the hammer bay.',
     removalFailure: 'The mill consumes nothing visible and the flour level '
       + 'rises from nowhere, contradicting the declared material source.',
     relocationFailure: 'Off the queue line the magazine no longer reads as '
       + 'staged input to the milling spot the sacks slide to.',
-    smallestAdequateForm: 'Five sacks: exactly one per qualified recorded '
-      + 'impact, none spare.',
+    smallestAdequateForm: 'Five sacks: the declared magazine capacity that '
+      + 'fills the authored queue without claiming an unlimited infeed.',
     evidence: REVIEW_EVIDENCE,
     honestyBoundary: WINDMILL_PRODUCTION_HONESTY_V1,
   }),
@@ -867,21 +867,22 @@ readonly WindmillProductionSystemPurposeV1[] = Object.freeze([
       [WINDMILL_PRODUCTION_MOTION_RULE_IDS_V1.wheatDelivery],
     ),
     beneficiary: 'The wheat-to-anvil half of the production story.',
-    job: 'Slides sack k from its queue slot to the milling spot before the '
-      + 'k-th answered blow, then tips it spent into the discard row — all '
-      + 'derived from the committed trace\'s impact ticks.',
-    locationDatum: 'Keyed to the answered anvil-impact events of the '
-      + 'committed trace; paths run along z 0.875, x 2.8125, z 1.625, and '
-      + 'z 2.03125.',
+    job: 'Assigns sack k to the k-th answered blow and follows the authored '
+      + 'delivery-and-tip path; once a live beat exists, its next predicted '
+      + 'answer is staged before impact. Times come from the lane\'s observed '
+      + 'or recorded impacts.',
+    locationDatum: 'Keyed to answered anvil-impact events from the live '
+      + 'observer or committed determinism trace; paths run along z 0.875, '
+      + 'x 2.8125, z 1.625, and z 2.03125.',
     removalFailure: 'Sacks stand still forever; the infeed magazine and the '
       + 'flour level lose their causal reading against the impacts.',
     relocationFailure: 'Re-keyed to any other times the deliveries detach '
-      + 'from the only recorded events that justify them.',
+      + 'from the landed events that justify them.',
     smallestAdequateForm: 'Straight slides, one edge-pivot tip, and rests; '
       + 'no curve, bounce, or flourish beyond what the story needs.',
-    evidence: 'Bound to the replay generation test\'s frame-zero and '
-      + 'schedule gates plus the clearance test\'s per-frame envelope '
-      + 'checks against the committed channels.',
+    evidence: 'Bound to the live-run cadence test, the replay generation '
+      + 'test\'s frame-zero and schedule gates, and the clearance test\'s '
+      + 'per-frame envelope checks against the committed channels.',
     honestyBoundary: WINDMILL_PRODUCTION_HONESTY_V1,
   }),
   Object.freeze({
@@ -898,12 +899,12 @@ readonly WindmillProductionSystemPurposeV1[] = Object.freeze([
     removalFailure: 'The bin stays at its opening level and the mill '
       + 'visibly produces nothing however long it runs.',
     relocationFailure: 'Steps keyed to other times or other amounts would '
-      + 'claim output the recorded impacts do not attribute.',
+      + 'claim output the answered impacts do not attribute.',
     smallestAdequateForm: 'One rigid level with one equal 0.0375 step per '
       + 'sack milled, ending proud of the rim.',
-    evidence: 'Bound to the replay generation test\'s frame-zero and '
-      + 'schedule gates, the clearance test\'s rim datums, and the browser '
-      + 'flour-phase captures.',
+    evidence: 'Bound to the live-run cadence test, the replay generation '
+      + 'test\'s frame-zero and schedule gates, the clearance test\'s rim '
+      + 'datums, and the browser flour-phase captures.',
     honestyBoundary: WINDMILL_PRODUCTION_HONESTY_V1,
   }),
 ]);

@@ -282,7 +282,7 @@ export const WINDMILL_DISCARD_ROW_Z_V1 = 2.03125;
 export const WINDMILL_DISCARD_ROW_XS_V1 = Object.freeze(
   [0, 1, 2, 3, 4].map((index) => 1.0625 + 0.375 * index),
 );
-/** Flour level rise per recorded impact, world units. */
+/** Flour level rise per answered impact, world units. */
 export const WINDMILL_FLOUR_RISE_PER_IMPACT_V1 = 0.0375;
 
 export interface WindmillWorldBoxV1 {

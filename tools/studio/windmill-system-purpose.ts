@@ -439,12 +439,12 @@ readonly WindmillRecipeContrastV1[] = Object.freeze([
       Object.freeze({
         axis: 'topology-negative-space',
         difference:
-          'A plump closed body under a centered one-voxel tie cue reads as soft goods; the drive cog is a toothed rim around an open hub bore.',
+          'The sack occupies 37 of its 45 cells: one filled 3-by-4-by-3 body under a centered top tie leaves the other eight top-layer cells empty. The phase flag occupies all 54 cells of its 3-by-6-by-3 bounds.',
       }),
       Object.freeze({
-        axis: 'supported-motion',
+        axis: 'material-role-rhythm',
         difference:
-          'The sack slides, tips over its base edge, and lies spent on authored tracks; the cog only ever turns about its bore.',
+          'The sack assigns 36 cells to its body and one to its tie; the phase flag divides its filled column into equal 27-cell structure and safety halves.',
       }),
     ]),
   }),
@@ -478,7 +478,7 @@ readonly WindmillRecipeContrastV1[] = Object.freeze([
       Object.freeze({
         axis: 'supported-motion',
         difference:
-          'The level rises one authored step after each recorded impact; the bin is fixed architecture.',
+          'The level rises one authored step after each answered impact; the bin is fixed architecture.',
       }),
     ]),
   }),

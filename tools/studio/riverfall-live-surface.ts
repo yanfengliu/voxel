@@ -3,7 +3,7 @@ import {
   type RiverfallFluidConfigV1,
 } from './riverfall-fluid-config.js';
 import {
-  createInitialRiverfallFluidStateV1,
+  cloneRiverfallFluidStateV1,
   createRiverfallFluidWorkspaceV1,
 } from './riverfall-pbf-support.js';
 import {
@@ -12,6 +12,7 @@ import {
   type RiverfallFluidStateV1,
   type RiverfallFluidWorkspaceV1,
 } from './riverfall-pbf.js';
+import { RIVERFALL_FLUID_WARM_STATE_V1 } from './generated-riverfall-fluid-warm-state.js';
 import {
   RIVERFALL_SURFACE_CELLS_V1,
   type RiverfallSurfaceCellV1,
@@ -29,7 +30,7 @@ import type { ScenePlacementPoseV1 } from './scene-pose-delta.js';
 /**
  * The river, solved in the browser.
  *
- * Riverfall was the last scene playing a recording. This runs its 288-particle
+ * Riverfall was the last scene playing a recording. This runs its 576-particle
  * position-based fluid live and maps the particles onto the blue tiles every
  * frame, so what the viewer sees is the solver's answer to this step rather
  * than a decoded frame of one someone recorded.
@@ -79,7 +80,7 @@ export class RiverfallLiveSurfaceV1 {
       (_, index) => index * this.#config.particles.witnessStride,
     );
     this.#phaseTravel = new Float64Array(this.#cells.length);
-    this.#state = createInitialRiverfallFluidStateV1(this.#config);
+    this.#state = cloneRiverfallFluidStateV1(RIVERFALL_FLUID_WARM_STATE_V1);
     this.#workspace = createRiverfallFluidWorkspaceV1(
       this.#config.particles.count,
     );
@@ -87,15 +88,11 @@ export class RiverfallLiveSurfaceV1 {
     this.#velocities = new Float32Array(witnessCount * 3);
     this.#visible = new Uint8Array(witnessCount);
     this.#rawSignals = new Float32Array(this.#cells.length);
-    // The recorded lane burns the fluid in before it starts capturing, so the
-    // scene opens on running water rather than on a starting grid. A live
-    // scene pays the same cost, once, at construction.
-    for (let step = 0; step < this.#config.recording.burnInSubsteps; step += 1) {
-      stepRiverfallFluidV1(this.#state, this.#config, this.#workspace);
-    }
-    // Seed the tracers from where each parcel sits at the end of burn-in,
-    // which is the same moment in the fluid's life that the recorded lane
-    // seeds from. Shared code, so the two lanes cannot drift apart.
+    // The generated initial condition is the canonical solver state after
+    // burn-in. This instance owns a defensive copy and solves every later
+    // state live; opening the scene does not replay motion or synchronously
+    // repeat 3,200 fixed substeps on the browser's main thread.
+    // Seed tracers at that same frame-zero instant as the recorded lane.
     this.#tracerValues = riverfallSurfaceTracerValuesV1(
       this.#config,
       Float32Array.from(this.#witnessIndices,
@@ -103,7 +100,8 @@ export class RiverfallLiveSurfaceV1 {
       Float32Array.from(this.#witnessIndices,
         (particle) => this.#state.lateral[particle]!),
     );
-    this.#remap();
+    this.#sampleSignalsAndAdvancePhase();
+    this.#presentSignals();
   }
 
   /**
@@ -114,12 +112,46 @@ export class RiverfallLiveSurfaceV1 {
    * not quietly slow the water.
    */
   advance(seconds: number): void {
-    if (!Number.isFinite(seconds) || seconds < 0) {
+    this.#assertElapsedSeconds(seconds);
+    if (!this.#advanceFluid(seconds)) return;
+    this.#sampleSignalsAndAdvancePhase();
+    this.#presentSignals();
+  }
+
+  /**
+   * Solves a batch of fixed frames but materializes only its final tile poses.
+   *
+   * Every frame still advances the PBF state and the advected-wave phase in
+   * the same order as separate `advance` calls. Deferring only spatial
+   * smoothing, tilts, and Map construction makes catch-up cheaper without
+   * making the water depend on how requestAnimationFrame grouped its ticks.
+   */
+  advanceFixedFrames(frameSeconds: number, frameCount: number): void {
+    this.#assertElapsedSeconds(frameSeconds);
+    if (!Number.isSafeInteger(frameCount) || frameCount < 0) {
       throw new Error(
-        `Cannot advance the Riverfall fluid by ${String(seconds)} seconds; `
-        + 'expected a finite, nonnegative elapsed time.',
+        `Cannot advance Riverfall through ${String(frameCount)} fixed frames; `
+        + 'expected a nonnegative safe integer.',
       );
     }
+    let sampled = false;
+    for (let frame = 0; frame < frameCount; frame += 1) {
+      if (!this.#advanceFluid(frameSeconds)) continue;
+      this.#sampleSignalsAndAdvancePhase();
+      sampled = true;
+    }
+    if (sampled) this.#presentSignals();
+  }
+
+  #assertElapsedSeconds(seconds: number): void {
+    if (Number.isFinite(seconds) && seconds >= 0) return;
+    throw new Error(
+      `Cannot advance the Riverfall fluid by ${String(seconds)} seconds; `
+      + 'expected a finite, nonnegative elapsed time.',
+    );
+  }
+
+  #advanceFluid(seconds: number): boolean {
     const dt = substepSeconds(this.#config);
     this.#carriedSeconds += seconds;
     // A long stall must not turn into a burst of catch-up steps that costs
@@ -133,7 +165,7 @@ export class RiverfallLiveSurfaceV1 {
       stepped += 1;
     }
     if (this.#carriedSeconds >= dt) this.#carriedSeconds = 0;
-    if (stepped > 0) this.#remap();
+    return stepped > 0;
   }
 
   /** This step's tile poses, keyed by placement id. */
@@ -161,7 +193,7 @@ export class RiverfallLiveSurfaceV1 {
     }
   }
 
-  #remap(): void {
+  #sampleSignalsAndAdvancePhase(): void {
     this.#captureWitnesses();
     const particles = {
       translations: this.#translations,
@@ -198,6 +230,10 @@ export class RiverfallLiveSurfaceV1 {
             * wave.localSpeedScale
         ) * frameSeconds;
     }
+  }
+
+  #presentSignals(): void {
+    const presentation = this.#config.presentation;
     // One frame of the same spatial smoothing the recorded lane applies.
     const smoothed = smoothRiverfallSurfaceSignalsV1(
       this.#rawSignals,

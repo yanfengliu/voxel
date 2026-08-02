@@ -144,6 +144,25 @@ describe('compact windmill promoted causal proof', () => {
       'actuation-boundary',
     ]);
     expect(proof.checks.filter(({ passed }) => !passed)).toEqual([]);
+    const primaryDisabled = proof.ablations['primary-cam-nose-disabled'];
+    const opposedDisabled = proof.ablations['opposed-cam-nose-disabled'];
+    expect(proof.nominal.evidence.qualifiedCausalCyclesByNose).toEqual({
+      'rotor-cam-nose': 5,
+      'rotor-opposed-cam-nose': 4,
+    });
+    expect(primaryDisabled.evidence.qualifiedCausalCyclesByNose).toEqual({
+      'rotor-cam-nose': 0,
+      'rotor-opposed-cam-nose': 7,
+    });
+    expect(opposedDisabled.evidence.qualifiedCausalCyclesByNose).toEqual({
+      'rotor-cam-nose': 6,
+      'rotor-opposed-cam-nose': 0,
+    });
+    const noseChecks = proof.checks.filter(({ id }) =>
+      id === 'primary-cam-nose-disabled'
+      || id === 'opposed-cam-nose-disabled');
+    expect(noseChecks.map(({ expectation }) => expectation).join(' '))
+      .not.toMatch(/untouched|preserves exact|necessary for.*minimum/i);
     expect(proof.passed).toBe(true);
     expect(proof.proofSha256)
       .toBe(WINDMILL_COMPACT_SELECTED_PROOF_SHA256_V1);

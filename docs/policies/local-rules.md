@@ -27,6 +27,8 @@ Strengthens the canon line `Docs are part of the change`, because voxel keeps `R
 
 - Docs are part of the change: update every affected surface in the same commit; affected surfaces do not automatically include `README.md`; write prose one line per paragraph (no hard wrapping); never reference or mandate files that don't exist.
 
+- Quantified, exhaustive, and causal claims require durable executable evidence at the same scope as the prose (owner rule, 2026-08-02). A reviewer assertion, a plausible mechanism, a partial sweep, or a count of candidates exceeding one threshold is not evidence for “every,” “only,” “failed on this gate alone,” or an exact causal attribution. Preserve the counterexample, fixed fixture, generated proof, or command-backed measurement that can refute the claim when it regresses, and narrow the prose to what that artifact actually establishes.
+
 ## Steering
 
 Strengthens the canon line `Steering compounds`: an exploratory question is not an accepted decision.

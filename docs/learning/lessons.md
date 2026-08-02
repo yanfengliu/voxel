@@ -64,6 +64,16 @@ It was not the cause. Recording that is worth as much as a fix, because the next
 
 Also worth naming: the second failure that appears at 60 Hz reads as a determinism break, and is not one. The determinism case re-runs the scenario and asserts it does not fail, so it simply reports the penetration failure a second time. A failing check that shows up twice under two names invites a much larger investigation than it deserves.
 
+## Riverfall's apparent freeze was a startup stall followed by a catch-up spiral
+
+**Anchor:** 2026-08-02. At commit `f5a5670`, headless Chromium measured 15.600 seconds from `openScene` to the first accepted live surface pose, a 15.036-second maximum `requestAnimationFrame` gap, and then 243 fixed solver ticks but only 41 visible pose commits over 5.326 seconds. Direct construction took 14.345 seconds and `advance(1/60)` measured 18.30 ms on that browser lane before rendering.
+
+Two separate multipliers made one symptom. `RiverfallLiveSurfaceV1` repeated the canonical 3,200-substep burn-in synchronously on the browser main thread, even though burn-in always produces the same deterministic initial condition. Afterward, a slow frame accumulated up to six session ticks and the presentation ran a complete fluid solve and 321-tile remap for every tick before drawing any of them, producing repeated 90–160 ms tasks and about 7.7 visible commits per second. The poses themselves changed, so neither the solver nor the runtime delta path was frozen.
+
+The generated consumer evidence now also pins a compact post-burn-in solver state. Studio defensively copies that initial condition and solves every later state live; it is not a pose trace and it does not supply any later motion. Fixed-step contact watchers and machine controllers still observe every tick. Riverfall likewise preserves every 60 Hz PBF and advected-phase sample when one animation callback contains several ticks, but batches them and materializes the 321 final tile poses only once; the fixed-step equivalence test proves that grouping six ticks produces the same pose map as six separate frames.
+
+The autonomous browser regression starts a heartbeat before opening, never calls deterministic `settleLive`, and requires readiness, ongoing solver steps, and a changed canvas. After exact catch-up batching, a repaired run reached live stepping in 1,366.8 ms, kept the maximum observed rAF gap to 200.0 ms, and advanced 230 solver ticks over the 3.80 seconds spanning the two screenshot samples; the committed test uses categorical bounds rather than pinning those host-dependent timings.
+
 ## A live Riverfall costs almost a whole frame, and the solver is most of it
 
 **Anchor:** 2026-07-31. Measured through `RiverfallLiveSurfaceV1` at `LIVE_TIMESTEP_SECONDS_V1`: 15.75 ms per frame after optimisation, against the 16.67 ms a 60 Hz frame has for everything including rendering.
@@ -158,7 +168,7 @@ Found by accident. A motion measurement that toggled the look between reads repo
 
 **Not the transport.** Riverfall's kelp carries authored model motion, so with scene animation enabled two consecutive screenshots differ on their own and any comparison across a toggle is meaningless. With `setSceneAnimation(false)` the stage is stable, and the toggle still changes the frame.
 
-**Not the camera.** `setLit` runs `clampSceneViewV1`, which is allowed to move the view for dense lit perspective, and that was the most promising explanation. Measured: yaw, pitch, view height and centre are identical either side of the round trip.
+**Not the camera.** At the time of this measurement, `setLit` ran the former dense-light opening clamp and could move a dense perspective view, which made it the most promising explanation. Measured: yaw, pitch, view height and centre were identical either side of the round trip. That interaction policy was removed on 2026-08-02; exact clustered-light presentation now accepts the requested camera or rolls it back without silently clamping it.
 
 **Not the solver.** Step count and body positions are unchanged across the toggle. Whatever moves, it is the presentation.
 
@@ -214,15 +224,15 @@ It matters because a live scene has no end. Whatever the remaining budget is, a 
 
 **Diagnosed 2026-08-01**, in the entry above: the cell sits upstream of the simulated domain, the loop bunches, and no particle count lifts its floor off zero.
 
-## A gate can point the wrong way after the rate moves, and this one selected against the machine working
+## A rate gate can reject a working machine without becoming an output proxy
 
-**Anchor:** 2026-08-01. The windmill consumer proof at 60 Hz. Of 144 candidates, sixteen passed only after `maximumShaftAxisDirectionRateRadiansPerSecond` was re-derived; before that, zero passed and 103 failed on that gate alone.
+**Anchor:** 2026-08-01, corrected 2026-08-02. The selected windmill consumer proof completes nine cycles at 60 Hz while its maximum hammer-axis direction rate is 0.099983 rad/s, above the retired 0.05 rad/s ceiling. Focused candidate `r5-g2-s4-c2x1-a4-h3-q0` is the counterexample to treating the ceiling as an output classifier: it completes four cycles while staying at 0.038561 rad/s, then fails the separate full-sweep-clearance and head-anvil-penetration gates. `windmill-compact-evaluator.test.ts` pins both facts, while the committed frozen selection separately records 144 full evaluations and 16 total passers.
 
-The gate said the shaft's direction may not swing faster than 0.05 rad/s. It was chosen at 960 Hz, where the promoted machine measured 0.0089. At 60 Hz the same machine measures 0.033 to 0.100, and the rule inverted: **every candidate that stayed under 0.05 was one whose hammer flew over the top and therefore never struck the anvil** — lift 1.4 to 2.25 m against a working 0.6 m, clearance breached by 0.12 to 0.25 m. All sixteen candidates that ran a clean cycle failed on it.
+The old ceiling was chosen at 960 Hz and no longer described the selected machine at the shared step. That is enough to retire it; it is not enough to infer an exhaustive anti-correlation. The earlier claim that every candidate below 0.05 failed to strike is false, and the statement that 103 candidates failed on that gate alone confused a count exceeding the threshold with exclusive gate failure. The current committed selection proves 16 total passers under the current declaration, but it does not retain the per-candidate counterfactual needed to publish an old-gate-only count or range, so none is claimed here.
 
-What the number is actually measuring is a per-step angular response divided by the step, and for this mechanism the peak is the blow itself. Measured on one candidate at 60 Hz: 0.06725 rad/s nominal with a 9.985 N·s strike, 0.01628 with anvil contact disabled after the first lift, 0.00006 with the cam disabled so the hammer never rises. A factor of 1,100 between striking and not striking. At 960 Hz the same impulse is spread over sixteen steps, so the quotient is small; nothing about the mechanism is worse at the coarser rate.
+The number is a consecutive-step change in the shaft's world direction divided by the step. Absolute tilt does not make that rate redundant: two endpoints at opposite 0.004-radian tilts both remain inside the 0.005-radian envelope, yet crossing between them in one 60 Hz step measures 0.48 rad/s. `windmill-compact-axis-diagnostics.test.ts` pins that construction.
 
-The claim the gate was defending — that this is a planar mechanism — is measured directly and separately, and both of those hold with room: axis tilt 0.001121 rad against a 0.005 gate, out-of-plane drift 0.000121 m against 0.005, at the instant of that same blow. So the replacement is derived rather than chosen: the axis may not cross its whole permitted tilt envelope inside one solver step, which is `maximumAxisTiltRadians / SOLVER_TIMESTEP_SECONDS_V1`. It moves with the rate by construction.
+Planarity is measured directly by the separate absolute-tilt and out-of-plane-drift gates. The direction-rate ceiling has a narrower job: the axis may not cross its whole permitted tilt envelope inside one solver step, so it is derived as `maximumAxisTiltRadians / SOLVER_TIMESTEP_SECONDS_V1` and moves with the solver rate by construction.
 
 The general shape, and it is not the same as "anything expressed in ticks is expressed in the rate": **a quantity denominated per second can still be a per-step quantity wearing a per-second name.** The tell is a threshold that starts rejecting the outcome it exists to protect. The evaluator declaration already carried the precedent one field away — `rawBodyOffAxisAngularSpeed` had long been excluded from acceptance because "it did not converge while pose constraints did", which is exactly what happened here to its pose-derived sibling.
 
@@ -258,10 +268,10 @@ They were found by accident: a browser proof needed one constant from `windmill-
 
 ## A presentation rule that held by luck reads as a rule until the numbers change
 
-**Anchor:** 2026-08-01. The windmill's recorded lane demanded exactly five anvil impacts for its five wheat sacks. At the shared rate the same mill strikes nine times in the same twelve seconds.
+**Anchor:** 2026-08-01, corrected after live numerical-profile alignment on 2026-08-02. The committed windmill fixture records nine anvil impacts in twelve seconds, while the aligned live product path's first six post-lift rising edges are ticks 110, 244, 382, 520, 658, and 796 at 60 Hz. `windmill-live-run.test.ts` pins the live sequence and the occupancy comparison.
 
-The live lane had already met this and solved it — it caps the flour at one rise per sack, with a comment saying an uncapped level climbs out through the roof, and that "the recording had exactly five blows so this never came up". The recorded lane never met it, so it kept a rule that was really a coincidence.
+The live lane had already exposed the finite-magazine rule by capping flour at one rise per sack; an uncapped level climbed out through the roof. The recorded lane initially demanded exactly five impacts for five sacks, so it kept a rule that was only a coincidence of its former cadence.
 
-A second rule was latent in the same place and neither lane had it. A sack cannot take the milling spot while the one before it is still being tipped and dragged clear: that takes about 1.12 s of authored choreography, and the new beat is about 0.9 s, so five sacks slid through each other. The fix is one shared function both lanes call — blows are answered in order, skipping any that land before the spot is free, and stopping at the magazine's capacity.
+A second rule was latent in the same place and neither lane had it. A sack occupies the milling spot for exactly `WINDMILL_SACK_SPOT_SECONDS_V1`, currently 1.270833 seconds, while the committed fixture's impact gaps are only 0.867 to 1.000 seconds, so answering every fixture blow slid sacks through each other. The shared filter answers blows in order, skips any that land before the spot is free, and stops at the magazine's capacity. The aligned live gaps are 2.233 to 2.300 seconds, so the same rule answers every landed live blow until all five sacks are spent; “roughly every second blow” describes the fixture cadence, not the live scene.
 
 Worth separating from the physics: none of this was a solver problem, and all of it was found by a clearance test measuring authored tracks against each other at every frame. **A presentation keyed to a measured event inherits that event's cadence, and a cadence is not a constant.**

@@ -22,7 +22,7 @@ import {
   DENSE_SCENE_MAX_VIEW_HEIGHT,
   DENSE_SCENE_PITCH_LIMIT_DEGREES,
   minimumDenseSceneViewHeightV1,
-  sceneViewCenterIsPinnedV1,
+  safeDenseSceneOpeningViewV1,
 } from './scene-orbit.js';
 import { createStudioParts } from './parts.js';
 import { createStudioRecipeBook } from './recipes.js';
@@ -168,41 +168,37 @@ describe('1,000-light showcase', () => {
     }
   });
 
-  it('bounds dense active lighting while reserving perspective-only movement constraints', () => {
+  it('keeps navigation free while retaining a bounded dense-light opening view', () => {
     const scene = lighting1000();
     const requested = { yawDegrees: -45, pitchDegrees: 85, viewHeight: 0.25 };
-    const active = clampSceneViewV1(
+    const active = safeDenseSceneOpeningViewV1(
       requested,
       scene,
       [0, 0, 0],
       { lit: true, depth: true },
     );
 
-    expect(sceneViewCenterIsPinnedV1(scene, true)).toBe(true);
-    expect(sceneViewCenterIsPinnedV1(scene, false)).toBe(false);
     expect(active.center).toEqual([0, 0, 0]);
     expect(active.orbit.yawDegrees).toBe(315);
     expect(active.orbit.pitchDegrees).toBe(DENSE_SCENE_PITCH_LIMIT_DEGREES);
     expect(active.orbit.viewHeight).toBe(minimumDenseSceneViewHeightV1(scene, [0, 0, 0]));
     expect(clampSceneViewV1(
       requested,
-      scene,
-      [0, 0, 0],
-      { lit: false, depth: true },
+      [20, 0, -20],
     )).toEqual({
-      center: [0, 0, 0],
+      center: [20, 0, -20],
       orbit: { yawDegrees: 315, pitchDegrees: 85, viewHeight: 0.25 },
     });
-    expect(clampSceneViewV1(
+    expect(safeDenseSceneOpeningViewV1(
       { ...requested, viewHeight: 256 },
       scene,
       [20, 0, -20],
       { lit: true, depth: false },
     )).toEqual({
-      center: [20, 0, -20],
-      orbit: { yawDegrees: 315, pitchDegrees: 85, viewHeight: 80 },
+      center: [0, 0, 0],
+      orbit: { yawDegrees: 315, pitchDegrees: 75, viewHeight: 80 },
     });
-    expect(clampSceneViewV1({
+    expect(safeDenseSceneOpeningViewV1({
       ...requested,
       pitchDegrees: -85,
     }, {
@@ -216,7 +212,7 @@ describe('1,000-light showcase', () => {
     const distantCenter: readonly [number, number, number] = [100, 0, 0];
     expect(minimumDenseSceneViewHeightV1(scene, distantCenter))
       .toBeGreaterThan(DENSE_SCENE_MAX_VIEW_HEIGHT);
-    const panned = clampSceneViewV1(
+    const panned = safeDenseSceneOpeningViewV1(
       requested,
       scene,
       distantCenter,
@@ -230,10 +226,9 @@ describe('1,000-light showcase', () => {
     const first = scene.lights?.[0];
     if (!first) throw new Error('The unbounded-light exemption test needs one showcase light.');
     const unbounded = { ...scene, lights: [{ ...first, range: 0 }, ...(scene.lights ?? []).slice(1)] };
-    expect(sceneViewCenterIsPinnedV1(unbounded, true)).toBe(false);
     expect(minimumDenseSceneViewHeightV1(unbounded, [0, 0, 0]))
       .toBe(Number.POSITIVE_INFINITY);
-    expect(clampSceneViewV1(
+    expect(safeDenseSceneOpeningViewV1(
       requested,
       unbounded,
       distantCenter,
@@ -338,13 +333,14 @@ describe('1,000-light showcase', () => {
       ] as const) {
         const view = clampSceneViewV1(
           { ...DEFAULT_ORBIT, pitchDegrees: 75, viewHeight: 0.25 },
-          scene,
           requestedCenter,
-          { lit: true, depth: true },
         );
-        expect(view.center).toEqual([0, 0, 0]);
-        expect(minimumDenseSceneViewHeightV1(scene, view.center))
-          .toBeLessThanOrEqual(DENSE_SCENE_MAX_VIEW_HEIGHT + 1e-10);
+        expect(view.center).toEqual(requestedCenter);
+        expect(view.orbit).toEqual({
+          ...DEFAULT_ORBIT,
+          pitchDegrees: 75,
+          viewHeight: 0.25,
+        });
       }
     } finally {
       field.disposeInternal();

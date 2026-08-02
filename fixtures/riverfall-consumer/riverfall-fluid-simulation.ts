@@ -13,6 +13,7 @@ import {
 import {
   createInitialRiverfallFluidStateV1,
   createRiverfallFluidWorkspaceV1,
+  cloneRiverfallFluidStateV1,
   mapRiverfallFluidParticleToWorldV1,
   stepRiverfallFluidV1,
   type RiverfallFluidStateV1,
@@ -67,6 +68,8 @@ export interface RiverfallFluidTraceV1 {
   /** Witness strip coordinates at recording frame zero, after burn-in. */
   readonly recordingInitialLongitudinal: Float32Array;
   readonly recordingInitialLateral: Float32Array;
+  /** Full solver state at frame zero, before the first recorded step. */
+  readonly recordingInitialState: RiverfallFluidStateV1;
   /** Frame-major flag for whether each witness occupies a visible reach. */
   readonly visibleWitnesses: Uint8Array;
   /** Frame-major, then witness-major. */
@@ -324,6 +327,7 @@ export function simulateRiverfallFluidV1(
       'Cannot capture Riverfall fluid frame zero because burn-in produced no observed substep.',
     );
   }
+  const recordingInitialState = cloneRiverfallFluidStateV1(state);
   const indices = witnessIndices(config);
   const recordingInitialLongitudinal = Float32Array.from(
     indices,
@@ -415,6 +419,7 @@ export function simulateRiverfallFluidV1(
     witnessParticleIndices: indices,
     recordingInitialLongitudinal,
     recordingInitialLateral,
+    recordingInitialState,
     visibleWitnesses,
     translations,
     rotations,

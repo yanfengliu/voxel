@@ -272,7 +272,7 @@ const PRODUCTION_SOLIDS: Readonly<Record<string, {
   'windmill:purpose:grain-infeed-mass': {
     label: 'wheat sack bodies',
     job: 'Be the visible units of grain the delivery rule feeds to the '
-      + 'anvil, one per recorded impact.',
+      + 'anvil, one per answered impact until the magazine empties.',
     requiredBy: Object.freeze([
       id(WINDMILL_PRODUCTION_MOTION_RULE_IDS_V1.wheatDelivery),
       id(SOURCE_WHEAT),
@@ -304,7 +304,7 @@ const PRODUCTION_SOLIDS: Readonly<Record<string, {
   'windmill:purpose:flour-output-level': {
     label: 'flour level',
     job: 'Be the one visible measure of accumulated output across the five '
-      + 'recorded impacts.',
+      + 'sacks the finite magazine can deliver.',
     requiredBy: Object.freeze([
       id(WINDMILL_PRODUCTION_MOTION_RULE_IDS_V1.flourAccumulation),
     ]),
@@ -316,11 +316,11 @@ const PRODUCTION_EVIDENCE: PurposeEvidenceV1 = Object.freeze({
   kind: 'bound',
   proofId: 'windmill production generation, clearance, and browser gates',
   establishes: Object.freeze([
-    'The committed replay regenerates these tracks byte-identically from '
-    + 'the recorded impact ticks, every authored solid holds its declared '
-    + 'clearance against the swept mechanism per frame, and the fixed '
-    + 'review cameras bind each removal and relocation to a visible '
-    + 'difference.',
+    'The live-run test binds landed-blow cadence while the committed '
+    + 'replay regenerates its evidence tracks byte-identically from '
+    + 'recorded impact ticks; every authored solid holds its declared '
+    + 'clearance against the swept mechanism per frame, and fixed review '
+    + 'cameras bind each removal and relocation to a visible difference.',
   ]),
 });
 
@@ -372,7 +372,7 @@ const NEEDS: readonly PurposeNodeV1[] = Object.freeze([
       kind: 'bound',
       proofId: CAUSAL_PROOF,
       establishes: Object.freeze([
-        'Five qualified cycles occur over the nominal run with contacts '
+        'Nine qualified cycles occur over the nominal run with contacts '
         + 'attributed to both cam noses, and disabling wind removes them.',
       ]),
     },
@@ -408,7 +408,7 @@ const NEEDS: readonly PurposeNodeV1[] = Object.freeze([
   purposeNeedV1({
     id: NEED.production,
     label: 'Grain becomes flour',
-    job: 'A viewer must see wheat enter, the recorded impacts pound it, and '
+    job: 'A viewer must see wheat enter, the landed impacts pound it, and '
       + 'flour accumulate — the whole reason a mill exists.',
     rootRationale:
       'A trip hammer that strikes an empty anvil is a mechanism study; the '
@@ -506,9 +506,9 @@ const PRODUCTION_RULES: readonly PurposeNodeV1[] = Object.freeze([
   purposeNodeV1({
     id: id(WINDMILL_PRODUCTION_MOTION_RULE_IDS_V1.wheatDelivery),
     kind: 'motion-rule',
-    label: 'Wheat delivery keyed to recorded impacts',
-    job: 'Slide sack k to the anvil-side milling spot before recorded '
-      + 'impact k and set it aside spent afterwards.',
+    label: 'Wheat delivery keyed to answered impacts',
+    job: 'Assign sack k to answered impact k, staging the next live answer '
+      + 'once a beat exists, and set it aside spent after the blow lands.',
     requiredBy: Object.freeze([NEED.production]),
     evidence: PRODUCTION_EVIDENCE,
     honestyBoundary: WINDMILL_PRODUCTION_HONESTY_V1,
@@ -516,9 +516,9 @@ const PRODUCTION_RULES: readonly PurposeNodeV1[] = Object.freeze([
   purposeNodeV1({
     id: id(WINDMILL_PRODUCTION_MOTION_RULE_IDS_V1.flourAccumulation),
     kind: 'motion-rule',
-    label: 'Flour accumulation keyed to recorded impacts',
+    label: 'Flour accumulation keyed to answered impacts',
     job: 'Raise the bin\'s flour level one fixed step shortly after each '
-      + 'recorded impact.',
+      + 'answered impact.',
     requiredBy: Object.freeze([NEED.production]),
     evidence: PRODUCTION_EVIDENCE,
     honestyBoundary: WINDMILL_PRODUCTION_HONESTY_V1,
@@ -657,7 +657,7 @@ const BOUNDARIES: readonly PurposeNodeV1[] = Object.freeze([
     kind: 'material-source',
     label: 'Wheat infeed',
     job: 'Supply the finite magazine of five queued sacks the delivery '
-      + 'rule feeds to the anvil, one per recorded impact.',
+      + 'rule feeds to the anvil, one per answered impact.',
     quantity: 'grain-mass',
     visibility: 'visible',
     truncates:

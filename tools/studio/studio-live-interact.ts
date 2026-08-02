@@ -226,7 +226,6 @@ export class StudioLiveInteract {
     const presentation = this.#presentation;
     if (presentation === null) return session.poses();
     const timeSeconds = session.state().stepped * LIVE_TIMESTEP_SECONDS_V1;
-    presentation.observe(session, timeSeconds);
     const merged = new Map(session.poses());
     for (const [placementId, pose] of presentation.poses(timeSeconds)) {
       merged.set(placementId, pose);
@@ -253,7 +252,14 @@ export class StudioLiveInteract {
       session.stepOnce();
       // Observed every tick rather than only at the end: a blow lasts a few
       // ticks, and sampling just the final pose would miss most of them.
-      this.#presentation?.observe(
+      this.#presentation?.observeStep?.(
+        session,
+        session.state().stepped * LIVE_TIMESTEP_SECONDS_V1,
+      );
+      // A deterministic settle presents each requested fixed tick. This keeps
+      // frame-cadence presentations exact without making a real rAF callback
+      // render every invisible catch-up tick.
+      this.#presentation?.observeFrame?.(
         session,
         session.state().stepped * LIVE_TIMESTEP_SECONDS_V1,
       );
@@ -449,16 +455,20 @@ export class StudioLiveInteract {
       this.#frameElapsedMs = elapsed;
       try {
         const before = performance.now();
-        // Observed on every fixed tick, exactly as a deterministic settle
-        // observes it. A driver that watches or commands the world must see
-        // the same ticks in the same order whichever way time arrives, or the
-        // scene is a different machine at 30 frames a second than at 60.
+        // Contact watchers and controllers observe every fixed tick, exactly
+        // as a deterministic settle does. Expensive visual fields observe
+        // once after the fixed-tick batch so catch-up cannot multiply frames
+        // that were never going to be shown.
         session.step(elapsed, () => {
-          this.#presentation?.observe(
+          this.#presentation?.observeStep?.(
             session,
             session.state().stepped * LIVE_TIMESTEP_SECONDS_V1,
           );
         });
+        this.#presentation?.observeFrame?.(
+          session,
+          session.state().stepped * LIVE_TIMESTEP_SECONDS_V1,
+        );
         this.#stepCostMs = performance.now() - before;
         this.#hooks.acceptPoses(this.#posesWithPresentation(session));
         this.#hooks.redraw();

@@ -20,9 +20,9 @@ import { WINDMILL_PRODUCTION_PLACEMENT_IDS_V1 } from './windmill-production-layo
  * the queue *before* the blow it is milled by, and nothing can know a future
  * impact. So the mill's own rhythm is measured — a loaded mill keeps a steady
  * beat — and the next blow is predicted one interval ahead of the last one.
- * The prediction only ever moves a sack; if the mill slows, speeds up or
- * stops, the sacks follow the blows that did land, because every impact
- * already observed replaces its own prediction.
+ * Only the next answer is predicted. If that blow is late or never lands,
+ * its sack waits at the milling spot and no later sack advances; an observed
+ * impact replaces the prediction before the flow can continue.
  *
  * Until two blows have landed there is no measurable beat, so nothing advances
  * and the queue simply waits. A mill that has not struck twice has not
@@ -39,6 +39,11 @@ export interface WindmillLiveProductionStateV1 {
 const SACK_IDS = WINDMILL_PRODUCTION_PLACEMENT_IDS_V1.wheatSacks;
 /** The schedule's own floor for when a sack may start moving. */
 const MINIMUM_START_SECONDS = 0.05;
+
+interface WindmillProductionImpactV1 {
+  readonly timeSeconds: number;
+  readonly observed: boolean;
+}
 
 function quaternionOf(pose: { readonly quaternion: readonly [number, number, number, number] }):
 readonly [number, number, number, number] {
@@ -87,20 +92,40 @@ export class WindmillLiveProductionV1 {
    * When sack `index` is milled: the blow that landed, or the one the mill's
    * beat says is coming.
    *
-   * Blows are filtered through the magazine's own rule first, so a mill
-   * striking faster than a sack can be dragged clear answers every other
-   * blow rather than sliding two sacks through each other. Predictions past
-   * the last landed blow keep the same spacing, for the same reason.
+   * Blows are filtered through the magazine's own rule first. Predictions
+   * extend the measured raw beat and pass those beat-aligned future blows
+   * through the same filter, so no invented non-blow time can move a sack.
    */
-  #impactFor(index: number): number | null {
+  #impactFor(index: number): WindmillProductionImpactV1 | null {
     const milled = windmillMilledImpactsV1(this.#impacts);
     const observed = milled[index];
-    if (observed !== undefined) return observed;
+    if (observed !== undefined) {
+      return { timeSeconds: observed, observed: true };
+    }
+    // A measured beat can stage the next answer, not a chain of hypothetical
+    // sacks whose preceding blows have not happened.
+    if (index !== milled.length) return null;
     const beat = this.#beat();
-    if (beat === null || milled.length === 0) return null;
-    const last = milled[milled.length - 1]!;
-    const stride = Math.max(beat, WINDMILL_SACK_SPOT_SECONDS_V1);
-    return last + stride * (index - (milled.length - 1));
+    if (beat === null || !Number.isFinite(beat) || beat <= 0
+      || milled.length === 0) return null;
+
+    const projectedImpacts = [...this.#impacts];
+    let projectedMilled = milled;
+    while (projectedMilled[index] === undefined) {
+      const lastRawImpact = projectedImpacts[projectedImpacts.length - 1]!;
+      const lastAnsweredImpact = projectedMilled[projectedMilled.length - 1]!;
+      const beatsUntilSpotIsFree = Math.max(1, Math.ceil(
+        (lastAnsweredImpact + WINDMILL_SACK_SPOT_SECONDS_V1 - lastRawImpact)
+        / beat,
+      ));
+      const nextRawImpact = lastRawImpact + beatsUntilSpotIsFree * beat;
+      if (!Number.isFinite(nextRawImpact) || nextRawImpact <= lastRawImpact) {
+        return null;
+      }
+      projectedImpacts.push(nextRawImpact);
+      projectedMilled = windmillMilledImpactsV1(projectedImpacts);
+    }
+    return { timeSeconds: projectedMilled[index], observed: false };
   }
 
   /**
@@ -111,8 +136,9 @@ export class WindmillLiveProductionV1 {
   poses(timeSeconds: number): ReadonlyMap<string, ScenePlacementPoseV1> {
     const poses = new Map<string, ScenePlacementPoseV1>();
     for (const [index, placementId] of SACK_IDS.entries()) {
-      const impact = this.#impactFor(index);
-      if (impact === null) break;
+      const answer = this.#impactFor(index);
+      if (answer === null) break;
+      const impact = answer.timeSeconds;
       // A sack that could never have reached the anvil in time stays in the
       // queue. Its blow landed before the mill had a rhythm to anticipate,
       // which is the honest reading of a machine still starting up.
@@ -123,16 +149,21 @@ export class WindmillLiveProductionV1 {
       if (impact - windmillSackLeadSecondsV1(index) < MINIMUM_START_SECONDS) {
         break;
       }
-      const pose = windmillWheatSackPoseV1(index, impact, timeSeconds);
+      // A missed prediction may bring one sack to the spot, but without the
+      // blow it cannot tip that sack spent or start another one behind it.
+      const poseTime = answer.observed
+        ? timeSeconds
+        : Math.min(timeSeconds, impact);
+      const pose = windmillWheatSackPoseV1(index, impact, poseTime);
       poses.set(placementId, {
         translation: pose.translation,
         quaternion: quaternionOf(pose),
       });
     }
-    // One rise per sack milled, and there are five sacks. The recording had
-    // exactly five blows so this never came up; a live mill strikes for as
-    // long as the wind blows, and an uncapped level climbs out through the
-    // roof — which is what it did, while every number still looked sane.
+    // One rise per sack milled, and there are five sacks. Both the committed
+    // fixture and the live mill can land more blows than that finite magazine
+    // can answer; an uncapped level climbs out through the roof — which is
+    // what it did, while every number still looked sane.
     const milled = windmillMilledImpactsV1(this.#impacts);
     const flour = windmillFlourPoseV1(milled, timeSeconds);
     poses.set(WINDMILL_PRODUCTION_PLACEMENT_IDS_V1.flourHeap, {

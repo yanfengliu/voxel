@@ -89,12 +89,13 @@ async function mountRiverfall(page: Page): Promise<void> {
     studio.setViewAngles({ yawDegrees: 45, pitchDegrees: 30, viewHeight: 80 });
     studio.drawAt(0);
   }, RIVERFALL_SCENE_ID);
-  // The fluid builds and burns in before the first live frame; until then the
-  // stage is still drawing authored anchors.
+  // Rapier still builds asynchronously. The fluid starts from its generated
+  // post-burn-in initial condition, so readiness must not wait on a main-thread
+  // warm-up.
   await page.waitForFunction(
     () => window.voxelStudio!.livePhysics().running,
     undefined,
-    { timeout: 180_000 },
+    { timeout: 30_000 },
   );
   await page.addStyleTag({
     content: [
@@ -130,6 +131,90 @@ async function imageHash(page: Page): Promise<string> {
       .screenshot({ animations: 'disabled' }))
     .digest('hex');
 }
+
+test('Riverfall opens responsively and changes under autonomous wall-clock play', async ({
+  page,
+}) => {
+  const errors: string[] = [];
+  page.on('pageerror', (error) => errors.push(error.message));
+  page.on('console', (message) => {
+    if (message.type() === 'error') errors.push(message.text());
+  });
+  await page.setViewportSize({ width: 1280, height: 800 });
+  const response = await page.goto(studioOrigin, { waitUntil: 'load' });
+  expect(response?.ok()).toBe(true);
+  await page.waitForFunction(() => typeof window.voxelStudio === 'object');
+
+  await page.evaluate((sceneId) => {
+    const probe = {
+      frames: 0,
+      maximumGapMs: 0,
+      startedMs: performance.now(),
+      previousMs: performance.now(),
+    };
+    (window as unknown as { __riverfallHeartbeat: typeof probe })
+      .__riverfallHeartbeat = probe;
+    const heartbeat = (nowMs: number): void => {
+      probe.frames += 1;
+      probe.maximumGapMs = Math.max(
+        probe.maximumGapMs,
+        nowMs - probe.previousMs,
+      );
+      probe.previousMs = nowMs;
+      requestAnimationFrame(heartbeat);
+    };
+    requestAnimationFrame(heartbeat);
+    window.voxelStudio!.openScene(sceneId);
+  }, RIVERFALL_SCENE_ID);
+
+  await page.waitForFunction(
+    () => window.voxelStudio!.livePhysics().running,
+    undefined,
+    { timeout: 5_000 },
+  );
+  await expect.poll(
+    () => page.evaluate(() => window.voxelStudio!.livePhysics().stepped),
+    { timeout: 5_000 },
+  ).toBeGreaterThan(3);
+  await page.evaluate(() => { window.voxelStudio!.setSceneAnimation(false); });
+  const opening = await page.evaluate(() => ({
+    heartbeat: (window as unknown as {
+      __riverfallHeartbeat: {
+        frames: number;
+        maximumGapMs: number;
+        startedMs: number;
+      };
+    }).__riverfallHeartbeat,
+    elapsedMs: performance.now() - (window as unknown as {
+      __riverfallHeartbeat: { startedMs: number };
+    }).__riverfallHeartbeat.startedMs,
+    sampledMs: performance.now(),
+    stepped: window.voxelStudio!.livePhysics().stepped,
+  }));
+  const openingHash = await imageHash(page);
+  await page.waitForTimeout(1_200);
+  const laterHash = await imageHash(page);
+  const later = await page.evaluate(() => ({
+    heartbeat: (window as unknown as {
+      __riverfallHeartbeat: { frames: number; maximumGapMs: number };
+    }).__riverfallHeartbeat,
+    sampledMs: performance.now(),
+    stepped: window.voxelStudio!.livePhysics().stepped,
+  }));
+
+  expect(opening.heartbeat.frames).toBeGreaterThanOrEqual(3);
+  expect(later.heartbeat.maximumGapMs).toBeLessThan(1_000);
+  expect(later.stepped - opening.stepped).toBeGreaterThan(10);
+  expect(laterHash).not.toBe(openingHash);
+  expect(errors).toEqual([]);
+  console.log(
+    `autonomous Riverfall: ready and stepping by ${opening.elapsedMs.toFixed(1)} ms; `
+    + `maximum rAF gap ${later.heartbeat.maximumGapMs.toFixed(1)} ms; `
+    + `${String(later.stepped - opening.stepped)} solver ticks over ${
+      ((later.sampledMs - opening.sampledMs) / 1_000).toFixed(2)
+    } s`,
+  );
+});
 
 test('Riverfall solves its water in the browser and plays back nothing', async ({
   page,

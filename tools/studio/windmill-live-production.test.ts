@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { WindmillLiveProductionV1 } from './windmill-live-production.js';
+import { windmillWheatSackPoseV1 } from './windmill-production-kinematics.js';
 import { WINDMILL_PRODUCTION_PLACEMENT_IDS_V1 } from './windmill-production-layout.js';
 
 /**
@@ -82,14 +83,17 @@ describe('the mill\'s live material flow', () => {
     const production = lift(new WindmillLiveProductionV1());
     strike(production, 2);
     strike(production, 5);
-    const beforeId = SACKS[2];
     // The predicted third blow is at 8; long after that with no blow landed,
-    // the flour must not have risen for a blow that never happened.
+    // its sack must still be waiting at the spot, no later sack may start,
+    // and the flour must not rise for a blow that never happened.
     const flourAt7 = production.poses(7).get(FLOUR)!.translation[1];
-    const flourAt30 = production.poses(30).get(FLOUR)!.translation[1];
+    const predicted = production.poses(8).get(SACKS[2]);
+    const stalled = production.poses(30);
+    const flourAt30 = stalled.get(FLOUR)!.translation[1];
     expect(flourAt30).toBeCloseTo(flourAt7, 9);
     expect(production.state().impactsSeconds).toHaveLength(2);
-    expect(beforeId).toBeDefined();
+    expect(stalled.get(SACKS[2])).toEqual(predicted);
+    expect(stalled.has(SACKS[3])).toBe(false);
   });
 
   it('fills the bin once and stops, however long the mill runs', () => {
@@ -124,5 +128,17 @@ describe('the mill\'s live material flow', () => {
     // Same instant, different schedule: the observed blow now drives it.
     expect(landed).not.toEqual(predicted);
     expect(production.state().impactsSeconds).toEqual([2, 5, 9]);
+  });
+
+  it('predicts the next answered beat-aligned blow instead of inventing a stride', () => {
+    const production = lift(new WindmillLiveProductionV1());
+    strike(production, 2);
+    strike(production, 2.9);
+    strike(production, 3.8);
+
+    const at = 4.5;
+    const expected = windmillWheatSackPoseV1(2, 5.6, at);
+    expect(production.poses(at).get(SACKS[2])?.translation)
+      .toEqual(expected.translation);
   });
 });

@@ -333,16 +333,15 @@ export async function proveWindmillCompactCandidateV1(
       const ablation = index === 0
         ? primaryCamNoseDisabled
         : opposedCamNoseDisabled;
-      // What one lobe's removal has to show is that the lobe did the work
-      // attributed to it: nothing of its own survives, the other lobe is
-      // untouched, the mill produces strictly less, and acceptance rejects
-      // the result. It used to also require the mill to fall under the
-      // three-cycle output floor, and that was a property of a marginal
-      // machine rather than a causal fact. The head that the shared-rate
-      // search promoted is a voxel taller and the mill runs on one lobe:
-      // measured at 60 Hz, 9 cycles nominal against 7 with the primary
-      // nose disabled and 6 with the opposed one. Single-lobe running is
-      // still rejected, by `dual-lobe-causal-coverage-failed`.
+      // This intervention removes only the selected nose's contact
+      // participation, while retaining its visible geometry and mass. It
+      // establishes nominal participation and output sensitivity: none of
+      // the disabled nose's attributed events survives, every remaining
+      // event belongs to the other nose, total cycles fall, and acceptance
+      // rejects the result. It does not leave the other nose's dynamics
+      // unchanged or prove either nose is necessary for the three-cycle
+      // minimum: measured at 60 Hz, 9 cycles nominal become 7 with the
+      // primary nose disabled and 6 with the opposed one.
       return check(
         id,
         nominal.evidence.qualifiedCausalCyclesByNose[disabledKey] > 0
@@ -365,7 +364,7 @@ export async function proveWindmillCompactCandidateV1(
             .includes('dual-lobe-causal-coverage-failed')
           && ablation.result.provenance.combinedEvaluationSha256
             !== nominal.result.provenance.combinedEvaluationSha256,
-        `disabling only ${disabledKey} removes its attributed events, preserves exact ${otherKey} contact, strictly lowers completed output, and is rejected for single-lobe coverage`,
+        `disabling only ${disabledKey} removes its attributed events, leaves every remaining event attributed to ${otherKey}, strictly lowers completed output, and is rejected for missing dual-lobe participation`,
         `disabledCycles=${String(ablation.evidence.qualifiedCausalCyclesByNose[disabledKey])}, otherCycles=${String(ablation.evidence.qualifiedCausalCyclesByNose[otherKey])}, cycles=${String(ablation.evidence.completedCausalCycles)}/${String(nominal.evidence.completedCausalCycles)}, contacts=${String(ablation.evidence.camContactTicks)}/${String(nominal.evidence.camContactTicks)}, rotorAngle=${String(ablation.evidence.finalRotorAngleRadians)}/${String(nominal.evidence.finalRotorAngleRadians)}`,
       );
     }),

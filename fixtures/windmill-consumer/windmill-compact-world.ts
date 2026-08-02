@@ -10,6 +10,9 @@ import {
   type WindmillCompactCamNoseKeyV1,
 } from '../../tools/studio/windmill-compact-geometry.js';
 import {
+  applyLivePhysicsNumericalProfileV1,
+} from '../../tools/studio/live-physics-numerical-profile.js';
+import {
   createPhysicalAssetBodyV1,
   scaledPhysicalPortV1,
   type RapierPhysicalInstanceV1,
@@ -81,27 +84,6 @@ const GROUPS = Object.freeze({
   anvil: interactionGroups(0x0008, 0x0004),
 });
 
-function applySolverSettings(
-  world: World,
-  settings: WindmillNumericalProfileV1,
-): void {
-  assertWindmillNumericalProfileV1(settings);
-  world.integrationParameters.dt = settings.fixedStepSeconds;
-  world.integrationParameters.contact_natural_frequency =
-    settings.contactNaturalFrequency;
-  world.integrationParameters.lengthUnit = settings.lengthUnit;
-  world.integrationParameters.normalizedAllowedLinearError =
-    settings.normalizedAllowedLinearError;
-  world.integrationParameters.normalizedPredictionDistance =
-    settings.normalizedPredictionDistance;
-  world.integrationParameters.numSolverIterations =
-    settings.numSolverIterations;
-  world.integrationParameters.numInternalPgsIterations =
-    settings.numInternalPgsIterations;
-  world.integrationParameters.minIslandSize = settings.minIslandSize;
-  world.integrationParameters.maxCcdSubsteps = settings.maxCcdSubsteps;
-}
-
 function collidersAt(
   instance: RapierPhysicalInstanceV1,
   indices: readonly number[],
@@ -158,9 +140,12 @@ function populateWindmillCompactWorldV1(
   compiled: WindmillCompiledCompactCandidateV1,
   options: WindmillCompactWorldOptionsV1,
 ): WindmillCompactWorldV1 {
-  applySolverSettings(
-    world,
-    options.numericalProfile ?? WINDMILL_OPERATIONAL_NUMERICAL_PROFILE_V1,
+  const numericalProfile = options.numericalProfile
+    ?? WINDMILL_OPERATIONAL_NUMERICAL_PROFILE_V1;
+  assertWindmillNumericalProfileV1(numericalProfile);
+  applyLivePhysicsNumericalProfileV1(
+    world.integrationParameters,
+    numericalProfile,
   );
   const grain = compiled.candidate.grainMeters;
   const frame = createPhysicalAssetBodyV1(

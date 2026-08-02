@@ -15,6 +15,12 @@ import {
   applyLiveContactPolicyV1,
   type LiveContactPolicyV1,
 } from './live-physics-contact-policy.js';
+import {
+  applyLivePhysicsNumericalProfileV1,
+  assertLivePhysicsNumericalProfileV1,
+  type LivePhysicsNumericalProfileV1,
+  type LivePhysicsNumericalSnapshotV1,
+} from './live-physics-numerical-profile.js';
 
 /**
  * A live, interactive solver world for one open Studio scene.
@@ -119,6 +125,8 @@ export interface LivePhysicsSpawnPlanV1 {
 
 export interface LivePhysicsProfileV1 {
   readonly sceneId: string;
+  /** Complete proof-bound solver settings when a scene declares them. */
+  readonly numericalProfile?: LivePhysicsNumericalProfileV1;
   readonly bodies: readonly LivePhysicsBodyPlanV1[];
   readonly spawn?: LivePhysicsSpawnPlanV1;
   /**
@@ -279,6 +287,7 @@ export class LivePhysicsSessionV1 {
     readonly b: string;
   }>();
   readonly #profile: LivePhysicsProfileV1;
+  readonly #numericalSnapshot: LivePhysicsNumericalSnapshotV1 | null;
   readonly #spawnQueue: string[];
   /** Spawn-only plans waiting for `spawnPlanned`, with their sources. */
   readonly #pending = new Map<string, {
@@ -300,8 +309,27 @@ export class LivePhysicsSessionV1 {
   ) {
     this.#rapier = rapier;
     this.#profile = profile;
+    if (profile.numericalProfile !== undefined) {
+      assertLivePhysicsNumericalProfileV1(profile.numericalProfile);
+      if (profile.numericalProfile.fixedStepSeconds !== TIMESTEP_S) {
+        throw new Error(
+          `Cannot create live physics for '${profile.sceneId}' with numerical `
+          + `profile '${profile.numericalProfile.id}': its fixed step is `
+          + `${String(profile.numericalProfile.fixedStepSeconds)} seconds, `
+          + `but every live scene solves at ${String(TIMESTEP_S)} seconds.`,
+        );
+      }
+    }
     this.#world = new rapier.World({ x: 0, y: -9.81, z: 0 });
-    this.#world.integrationParameters.dt = TIMESTEP_S;
+    if (profile.numericalProfile === undefined) {
+      this.#world.integrationParameters.dt = TIMESTEP_S;
+      this.#numericalSnapshot = null;
+    } else {
+      this.#numericalSnapshot = applyLivePhysicsNumericalProfileV1(
+        this.#world.integrationParameters,
+        profile.numericalProfile,
+      );
+    }
     this.#spawnQueue = [...(profile.spawn?.placementIds ?? [])];
 
     const bySource = new Map(sources.map((source) => [source.placementId, source]));
@@ -908,6 +936,12 @@ export class LivePhysicsSessionV1 {
       paused: this.#paused,
       timeScale: this.#timeScale,
     };
+  }
+
+  /** Receipt for a complete applied profile; null when this world declares none. */
+  numericalSnapshot(): LivePhysicsNumericalSnapshotV1 | null {
+    this.#assertLive();
+    return this.#numericalSnapshot;
   }
 
   /** Full solver readouts for every live body, sorted by placement id. */

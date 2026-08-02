@@ -1,8 +1,13 @@
 import { describe, expect, it } from 'vitest';
 
+import { createRiverfallFluidConfigV1 } from './riverfall-fluid-config.js';
+import {
+  RIVERFALL_FLUID_WARM_STATE_ENCODED_V1,
+} from './generated-riverfall-fluid-warm-state.js';
 import { LIVE_TIMESTEP_SECONDS_V1 } from './live-physics.js';
 import { RiverfallLiveSurfaceV1 } from './riverfall-live-surface.js';
 import { RIVERFALL_SURFACE_CELLS_V1 } from './riverfall-surface-grid.js';
+import { decodeRiverfallFluidWarmStateV1 } from './riverfall-warm-state.js';
 
 /**
  * The river, solved rather than replayed.
@@ -12,9 +17,8 @@ import { RIVERFALL_SURFACE_CELLS_V1 } from './riverfall-surface-grid.js';
  * recording decoded badly.
  */
 describe('the live Riverfall surface', () => {
-  // Construction alone runs 800 burn-in substeps, and each of these steps a
-  // 288-particle fluid for real. Timeouts are sized against that work,
-  // generously, rather than against whatever else the suite is doing.
+  // Construction clones the generated post-burn-in solver state. Every call
+  // to advance below still runs the 576-particle fluid for real.
   it('poses every authored cell from the fluid it just stepped', () => {
     const surface = new RiverfallLiveSurfaceV1();
     const poses = surface.poses();
@@ -75,6 +79,27 @@ describe('the live Riverfall surface', () => {
     expect(moved(middle, later)).toBeGreaterThan(0.1);
   }, 300_000);
 
+  it('keeps the exact fixed-step water state when rAF batches catch-up ticks', () => {
+    const individual = new RiverfallLiveSurfaceV1();
+    const batched = new RiverfallLiveSurfaceV1();
+    const catchUpTicks = 6;
+    for (let step = 0; step < catchUpTicks; step += 1) {
+      individual.advance(LIVE_TIMESTEP_SECONDS_V1);
+    }
+    batched.advanceFixedFrames(LIVE_TIMESTEP_SECONDS_V1, catchUpTicks);
+
+    expect([...batched.poses()]).toEqual([...individual.poses()]);
+  }, 300_000);
+
+  it('rejects a warm state from any different canonical fluid input', () => {
+    expect(() => decodeRiverfallFluidWarmStateV1({
+      ...RIVERFALL_FLUID_WARM_STATE_ENCODED_V1,
+      canonicalInputJson: '{"stale":true}',
+    }, createRiverfallFluidConfigV1())).toThrow(
+      /canonical input JSON differs from the live configuration/,
+    );
+  });
+
   it('reports what a live frame of river costs', () => {
     // Reported, not gated. A wall-clock number is a statement about the host,
     // and this repo does not let one decide a verdict — a loaded machine
@@ -119,5 +144,8 @@ describe('the live Riverfall surface', () => {
       .toThrow(/Cannot advance the Riverfall fluid by -1 seconds/);
     expect(() => { surface.advance(Number.NaN); })
       .toThrow(/finite, nonnegative elapsed time/);
+    expect(() => {
+      surface.advanceFixedFrames(LIVE_TIMESTEP_SECONDS_V1, 0.5);
+    }).toThrow(/expected a nonnegative safe integer/);
   }, 300_000);
 });

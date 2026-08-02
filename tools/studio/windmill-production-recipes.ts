@@ -80,7 +80,7 @@ readonly ProductionRoleColorV1[] = Object.freeze([
     role: 'flour',
     color: Object.freeze({ r: 240, g: 234, b: 220 }),
     job: 'Near-white marks the milled output whose level steps up after '
-      + 'each recorded impact.',
+      + 'each answered hammer impact.',
     honestyBoundary: 'A color role only; the level is one rigid prop moved '
       + 'by authored kinematics, not accumulated matter.',
   }),
@@ -126,8 +126,8 @@ Record<WindmillProductionRecipeIdV1, ProductionRecipeSpecV1>
     seed: 0x71c4_202,
     summary:
       'One tied grain sack from the finite infeed magazine; five placements '
-      + 'queue at the mill and are set aside spent, keyed to the five '
-      + 'recorded impacts.',
+      + 'queue at the mill and are set aside spent, keyed to at most five '
+      + 'answered hammer impacts.',
     tags: Object.freeze([
       'windmill', 'production-line', 'material-infeed', 'prop',
     ]),
@@ -147,7 +147,7 @@ Record<WindmillProductionRecipeIdV1, ProductionRecipeSpecV1>
     seed: 0x71c4_204,
     summary:
       'The milled-output level inside the flour bin; authored kinematics '
-      + 'raise it one step after each recorded impact.',
+      + 'raise it one step after each answered hammer impact.',
     tags: Object.freeze([
       'windmill', 'production-line', 'material-outfeed', 'prop',
     ]),

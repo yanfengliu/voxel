@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  createWindmillCompactCandidateV1,
   WINDMILL_COMPACT_CAM_NOSE_KEYS_V1,
 } from '../../tools/studio/windmill-compact-geometry.js';
 import {
@@ -95,8 +96,37 @@ describe('compact windmill default evaluator', () => {
     );
     expect(evaluation.result.provenance.runEvidenceSha256)
       .toMatch(/^[0-9a-f]{64}$/);
+    expect(evaluation.evidence.completedCausalCycles).toBe(9);
+    expect(evaluation.evidence
+      .maximumHammerAxisDirectionRateRadiansPerSecond)
+      .toBeCloseTo(0.09998339734822455, 12);
     expect(windmillCandidatePassesV1(evaluation.result)).toBe(true);
     expect(evaluation.evidence.failedGateIds).toEqual([]);
+  }, 15_000);
+
+  it('does not treat the retired 0.05 axis-rate threshold as an output proxy', async () => {
+    const evaluation = await evaluateWindmillCompactCandidateV1(
+      createWindmillCompactCandidateV1({
+        rotorRadiusVoxels: 5,
+        groundClearanceVoxels: 2,
+        sailRadialSpanVoxels: 4,
+        camRadialLengthVoxels: 2,
+        camHeightVoxels: 1,
+        hammerRightArmLengthVoxels: 4,
+        hammerHeadHeightVoxels: 3,
+        initialHeadAnvilClearanceVoxels: 0,
+      }),
+      { name: 'retired-axis-rate-counterexample' },
+    );
+    expect(Math.max(
+      evaluation.evidence.maximumRotorAxisDirectionRateRadiansPerSecond,
+      evaluation.evidence.maximumHammerAxisDirectionRateRadiansPerSecond,
+    )).toBeCloseTo(0.038560790171232186, 12);
+    expect(evaluation.evidence.completedCausalCycles).toBe(4);
+    expect(evaluation.evidence.failedGateIds).toEqual([
+      'full-sweep-clearance-failed',
+      'head-anvil-penetration-failed',
+    ]);
   }, 15_000);
 
   it('removes one exact sail geometry, collider mass, and load together', async () => {
@@ -149,7 +179,7 @@ describe('compact windmill default evaluator', () => {
     );
   });
 
-  it('removes only the disabled nose work and changes the physical output', async () => {
+  it('removes disabled-nose attribution while retaining changed other-nose work', async () => {
     const selected = createSelectedWindmillCompactCandidateV1();
     const nominal = await evaluateWindmillCompactCandidateV1(selected, {
       name: 'dual-lobe-ablation-nominal',
@@ -172,6 +202,14 @@ describe('compact windmill default evaluator', () => {
         .toBe(0);
       expect(ablated.evidence.cycleRecords.some((record) =>
         record.camNoseKey === disabledCamNoseKey)).toBe(false);
+      const otherCamNoseKey = WINDMILL_COMPACT_CAM_NOSE_KEYS_V1.find((key) =>
+        key !== disabledCamNoseKey)!;
+      expect(ablated.evidence.camContactTicksByNose[otherCamNoseKey])
+        .toBeGreaterThan(0);
+      expect(ablated.evidence.cycleRecords.every((record) =>
+        record.camNoseKey === otherCamNoseKey)).toBe(true);
+      expect(ablated.evidence.completedCausalCycles)
+        .toBeLessThan(nominal.evidence.completedCausalCycles);
       expect(ablated.evidence.finalRotorAngleRadians)
         .not.toBe(nominal.evidence.finalRotorAngleRadians);
       expect(ablated.evidence.camContactTicks)

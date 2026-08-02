@@ -16,26 +16,19 @@ const MAXIMUM_AXIS_TILT_RADIANS = 0.005;
  * gate and the repository's one solver rate, so it moves with the rate
  * instead of quietly meaning something else after it changes.
  *
- * It used to be a flat 0.05 rad/s, and that number was measured at a
- * sixteenth of this step. Rebuilt at the shared rate it inverted: it
- * began selecting against the machine working. The direction rate is a
- * per-step angular response divided by the step, and for this mechanism
- * the peak is the hammer landing on the anvil — remove the blow and it
- * collapses. On one candidate at this rate: 0.06725 rad/s nominal with a
- * 9.985 N*s strike, 0.01628 with anvil contact disabled after the first
- * lift, and 0.00006 with the cam disabled so the hammer never rises at
- * all. Over 144 candidates the anti-correlation is complete — every
- * candidate under the old 0.05 was one whose hammer flew over the top
- * and therefore never struck (lift 1.4 to 2.25 m, clearance breached by
- * 0.12 to 0.25 m), and all sixteen candidates that ran a clean cycle
- * failed on it alone.
+ * It used to be a flat 0.05 rad/s, measured at a sixteenth of this step.
+ * At the shared rate that threshold rejects the selected machine's
+ * 0.09998 rad/s hammer response even though it completes nine qualified
+ * cycles. The rate is not itself an output proxy: focused current candidate
+ * r5-g2-s4-c2x1-a4-h3-q0 stays below the old threshold at 0.03856 rad/s and
+ * completes four cycles, while separately failing sweep-clearance and
+ * head-anvil-penetration gates. The frozen current search records 16 total
+ * passers; no exhaustive counterfactual range under the retired threshold
+ * is claimed here.
  *
- * What the old gate was really defending is planarity, and that is
- * measured directly and separately: axis tilt stays at 0.001121 rad
- * against this 0.005 gate, and out-of-plane drift at 0.000121 m against
- * 0.005, at the instant of that same 9.985 N*s blow. Those two are the
- * binding claim; this one is the ceiling that stops a shaft being wrenched
- * clean out of its plane within a step.
+ * Planarity is measured directly by separate tilt and out-of-plane-drift
+ * gates. This rate remains a distinct safety ceiling: two consecutive axes
+ * can each stay inside the tilt envelope while crossing it too quickly.
  */
 const MAXIMUM_SHAFT_AXIS_DIRECTION_RATE_RADIANS_PER_SECOND =
   MAXIMUM_AXIS_TILT_RADIANS / WINDMILL_FIXED_STEP_SECONDS;

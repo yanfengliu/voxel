@@ -60,7 +60,10 @@ import type { ScenePoseReplayEventV1, ScenePoseReplayV1OrV2 } from './scene-pose
 import { VOXEL_SCENE_SCHEMA_V4, type SceneV1 } from './scene.js';
 import { sceneMotionWindowMsV1 } from './scene-motion.js';
 import { sceneOpeningViewV1 } from './scene-opening-view.js';
-import { clampSceneViewV1, sceneViewCenterIsPinnedV1 } from './scene-orbit.js';
+import {
+  clampSceneViewV1,
+  safeDenseSceneOpeningViewV1,
+} from './scene-orbit.js';
 import { createSceneWorkspace } from './scene-workspace.js';
 import {
   createModelLabelWorkspace,
@@ -639,7 +642,6 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
   } | null = null;
   let sceneAnnotationModeOn = false;
   let sceneNotesPanel: StudioSceneNotesPanelV1 | null = null;
-  let sceneViewTranslationLocked = false;
   // A left click picks the model under the cursor; these hold each placement's
   // world box (recomputed when the scene changes) and which one is selected, so
   // it can be outlined and dragged.
@@ -989,9 +991,7 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
         if (sceneOpen !== null && sceneSession !== null) {
           const candidateView = clampSceneViewV1(
             orbit,
-            sceneOpen,
             panCenter,
-            { lit: on, depth: depthOn },
           );
           orbit = candidateView.orbit;
           panCenter = candidateView.center;
@@ -1441,14 +1441,7 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
     const previousOrbit = orbit;
     const previousPanCenter = panCenter;
     const previousShownMs = lastShownMs;
-    const candidateView = sceneOpen === null
-      ? { orbit: clampOrbit(nextOrbit), center: nextPanCenter }
-      : clampSceneViewV1(
-        nextOrbit,
-        sceneOpen,
-        nextPanCenter,
-        { lit: sceneSession?.lit === true, depth: depthOn },
-      );
+    const candidateView = clampSceneViewV1(nextOrbit, nextPanCenter);
     orbit = candidateView.orbit;
     panCenter = candidateView.center;
     try {
@@ -1550,7 +1543,7 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
     const openingView = openingPolicy === 'occupied-world-bounds'
       ? sceneOpeningViewV1(scene, sceneRecipes, sceneParts)
       : null;
-    const candidateView = clampSceneViewV1(
+    const candidateView = safeDenseSceneOpeningViewV1(
       {
         ...orbit,
         viewHeight: openingView?.viewHeight ?? sceneFitHeight(scene),
@@ -1841,15 +1834,9 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
       lightCount,
       session.lit,
     );
-    sceneViewTranslationLocked = sceneViewCenterIsPinnedV1(scene, depthOn && session.lit);
-    syncStageKeyboardShortcuts(!sceneViewTranslationLocked, hasMotion);
-    const cameraHint = sceneViewTranslationLocked
-      ? lightingHint
-        + ' · right-drag and WASD translation locked for dense perspective lighting; '
-        + 'use flat view or turn lighting off'
-      : lightingHint;
+    syncStageKeyboardShortcuts(true, hasMotion);
     stageHint.textContent = sceneAnimationStageHint(
-      cameraHint,
+      lightingHint,
       hasMotion,
       sceneTransport.enabled,
     );
@@ -2013,7 +2000,6 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
     sceneAnimationToggle.hidden = true;
     snapToggle.hidden = true;
     stageHint.textContent = modelStageHint;
-    sceneViewTranslationLocked = false;
     syncStageKeyboardShortcuts(true);
     checkRow.hidden = false;
     sizeField.hidden = false;
@@ -2165,9 +2151,7 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
     const previousPanCenter = panCenter;
     const candidateView = clampSceneViewV1(
       orbit,
-      next,
       panCenter,
-      { lit: activeSession.lit, depth: depthOn },
     );
     orbit = candidateView.orbit;
     panCenter = candidateView.center;
@@ -2726,14 +2710,7 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
     if (on === depthOn) return depthOn;
     const previousCamera = camera;
     const nextCamera = on ? depthCamera : flatCamera;
-    const candidateView = sceneOpen === null
-      ? { orbit: clampOrbit(orbit), center: panCenter }
-      : clampSceneViewV1(
-        orbit,
-        sceneOpen,
-        panCenter,
-        { lit: sceneSession?.lit === true, depth: on },
-      );
+    const candidateView = clampSceneViewV1(orbit, panCenter);
     applyOrbit(nextCamera, candidateView.orbit, viewW, viewH, candidateView.center);
     try {
       session.setCamera(nextCamera);
@@ -3069,8 +3046,7 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
       advancingFrame = nextShownMs !== null;
       const movement = keyboard.movement();
       const moving = movement.forward !== 0 || movement.right !== 0;
-      const movementLocked = moving && sceneViewTranslationLocked;
-      if (!movementLocked && moving && elapsedMs > 0) {
+      if (moving && elapsedMs > 0) {
         const distance = orbit.viewHeight
           * KEYBOARD_PAN_VIEW_HEIGHTS_PER_SECOND
           * (elapsedMs / 1_000);

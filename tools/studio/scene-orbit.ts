@@ -41,14 +41,6 @@ function finiteDenseEnvelopeApplies(scene: SceneV1): boolean {
   return count > CLUSTERED_POINT_LIGHTS_PER_TILE_INTERNAL;
 }
 
-/** Whether safe dense perspective lighting deliberately pins ground-plane camera movement. */
-export function sceneViewCenterIsPinnedV1(
-  scene: SceneV1,
-  perspectiveLightingActive: boolean,
-): boolean {
-  return perspectiveLightingActive && finiteDenseEnvelopeApplies(scene);
-}
-
 function motionOf(light: ScenePointLight): ScenePointLightV3['motion'] {
   return 'motion' in light ? light.motion : undefined;
 }
@@ -94,10 +86,9 @@ export function minimumDenseSceneViewHeightV1(
 }
 
 /**
- * Dense active lighting keeps the scene origin under the camera. Staying at
- * the same proven center avoids screen-space cluster alignments that a
- * world-space influence sphere alone cannot bound. The ground-plane pan
- * remains free as soon as lighting or perspective is disabled.
+ * A dense scene's conservative first frame keeps the proven scene origin
+ * under the camera. This helper never runs during navigation; exact
+ * preparation accepts or rejects every later ground-plane center.
  */
 function clampDenseSceneCenterV1(
   center: OrbitCenterV1,
@@ -116,12 +107,25 @@ export interface SceneViewModeV1 {
 }
 
 /**
- * Dense active lighting keeps the far zoom inside its proven clustered-light
- * envelope in either camera. Perspective additionally needs its data-derived
- * near limit, bounded pitch, and pinned center; flat, unlit, and sparse views
- * retain unrestricted ground-plane movement.
+ * Applies only the Studio orbit's numerical bounds. Camera-dependent lighting
+ * safety is checked by presenting the exact candidate view and rolling it back
+ * on failure; total light count is not a reason to mutate a safe camera.
  */
 export function clampSceneViewV1(
+  state: OrbitStateV1,
+  center: OrbitCenterV1,
+): SceneViewV1 {
+  return { orbit: clampOrbit(state), center };
+}
+
+/**
+ * Conservative first camera for opening a dense lit scene.
+ *
+ * A scene needs one known-presentable frame before transactional navigation
+ * exists. This envelope is retained only for that initial frame; subsequent
+ * views are free until the exact clustered-light preparation rejects one.
+ */
+export function safeDenseSceneOpeningViewV1(
   state: OrbitStateV1,
   scene: SceneV1,
   center: OrbitCenterV1,
@@ -132,27 +136,28 @@ export function clampSceneViewV1(
   if (!denseLightingActive) {
     return { orbit: clamped, center };
   }
+  const safeCenter = clampDenseSceneCenterV1(center);
+  const safeOrbit = {
+    ...clamped,
+    pitchDegrees: Math.min(
+      DENSE_SCENE_PITCH_LIMIT_DEGREES,
+      Math.max(-DENSE_SCENE_PITCH_LIMIT_DEGREES, clamped.pitchDegrees),
+    ),
+    viewHeight: Math.min(DENSE_SCENE_MAX_VIEW_HEIGHT, clamped.viewHeight),
+  };
   if (!mode.depth) {
     return {
-      center,
-      orbit: {
-        ...clamped,
-        viewHeight: Math.min(DENSE_SCENE_MAX_VIEW_HEIGHT, clamped.viewHeight),
-      },
+      center: safeCenter,
+      orbit: safeOrbit,
     };
   }
-  const safeCenter = clampDenseSceneCenterV1(center);
   return {
     center: safeCenter,
     orbit: {
-      ...clamped,
-      pitchDegrees: Math.min(
-        DENSE_SCENE_PITCH_LIMIT_DEGREES,
-        Math.max(-DENSE_SCENE_PITCH_LIMIT_DEGREES, clamped.pitchDegrees),
-      ),
+      ...safeOrbit,
       viewHeight: Math.min(
         DENSE_SCENE_MAX_VIEW_HEIGHT,
-        Math.max(clamped.viewHeight, minimumDenseSceneViewHeightV1(scene, safeCenter)),
+        Math.max(safeOrbit.viewHeight, minimumDenseSceneViewHeightV1(scene, safeCenter)),
       ),
     },
   };

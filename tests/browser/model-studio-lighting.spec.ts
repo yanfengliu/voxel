@@ -774,17 +774,18 @@ test('1,000 moving lights stay cluster-bounded without compiling per-light shade
   });
   await settleFrames(page);
   const cameraEnvelope = await measureDenseLightCameraEnvelope(page);
-  expect(cameraEnvelope.perspectiveRequest).toMatchObject({ pitchDegrees: 75 });
-  expect(cameraEnvelope.perspectiveRequest.viewHeight).toBeGreaterThanOrEqual(40);
-  expect(cameraEnvelope.perspectiveRequest.viewHeight).toBeLessThan(50);
-  expect(cameraEnvelope.unlitRequest).toMatchObject({ pitchDegrees: 85, viewHeight: 0.25 });
-  expect(cameraEnvelope.relit).toMatchObject({ pitchDegrees: 75 });
-  expect(cameraEnvelope.relit.viewHeight).toBe(cameraEnvelope.perspectiveRequest.viewHeight);
-  expect(cameraEnvelope.flatRequest).toMatchObject({ pitchDegrees: -85, viewHeight: 0.25 });
-  expect(cameraEnvelope.restoredPerspective).toMatchObject({ pitchDegrees: -75 });
-  expect(cameraEnvelope.restoredPerspective.viewHeight)
-    .toBe(cameraEnvelope.perspectiveRequest.viewHeight);
-  expect(cameraEnvelope.farPerspectiveRequest.viewHeight).toBe(80);
+  expect(cameraEnvelope.perspectiveRequest)
+    .toMatchObject({ pitchDegrees: 85, viewHeight: 100 });
+  expect(cameraEnvelope.perspectiveCenter).toEqual([20, 0, -20]);
+  expect(cameraEnvelope.unlitRequest).toEqual(cameraEnvelope.perspectiveRequest);
+  expect(cameraEnvelope.relit).toEqual(cameraEnvelope.perspectiveRequest);
+  expect(cameraEnvelope.relitCenter).toEqual(cameraEnvelope.perspectiveCenter);
+  expect(cameraEnvelope.flatRequest)
+    .toMatchObject({ pitchDegrees: -85, viewHeight: 100 });
+  expect(cameraEnvelope.restoredPerspective).toEqual(cameraEnvelope.flatRequest);
+  expect(cameraEnvelope.restoredCenter).toEqual([-20, 0, 20]);
+  expect(cameraEnvelope.rejection).toContain('prior orbit and pan remain active');
+  expect(cameraEnvelope.afterRejected).toEqual(cameraEnvelope.beforeRejected);
   for (const lighting of [
     cameraEnvelope.perspectiveLighting,
     cameraEnvelope.relitLighting,
@@ -813,7 +814,7 @@ test('1,000 moving lights stay cluster-bounded without compiling per-light shade
   await page.evaluate(() => {
     const harness = window.voxelStudio!;
     harness.openScene('studio:scene:lighting-1000');
-    harness.setViewAngles({ yawDegrees: 45, pitchDegrees: 30, viewHeight: 256 });
+    harness.setViewAngles({ yawDegrees: 45, pitchDegrees: 30, viewHeight: 100 });
     harness.drawAt(0);
     harness.play();
   });

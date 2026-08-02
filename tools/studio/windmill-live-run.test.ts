@@ -10,6 +10,11 @@ import { buildRecipe } from './recipe.js';
 import { catalogPartsV1, catalogRecipesV1 } from './studio-library.js';
 import { WINDMILL_LIVE_PROFILE_V1 } from './windmill-live-profile.js';
 import { WINDMILL_PLACEMENT_IDS_V1, WINDMILL_SCENE_LAYOUT_V1 } from './windmill-layout.js';
+import { WINDMILL_OPERATIONAL_NUMERICAL_PROFILE_V1 } from './windmill-numerical-profile.js';
+import {
+  WINDMILL_SACK_SPOT_SECONDS_V1,
+  windmillMilledImpactsV1,
+} from './windmill-production-kinematics.js';
 import { createWindmillScene } from './windmill-scene.js';
 
 /**
@@ -26,13 +31,7 @@ import { createWindmillScene } from './windmill-scene.js';
 const TICKS_PER_SECOND = LIVE_TICKS_PER_SECOND_V1;
 const RUN_SECONDS = 24;
 
-async function runMill(): Promise<{
-  readonly impacts: readonly number[];
-  readonly rotorTurns: number;
-  readonly hammerLowDegrees: number;
-  readonly hammerHighDegrees: number;
-  readonly spins: readonly number[];
-}> {
+async function createMillSession(): Promise<LivePhysicsSessionV1> {
   const catalog = createStudioCatalog();
   const recipes = catalogRecipesV1(catalog);
   const parts = catalogPartsV1(catalog);
@@ -54,11 +53,24 @@ async function runMill(): Promise<{
         ] as const,
       };
     });
-  const session = await LivePhysicsSessionV1.create(WINDMILL_LIVE_PROFILE_V1, sources);
+  return LivePhysicsSessionV1.create(WINDMILL_LIVE_PROFILE_V1, sources);
+}
+
+async function runMill(): Promise<{
+  readonly impactTicks: readonly number[];
+  readonly impacts: readonly number[];
+  readonly rotorTurns: number;
+  readonly hammerLowDegrees: number;
+  readonly hammerHighDegrees: number;
+  readonly spins: readonly number[];
+}> {
+  const session = await createMillSession();
   try {
+    const impactTicks: number[] = [];
     const impacts: number[] = [];
     const spins: number[] = [];
-    let struck = false;
+    let struck = true;
+    let armed = false;
     let turned = 0;
     let previousAngle = 0;
     let low = Number.POSITIVE_INFINITY;
@@ -87,10 +99,15 @@ async function runMill(): Promise<{
       const touching = session
         .contactSamples(WINDMILL_PLACEMENT_IDS_V1.hammer, 8)
         .some((sample) => sample.other === WINDMILL_PLACEMENT_IDS_V1.anvil);
-      if (touching && !struck) impacts.push(tick / TICKS_PER_SECOND);
+      if (!touching) armed = true;
+      if (armed && touching && !struck) {
+        impactTicks.push(tick);
+        impacts.push(tick / TICKS_PER_SECOND);
+      }
       struck = touching;
     }
     return {
+      impactTicks,
       impacts,
       rotorTurns: turned / 360,
       hammerLowDegrees: low,
@@ -103,6 +120,33 @@ async function runMill(): Promise<{
 }
 
 describe('the windmill, solved live', () => {
+  it('runs the same complete numerical profile as the consumer proof', async () => {
+    const session = await createMillSession();
+    try {
+      const actual = session.numericalSnapshot();
+      const expected = WINDMILL_OPERATIONAL_NUMERICAL_PROFILE_V1;
+      if (actual === null) {
+        throw new Error('The live windmill did not apply a numerical profile.');
+      }
+      expect(WINDMILL_LIVE_PROFILE_V1.numericalProfile).toBe(expected);
+      expect(actual.fixedStepSeconds).toBeCloseTo(expected.fixedStepSeconds, 8);
+      expect(actual.contactNaturalFrequency)
+        .toBeCloseTo(expected.contactNaturalFrequency, 8);
+      expect(actual.lengthUnit).toBeCloseTo(expected.lengthUnit, 8);
+      expect(actual.normalizedAllowedLinearError)
+        .toBeCloseTo(expected.normalizedAllowedLinearError, 8);
+      expect(actual.normalizedPredictionDistance)
+        .toBeCloseTo(expected.normalizedPredictionDistance, 8);
+      expect(actual.numSolverIterations).toBe(expected.numSolverIterations);
+      expect(actual.numInternalPgsIterations)
+        .toBe(expected.numInternalPgsIterations);
+      expect(actual.minIslandSize).toBe(expected.minIslandSize);
+      expect(actual.maxCcdSubsteps).toBe(expected.maxCcdSubsteps);
+    } finally {
+      session.dispose();
+    }
+  });
+
   it('turns, lifts its hammer, and strikes the anvil repeatedly', { timeout: 600_000 }, async () => {
     const run = await runMill();
 
@@ -119,6 +163,17 @@ describe('the windmill, solved live', () => {
     // It keeps striking, which is the mill doing its job rather than seizing
     // after a promising start.
     expect(run.impacts.length).toBeGreaterThan(4);
+    expect(run.impactTicks.slice(0, 6)).toEqual([
+      110, 244, 382, 520, 658, 796,
+    ]);
+    for (let index = 1; index < run.impactTicks.length; index += 1) {
+      expect(
+        (run.impactTicks[index]! - run.impactTicks[index - 1]!)
+        / TICKS_PER_SECOND,
+      ).toBeGreaterThan(WINDMILL_SACK_SPOT_SECONDS_V1);
+    }
+    expect(windmillMilledImpactsV1(run.impacts))
+      .toEqual(run.impacts.slice(0, 5));
     const late = run.impacts.filter((time) => time > RUN_SECONDS / 2);
     expect(late.length, `late strikes among ${JSON.stringify(run.impacts)}`)
       .toBeGreaterThan(1);

@@ -43,12 +43,12 @@ export const WINDMILL_PRODUCTION_KINEMATICS_LABEL_V1 =
 
 /** World units per second for every straight sack slide. */
 const SLIDE_SPEED = 1.5;
-/** A sack reaches the milling spot this long before its recorded impact. */
+/** A sack reaches the milling spot this long before its answered impact. */
 const ARRIVE_LEAD_SECONDS = 0.15;
-/** The spent sack stays at the spot this long after its recorded impact. */
+/** The spent sack stays at the spot this long after its answered impact. */
 const DEPART_LAG_SECONDS = 0.25;
 const ROLL_SECONDS = 0.6;
-/** Flour rises over this window, starting just after each recorded impact. */
+/** Flour rises over this window, starting just after each answered impact. */
 const FLOUR_RISE_START_LAG = 0.15;
 const FLOUR_RISE_SECONDS = 0.4;
 
@@ -152,7 +152,7 @@ function sackSchedule(
     throw new Error(
       `Cannot schedule windmill wheat sack ${String(index + 1)}: it would `
       + `have to leave the queue at ${startMove.toFixed(3)} s to reach the `
-      + `milling spot ${String(ARRIVE_LEAD_SECONDS)} s before its recorded `
+      + `milling spot ${String(ARRIVE_LEAD_SECONDS)} s before its scheduled `
       + `impact at ${impactSeconds.toFixed(3)} s. Increase the slide speed `
       + 'or accept a later arrival.',
     );
@@ -337,10 +337,11 @@ export const WINDMILL_SACK_SPOT_SECONDS_V1 =
  * than to sacks climbs out through the roof. And a sack cannot answer a blow
  * that lands while the sack before it is still being tipped and dragged
  * clear; that one used to be free, because the 960 Hz recording struck five
- * times in twelve seconds. At the shared rate the same mill strikes nine
- * times in the same twelve seconds — about 0.9 s apart against the
- * choreography's own occupancy of roughly 1.12 s — so without this the
- * sacks pass through each other.
+ * times in twelve seconds. The committed 60 Hz fixture strikes nine times
+ * in the same twelve seconds, 0.867 to 1.000 s apart against the
+ * choreography's exact 1.270833 s occupancy, so without this filter the
+ * sacks pass through each other. The current live cadence is slower and
+ * answers each landed blow until the finite magazine empties.
  *
  * Neither rule is a cap on the mill. The hammer keeps striking; the mill
  * simply has nothing under it, which is what an emptied magazine looks like.

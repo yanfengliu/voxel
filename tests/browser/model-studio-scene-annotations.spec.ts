@@ -640,6 +640,16 @@ test('Riverfall pins hide outside their captured view, restore it, and send requ
   const errors = collectPageErrors(page);
   await page.setViewportSize({ width: 1280, height: 800 });
   await loadScene(page, RIVERFALL_SCENE_ID);
+  // Continuous Riverfall motion has its own autonomous browser regression.
+  // This longer annotation workflow needs one real live step, then an exact
+  // paused solver state so host load cannot spend its 60-second budget solving
+  // water that none of the camera, pin, resize, or request assertions observe.
+  await page.waitForFunction(() => window.voxelStudio!.livePhysics().running);
+  const settledLiveTick = await page.evaluate(() => {
+    const studio = window.voxelStudio!;
+    studio.settleLive(1);
+    return studio.livePhysics().stepped;
+  });
   const captureEvidence = await page.evaluate(() => {
     const studio = window.voxelStudio!;
     studio.setSceneAnimation(true);
@@ -941,5 +951,7 @@ test('Riverfall pins hide outside their captured view, restore it, and send requ
   expect(sent.scene).not.toHaveProperty('poseReplay');
   expect(sent.capture).not.toHaveProperty('replay');
   expect(JSON.stringify(sent)).not.toContain('translationsBase64');
+  expect(await page.evaluate(() => window.voxelStudio!.livePhysics().stepped))
+    .toBe(settledLiveTick);
   expect(errors).toEqual([]);
 });

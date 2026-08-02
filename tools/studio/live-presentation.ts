@@ -25,8 +25,10 @@ import { WINDMILL_SCENE_ID } from './windmill-layout.js';
  */
 
 export interface LiveScenePresentationDriverV1 {
-  /** Reads the live world at the scene's own elapsed time. */
-  observe(session: LivePhysicsSessionV1, timeSeconds: number): void;
+  /** Reads each fixed solver tick when contact/controller history matters. */
+  observeStep?(session: LivePhysicsSessionV1, timeSeconds: number): void;
+  /** Reads once per presented frame when work must not multiply on catch-up. */
+  observeFrame?(session: LivePhysicsSessionV1, timeSeconds: number): void;
   /** Poses for the placements this driver owns, merged over solver poses. */
   poses(timeSeconds: number): ReadonlyMap<string, ScenePlacementPoseV1>;
 }
@@ -40,7 +42,7 @@ export interface LiveScenePresentationDriverV1 {
 function createWindmillProductionDriver(): LiveScenePresentationDriverV1 {
   const production = new WindmillLiveProductionV1();
   return {
-    observe: (session, timeSeconds) => {
+    observeStep: (session, timeSeconds) => {
       const touching = session
         .contactSamples(WINDMILL_PLACEMENT_IDS_V1.hammer, 8)
         .some((sample) => sample.other === WINDMILL_PLACEMENT_IDS_V1.anvil);
@@ -62,12 +64,10 @@ function createMachineWorksDriver(): LiveScenePresentationDriverV1 {
   const controller = new MachineWorksLiveControllerV1();
   let advancedSteps = 0;
   return {
-    observe: (session) => {
-      // Advance by the solver steps that have actually happened, not once per
-      // call. `observe` runs once per pose collection, and the stage collects
-      // once a frame while the solver may have taken several steps or none —
-      // so counting calls ran the machine at the wrong rate and dropped the
-      // product outside the world. The step counter is the only honest clock.
+    observeStep: (session) => {
+      // Advance by the solver steps that have actually happened. The counter
+      // also makes a repeated observation idempotent, so collection cannot
+      // command the machine twice at one fixed instant.
       const stepped = session.state().stepped;
       for (; advancedSteps < stepped; advancedSteps += 1) {
         controller.advance(session, LIVE_TIMESTEP_SECONDS_V1 * 1_000);
@@ -78,27 +78,29 @@ function createMachineWorksDriver(): LiveScenePresentationDriverV1 {
 }
 
 /**
- * The river, stepped once per solver tick.
+ * The river, solved at 60 Hz and presented once per displayed frame.
  *
  * Riverfall's live world holds no bodies, so this driver is the whole of its
- * motion: it advances a position-based fluid by one fixed step for every step
- * the session took, and returns a pose for each of the 321 surface tiles the
- * fluid reconstructs.
+ * motion: it advances a position-based fluid through every fixed 60 Hz step
+ * and returns a pose for each of the 321 surface tiles the fluid reconstructs.
  *
- * Advanced by the session's own step count rather than once per call, for the
- * same reason the machine is: a frame carries whole ticks but not always the
- * same number of them, and a river stepped once per frame would run at the
- * frame rate instead of at the lane's.
+ * Unlike a controller or contact watcher, it need not rebuild 321 final tile
+ * poses after every invisible catch-up tick. A slow frame used to trigger six
+ * complete PBF-and-pose passes, creating a permanent catch-up spiral with only
+ * about eight visible commits per second. The batched surface keeps every
+ * fixed solver and phase sample but builds poses only for the final state, so
+ * a given session step still identifies one deterministic water state.
  */
 function createRiverfallSurfaceDriver(): LiveScenePresentationDriverV1 {
   const surface = new RiverfallLiveSurfaceV1();
   let advancedSteps = 0;
   return {
-    observe: (session) => {
+    observeFrame: (session) => {
       const stepped = session.state().stepped;
-      for (; advancedSteps < stepped; advancedSteps += 1) {
-        surface.advance(LIVE_TIMESTEP_SECONDS_V1);
-      }
+      if (stepped <= advancedSteps) return;
+      const elapsedSteps = stepped - advancedSteps;
+      advancedSteps = stepped;
+      surface.advanceFixedFrames(LIVE_TIMESTEP_SECONDS_V1, elapsedSteps);
     },
     poses: () => surface.poses(),
   };

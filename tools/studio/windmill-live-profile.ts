@@ -14,6 +14,9 @@ import {
   WINDMILL_SCENE_ID,
   WINDMILL_SCENE_LAYOUT_V1,
 } from './windmill-layout.js';
+import {
+  WINDMILL_OPERATIONAL_NUMERICAL_PROFILE_V1,
+} from './windmill-numerical-profile.js';
 
 /**
  * The windmill solved live: wind turns the sails, the cam lifts the hammer,
@@ -182,6 +185,7 @@ const JOINTS: readonly LivePhysicsJointPlanV1[] = Object.freeze([
 
 export const WINDMILL_LIVE_PROFILE_V1: LivePhysicsProfileV1 = Object.freeze({
   sceneId: WINDMILL_SCENE_ID,
+  numericalProfile: WINDMILL_OPERATIONAL_NUMERICAL_PROFILE_V1,
   bodies: Object.freeze([
     {
       placementId: WINDMILL_PLACEMENT_IDS_V1.frame,
@@ -203,12 +207,9 @@ export const WINDMILL_LIVE_PROFILE_V1: LivePhysicsProfileV1 = Object.freeze({
       material: bodyMaterial('cam', 'rotorCore'),
       ccd: WINDMILL_COMPACT_BODY_DYNAMICS_V1.rotor.continuous,
       // No bearing-friction tuning here. The universal law's jointFriction
-      // governs this shaft, and the mill runs well on it: measured over 24 s,
-      // governed by the law the rotor settles at 1.373 rad/s and lands 11
-      // blows, against 2.267 rad/s and 9 blows with the consumer
-      // declaration's 0.06 written in. Both work, so there is no effect to
-      // justify a tuning with, and content that does not need to override a
-      // law should not.
+      // and the shared operational numerical profile govern both the live
+      // and consumer-proof worlds. The aligned product-path cadence is pinned
+      // by the live-run regression; the resting contact at t=0 is not a blow.
     },
     {
       placementId: WINDMILL_PLACEMENT_IDS_V1.hammer,

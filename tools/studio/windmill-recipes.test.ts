@@ -4,6 +4,9 @@ import {
   analyzeStudioCatalogDiversityV1,
 } from './catalog-diversity.js';
 import { createStudioCatalog } from './catalog.js';
+import { voxelIndex } from './model.js';
+import { buildRecipe } from './recipe.js';
+import { catalogPartsV1, catalogRecipesV1 } from './studio-library.js';
 import {
   createWindmillCompactCreativeV1,
 } from './windmill-compact-creative.js';
@@ -33,6 +36,9 @@ import {
   WINDMILL_RECIPES,
   WINDMILL_RECIPE_STEP_PURPOSES_V1,
 } from './windmill-recipes.js';
+import {
+  WINDMILL_PRODUCTION_RECIPE_IDS_V1,
+} from './windmill-production-layout.js';
 import {
   WINDMILL_MATERIAL_PURPOSES_V1,
   WINDMILL_MATERIAL_PURPOSE_MAP_V1,
@@ -253,5 +259,72 @@ describe('selected compact windmill recipes', () => {
       ).toBe(contrast.analyzerNearestRecipeId);
       expect(contrast.axes.length, contrast.recipeId).toBeGreaterThanOrEqual(2);
     }
+  });
+
+  it('derives the wheat-sack contrast prose from the built neighboring geometry', () => {
+    const catalog = createStudioCatalog();
+    const recipes = catalogRecipesV1(catalog);
+    const parts = catalogPartsV1(catalog);
+    const wheatSack = buildRecipe(
+      recipes[WINDMILL_PRODUCTION_RECIPE_IDS_V1.wheatSack]!,
+      parts,
+      recipes,
+    ).model;
+    const phaseFlag = buildRecipe(
+      recipes['studio:machine-works:drive-cog']!,
+      parts,
+      recipes,
+    ).model;
+    const wheatContrast = WINDMILL_RECIPE_CONTRASTS_V1.find(({ recipeId }) =>
+      recipeId === WINDMILL_PRODUCTION_RECIPE_IDS_V1.wheatSack)!;
+    const materialCounts = (voxels: readonly number[]): readonly number[] =>
+      [...voxels.reduce((counts, value) => {
+        if (value !== 0) counts.set(value, (counts.get(value) ?? 0) + 1);
+        return counts;
+      }, new Map<number, number>()).values()].sort((a, b) => a - b);
+
+    expect(wheatSack.size).toEqual([3, 5, 3]);
+    expect(wheatSack.voxels.filter((value) => value !== 0)).toHaveLength(37);
+    expect(materialCounts(wheatSack.voxels)).toEqual([1, 36]);
+    const sackBodyMaterial = wheatSack.voxels[voxelIndex(wheatSack, 0, 0, 0)];
+    const sackTieMaterial = wheatSack.voxels[voxelIndex(wheatSack, 1, 4, 1)];
+    expect(sackBodyMaterial).not.toBe(0);
+    expect(sackTieMaterial).not.toBe(0);
+    expect(sackTieMaterial).not.toBe(sackBodyMaterial);
+    for (let z = 0; z < 3; z += 1) {
+      for (let y = 0; y < 5; y += 1) {
+        for (let x = 0; x < 3; x += 1) {
+          const expected = y < 4
+            ? sackBodyMaterial
+            : (x === 1 && z === 1 ? sackTieMaterial : 0);
+          expect(wheatSack.voxels[voxelIndex(wheatSack, x, y, z)])
+            .toBe(expected);
+        }
+      }
+    }
+    expect(phaseFlag.size).toEqual([3, 6, 3]);
+    expect(phaseFlag.voxels.every((value) => value !== 0)).toBe(true);
+    expect(materialCounts(phaseFlag.voxels)).toEqual([27, 27]);
+    const flagLowerMaterial = phaseFlag.voxels[voxelIndex(phaseFlag, 0, 0, 0)];
+    const flagUpperMaterial = phaseFlag.voxels[voxelIndex(phaseFlag, 0, 5, 0)];
+    expect(flagLowerMaterial).not.toBe(flagUpperMaterial);
+    for (let z = 0; z < 3; z += 1) {
+      for (let y = 0; y < 6; y += 1) {
+        for (let x = 0; x < 3; x += 1) {
+          expect(phaseFlag.voxels[voxelIndex(phaseFlag, x, y, z)])
+            .toBe(y < 3 ? flagLowerMaterial : flagUpperMaterial);
+        }
+      }
+    }
+    expect(wheatContrast.axes.map(({ axis }) => axis)).toEqual([
+      'topology-negative-space',
+      'material-role-rhythm',
+    ]);
+    const prose = wheatContrast.axes.map(({ difference }) => difference).join(' ');
+    expect(prose).toMatch(/37 of its 45 cells/);
+    expect(prose).toMatch(/all 54 cells/);
+    expect(prose).toMatch(/36 cells to its body and one to its tie/);
+    expect(prose).toMatch(/equal 27-cell structure and safety halves/);
+    expect(prose).not.toMatch(/tooth|teeth|rim|bore/i);
   });
 });

@@ -25,7 +25,8 @@ export interface EncodedInterleavedScenePoseReplayV2
   readonly playback: 'once';
 }
 
-function decodeFloat32LittleEndian(
+/** Decodes a bounded little-endian Float32 channel used by generated fixtures. */
+export function decodeFloat32LittleEndianV1(
   encoded: string,
   expectedValues: number,
   path: string,
@@ -87,22 +88,22 @@ export function decodeInterleavedScenePoseReplayV1(
   }
   const vectorValues = encoded.frameCount * trackCount * 3;
   const quaternionValues = encoded.frameCount * trackCount * 4;
-  const translations = decodeFloat32LittleEndian(
+  const translations = decodeFloat32LittleEndianV1(
     encoded.translationsBase64,
     vectorValues,
     'translationsBase64',
   );
-  const quaternions = decodeFloat32LittleEndian(
+  const quaternions = decodeFloat32LittleEndianV1(
     encoded.quaternionsBase64,
     quaternionValues,
     'quaternionsBase64',
   );
-  const linearVelocities = decodeFloat32LittleEndian(
+  const linearVelocities = decodeFloat32LittleEndianV1(
     encoded.linearVelocitiesBase64,
     vectorValues,
     'linearVelocitiesBase64',
   );
-  const angularVelocities = decodeFloat32LittleEndian(
+  const angularVelocities = decodeFloat32LittleEndianV1(
     encoded.angularVelocitiesBase64,
     vectorValues,
     'angularVelocitiesBase64',
