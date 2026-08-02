@@ -421,11 +421,12 @@ test('the fired trebuchet knocks the brick wall down', async ({ page }) => {
 });
 
 test('the trebuchet holds cocked, fires downrange, and reset re-cocks it', async ({ page }) => {
-  // Sized against the work this test does rather than against what the machine
-  // used to cost: this station solves 33 bricks and a jointed machine with the
-  // whip's extra solver passes, and it waits out several seconds of simulated
-  // flight in real time. The default budget was set when the machine was
-  // cheaper, and expiring reads as a broken trebuchet rather than a slow one.
+  // Nothing here waits on a wall clock. This test used to poll the live frame
+  // loop for "has the ball got downrange yet", which passed alone and expired
+  // under a full suite — a slow machine reading as a broken trebuchet. The
+  // solver is deterministic for a given tick count, so every moment below is
+  // reached by pausing and stepping it exactly, and the machine costs whatever
+  // it costs.
   test.setTimeout(240_000);
   const errors: string[] = [];
   page.on('pageerror', (error) => errors.push(error.message));
@@ -446,11 +447,10 @@ test('the trebuchet holds cocked, fires downrange, and reset re-cocks it', async
   }));
   expect(opening.joints).toBe(4);
   expect(opening.ball?.translation[2] ?? 0).toBeGreaterThan(4);
-  await page.waitForFunction(
-    () => window.voxelStudio!.playground.state().stepped > 120,
-    undefined,
-    { timeout: 30_000 },
-  );
+  await page.evaluate(() => {
+    window.voxelStudio!.playground.pause();
+    window.voxelStudio!.playground.stepOnce(120);
+  });
   const held = await page.evaluate(() => window.voxelStudio!.playground
     .bodies().find((body) => body.placementId === 'ball'));
   expect(Math.abs((held?.translation[2] ?? 0) - (opening.ball?.translation[2] ?? 9)))
@@ -460,15 +460,9 @@ test('the trebuchet holds cocked, fires downrange, and reset re-cocks it', async
   // and it crosses far downrange in the firing plane.
   expect(await page.evaluate(() =>
     window.voxelStudio!.playground.fireCase('fire'))).toBe(true);
-  await page.waitForFunction(
-    () => {
-      const row = window.voxelStudio!.playground.bodies()
-        .find((body) => body.placementId === 'ball');
-      return row !== undefined && row.translation[2] < -4;
-    },
-    undefined,
-    { timeout: 60_000 },
-  );
+  // Four seconds of flight, stepped rather than waited for. The ball is well
+  // downrange by then and still airborne.
+  await page.evaluate(() => { window.voxelStudio!.playground.stepOnce(240); });
   const flight = await page.evaluate(() => ({
     joints: window.voxelStudio!.livePhysics().joints,
     ball: window.voxelStudio!.playground.bodies()
@@ -483,16 +477,20 @@ test('the trebuchet holds cocked, fires downrange, and reset re-cocks it', async
   // Reset rebuilds the cocked machine: the lashing is back and the ball
   // waits in the pouch again.
   await page.evaluate(() => { window.voxelStudio!.playground.reset(); });
+  // A wait, because rebuilding the world is genuinely asynchronous — but for
+  // the rebuild itself, never for simulated time. The ball being back behind
+  // the machine is the evidence that this is a fresh cocked world; a bound on
+  // the tick counter would only be a proxy for it, and a load-sensitive one.
   await page.waitForFunction(
     () => {
       const state = window.voxelStudio!.playground.state();
-      if (!state.available || state.stepped >= 400) return false;
+      if (!state.available) return false;
       const row = window.voxelStudio!.playground.bodies()
         .find((body) => body.placementId === 'ball');
       return row !== undefined && row.translation[2] > 4;
     },
     undefined,
-    { timeout: 30_000 },
+    { timeout: 60_000 },
   );
   expect(await page.evaluate(() => window.voxelStudio!.livePhysics().joints))
     .toBe(4);

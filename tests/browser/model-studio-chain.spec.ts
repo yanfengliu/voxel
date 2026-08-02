@@ -90,29 +90,45 @@ test('the chain falls under gravity, solved live', async ({ page }) => {
     content: '.viewchip, .toggles, .stagehint { visibility: hidden !important; }',
   });
 
-  // Advance the solver itself, then let the stage present that exact state.
-  const settleTo = async (steps: number, yawDegrees: number, pitchDegrees: number) => {
-    await page.evaluate(async ([count, yaw, pitch]) => {
+  // Advance the solver itself to an exact tick, then let the stage present
+  // that state. The target is absolute and the arithmetic happens in the page:
+  // the frame loop is already running when the first settle arrives, so a
+  // relative count starts from wherever it happened to reach. The chain moves
+  // fastest in its first moments, so that variance is worth whole pixels and
+  // made this screenshot flake.
+  const settleTo = async (target: number, yawDegrees: number, pitchDegrees: number) => {
+    await page.evaluate(async ([tick, yaw, pitch]) => {
       const harness = window.voxelStudio!;
       harness.setViewAngles({ yawDegrees: yaw, pitchDegrees: pitch });
-      harness.settleLive(count);
+      const stepped = harness.livePhysics().stepped;
+      if (stepped > tick) {
+        throw new Error(
+          `Cannot settle the chain back to tick ${String(tick)}: its live world `
+          + `has already stepped ${String(stepped)} times, and a solver runs `
+          + 'forward only.',
+        );
+      }
+      harness.settleLive(tick - stepped);
       await new Promise<void>((settle) => {
         requestAnimationFrame(() => requestAnimationFrame(() => { settle(); }));
       });
-    }, [steps, yawDegrees, pitchDegrees] as const);
+    }, [target, yawDegrees, pitchDegrees] as const);
   };
 
-  // As spawned: held on a flattened curve, each ring already leaning along it.
-  await settleTo(0, 0, 10);
+  // Barely moved: held on a flattened curve, each ring already leaning along
+  // it. Half a second rather than tick zero, because the world builds
+  // asynchronously and starts stepping on its own before any test can reach
+  // it; a tick it is certain to have passed is reachable, and tick zero is not.
+  await settleTo(30, 0, 10);
   await expect(page.locator('.scene-canvas'))
     .toHaveScreenshot('model-studio-chain-held.png', {
       animations: 'disabled',
       maxDiffPixelRatio: 0.002,
     });
 
-  // 1,200 fixed ticks is twenty seconds at the shared rate — far longer than
-  // the chain needs to reach its curve, and deliberately so: the picture below
-  // is of a settled chain, not of one still arriving.
+  // Tick 1,200 is twenty seconds at the shared rate — far longer than the
+  // chain needs to reach its curve, and deliberately so: the picture below is
+  // of a settled chain, not of one still arriving.
   await settleTo(1_200, 0, 10);
   await expect(page.locator('.scene-canvas'))
     .toHaveScreenshot('model-studio-chain-hanging.png', {
@@ -120,8 +136,9 @@ test('the chain falls under gravity, solved live', async ({ page }) => {
       maxDiffPixelRatio: 0.002,
     });
 
-  // Overhead, where the hanging plane is a line rather than depth.
-  await settleTo(0, 0, 62);
+  // Overhead, where the hanging plane is a line rather than depth. The same
+  // instant as the frame above: only the camera moves.
+  await settleTo(1_200, 0, 62);
   await expect(page.locator('.scene-canvas'))
     .toHaveScreenshot('model-studio-chain-hanging-overhead.png', {
       animations: 'disabled',
