@@ -17,7 +17,7 @@ Strengthens the canon line `Concurrent sessions share one worktree and one index
 
 ## Review
 
-Strengthens the canon line `Review: self-review trivial changes`, narrowing what counts as high-risk persistence so browser-local notes do not escalate by accident.
+Strengthens the canon line `High-risk work — persistence/migrations, security/auth, concurrency, money, supply chain, edits that reach sibling repos — escalates to the multi-cli-review skill`, narrowing what counts as high-risk persistence so browser-local notes do not escalate by accident.
 
 - Review: self-review trivial changes; adversarially review non-trivial ones — independent agents that try to refute the change against the live code. High-risk work (persistence involving durable or shared data, cross-version migrations, or credible data-loss or compatibility risk; security/auth; concurrency; money; supply chain; edits that reach sibling repos) escalates to the multi-cli-review skill. Browser-local notes and disposable preferences use ordinary risk-based review unless they introduce one of those risks. Reviewers must read the live code; verify reviewer claims against the codebase before acting on them; substantive findings outweigh approval votes.
 
@@ -27,7 +27,7 @@ Strengthens the canon line `Docs are part of the change`, because voxel keeps `R
 
 - Docs are part of the change: update every affected surface in the same commit; affected surfaces do not automatically include `README.md`; write prose one line per paragraph (no hard wrapping); never reference or mandate files that don't exist.
 
-- Quantified, exhaustive, and causal claims require durable executable evidence at the same scope as the prose (owner rule, 2026-08-02). A reviewer assertion, a plausible mechanism, a partial sweep, or a count of candidates exceeding one threshold is not evidence for “every,” “only,” “failed on this gate alone,” or an exact causal attribution. Preserve the counterexample, fixed fixture, generated proof, or command-backed measurement that can refute the claim when it regresses, and narrow the prose to what that artifact actually establishes.
+- Quantified, exhaustive, and causal claims require durable executable proof at the same scope as the prose (owner rule, 2026-08-02). A reviewer assertion, a plausible mechanism, a partial sweep, or a count of candidates exceeding one threshold is not proof for “every,” “only,” “failed on this gate alone,” or an exact causal attribution. Preserve a deterministic counterexample, reviewed fixed fixture, reviewed deterministic proof input or proof generator, or the generator or command plus concise reproducible provenance that can refute the claim when it regresses, and narrow the prose to what that input or procedure actually establishes. Every retained input follows the fleet promotion and Git-blob-size rules; raw task-run measurements remain ignored local evidence and are deleted when no active task, process, reviewer, or documented local workflow needs them.
 
 ## Steering
 
