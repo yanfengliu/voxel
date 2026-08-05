@@ -8,9 +8,10 @@ const LOG_PREFIX = '[supply-chain]';
 const PROJECT_ROOT = resolvePath(dirname(fileURLToPath(import.meta.url)), '..');
 
 /**
- * Findings at or above this severity block. AGENTS.md allows an exception only
- * when the user documents one with an expiry, which is deliberately not a flag
- * this script offers: an exception should require editing this list in a commit
+ * Findings at or above this severity block. `docs/policies/support.md` allows an
+ * exception only when the user accepts a documented one carrying owner,
+ * rationale, mitigation, and expiration, which is deliberately not a flag this
+ * script offers: an exception should require editing this list in a commit
  * someone reviews, not a CI argument nobody reads.
  */
 const BLOCKING_SEVERITIES = ['high', 'critical'];

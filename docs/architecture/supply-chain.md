@@ -1,6 +1,6 @@
 # Supply chain and artifact record
 
-Status: updated 2026-07-26 against `voxel@1.0.0`.
+Status: updated 2026-08-04 against `voxel@1.0.0`.
 
 This is the E-05 record: what this package redistributes, under what terms, and
 which checks hold each claim. Every figure here is produced by
@@ -36,7 +36,7 @@ asset is not automatically appropriate for a reusable engine package; if one is
 ever imported, its source, version, license, and redistribution terms belong in
 this document before it ships.
 
-Development dependencies are MIT or Apache-2.0 and are not redistributed. The gate checks each declared license against an allowed permissive set and fails on an unknown or non-permissive one. `@dimforge/rapier3d-compat` is used only by the headless Machine Works and Windmill consumer fixtures to generate committed numeric pose replays through their shared fixture-private exact-sidecar adapter; `src/`, `dist`, and the package tarball do not import or include its JS/WASM implementation. Its source is the npm registry package locked at `0.19.3`, its declared license is Apache-2.0, the lockfile records registry integrity, and generation tests bind each trace to SHA-256 input and final hashes.
+The 14 direct development dependencies tabulated below are MIT or Apache-2.0, and none of them is redistributed. The gate sweeps wider than that table: it checks every installed package — 145 of them on the machine this was last run against — and fails on an unknown or non-permissive license. Three build-time-only packages sit outside the permissive set and carry recorded exceptions naming their exact declared license, so a version that relicenses fails the gate rather than inheriting an old exception: `lightningcss` and whichever one of its eleven platform binaries the machine installed, both MPL-2.0, and `minimatch`, BlueOak-1.0.0. None of the three is redistributed either, because the packed tarball carries only `dist`. `@dimforge/rapier3d-compat` is used only by the headless Machine Works and Windmill consumer fixtures to generate committed numeric pose replays through their shared fixture-private exact-sidecar adapter; `src/`, `dist`, and the package tarball do not import or include its JS/WASM implementation. Its source is the npm registry package locked at `0.19.3`, its declared license is Apache-2.0, the lockfile records registry integrity, and generation tests bind each trace to SHA-256 input and final hashes.
 
 | Dependency | Version | License |
 | --- | --- | --- |
@@ -57,7 +57,7 @@ Development dependencies are MIT or Apache-2.0 and are not redistributed. The ga
 
 ## Audits
 
-Both audits npm supports run on every `verify`, and both reported zero findings on 2026-07-26 at `voxel@1.0.0`:
+Both audits npm supports run on every `verify`, and both reported zero findings on 2026-08-04 at `voxel@1.0.0`:
 
 - **runtime-only** (`npm audit --omit=dev`) — the surface a consumer actually
   installs. With no runtime dependencies this is necessarily empty, which is the
@@ -65,12 +65,9 @@ Both audits npm supports run on every `verify`, and both reported zero findings 
 - **full** (`npm audit`) — the development surface, which can still compromise a
   release through the toolchain that builds it.
 
-High and critical findings block. `npm audit` exits non-zero whenever it finds
-anything at all, so its exit code cannot distinguish "vulnerable" from "failed to
-run"; the gate parses the JSON report and treats a missing report as the real
-failure. AGENTS.md permits a documented, expiring exception for a blocking
-finding; that is deliberately not a command-line flag, so granting one means
-editing the severity list in a reviewed commit.
+That run followed one that did not. Earlier the same day the full audit blocked on GHSA-rgw5-rvv9-x895 against a `brace-expansion` the tree had carried unchanged since 2026-07-31: a newly published advisory, not a dependency change. This is the closing note below happening rather than an exception to it, and it is why the date above is a fact about one run and not a property of the tree.
+
+High and critical findings block. `npm audit` exits non-zero whenever it finds anything at all, so its exit code cannot distinguish "vulnerable" from "failed to run"; the gate parses the JSON report and treats a missing report as the real failure. [The support policy](../policies/support.md) permits a documented exception for a blocking finding, carrying owner, rationale, mitigation, and expiration; that is deliberately not a command-line flag, so granting one means editing the severity list in a reviewed commit.
 
 ## Artifact inspection
 
@@ -100,9 +97,9 @@ npm run test:supply-chain
 Expected output at `voxel@1.0.0`:
 
 ```
-[supply-chain] 0 runtime dependencies; @types/three and three optional peers;
-14 dev dependencies all permissively licensed; runtime-only audit 0 findings,
-full audit 0 findings, none high or critical
+[supply-chain] 0 runtime dependencies; @types/three and three optional peers; 14 direct dev dependencies and all 145 installed packages permissively licensed (3 recorded build-time exceptions); runtime-only audit 0 findings, full audit 0 findings, none high or critical
 ```
+
+Which `lightningcss` platform binary is installed is machine-dependent — npm installs exactly one of eleven, chosen by the machine — so a Linux run covers a different binary than the Windows run above. The figures here were measured on Windows; the gate recomputes them on every run rather than comparing against anything recorded here.
 
 Re-run before any release candidate. The audit result is a claim about a moment in time: advisories are published against versions that have not changed, so a green audit at `1.0.0` says nothing about the same tree next month, which is why this runs in `verify` rather than being recorded here once.
