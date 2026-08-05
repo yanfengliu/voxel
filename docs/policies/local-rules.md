@@ -23,7 +23,7 @@ Strengthens the canon line `High-risk work — persistence/migrations, security/
 
 ## Docs
 
-Strengthens the canon line `Docs are part of the change`, because voxel keeps `README.md` capability-oriented and an automatic README edit works against that.
+Voxel-only as of the 2026-08-05 canon cut, which kept `Write prose one line per paragraph` as house style and dropped the rest of `Docs are part of the change` as derivable. Voxel keeps the whole rule, because `README.md` is capability-oriented here and an automatic README edit works against that.
 
 - Docs are part of the change: update every affected surface in the same commit; affected surfaces do not automatically include `README.md`; write prose one line per paragraph (no hard wrapping); never reference or mandate files that don't exist.
 
@@ -39,7 +39,7 @@ Strengthens the canon line `Steering compounds`: an exploratory question is not 
 
 ## Physics and fluid simulation
 
-Strengthens the canon line `Research before you reason` for the one area of this repository where the temptation to derive is strongest.
+Voxel-only as of the 2026-08-05 canon cut. The line it strengthened — `Research before you reason`, renamed `Citations are part of the deliverable` in `8923ae5` — was cut as a bar a capable model already holds. Voxel keeps it for the one area of this repository where the temptation to derive is strongest, and where it demonstrably failed once (below).
 
 - Read the readily available resources before building or explaining simulation behaviour yourself (owner rule, 2026-08-01). Physics and fluid dynamics are old, well-documented fields, and the solver in this repository is an open-source engine whose source is one fetch away. Search the literature and the engine's own docs and code for the method, the parameter, and the failure mode before writing a solver, a stability argument, or a tuning sweep. Do not reinvent a scheme that has a name, and do not explain a measured result with a mechanism you have not checked. Evidence: the same session measured that Rapier's per-body soft CCD was inert for a rotating cam and correctly guessed why, then in the same comment asserted that a 45 Hz contact natural frequency "cannot be represented" by a 1/60 s step — Rapier's own `erp = dt*w / (dt*w + 2*zeta)` saturates smoothly and has no such limit, and thirty seconds in `src/dynamics/integration_parameters.rs` would have said so. Cite the file or paper in the comment, so the next reader can check the claim instead of re-deriving it.
 
