@@ -2,7 +2,7 @@
 
 Findings that cost real time to learn and cannot be re-derived by reading the code.
 
-Every entry carries an anchor — a measurement, a commit, a test id, or a behavior delta. AGENTS.md is explicit that an unanchored lesson is folklore, so an entry without one does not belong here. Entries are appended; a superseded entry is corrected in place with its correction dated, never silently deleted.
+Every entry carries an anchor — a measurement, a commit, a test id, or a behavior delta. [The local rules](../policies/local-rules.md) are explicit that an unanchored lesson is folklore, so an entry without one does not belong here. Entries are appended; a superseded entry is corrected in place with its correction dated, never silently deleted.
 
 ## The Machine Works landing dent resists every cheap fix, and the cheap fixes are not equally wrong
 
@@ -38,11 +38,13 @@ The exemption list is part of the design, not a hole in it. Each entry states wh
 
 ## Lessons nobody reads are not lessons
 
-**Anchor:** 2026-07-31. `AGENTS.md:68` now lists `docs/learning/lessons.md` in the session-start reading; before that, `AGENTS.md:28` mentioned the file only to govern its format.
+**Anchor:** 2026-07-31. AGENTS.md's Conventions section began naming this file in its session-start reading — "read `README.md`, `docs/design/spec.md`, and `docs/learning/lessons.md` before substantial work"; before that, the file was named only in the rule governing its own format.
 
 This file existed, had a rule about how to write entries, and was never once instructed to be read. `CLAUDE.md` is `@AGENTS.md`, so AGENTS.md reaches every agent automatically and this file reached none of them.
 
-The consequence for where things go: a rule that must be followed belongs in AGENTS.md, which is loaded; the evidence behind it belongs here, which is now read at session start. Writing a hard-won lesson only here was, until today, the same as deleting it.
+The consequence for where things go: a rule that must be followed belongs where it is loaded and cannot be overwritten; the evidence behind it belongs here, which is now read at session start. Writing a hard-won lesson only here was, until 2026-07-31, the same as deleting it.
+
+**Corrected 2026-08-05, by the failure this entry did not anticipate.** The anchor above originally cited `AGENTS.md:68` and `AGENTS.md:28` by line number, and both had moved — line 68 now holds an unrelated known trap. Worse, the conclusion said a rule that must be followed "belongs in AGENTS.md, which is loaded", and the rule requiring these very anchors was put there and then deleted: it sat inside the generated `FLEET-CANON` block, and the 2026-08-04 fleet sync (`99f09f2`) trimmed the clause out of `FLEET.md`, taking it from this repo without anyone deciding to drop it. It now lives in `docs/policies/local-rules.md`, which no sync can rewrite. **Two corollaries, both learned the hard way: a line number into AGENTS.md is stale within days, so quote the rule instead; and "loaded" is only half the requirement — a repo-local rule written inside the canon block is loaded right up until the moment it silently is not.**
 
 ## A timeout sized against the suite's current load is a time bomb
 
