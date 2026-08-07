@@ -8,12 +8,12 @@ These rules bind alongside the constitution and may only make it stricter. Where
 
 ## Concurrency and commits
 
-Strengthens the canon line `Concurrent sessions share one worktree and one index`. Voxel refuses the shared checkout outright: a browser gate boots whatever is on disk, so two sessions in one checkout cannot honestly attribute a whole-app result.
+Strengthens the canon line `You are not the only writer in the worktree`. Voxel refuses the shared checkout outright: a browser gate boots whatever is on disk, so two sessions in one checkout cannot honestly attribute a whole-app result.
 
 - Concurrent sessions each take their own `git worktree`, and only one session works in the primary checkout (owner rule, 2026-07-31). Sharing one checkout means one index, one `node_modules`, and a browser gate that boots whatever is on disk, so no session can run a whole-app gate and honestly attribute the result. Two sessions sharing voxel cost one session three separate control runs — roughly thirty minutes of browser suites — purely to work out which failures were whose, and it still misread a passing tail as a clean control once. A worktree costs one `npm ci` and removes the whole class.
 - Commit and push in small units, and prefer the smallest coherent one that passes its gates. Most cross-session collisions come from two large uncommitted diffs overlapping for hours; short-lived diffs barely overlap at all.
 - When sessions must share a checkout anyway, split file ownership explicitly and say so up front. Collisions land on the files neither session owns — the 2026-07-31 pair collided only on `tools/studio/live-physics.ts`, which both a physics change and a windmill change had reason to touch.
-- Commit by explicit pathspec (`git commit -- <files>`), never `git commit -a`, `git add -A`, or `git add .` — a sweeping commit captures whatever another session has staged. This still holds inside a worktree, because a worktree removes the collision, not the habit. (Evidence: voxel c024b33, 2026-07-17.)
+- The canon's explicit-pathspec rule still holds inside a worktree, because a worktree removes the collision, not the habit.
 
 ## Review
 
@@ -26,8 +26,6 @@ Strengthens the canon line `High-risk work — persistence/migrations, security/
 Voxel-only as of the 2026-08-05 canon cut, which kept `Write prose one line per paragraph` as house style and dropped the rest of `Docs are part of the change` as derivable. Voxel keeps the whole rule, because `README.md` is capability-oriented here and an automatic README edit works against that.
 
 - Docs are part of the change: update every affected surface in the same commit; affected surfaces do not automatically include `README.md`; write prose one line per paragraph (no hard wrapping); never reference or mandate files that don't exist.
-
-- Every entry in [the lessons file](../learning/lessons.md) carries an evidence anchor — a source, a fix commit, a test id, or a behavior delta — and an unanchored lesson is folklore. This was fleet canon until the 2026-08-04 sync (`99f09f2`) trimmed the clause out of `FLEET.md`; voxel keeps it because the lessons file is written against it and says so in its own header. It is restated here rather than in `AGENTS.md` for the reason at the top of this page: a rule inside the generated constitution block does not survive the next propagation, and this is the rule that proved it.
 
 - Quantified, exhaustive, and causal claims require durable executable proof at the same scope as the prose (owner rule, 2026-08-02). A reviewer assertion, a plausible mechanism, a partial sweep, or a count of candidates exceeding one threshold is not proof for “every,” “only,” “failed on this gate alone,” or an exact causal attribution. Preserve a deterministic counterexample, reviewed fixed fixture, reviewed deterministic proof input or proof generator, or the generator or command plus concise reproducible provenance that can refute the claim when it regresses, and narrow the prose to what that input or procedure actually establishes. Every retained input follows the fleet promotion and Git-blob-size rules; raw task-run measurements remain ignored local evidence and are deleted when no active task, process, reviewer, or documented local workflow needs them.
 
