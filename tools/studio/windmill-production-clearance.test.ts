@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
+import { timeoutForMeasuredWorkMs } from '../../tests/testing/test-timeout.js';
+
 import {
   WINDMILL_COMPACT_REPLAY_RECORD_PROFILE,
   WINDMILL_POSE_REPLAY,
@@ -487,7 +489,7 @@ describe('windmill production clearances against the committed replay', () => {
   // sweep runs near vitest's 5-second default when the whole suite loads
   // every core; the explicit budget keeps a loaded machine from reporting a
   // scheduling stall as a clearance failure.
-  it('keeps every authored track clear of statics, the rotor, and each other', { timeout: 30_000 }, () => {
+  it('keeps every authored track clear of statics, the rotor, and each other', { timeout: timeoutForMeasuredWorkMs(1_855) }, () => {
     const trackPoses = WINDMILL_PRODUCTION_TRACK_IDS_V1.map(
       (placementId) => ({ placementId, poses: framePoses(placementId) }),
     );

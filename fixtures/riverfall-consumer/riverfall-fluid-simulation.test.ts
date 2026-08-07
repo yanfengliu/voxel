@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
+import { timeoutForMeasuredWorkMs } from '../../tests/testing/test-timeout.js';
+
 import {
   RIVERFALL_FLUID_DOMAIN_V1,
   riverfallFluidDomainLengthV1,
@@ -56,8 +58,13 @@ function expectFinite(values: Float32Array): void {
  * `docs/learning/lessons.md` records for the lighting and mesher-benchmark
  * cases. Four times the measured work leaves the slow machine room to be
  * slow without teaching anyone to rerun until green.
+ *
+ * Derived from the shared rule since 2026-08-07 rather than written by hand:
+ * this case is the precedent the rule was generalised from, so if the two ever
+ * disagree one of them is wrong. 44.4 s of work yields 177,600 ms, which is the
+ * 180,000 ms this held before, less the rounding.
  */
-const RIVERFALL_HEAVY_CASE_TIMEOUT_MS = 180_000;
+const RIVERFALL_HEAVY_CASE_TIMEOUT_MS = timeoutForMeasuredWorkMs(44_400);
 
 describe('Riverfall deterministic 2D PBF', () => {
   it('matches its stable spatial hash against a brute-force neighbor oracle', () => {
@@ -153,7 +160,7 @@ describe('Riverfall deterministic 2D PBF', () => {
     expect(second.linearVelocities).toEqual(first.linearVelocities);
     expect(second.diagnostics).toEqual(first.diagnostics);
     expect(second.finalState).toEqual(first.finalState);
-  }, 30_000);
+  }, timeoutForMeasuredWorkMs(3_387));
 
   it('keeps every fixed-mass particle finite and inside the closed sidecar', () => {
     const trace = simulateRiverfallFluidV1({
@@ -207,7 +214,7 @@ describe('Riverfall deterministic 2D PBF', () => {
     expect(Array.from(trace.angularVelocities).every(
       (velocity) => velocity === 0,
     )).toBe(true);
-  }, 30_000);
+  }, timeoutForMeasuredWorkMs(9_629));
 
   it('rejects an absolute trace regression with actual and required metrics', () => {
     const trace = simulateRiverfallFluidV1({

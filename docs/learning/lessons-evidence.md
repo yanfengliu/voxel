@@ -56,6 +56,20 @@ Any margin picked against what else happens to be running is consumed by the nex
 
 **It happened again on 2026-08-01, to a third case, and this is how it should be handled.** `riverfall-fluid-simulation.test.ts`'s causal-evidence attestation expired at its 60 s budget inside a full `npm run verify`, on a diff that had changed nothing but comments since the same code passed the same gate twenty minutes earlier. Measured alone it takes 44.4 s, and its sibling ablation sweep 29.9 s — both were carrying 60 s, a 26% margin. The point is what *not* to do: rerunning until green would have worked, and would have left the bomb armed. Both now derive from one `RIVERFALL_HEAVY_CASE_TIMEOUT_MS` at four times the measured work, with the measurement written beside it. **A timeout that fires on a diff which cannot have caused it is not noise to rerun past; it is the defect reporting itself.**
 
+**It happened a fourth time on 2026-08-07, and the 4× rule above is why.** See the next entry: a multiple of the work does not scale down, and the fix is now a gate rather than a paragraph.
+
+## A budget below the shared floor is worse than none, and a multiple of the work is not a floor
+
+**Anchor:** 2026-08-07. 15 tests across 11 files expired at vitest's unstated 5,000 ms default on a markdown-only diff, reproduced exactly (11 files, 15 tests, 1,876 passing) under 24 competing CPU workers on 32 cores. `tests/testing/test-timeout.test.ts` now pins the rule and scans every test file for violations; the same load passes 226 files / 1,898 tests.
+
+Those tests measure 570 ms to 1,694 ms alone and 5,425 ms to 11,708 ms under that load. None had chosen a budget at all — they inherited a default sized against nothing.
+
+**Four times the work would not have saved one of them.** That is the multiple the entry above established from the Riverfall cases, and it does not transfer down the scale: four times 570 ms is 2.3 s, *less* than the 5 s default the test had already blown. The stretch is worse for shorter tests — 570 ms goes 10.8×, 1,694 ms 6.9×, 9,629 ms only 5.5× — because contention costs a roughly fixed amount of scheduling delay on top of whatever it multiplies. So a budget is an allowance **plus** a multiple, never the larger of the two. `timeoutForMeasuredWorkMs` is 45,000 ms + 4 × measured, and the config's global default is that rule applied to zero work.
+
+**An explicit budget below the shared default is strictly worse than writing none**, because it opts its test out of the floor every other test gets. Ten hand-written literals did that here — `15_000` and `30_000` — two of them in `riverfall-fluid-simulation.test.ts`, the file that already carried the entry above. They passed the 24-worker reproduction at 24.7 s and 21.9 s against their 30 s, then blew it at 41.8 s and 52.7 s when the load doubled. **A budget that survives the load you happened to test at is the same bomb with a longer fuse.**
+
+**The inventory is the finding, and the first one was truncated.** The initial sweep for existing timeouts ended in `head -40`, which cut off before reaching `fixtures/`. So the first fix shipped covering the 15 tests that had no budget while missing the ten that had a bad one, and the very next run failed on two of them. That is the exemption entry's lesson arriving from the other side: a search covering part of the tree reads, in every summary, like a search that covered it.
+
 ## Test the obvious suspect before recording it as unexplored
 
 **Anchor:** 2026-07-31. Rapier's `lengthUnit` at 0.25, 0.5, 1 and 2, against the playground's 60 Hz floor-penetration failure. None changed it.

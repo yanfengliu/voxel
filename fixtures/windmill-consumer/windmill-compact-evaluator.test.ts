@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
+import { timeoutForMeasuredWorkMs } from '../../tests/testing/test-timeout.js';
+
 import {
   createWindmillCompactCandidateV1,
   WINDMILL_COMPACT_CAM_NOSE_KEYS_V1,
@@ -77,7 +79,7 @@ describe('compact windmill default evaluator', () => {
     expect(evaluation.evidence
       .maximumAbsoluteRotorAngularSpeedLastSecondRadiansPerSecond)
       .toBeLessThan(0.05);
-  }, 15_000);
+  }, timeoutForMeasuredWorkMs(291));
 
   // A full passing horizon is a claim about the machine this repository
   // promoted, not about the parameter grid's first tuple. The two cases
@@ -102,7 +104,7 @@ describe('compact windmill default evaluator', () => {
       .toBeCloseTo(0.09998339734822455, 12);
     expect(windmillCandidatePassesV1(evaluation.result)).toBe(true);
     expect(evaluation.evidence.failedGateIds).toEqual([]);
-  }, 15_000);
+  }, timeoutForMeasuredWorkMs(296));
 
   it('does not treat the retired 0.05 axis-rate threshold as an output proxy', async () => {
     const evaluation = await evaluateWindmillCompactCandidateV1(
@@ -127,7 +129,7 @@ describe('compact windmill default evaluator', () => {
       'full-sweep-clearance-failed',
       'head-anvil-penetration-failed',
     ]);
-  }, 15_000);
+  }, timeoutForMeasuredWorkMs(304));
 
   it('removes one exact sail geometry, collider mass, and load together', async () => {
     const evaluation = await evaluateWindmillCompactDefaultV1({
@@ -215,5 +217,5 @@ describe('compact windmill default evaluator', () => {
       expect(ablated.evidence.camContactTicks)
         .not.toBe(nominal.evidence.camContactTicks);
     }
-  }, 30_000);
+  }, timeoutForMeasuredWorkMs(818));
 });

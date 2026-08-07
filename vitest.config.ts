@@ -1,7 +1,20 @@
 import { configDefaults, defineConfig } from 'vitest/config';
 
+import { timeoutForMeasuredWorkMs } from './tests/testing/test-timeout.js';
+
 export default defineConfig({
   test: {
+    // Vitest's own default is 5,000 ms, sized against nothing at all. On
+    // 2026-08-07 it expired 15 tests across 11 files on a markdown-only diff:
+    // each does 570-1,694 ms of work alone but 5,425-11,708 ms on a loaded
+    // machine, and all 15 pass once given room. This is the shared rule applied
+    // to zero measured work, so an unmeasured test gets the contention allowance
+    // and nothing more; `tests/testing/test-timeout.ts` carries the measurements.
+    // A test that does real work states its own budget with
+    // `timeoutForMeasuredWorkMs(<measured>)` — and never a bare literal below
+    // this default, which would opt it out of the allowance every other test has.
+    testTimeout: timeoutForMeasuredWorkMs(0),
+    hookTimeout: timeoutForMeasuredWorkMs(0),
     // `tests/browser/**` are Playwright specs, run by their own gate.
     // `**/.claude/**` keeps the runner out of Claude Code worktrees: a
     // concurrent session's checkout lands there, and without this vitest

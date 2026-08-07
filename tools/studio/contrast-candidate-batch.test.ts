@@ -1,5 +1,7 @@
 import { beforeAll, describe, expect, it } from 'vitest';
 
+import { timeoutForMeasuredWorkMs } from '../../tests/testing/test-timeout.js';
+
 import { createStudioCatalog, type StudioCatalogV1 } from './catalog.js';
 import {
   CONTRAST_CANDIDATE_COUNT_V1,
@@ -50,7 +52,7 @@ describe('Studio contrast candidate batch', () => {
       (entry) => Object.isFrozen(entry.recipe.size),
     );
     report = generateStudioContrastCandidateReportV1(catalog);
-  }, 30_000);
+  }, timeoutForMeasuredWorkMs(13));
 
   it('generates exactly 64 structurally salted candidates for every contrast family', () => {
     expect(report.schemaVersion).toBe(STUDIO_CONTRAST_CANDIDATE_REPORT_V1);
@@ -91,7 +93,7 @@ describe('Studio contrast candidate batch', () => {
     const repeated = generateStudioContrastCandidateReportV1(createStudioCatalog());
 
     expect(JSON.stringify(repeated)).toBe(JSON.stringify(report));
-  }, 30_000);
+  }, timeoutForMeasuredWorkMs(1_927));
 
   it('ranks every buildable candidate against the live catalog with raw axis evidence', () => {
     const buildable = report.candidates.filter(
@@ -269,7 +271,7 @@ describe('Studio contrast candidate batch', () => {
         candidate.supportAxes.includes('topology')
         && candidate.supportAxes.includes('construction-grammar'),
     )).toBe(true);
-  }, 30_000);
+  }, timeoutForMeasuredWorkMs(2_006));
 
   it('never mutates or auto-promotes into the catalog or curated recipe set', () => {
     const catalogRecipeIds = new Set(Object.keys(catalog.recipes ?? {}));
