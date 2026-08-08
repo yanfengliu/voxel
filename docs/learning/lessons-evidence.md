@@ -70,6 +70,34 @@ Those tests measure 570 ms to 1,694 ms alone and 5,425 ms to 11,708 ms under tha
 
 **The inventory is the finding, and the first one was truncated.** The initial sweep for existing timeouts ended in `head -40`, which cut off before reaching `fixtures/`. So the first fix shipped covering the 15 tests that had no budget while missing the ten that had a bad one, and the very next run failed on two of them. That is the exemption entry's lesson arriving from the other side: a search covering part of the tree reads, in every summary, like a search that covered it.
 
+## Moving to 60 Hz found two tests that had been passing for the wrong reason
+
+**Anchor:** 2026-07-31, commit `73f9bbc`. Machine Works, moved off its 240 Hz solver onto the shared lane; once both defects were repaired the run test passed at both 32 and 72 simulated seconds.
+
+**The carrier's tip was never implemented, and 240 Hz hid that.** The scene had always said that a position command tips the carrier about its bucket-boundary edge so gravity empties it. No code did that. At 240 Hz the product left the carrier anyway, by an accident of contact timing; at 60 Hz it simply sat there. The rate change did not break the scene — it stopped the scene getting away with a missing mechanism. So anything whose result depends on contact resolution is worth running at a second rate before it is believed, because passing at one rate is compatible with the mechanism under test not existing.
+
+**The run test built its own world.** It constructed bodies from the scene's authored placements, while the studio builds them from the live profile's opening poses, so the belt's slats started on the grid instead of on their path. It had been green for weeks against a world the studio never builds. It now constructs through the studio's own path. A test that assembles the world itself is testing the world it assembled, and no amount of it passing says anything about the product's.
+
+A third defect in the same commit is the same shape from a third angle: the machine driver advanced once per `observe` call rather than by the solver steps that had actually happened, so it ran the machine at the wrong rate and dropped the product outside the world — which the render showed and no test did.
+
+## The mill's flour climbed out through the roof with 953 tests green
+
+**Anchor:** 2026-07-31, commit `eb1260e`. Found by looking at the live Windmill from three angles at 1,200-tick intervals, not by a test; `windmill-live-production.test.ts` now runs twenty blows past the fifth and requires the level to stop.
+
+The flour level rose one fixed step per hammer blow. That was right while the recorded lane carried exactly five blows, and wrong the moment the mill went live: a live mill strikes for as long as the wind blows, so the level climbed without bound. Every number involved stayed sane — a level, a blow count, a step size, each finite and each plausible — and all 953 tests passed. The scene already said what the answer was: five sacks, five rises, bin full. Only blows that mill a sack raise the level now.
+
+**Then the picture lied about what was wrong.** In the same visual check, the front-left view appeared to show a sack sitting on the roof. It was the far sail seen against the roofline: the sails top out at 2.625 and the roof reaches 3.25, and a side elevation showed the whole mechanism enclosed with nothing above the ridge. Looking is what finds the defect a green suite cannot; measuring is what tells you whether the thing you saw is one.
+
+## Two tests written to a reviewer's finding passed with and without their fix
+
+**Anchor:** 2026-07-30, commit `08ca50e`. The review thread is `docs/threads/current/full/2026-07-30/1/REVIEW.md`, whose closing notes record this against its forty findings.
+
+Every fix in that review was checked by neutralizing it and watching its test fail. Two candidate tests did not fail, and were discarded rather than committed. One passed because an unrelated guard rejected the payload before the code under test ever ran; the other because the validator already caught what the estimator was said to have missed, so the finding was not reproducible at all.
+
+Both were written against the reviewer's claim rather than against observed behaviour, which is what made them plausible enough to nearly ship. An adversarial finding is a hypothesis: it names a mechanism that would explain a defect, and it can be right about the code and wrong about the consequence, or right about neither. A test derived from the claim inherits whatever the claim got wrong and then reports green, which reads in the log exactly like a repair.
+
+The failing-first check is what separates a repair from a story, and it costs one run. It is the discipline the physics fixtures already spend on counter-runs, pointed at review output instead.
+
 ## Test the obvious suspect before recording it as unexplored
 
 **Anchor:** 2026-07-31. Rapier's `lengthUnit` at 0.25, 0.5, 1 and 2, against the playground's 60 Hz floor-penetration failure. None changed it.
