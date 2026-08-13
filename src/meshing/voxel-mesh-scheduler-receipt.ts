@@ -16,6 +16,7 @@ import {
   type MeshSchedulerWorkerSlotInternal,
 } from './voxel-mesh-scheduler-state.js';
 import {
+  meshSchedulerProtocolErrorIssueV1Internal,
   meshSchedulerResultJobIdV1Internal,
   meshSchedulerUntrustedOutputBytesV1Internal,
 } from './voxel-mesh-scheduler-validation.js';
@@ -86,6 +87,29 @@ export function receiveMeshSchedulerResultV1Internal(
     return { status: 'stale-result' };
   }
   const job = slot.active;
+  const protocolIssue = meshSchedulerProtocolErrorIssueV1Internal(value);
+  if (protocolIssue !== null) {
+    // Terminal for this job by construction: the worker rejected the request
+    // itself, so no result will follow. Failing the group here is what frees
+    // the slot; treating it as a stale receipt left the worker busy forever.
+    incrementMeshSchedulerMetricInternal(state.metrics, 'invalidResults');
+    settleAsTerminal(state, slot, job);
+    const protocolGroup = state.groups.get(job.normalized.eligibility.groupId);
+    if (protocolGroup === undefined) return { status: 'stale-result', issue: protocolIssue };
+    return {
+      status: 'terminal',
+      outcome: failMeshSchedulerGroupV1Internal(
+        state,
+        protocolGroup,
+        'invalid-result',
+        state.lastLogicalTick,
+      ),
+      // The worker's own account of what it could not accept. Discarding it
+      // was the second half of this defect: the caller was left to rediscover
+      // a cause the worker had already named.
+      issue: protocolIssue,
+    };
+  }
   if (jobId !== job.activeJobId
     || job.activeWorkerId !== workerId || job.expectation === undefined) {
     incrementMeshSchedulerMetricInternal(state.metrics, 'staleResults');

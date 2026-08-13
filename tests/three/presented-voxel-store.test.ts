@@ -165,7 +165,15 @@ describe('PresentedVoxelStoreInternal', () => {
     )).toEqual({ status: 'miss', voxelSteps: 0 });
   });
 
-  it('returns typed unavailability when presented world bounds overflow', () => {
+  // This used to feed `Number.MAX_VALUE` as the voxel scale and assert the
+  // store's typed `voxel-coordinate-overflow`. Ingest now refuses that
+  // descriptor outright — see "rejects a voxel scale that cannot survive the
+  // Float32 position buffer" in tests/core/snapshot-validation.test.ts — so no
+  // store can be built from one, and the state this reached is unreachable
+  // through the public boundary. The store keeps its guard as defence in
+  // depth; what is worth pinning here is that the refusal happens before a
+  // store exists at all.
+  it('cannot be built from a world whose scale overflows the position buffer', () => {
     const snapshot = profiledSnapshot();
     const origin = 16_777_215;
     snapshot.descriptor.chunkProfile = {
@@ -184,17 +192,10 @@ describe('PresentedVoxelStoreInternal', () => {
       size: { x: 1, y: 1, z: 1 },
       voxels: new Uint16Array([1]),
     };
-    const store = PresentedVoxelStoreInternal.fromCanonicalStateInternal(canonical(snapshot))!;
 
-    expect(store.pickRayInternal(
-      { x: 0, y: 0, z: 0 },
-      { x: 1, y: 0, z: 0 },
-      1,
-      1,
-    )).toEqual({
-      status: 'unavailable',
-      reason: 'voxel-coordinate-overflow',
-      voxelSteps: 0,
+    expect(validateAndCopySnapshotV1(snapshot)).toMatchObject({
+      ok: false,
+      issue: { code: 'number.range', path: 'descriptor.coordinates.worldUnitsPerVoxel.x' },
     });
   });
 });

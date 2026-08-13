@@ -592,4 +592,83 @@ describe('validateAndCopySnapshotV1', () => {
       issue: { code: 'chunk.overlap', path: 'chunks[1].origin' },
     });
   });
+  // A declared length is the bound the caller is held to. `Array.from` reaches
+  // for `Symbol.iterator` first, so an array whose iterator disagrees with its
+  // own indices walked straight past `maxResources`: a length-zero array with
+  // an endless iterator hung `acceptSnapshot` on the caller's thread. The copy
+  // must read by index, and must never ask the input how to iterate itself.
+  it('copies bounded lists by index without invoking a caller iterator', () => {
+    const input = validSnapshot();
+    const real = [...input.resources];
+    let iteratorCalls = 0;
+    const hostile: unknown[] = [...real];
+    Object.defineProperty(hostile, Symbol.iterator, {
+      value: function* (): Generator {
+        iteratorCalls += 1;
+        for (let index = 0; index < 10_000; index += 1) {
+          yield {
+            kind: 'palette',
+            key: `palette:${String(index)}`,
+            incarnation: 1,
+            revision: 1,
+            entries: [{ color: { r: 0, g: 0, b: 0, a: 255 } }],
+          };
+        }
+      },
+    });
+    (input as { resources: unknown[] }).resources = hostile;
+
+    const result = validateAndCopySnapshotV1(input);
+
+    expect(iteratorCalls).toBe(0);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.resources.map((entry) => entry.key))
+      .toEqual(real.map((entry) => entry.key));
+  });
+  // Chunk coordinates are bounded in voxels, but the scale that turns them
+  // into world units was not — so a finite descriptor could still produce
+  // Infinity in a Float32 position buffer and a NaN bounding sphere, and the
+  // geometry silently vanished instead of being refused at the boundary.
+  it('rejects a voxel scale that cannot survive the Float32 position buffer', () => {
+    const input = validSnapshot();
+    input.descriptor.coordinates.worldUnitsPerVoxel = { x: 1e308, y: 1, z: 1 };
+
+    expect(validateAndCopySnapshotV1(input)).toMatchObject({
+      ok: false,
+      issue: { code: 'number.range', path: 'descriptor.coordinates.worldUnitsPerVoxel.x' },
+    });
+  });
+
+  it('rejects a geometry pivot that cannot survive the Float32 position buffer', () => {
+    const input = validSnapshot();
+    const geometry = input.resources.find((entry) => entry.kind === 'geometry');
+    (geometry as { pivot?: unknown }).pivot = { x: 1e308, y: 0, z: 0 };
+
+    expect(validateAndCopySnapshotV1(input)).toMatchObject({
+      ok: false,
+      issue: { code: 'number.range' },
+    });
+  });
+
+  // Affine validation ran only when a batch also carried animation, so a
+  // static projective matrix was accepted. The conservative bounding sphere
+  // scales its radius by the linear part's Frobenius norm, which is only a
+  // bound for an affine transform — the instance then falls outside its own
+  // sphere and disappears under frustum culling and the raycaster broad phase.
+  it('rejects a projective instance matrix even without animation', () => {
+    const input = validSnapshot();
+    const target = input.batches[0]!;
+    const matrices = new Float32Array(target.matrices);
+    // Column-major: index 3 is the first column's fourth row — zero for any
+    // affine transform, and a perspective divide when it is not.
+    matrices[3] = 1.9;
+    (target as { matrices: Float32Array }).matrices = matrices;
+    expect(target.animation).toBeUndefined();
+
+    expect(validateAndCopySnapshotV1(input)).toMatchObject({
+      ok: false,
+      issue: { code: 'batch.matrix-affine' },
+    });
+  });
 });

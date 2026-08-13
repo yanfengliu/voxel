@@ -264,4 +264,34 @@ describe('VoxelMeshSchedulerV1 stale-result identity firewall', () => {
     });
     harness.scheduler.dispose(7);
   });
+  // The worker answers an unusable request with `protocol-error`, and that
+  // message carries no job identity — so the scheduler read it as somebody
+  // else's stale output, threw the diagnostic away, and left the slot busy.
+  // It is the only reply that request will ever get, so the slot stayed
+  // occupied for the life of the scheduler and the mesh pipeline stopped.
+  it('settles the slot when a worker answers with a protocol error', () => {
+    const harness = createSchedulerHarness({ ...SCHEDULER_TEST_CONFIG, workerCount: 1 });
+    harness.scheduler.enqueue(schedulerGroup('protocol', 1, [{ coordinateX: 0 }]), 0);
+    const dispatch = harness.scheduler.pump(1, harness.allocator).dispatches[0]!;
+    expect(harness.scheduler.getMetrics().busyWorkers).toBe(1);
+
+    const received = harness.scheduler.receive(dispatch.workerId, {
+      schemaVersion: 'voxel.mesh-worker/1',
+      kind: 'protocol-error',
+      issue: {
+        code: 'worker.unsupported-mesher',
+        path: 'request.input.mesherId',
+        message: 'The request does not name an installed mesher version.',
+      },
+    }, 2, current);
+
+    expect(received).toMatchObject({
+      status: 'terminal',
+      outcome: { code: 'invalid-result' },
+    });
+    // The slot is the thing that wedged: without it free, `pump` skips this
+    // worker forever and no later group can ever be dispatched.
+    expect(harness.scheduler.getMetrics().busyWorkers).toBe(0);
+    harness.scheduler.dispose(3);
+  });
 });

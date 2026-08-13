@@ -2,6 +2,7 @@ import { BoxGeometry, Group, Matrix4, MeshBasicMaterial } from 'three';
 import { describe, expect, it, vi } from 'vitest';
 
 import {
+  INSTANCE_TRANSFORM_ANIMATION_SCHEMA_V1,
   RENDER_DELTA_SCHEMA_V1,
   type InstanceBatchV1,
   type RenderDeltaV1,
@@ -71,6 +72,41 @@ function canonical(count: number): CanonicalRenderStateV1 {
   return CanonicalRenderStateV1.fromSnapshot(owned.value);
 }
 
+function animatedCanonical(
+  count: number,
+  animatedSlots: readonly number[],
+): CanonicalRenderStateV1 {
+  const snapshot = validSnapshot(1);
+  const value = batch(count);
+  const periodsMs = new Float32Array(count);
+  for (const slot of animatedSlots) periodsMs[slot] = 1_000;
+  snapshot.batches = [{
+    ...value,
+    instanceKeys: [...value.instanceKeys],
+    animation: {
+      schemaVersion: INSTANCE_TRANSFORM_ANIMATION_SCHEMA_V1,
+      periodsMs,
+      phasesRadians: new Float32Array(count),
+      translationAmplitudes: new Float32Array(count * 3).fill(0.5),
+      rotationAmplitudesRadians: new Float32Array(count * 3),
+      scaleAmplitudes: new Float32Array(count * 3),
+    },
+  }];
+  snapshot.descriptor.limits.maxInstancesPerBatch = Math.max(2_048, count + 1);
+  snapshot.descriptor.limits.maxTotalBytes = 64_000_000;
+  snapshot.descriptor.transactionLimits = {
+    maxOperations: 64,
+    maxInstanceChanges: 4_096,
+    maxInputTypedArrayBytes: 64_000_000,
+    maxValidationElements: 32_000_000,
+    maxTombstones: 1_024,
+    maxPresentationWaiters: 32,
+  };
+  const owned = validateAndCopySnapshotV1(snapshot);
+  if (!owned.ok) throw new Error(`${owned.issue.code}: ${owned.issue.message}`);
+  return CanonicalRenderStateV1.fromSnapshot(owned.value);
+}
+
 function delta(
   baseRevision: number,
   revision: number,
@@ -103,6 +139,40 @@ function patch(
       instanceKeys: [`instance:${String(slot).padStart(6, '0')}`],
       matrices: matrices(1, translation),
       colors: colors(1, translation),
+    },
+  }]));
+  if (result.status !== 'prepared') throw new Error(`Unexpected ${result.status}: ${JSON.stringify(result)}`);
+  return result.prepared;
+}
+
+function animatedPatch(
+  base: CanonicalRenderStateV1,
+  baseRevision: number,
+  revision: number,
+  slot: number,
+  translation: number,
+): PreparedRenderDeltaInternal {
+  const result = prepareRenderDeltaInternal(base, delta(baseRevision, revision, [{
+    op: 'patch-batch-instances',
+    key: 'batch:triangle',
+    incarnation: 1,
+    revision,
+    removeInstanceKeys: [],
+    upserts: {
+      instanceKeys: [`instance:${String(slot).padStart(6, '0')}`],
+      matrices: matrices(1, translation),
+      colors: colors(1, translation),
+      // Tuples for the upserted instance only. This slot stays static: the
+      // point of the test is that a still instance's move survives a frame in
+      // which some other instance animates.
+      animation: {
+        schemaVersion: INSTANCE_TRANSFORM_ANIMATION_SCHEMA_V1,
+        periodsMs: new Float32Array(1),
+        phasesRadians: new Float32Array(1),
+        translationAmplitudes: new Float32Array(3),
+        rotationAmplitudesRadians: new Float32Array(3),
+        scaleAmplitudes: new Float32Array(3),
+      },
     },
   }]));
   if (result.status !== 'prepared') throw new Error(`Unexpected ${result.status}.`);
@@ -316,5 +386,41 @@ describe('paged instance presenter integration', () => {
     capacityFixture.presenter.dispose();
     capacityFixture.geometry.dispose();
     capacityFixture.material.dispose();
+  });
+  // Three uploads exactly the ranges queued on the attribute at draw time and
+  // then clears them. `animate` used to clear the whole queue before adding
+  // its own spans, so a reconcile and an animation in the same frame — which
+  // is every frame on an animated batch — silently dropped the presentation's
+  // ranges. The moved instance stayed at its old transform on the GPU while
+  // the CPU matrix, the bounds, and the metrics all said it had moved.
+  it('keeps presentation ranges queued when an animated batch also animates', () => {
+    // Slot 0 alone animates; slot 257 is static and is the one the delta moves.
+    const base = animatedCanonical(600, [0]);
+    const prepared = animatedPatch(base, 1, 2, 257, 9_000);
+    const first = canonicalStateToThreePresentationInternal(base).batches[0]!;
+    const next = preparedDeltaToThreePresentationInternal(prepared).batches[0]!;
+
+    const fixture = presenterFixture();
+    // Frame one: the batch arrives and animates. This is what consumes the
+    // entry's pending full upload, so frame two is the ordinary steady state
+    // in which every later sparse update lands.
+    fixture.presenter.reconcile([first], fixture.resolvers);
+    const mesh = fixture.presenter.get(first.key)!;
+    fixture.presenter.animate(0);
+    expect(fixture.presenter.animatedInstanceCount).toBe(1);
+
+    // Frame two: a delta moves a static instance, then the same frame animates.
+    fixture.presenter.reconcile([next], fixture.resolvers);
+    expect(mesh.instanceMatrix.updateRanges).toEqual([{ start: 257 * 16, count: 16 }]);
+    fixture.presenter.animate(16);
+
+    const covers257 = mesh.instanceMatrix.updateRanges.some(
+      (range) => range.start <= 257 * 16 && range.start + range.count >= 258 * 16,
+    );
+    expect(covers257).toBe(true);
+
+    fixture.presenter.dispose();
+    fixture.geometry.dispose();
+    fixture.material.dispose();
   });
 });

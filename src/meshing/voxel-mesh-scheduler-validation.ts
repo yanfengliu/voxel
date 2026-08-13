@@ -4,7 +4,11 @@ import {
   MAX_MESHER_ID_LENGTH_V1,
   type MesherSourceTokenV1,
 } from './mesher-contract.js';
-import { MAX_MESH_WORKER_ID_LENGTH_V1 } from './mesh-worker-contract.js';
+import {
+  MAX_MESH_WORKER_ID_LENGTH_V1,
+  MESH_WORKER_SCHEMA_V1,
+  type MeshWorkerValidationIssueV1,
+} from './mesh-worker-contract.js';
 import {
   DEFAULT_MESH_SCHEDULER_UNPROVEN_FAILURE_LIMIT_V1,
   MAX_MESH_SCHEDULER_RUNTIME_ID_LENGTH_V1,
@@ -322,6 +326,31 @@ export function meshSchedulerResultJobIdV1Internal(value: unknown): string | nul
   if (typeof result.identity !== 'object' || result.identity === null) return null;
   const identity = result.identity as Record<string, unknown>;
   return typeof identity.jobId === 'string' ? identity.jobId : null;
+}
+
+/**
+ * The worker's `protocol-error` reply, or null when the message is not one.
+ *
+ * This message deliberately carries no job identity: it answers a command the
+ * worker could not trust enough to echo. That made it indistinguishable from
+ * another job's stale output, so the scheduler discarded it and left the slot
+ * busy — and since it is the only reply that request will ever receive, the
+ * slot never came back. A worker handles one request at a time, so the slot's
+ * own active job is the only job this can be about.
+ */
+export function meshSchedulerProtocolErrorIssueV1Internal(
+  value: unknown,
+): MeshWorkerValidationIssueV1 | null {
+  if (typeof value !== 'object' || value === null) return null;
+  const message = value as Record<string, unknown>;
+  if (message.schemaVersion !== MESH_WORKER_SCHEMA_V1) return null;
+  if (message.kind !== 'protocol-error') return null;
+  if (typeof message.issue !== 'object' || message.issue === null) return null;
+  const issue = message.issue as Record<string, unknown>;
+  if (typeof issue.code !== 'string') return null;
+  if (typeof issue.path !== 'string') return null;
+  if (typeof issue.message !== 'string') return null;
+  return issue as unknown as MeshWorkerValidationIssueV1;
 }
 
 export function meshSchedulerUntrustedOutputBytesV1Internal(value: unknown): number {

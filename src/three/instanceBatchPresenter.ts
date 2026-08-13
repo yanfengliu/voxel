@@ -183,12 +183,21 @@ function writeBatchSlots(
 }
 
 function markAnimatedMatrixRanges(entry: BatchEntry): void {
-  entry.mesh.instanceMatrix.clearUpdateRanges();
   if (entry.fullUploadPending) {
+    // An empty range list is how Three is asked for a whole-buffer upload, so
+    // this branch — and only this branch — clears.
+    entry.mesh.instanceMatrix.clearUpdateRanges();
     entry.fullUploadPending = false;
     entry.mesh.instanceMatrix.needsUpdate = true;
     return;
   }
+  // Everything still queued belongs to a reconcile that ran earlier in this
+  // same frame, for slots this animation does not touch. Three uploads exactly
+  // the ranges present at draw time, so clearing here left a moved instance
+  // sitting at its old transform on the GPU forever, while the CPU matrix, the
+  // conservative bounds, and the write metrics all reported the move.
+  // Accumulation is not a risk: `writeBatchSlots` clears on entry, and Three
+  // clears after each upload, merging any overlap in between.
   const ranges: { start: number; end: number }[] = [];
   let rangeStart = entry.animatedIndices[0]!;
   let previous = rangeStart;

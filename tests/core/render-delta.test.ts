@@ -848,4 +848,30 @@ describe('RenderWorld.acceptDelta', () => {
     });
     expect(putKeyTouched).toBe(false);
   });
+  // The sibling of the snapshot validator's guard: the delta path bounded
+  // `length` and then handed the array to `Array.from`, which asks the caller
+  // how to iterate. An operations array declaring one entry could deliver
+  // thousands, or never stop.
+  it('copies the operation list by index without invoking a caller iterator', () => {
+    const world = new RenderWorld();
+    expect(world.acceptSnapshot(validSnapshot(1)).status).toBe('accepted');
+    let iteratorCalls = 0;
+    const realOperations = [{
+      op: 'remove-chunk' as const,
+      key: 'chunk:missing',
+    }];
+    const operations: unknown[] = [...realOperations];
+    Object.defineProperty(operations, Symbol.iterator, {
+      value: function* (): Generator {
+        iteratorCalls += 1;
+        for (let index = 0; index < 10_000; index += 1) {
+          yield { op: 'remove-chunk', key: `chunk:${String(index)}` };
+        }
+      },
+    });
+
+    world.acceptDelta({ ...delta(1, 2), operations });
+
+    expect(iteratorCalls).toBe(0);
+  });
 });

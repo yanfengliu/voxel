@@ -86,7 +86,23 @@ function list(
 ): unknown[] {
   if (!Array.isArray(value)) fail('type.array', path, 'Expected an array.');
   if (value.length > maximum) fail(limitCode, path, limitMessage);
-  return Array.from(value);
+  return copyByIndexInternal(value);
+}
+
+/**
+ * Copies exactly the elements the checked length promises.
+ *
+ * `Array.from` consults `Symbol.iterator` before the array-like path, so a
+ * caller's iterator decides how many elements arrive — and the bound checked
+ * one line earlier is a bound on `length`, not on that iterator. A length-zero
+ * array with an endless iterator therefore walked straight past every limit
+ * and hung the caller's own thread inside `acceptSnapshot`. Indexed reads are
+ * bounded by the number this function already agreed to.
+ */
+function copyByIndexInternal(value: readonly unknown[]): unknown[] {
+  const copy = new Array<unknown>(value.length);
+  for (let index = 0; index < value.length; index += 1) copy[index] = value[index];
+  return copy;
 }
 
 function literal<T extends string>(
@@ -131,6 +147,31 @@ function unit(value: unknown, path: string): number {
   const parsed = finite(value, path);
   if (parsed < 0 || parsed > 1) fail('number.unit', path, 'Expected a number from zero to one.');
   return parsed;
+}
+
+/**
+ * The largest world offset a voxel coordinate may be scaled or shifted by.
+ *
+ * Positions are written into `Float32Array`s, so a value that is merely finite
+ * as a JavaScript number is not enough: chunk coordinates are already bounded
+ * to the exact Float32 integer range, but multiplying one by a huge scale, or
+ * subtracting a huge pivot, produced `Infinity` vertices and a `NaN` bounding
+ * sphere from a descriptor that passed every other check. Requiring the
+ * product to stay inside Float32 keeps the rejection at the boundary, where
+ * the offending value can still be named.
+ */
+const MAX_FLOAT32_WORLD_OFFSET_V1 = 3.4028234663852886e38
+  / MAX_EXACT_FLOAT32_VOXEL_COORDINATE_V1;
+
+function requireFloat32WorldScaleInternal(value: number, path: string): void {
+  if (Math.abs(value) <= MAX_FLOAT32_WORLD_OFFSET_V1) return;
+  fail(
+    'number.range',
+    path,
+    `Expected a magnitude of at most ${String(MAX_FLOAT32_WORLD_OFFSET_V1)} so that a `
+    + `voxel coordinate scaled by it stays finite in a Float32 position buffer; `
+    + `received ${String(value)}.`,
+  );
 }
 
 function vec3(value: unknown, path: string): Vec3V1 {
@@ -224,6 +265,10 @@ function parseDescriptor(value: unknown): WorldDescriptorV1 {
   const units = vec3(coordinates.worldUnitsPerVoxel, 'descriptor.coordinates.worldUnitsPerVoxel');
   for (const axis of ['x', 'y', 'z'] as const) {
     if (units[axis] <= 0) fail('number.positive', `descriptor.coordinates.worldUnitsPerVoxel.${axis}`, 'Expected a positive value.');
+    requireFloat32WorldScaleInternal(
+      units[axis],
+      `descriptor.coordinates.worldUnitsPerVoxel.${axis}`,
+    );
   }
   const metersPerWorldUnit = finite(coordinates.metersPerWorldUnit, 'descriptor.coordinates.metersPerWorldUnit');
   if (metersPerWorldUnit <= 0) fail('number.positive', 'descriptor.coordinates.metersPerWorldUnit', 'Expected a positive value.');
@@ -447,7 +492,15 @@ function parseGeometry(
     indices: parsedIndices,
     groups,
     bounds,
-    pivot: vec3(input.pivot, `${path}.pivot`),
+    // Subtracted from every vertex on presentation, so it shares the position
+    // buffer's Float32 range with the world scale above.
+    pivot: (() => {
+      const value = vec3(input.pivot, `${path}.pivot`);
+      for (const axis of ['x', 'y', 'z'] as const) {
+        requireFloat32WorldScaleInternal(value[axis], `${path}.pivot.${axis}`);
+      }
+      return value;
+    })(),
   };
 }
 
@@ -560,6 +613,9 @@ function parseBatch(
     }
     validateAnimatedBaseMatrices(matrices, animation, path);
   }
+  // After the animated check, so an animated batch keeps reporting the more
+  // specific `batch.animation.matrix-affine` it always has.
+  validateAffineMatrices(matrices, path);
   const presentation = input.presentation === undefined
     ? undefined
     : (() => {
@@ -583,6 +639,42 @@ function parseBatch(
 
 const ANIMATED_AFFINE_ZERO_INDICES = [3, 7, 11] as const;
 const ANIMATED_AFFINE_LINEAR_INDICES = [0, 1, 2, 4, 5, 6, 8, 9, 10] as const;
+
+/**
+ * Every instance matrix must be affine, animated or not.
+ *
+ * The conservative batch bounding sphere transforms a centre and scales its
+ * radius by the linear part's Frobenius norm — a bound only for an affine
+ * transform. A projective matrix passes validation as "finite", then places
+ * its instance outside the sphere that is supposed to contain it, so frustum
+ * culling and the raycaster broad phase both drop geometry that is on screen.
+ * This ran only for animated batches, which is why a static one could carry
+ * a perspective row.
+ */
+function validateAffineMatrices(matrices: Float32Array, batchPath: string): void {
+  for (let offset = 0; offset < matrices.length; offset += 16) {
+    for (const elementIndex of ANIMATED_AFFINE_ZERO_INDICES) {
+      const element = matrices[offset + elementIndex]!;
+      if (element !== 0) {
+        fail(
+          'batch.matrix-affine',
+          `${batchPath}.matrices[${String(offset + elementIndex)}]`,
+          `Instance matrices must be affine: the projective row must be zero, `
+          + `received ${String(element)}.`,
+        );
+      }
+    }
+    const homogeneous = matrices[offset + 15]!;
+    if (homogeneous !== 1) {
+      fail(
+        'batch.matrix-affine',
+        `${batchPath}.matrices[${String(offset + 15)}]`,
+        `Instance matrices must be affine: the homogeneous element must be 1, `
+        + `received ${String(homogeneous)}.`,
+      );
+    }
+  }
+}
 
 function validateAnimatedBaseMatrices(
   matrices: Float32Array,

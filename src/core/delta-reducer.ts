@@ -161,7 +161,12 @@ function list(
 ): unknown[] {
   if (!Array.isArray(value)) return fail('type.array', path, 'Expected an array.');
   if (value.length > maximum) fail(limitCode, path, limitMessage);
-  return Array.from(value);
+  // Indexed, never `Array.from`: that consults the caller's `Symbol.iterator`,
+  // which is free to disagree with the `length` this function just bounded.
+  // See the same guard in `snapshot-validation.ts`.
+  const copy = new Array<unknown>(value.length);
+  for (let index = 0; index < value.length; index += 1) copy[index] = value[index];
+  return copy;
 }
 
 function key(value: unknown, path: string): string {

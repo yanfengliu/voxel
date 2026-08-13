@@ -473,6 +473,7 @@ export class ThreeRenderRuntime {
     this.center = { ...center };
     this.zoom = zoom;
     this.daylightRig?.setCenter(this.center);
+    this.retirePresentedManifest();
   }
   resize(width: number, height: number, pixelRatio = this.pixelRatio): void {
     this.assertAccepting();
@@ -1004,6 +1005,23 @@ export class ThreeRenderRuntime {
     this.width = width;
     this.height = height;
     this.pixelRatio = pixelRatio;
+    this.retirePresentedManifest();
+  }
+
+  /**
+   * Drops the committed frame's identity when the surface it was drawn on
+   * moves out from under it.
+   *
+   * Capture re-renders the live scene and stamps the readback with the
+   * committed manifest. The fence caught a changed frame, a changed device,
+   * and a stopped runtime — but a resize or a camera move changes neither, so
+   * a capture taken after one published pixels at the new size and pose under
+   * a manifest still describing the old viewport and camera matrices. Clearing
+   * the manifest turns that into the existing typed unavailable outcome, which
+   * is what a caller can actually act on.
+   */
+  private retirePresentedManifest(): void {
+    this.lastPresentedManifest = null;
   }
   private transitionToFailed(phase: ThreeRuntimeFailurePhaseV1, reason: unknown): void {
     if (

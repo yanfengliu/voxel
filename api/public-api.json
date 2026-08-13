@@ -265,7 +265,7 @@
       ]
     },
     "dist/meshing/voxel-mesh-scheduler-contract.d.ts": {
-      "sha256": "9491ff15f3b5e7a17702d2a604a3e60235c4117090f8d610039f2fe221148756",
+      "sha256": "44583392c891fcfa4cd609040384d9dc8cf9036ede17480cacfbe0d744951e25",
       "reachableFrom": [
         "./meshing",
         "./three"
@@ -399,7 +399,7 @@
       ]
     },
     "dist/three/ThreeRenderRuntime.d.ts": {
-      "sha256": "d900b63f729285cd14d1c488b65b25779c363112655e5191150791202e441643",
+      "sha256": "a2d94b96b6282f3d78686f14fc9ab8800fc620e2dd17254ec8d4a885ae78b7c8",
       "reachableFrom": [
         "./three"
       ]

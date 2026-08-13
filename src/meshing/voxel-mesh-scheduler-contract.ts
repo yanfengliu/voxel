@@ -1,5 +1,6 @@
 import type {
   MeshWorkerRequestV1,
+  MeshWorkerValidationIssueV1,
   PreparedMeshWorkerRequestV1,
 } from './mesh-worker-contract.js';
 import type {
@@ -236,9 +237,16 @@ export type MeshSchedulerReceiveResultV1 =
   | {
       readonly status: 'terminal';
       readonly outcome: MeshSchedulerGroupOutcomeV1;
+      /**
+       * Present only when the worker rejected the request itself and said why.
+       * A `protocol-error` reply names an unusable request — an uninstalled
+       * mesher id, a payload its bundled validator refused — and that account
+       * is not recoverable from the outcome code alone.
+       */
+      readonly issue?: MeshWorkerValidationIssueV1;
     }
   | { readonly status: 'duplicate-result' }
-  | { readonly status: 'stale-result' }
+  | { readonly status: 'stale-result'; readonly issue?: MeshWorkerValidationIssueV1 }
   | { readonly status: 'disposed' };
 
 export interface MeshSchedulerPreparedOutputV1 {

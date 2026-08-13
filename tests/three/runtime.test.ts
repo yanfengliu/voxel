@@ -1017,4 +1017,47 @@ describe('ThreeRenderRuntime', () => {
       rendererTextures: 0,
     });
   });
+  // The capture fence compared manifest identity, device generation, and
+  // lifecycle — none of which a resize touches. So a host that committed a
+  // frame at one size, resized, and then captured received pixels drawn at
+  // the new size under a manifest still describing the old viewport and the
+  // old camera. Anything un-projecting image coordinates through that
+  // manifest was reading a frame that never existed.
+  it('refuses to capture a committed frame after the viewport moves under it', () => {
+    const renderer = new FakeRenderer();
+    const runtime = new ThreeRenderRuntime({
+      renderer,
+      rendererOwnership: 'borrowed',
+      width: 320,
+      height: 200,
+    });
+    expect(runtime.acceptSnapshot(validSnapshot(1, 'epoch:capture-resize')).status)
+      .toBe('accepted');
+    runtime.frame({ nowMs: 0, deltaMs: 0, frameIndex: 0 });
+    expect(runtime.captureWithManifest()).toMatchObject({ status: 'captured' });
+
+    runtime.resize(160, 100);
+
+    expect(runtime.captureWithManifest()).not.toMatchObject({ status: 'captured' });
+    runtime.dispose();
+  });
+
+  it('refuses to capture a committed frame after the camera moves under it', () => {
+    const renderer = new FakeRenderer();
+    const runtime = new ThreeRenderRuntime({
+      renderer,
+      rendererOwnership: 'borrowed',
+      width: 320,
+      height: 200,
+    });
+    expect(runtime.acceptSnapshot(validSnapshot(1, 'epoch:capture-view')).status)
+      .toBe('accepted');
+    runtime.frame({ nowMs: 0, deltaMs: 0, frameIndex: 0 });
+    expect(runtime.captureWithManifest()).toMatchObject({ status: 'captured' });
+
+    runtime.setView({ x: 40, y: 0, z: 40 });
+
+    expect(runtime.captureWithManifest()).not.toMatchObject({ status: 'captured' });
+    runtime.dispose();
+  });
 });

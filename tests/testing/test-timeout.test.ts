@@ -84,7 +84,13 @@ describe('no test opts itself out of the contention allowance', () => {
     // line so it only matches a closing `it(...)` brace. Without the anchor this
     // also catches ordinary calls like `definition.build({}, 1234)`, where 1234
     // is a seed and not a budget at all.
-    /^[ \t]*\}\s*,\s*([0-9]+_[0-9_]+|[0-9]{4,})\s*\)/gm,
+    // The trailing comma is optional because the multi-line form
+    //   },
+    //   600_000,
+    //   );
+    // is already in the tree, and without it that budget was invisible to the
+    // scan whose whole promise is that no test opts itself out.
+    /^[ \t]*\}\s*,\s*([0-9]+_[0-9_]+|[0-9]{4,})\s*,?\s*\)/gm,
   ];
 
   it('has no bare numeric budget below the allowance', () => {
@@ -94,7 +100,10 @@ describe('no test opts itself out of the contention allowance', () => {
       // `tests/browser/**` are Playwright specs on their own gate and their own
       // timeout semantics; `tmp/**` and `.claude/**` are excluded from this suite
       // entirely (see vitest.config.ts), so they cannot arm anything.
-      .filter((f) => !f.startsWith('tests/browser/') && !f.startsWith('tmp/') && !f.includes('.claude/'))
+      // `node_modules/` is not ours to police: a dependency shipping a
+      // `.test.ts` would fail this gate on foreign code.
+      .filter((f) => !f.startsWith('tests/browser/') && !f.startsWith('tmp/')
+        && !f.includes('.claude/') && !f.split('/').includes('node_modules'))
       // This file quotes literals while explaining them.
       .filter((f) => f !== 'tests/testing/test-timeout.test.ts');
 
