@@ -8,13 +8,12 @@ These rules bind alongside the constitution and may only make it stricter. Where
 
 ## Concurrency and commits
 
-Strengthens the canon line `You are not the only writer in the worktree`. Voxel refuses the shared checkout outright: a browser gate boots whatever is on disk, so two sessions in one checkout cannot honestly attribute a whole-app result.
+Voxel refuses the shared checkout outright: a browser gate boots whatever is on disk, so two sessions in one checkout cannot honestly attribute a whole-app result.
 
 - Concurrent sessions each take their own `git worktree`, and only one session works in the primary checkout (owner rule, 2026-07-31). Sharing one checkout means one index, one `node_modules`, and a browser gate that boots whatever is on disk, so no session can run a whole-app gate and honestly attribute the result. Two sessions sharing voxel cost one session three separate control runs — roughly thirty minutes of browser suites — purely to work out which failures were whose, and it still misread a passing tail as a clean control once. A worktree costs one `npm ci` and removes the whole class.
 - Commit and push in small units, and prefer the smallest coherent one that passes its gates. Most cross-session collisions come from two large uncommitted diffs overlapping for hours; short-lived diffs barely overlap at all.
 - When sessions must share a checkout anyway, split file ownership explicitly and say so up front. Collisions land on the files neither session owns — the 2026-07-31 pair collided only on `tools/studio/live-physics.ts`, which both a physics change and a windmill change had reason to touch.
 - A whole-app gate that fails in a shared checkout has told you nothing about your diff. `npm run test:browser` serves whatever is on disk, so a concurrent session's half-written studio code fails specs your change never touched — the 2026-07-30 full review saw four, including a `.scene-canvas` that never became visible. Never read those as your own result, and never blame the other session without proof: add a throwaway `git worktree` at HEAD, apply only your own staged diff, `npm ci` there, and run the gate in that tree, which is what took that review green through the specs that had failed. The same reasoning covers any gate that exercises the whole app rather than your files.
-- The canon's explicit-pathspec rule still holds inside a worktree, because a worktree removes the collision, not the habit.
 
 ## Review
 
