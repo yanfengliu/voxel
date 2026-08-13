@@ -58,18 +58,6 @@ Any margin picked against what else happens to be running is consumed by the nex
 
 **It happened a fourth time on 2026-08-07, and the 4× rule above is why.** See the next entry: a multiple of the work does not scale down, and the fix is now a gate rather than a paragraph.
 
-## A budget below the shared floor is worse than none, and a multiple of the work is not a floor
-
-**Anchor:** 2026-08-07. 15 tests across 11 files expired at vitest's unstated 5,000 ms default on a markdown-only diff, reproduced exactly (11 files, 15 tests, 1,876 passing) under 24 competing CPU workers on 32 cores. `tests/testing/test-timeout.test.ts` now pins the rule and scans every test file for violations; the same load passes 226 files / 1,898 tests.
-
-Those tests measure 570 ms to 1,694 ms alone and 5,425 ms to 11,708 ms under that load. None had chosen a budget at all — they inherited a default sized against nothing.
-
-**Four times the work would not have saved one of them.** That is the multiple the entry above established from the Riverfall cases, and it does not transfer down the scale: four times 570 ms is 2.3 s, *less* than the 5 s default the test had already blown. The stretch is worse for shorter tests — 570 ms goes 10.8×, 1,694 ms 6.9×, 9,629 ms only 5.5× — because contention costs a roughly fixed amount of scheduling delay on top of whatever it multiplies. So a budget is an allowance **plus** a multiple, never the larger of the two. `timeoutForMeasuredWorkMs` is 45,000 ms + 4 × measured, and the config's global default is that rule applied to zero work.
-
-**An explicit budget below the shared default is strictly worse than writing none**, because it opts its test out of the floor every other test gets. Ten hand-written literals did that here — `15_000` and `30_000` — two of them in `riverfall-fluid-simulation.test.ts`, the file that already carried the entry above. They passed the 24-worker reproduction at 24.7 s and 21.9 s against their 30 s, then blew it at 41.8 s and 52.7 s when the load doubled. **A budget that survives the load you happened to test at is the same bomb with a longer fuse.**
-
-**The inventory is the finding, and the first one was truncated.** The initial sweep for existing timeouts ended in `head -40`, which cut off before reaching `fixtures/`. So the first fix shipped covering the 15 tests that had no budget while missing the ten that had a bad one, and the very next run failed on two of them. That is the exemption entry's lesson arriving from the other side: a search covering part of the tree reads, in every summary, like a search that covered it.
-
 ## Moving to 60 Hz found two tests that had been passing for the wrong reason
 
 **Anchor:** 2026-07-31, commit `73f9bbc`. Machine Works, moved off its 240 Hz solver onto the shared lane; once both defects were repaired the run test passed at both 32 and 72 simulated seconds.
@@ -319,3 +307,55 @@ The live lane had already exposed the finite-magazine rule by capping flour at o
 A second rule was latent in the same place and neither lane had it. A sack occupies the milling spot for exactly `WINDMILL_SACK_SPOT_SECONDS_V1`, currently 1.270833 seconds, while the committed fixture's impact gaps are only 0.867 to 1.000 seconds, so answering every fixture blow slid sacks through each other. The shared filter answers blows in order, skips any that land before the spot is free, and stops at the magazine's capacity. The aligned live gaps are 2.233 to 2.300 seconds, so the same rule answers every landed live blow until all five sacks are spent; “roughly every second blow” describes the fixture cadence, not the live scene.
 
 Worth separating from the physics: none of this was a solver problem, and all of it was found by a clearance test measuring authored tracks against each other at every frame. **A presentation keyed to a measured event inherits that event's cadence, and a cadence is not a constant.**
+
+## A bound checked on one property is not a bound on how the value is read
+
+**Anchor:** 2026-08-13, full-codebase review. Probe against `validateAndCopySnapshotV1`: an array declaring `length: 0` delivered **10,000 elements** past `maxResources: 1`. Pinned by "copies bounded lists by index without invoking a caller iterator" in `tests/core/snapshot-validation.test.ts` and its delta twin.
+
+Both public validators bounded a list like this:
+
+```ts
+if (value.length > maximum) fail(limitCode, path, limitMessage);
+return Array.from(value);
+```
+
+`Array.from` consults `Symbol.iterator` before the array-like path, and a caller's iterator is under no obligation to agree with `length`. The check and the read were asking two different questions, so the bound was decorative: a hostile array passed the limit check on a `length` of zero and then supplied ten thousand elements. A generator that never returns hangs `acceptSnapshot` synchronously on the caller's own thread — inside the function whose entire job is to make untrusted input safe.
+
+The repo already tested oversized *declared* lengths. The bound was covered; the copy was not, and nothing in the test's shape would have revealed the difference.
+
+Generalise past `Array.from`: whenever a guard reads one property and the code that follows reaches the value through a different mechanism — a getter, an iterator, a proxy trap, a `valueOf` — the guard binds the property, not the value. Copy through the thing you bounded.
+
+## A frame-loop bug needs the frame loop's own sequence to reproduce
+
+**Anchor:** 2026-08-13. Two consecutive false passes writing "keeps presentation ranges queued when an animated batch also animates" in `tests/three/paged-instance-presenter.test.ts`, against the defect in `instanceBatchPresenter.ts#markAnimatedMatrixRanges`.
+
+The defect: `animate` cleared every queued instance update range before adding its own, and Three uploads exactly the ranges present at draw time. A delta moving a non-animated instance in the same frame never reached the GPU.
+
+The first test had no animation lane, so `animate()` hit its `animatedIndices.length === 0` guard and never entered the code under test. Fair enough — a setup mistake. The second test added a real animation lane and **still passed**, and this one was subtle: the batch entry was created with `fullUploadPending: true`, and that branch legitimately clears ranges because an empty range list is how Three is asked for a whole-buffer upload. In that sequence nothing is lost; the data reaches the GPU the expensive way.
+
+The bug only appears in the steady state: frame one reconciles *and animates*, consuming the pending full upload; frame two reconciles a sparse change and animates again. That is exactly what the runtime does every frame, and nothing shorter reproduces it.
+
+The habit: when testing something inside a loop that runs every frame, run at least two frames, and let the first one leave the state the second one actually starts from. An abbreviated sequence can be masked by initialisation the real loop has already consumed.
+
+## Finding which two lanes differ is the easy half; proving which one is right is the work
+
+**Anchor:** 2026-08-13. `SOLVER_SOFT_CCD_PREDICTION_V1` (0.25) applied by `fixtures/physics-playground/playground-world.ts` to every dynamic body, applied by `tools/studio/live-physics.ts` only on request, and requested by no profile. Measured gap recorded in `solver-rate.ts`: **0.16427 m of burial against 0.00342 m**. The fix was made and reverted; the divergence is recorded in a comment at the site in `physics-playground-profiles.ts`.
+
+Both files carry a comment promising the studio's Interact lane and the headless twin see identical bodies, and both were sincere: the two lanes really do generate their bodies from one set of specs. The divergence lived one layer below that, where each lane turns a spec into a Rapier descriptor — and one of them added a solver setting the other never did. So the parity guarantee was asserted at the layer where the shared input is produced, and broken at the layer where each consumer interprets it.
+
+Diagnosing that took an afternoon. Then the obvious repair — declare the setting in the profile builder, so both lanes read one value — **took the live trebuchet from 23 bricks knocked past a quarter metre to zero.** The full browser gate caught it; reverting that single line and rerunning the spec confirmed the cause. The headless trebuchet's 19 scenarios stayed green the whole time, because none of them assert the wall coming down at all.
+
+That is the lesson. "Make lane A match lane B" silently assumes B is right, and here nothing established it: B is the lane with the assertions, A is the lane with a working machine, and the setting in dispute is a solver accuracy knob rather than one of this universe's laws — soft CCD reads linear velocity only and is inert for a rotating contact, which this repo had already measured.
+
+Two habits fall out. Assert parity at the layer where the lanes can actually differ — walk the built objects, not the shared inputs. And when a parity fix changes an outcome, **treat the change as evidence about which lane was wrong**, not as scenery to be re-tuned; bending the surviving lane's expectation to protect the fix is the workaround-as-furniture the owner rule forbids.
+
+## A stale comment can be a standing instruction not to fix something
+
+**Anchor:** 2026-08-13. Twenty lines above `PLAYGROUND_TIMESTEP_S_V1` in `tools/studio/physics-playground-materials.ts`, contradicted by the line directly beneath them.
+
+The block said the playground had not reached the shared 60 Hz rate, that deriving the constant had been tried three times and backed out each time, and that the station thresholds and law damping rates — "all measured at 240 Hz" — needed re-measuring "before this constant can move." The next line was `export const PLAYGROUND_TIMESTEP_S_V1 = SOLVER_TIMESTEP_SECONDS_V1;`. The derivation had already happened; the note describing it as unsafe outlived it.
+
+This is a worse failure mode than an out-of-date fact, because it is addressed to a future reader as advice, and it argues *against* the action that had already been taken. A reader trusting it would have concluded the lane was still drifting and that fixing it was blocked on re-measurement work that no longer existed. The rate scan strips comments by design, so no gate could catch it.
+
+Comments that say "do not do X yet, because Y" have to be deleted when Y stops being true — the same session, not eventually. A note that records a constraint is a liability the moment the constraint lifts.
+

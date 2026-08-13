@@ -1,0 +1,95 @@
+# Full-codebase adversarial review — objective `full`, 2026-08-13, iteration 1
+
+Reviewers: Claude CLI `claude-fable-5[1m]` (effort `max`) and Codex CLI `gpt-5.6-sol` (reasoning `ultra`), six lenses over the whole tree — portable data plane (`src/core` + `src/meshing`), Three.js runtime (`src/three`), studio/scenes/physics (`tools/studio` + `fixtures`), tests/gates/verification, cross-cutting invariants and the public boundary, and documentation accuracy. Raw CLI captures lived in gitignored `tmp/review-runs/full/2026-08-13/1/` and are deleted after synthesis; this file is the durable record.
+
+The studio lens (C) died silently on its first run: exit 0, an empty `-o` file, and no status line. It was relaunched with the same prompt and completed. Codex reported that its own Claude Fable pass could not reach the API, which is why the Codex lenses carry no second opinion of their own; the four Claude lenses supplied that independently. No lens was dropped.
+
+Eight findings were confirmed and fixed; a ninth was confirmed, attempted, and reverted with its evidence recorded. Every behavioural fix landed test-first: the test was watched failing on the unfixed code, and for four of them the fix was then neutralized to confirm the test bites rather than passing for its own reasons.
+
+## Confirmed and fixed
+
+### High — a caller's iterator walked past every public input bound
+
+`list()` in both `snapshot-validation.ts` and `delta-reducer.ts` checked an array's `length` and then copied it with `Array.from`, which consults `Symbol.iterator` before the array-like path. A probe against a real `validateAndCopySnapshotV1` — control snapshot validating first, so the probe proved something — executed **10,000 iterator yields from an array declaring `length: 0`**, against `maxResources: 1`. An endless iterator hangs `acceptSnapshot` synchronously on the caller's thread. Both validators now copy by index. Found by Codex lens E, which reported its own probe; reproduced here before acting.
+
+### High — a worker protocol error wedged a scheduler slot forever
+
+`meshWorkerProtocolErrorV1` carries no job identity, by design: it answers a request the worker could not trust enough to echo. `receiveMeshSchedulerResultV1Internal` therefore fell into its `jobId !== job.activeJobId` branch, counted a stale result, discarded the diagnostic, and — unlike the neighbouring terminal branches — never settled the slot. It is the only reply that request will ever receive, and there is no timeout anywhere in `src/` (grep-confirmed), so one main-thread/worker bundle skew wedges every slot and the mesh pipeline stops with no failed group and no named cause. Now terminal for the slot's active job, reported as `invalid-result` with the worker's issue attached through a new optional `issue` field. Claude lens A.
+
+### High — an animated batch dropped the frame's other instance updates
+
+`markAnimatedMatrixRanges` cleared every queued update range before adding its own. Three uploads exactly the ranges present at draw time and clears them afterwards (`WebGLAttributes.js` — read, not assumed). Since the runtime reconciles and then animates in the same frame, a delta moving a non-animated instance never reached the GPU, while the CPU matrix, the conservative bounds, and `instancePresentationMatrixWrites` all reported the move. Only the pending-full-upload branch clears now. Claude lens B.
+
+The first version of this test passed on unfixed code twice — once because the batch had no animation lane so `animate` skipped it, then because a pending full upload from the entry's creation masked the loss. The real path needs frame one to reconcile *and* animate before frame two's sparse update, which is what production does every frame.
+
+### High — capture published pixels under a manifest describing a different frame
+
+`resize()` and `setView()` change the drawing buffer and the camera without retiring `lastPresentedManifest`, and the capture fence compared only manifest identity, device generation, and lifecycle. A capture after a resize returned pixels at the new size stamped with the old viewport and camera matrices — poisoning any consumer un-projecting image coordinates through `manifest.camera`. Both now retire the manifest, so the existing typed unavailable outcome is reported. Claude lens B.
+
+### High — a finite descriptor still produced non-finite geometry
+
+`worldUnitsPerVoxel` and geometry pivots accepted any finite number. A probe confirmed `worldUnitsPerVoxel.x = 1e308` is accepted and `Math.fround(1 * 1e308)` is `Infinity`. Chunk coordinates were already bounded to the exact Float32 integer range; the scale that turns them into world units was not. Both are now bounded to what a Float32 position buffer can hold, and the message names the value and the range. Codex lens E.
+
+This made the presented store's `voxel-coordinate-overflow` guard unreachable through the public boundary, so the test that reached it by feeding `Number.MAX_VALUE` was rewritten to pin the stronger contract — the refusal happens before a store can exist — rather than deleted.
+
+### High — a static projective instance matrix broke its own bounding sphere
+
+Affine validation ran only inside `if (animation !== undefined)`. The conservative batch bounds scale a radius by the linear part's Frobenius norm, which bounds nothing for a projective transform, so the instance falls outside the sphere meant to contain it and vanishes under frustum culling and the raycaster broad phase. Every instance matrix is checked now. The new check runs *after* the animated one so an animated batch keeps reporting the more specific `batch.animation.matrix-affine` it always did — only previously-accepted input changes verdict. Codex lens E.
+
+### High — the playground's two lanes solve different worlds (confirmed, not fixed)
+
+The headless twin sets soft CCD on every dynamic body; the live studio lane applies it only when a body plan declares it, and no playground profile ever did (`softCcdPrediction` appeared nowhere outside its own declaration — grep-confirmed). Rapier's default is 0. Both files promise the lanes are one world; the measured gap is 0.16427 m of burial against 0.00342 m, and only the headless number was ever checked.
+
+**The obvious fix was made, gated, and reverted.** Declaring `softCcdPrediction` for every dynamic body in the profile builder takes the live trebuchet from 23 bricks knocked past a quarter metre to **zero** — caught by `model-studio-physics-playground.spec.ts` in the full gate, and confirmed by reverting only that line and watching the spec pass again. The headless trebuchet's 19 scenarios stay green either way, because none of them assert the wall coming down.
+
+That is the whole difficulty: "make the live lane match the twin" assumes the twin is right, and nothing here establishes that. The headless lane is the one with the assertions, but the browser lane is the one with a working machine, and the setting is a solver accuracy knob rather than a physical law — this repo has already measured that soft CCD reads linear velocity only and is inert for a rotating contact. Which lane to move is a physics question with its own measurements, and bending the browser expectation to protect the change would have been exactly the workaround-as-furniture the owner rule forbids.
+
+Recorded as a comment at the divergence site carrying the measurement and the failed attempt, so the next session starts past it rather than at it.
+
+### High — deleting the open scene skipped the live-physics teardown
+
+`deleteStudioScene`'s open-scene branch was a hand-copied subset of `closeSceneMode` and had drifted by exactly the two calls that matter: `liveInteract.openScene(null, …)` and `playgroundPanel?.sceneOpened(null)`. Nearly every shipped scene has a live profile, so deleting one left its Rapier world stepping against a retired snapshot until the pose delta threw `pose.instance-missing` over the restored model view, with the Adjust/Interact buttons and the playground panel still on screen. The delete path now calls `closeSceneMode()` and keeps only its own retirement work. Claude lens C — which also named the duplication as the cause, not a coincidence.
+
+### High — two solver body constructors escaped the universal physics laws
+
+`spawnAt` (the ball-drop spawner) and the chain fixture built raw Rapier bodies with no linear damping, while `#applyRollingResistance` still governed their spin — a body whose rotation was damped and whose fall was not. Both now apply the air law at construction. Reported independently by Claude lens C and Codex lens F, which is what raised it above "latent".
+
+## Gate and coverage holes closed
+
+- **`fixtures/chain-consumer` and `fixtures/deterministic-math.test.ts` were in no TypeScript program.** A live Rapier lane, four source files, with type-aware lint disabled for `fixtures/**` — so a wrong shape passed `typecheck`, `lint`, and `test` alike. Adding them found three real `Object is possibly 'undefined'` errors on the first run. `tests/testing/typecheck-coverage.test.ts` now asks the compiler which files it covers (`tsc --listFilesOnly`, not the include list, because TypeScript also pulls in what an included file imports) and fails when a fixture falls outside. Confirmed to bite.
+- **The solver-rate scan listed `scripts/` but read only `.ts`,** and every file there is `.mjs` — so that directory contributed zero files while the scan's own comment claimed whole-repository coverage. Widened; confirmed by planting a `1 / 240` in a `scripts/*.mjs` and watching it fail.
+- **The timeout meta-scan could not see the multi-line trailing-comma budget form** already in the tree, and swept `node_modules`. Both fixed; confirmed by lowering that exact budget below the floor and watching the gate catch it.
+- **CI proved the complete gate only on Node 22** while `.nvmrc` and the canon declare Node 24 the baseline — the browser suite, compatibility, package and supply-chain gates never ran on the declared toolchain. The roles are swapped: Node 24 carries `npm run verify`, Node 22 carries the portable subset. Found by Claude lens D and independently by this session's own reading.
+
+## Documentation corrected
+
+Codex lens F carried this, and its findings matched three the session had already found by hand.
+
+- `AGENTS.md` named the solver-rate gate under a `tests/studio/` directory that does not exist; it lives at `tools/studio/solver-rate.test.ts`. It also still listed Machine Works, Riverfall, Windmill and the chain as "delivery work to convert" — all four converted, and `catalog.test.ts` now refuses a recorded shelf scene. Both corrected; the ban on new recorded scenes stays.
+- The Gates section named no toolchain, which the 2026-08-13 canon sync made a requirement. It now does, and the sentence was rewritten once CI was changed to make it true — the first draft described a CI that did not exist yet.
+- `model-studio.md` described Machine Works as a 30-second replay with a scrubbable timeline, listed eleven of the fourteen live profiles, and said the chain's live bodies "start at the recording's opening poses". `chainLiveSpawnPosesV1` derives that curve analytically and reads no recording; the same stale idea sat in two comments in `scenes.ts`.
+- `consumer-integration.md` promised that a `voxelWorkers` runtime keeps the synchronous path for an unprofiled world. Ingest rejects it with `three.voxel-profile-required` on both snapshot and delta.
+- `physics-playground.md` said eight scenes (nine), 2 % fall-time agreement (4 %, and the same guide said 4 % elsewhere), a wall that moved twice to −26.6 (four times, to −24.5), no first-law check (there is one), and a 250–300 detection floor (200–400).
+- `physics-playground-materials.ts` carried a long note saying the lane had *not* reached 60 Hz and that moving the constant was unsafe — directly above the line deriving it from the shared rate. The twin claimed a 1/240 tick in two places. The rate scan strips comments by design, so nothing could catch these.
+- README and CHANGELOG attributed flat-resource evidence to 30 real device losses; that test's own comment says a context loss resets Three's memory counters, so it cannot see a leak and the claim belongs to the repeated-edit test.
+- `voxel/physics` shipped after the frozen 1.0 tag under version `1.0.0`, with no changelog entry. HEAD is now `1.1.0` with a release section.
+
+## Deliberately not acted on
+
+- **`ChunkIndexV1`'s slot map grows without bound within an epoch** and is fully copied per build (lens A, medium). Real, and correctly reasoned; it is a streaming-world concern and no consumer streams yet. Left for its own change, where the bound can be designed against a measured session rather than guessed.
+- **Duplicate chunk-overlap scan and its x-only sweep** (lens A, low): the same ~35 lines maintained twice, redundant for profiled worlds, and pathological for a world one chunk thick in x — it rejects a *valid* snapshot at ~1,415 chunks. Worth fixing; out of scope for a review pass already this large.
+- **Capture carries no output colour-space evidence** (lens E, medium): a borrowed renderer configured for non-sRGB output produces an accepted capture whose colours differ from the documented promise. This is a contract change, not a bug fix.
+- **Deterministic scenario results fold `performance.now()` into their status** (lens E, medium). Confirmed shape; the fix is to separate telemetry from the deterministic result, which touches the scenario contract.
+- **Contact policy is unenforced for bodies that spawn later** (lens C, medium, latent): no current profile combines `contactPolicy` with a spawn queue, so nothing breaks today. The first mechanism fed by spawned parts gets a policy that is silently a decoration.
+- **`#jointedBodies` is grow-only** (lens C, low-medium, latent): a body keeps bearing friction after its joint is detached. Masked by every current scene.
+- **Windmill "visible/legible" proofs enforce sliver-level floors** (lens D, low): 50 contrasting pixels in a 5 % box satisfies "remains legible". The assertion names promise more than the floors enforce.
+- **Two heavyweight live-solve suites solve twice** (lens D, low) with bare timeout literals rather than the measured-work convention.
+- **Eight browser specs have no `pageerror` guard**, including the Interact-lane spec that drives real pointer input against the whole app. The repo's own standard treats page errors as a first-class assertion in nine other specs.
+
+Each of these is a real finding with a grounded location; none was dismissed as wrong.
+
+## Reviewer notes
+
+Both CLIs did their best work where they could execute rather than only read. Codex lens E's three high findings all came with probe results, and all three reproduced. Claude lens B read the installed Three.js upload path rather than reasoning about it, which is what made the instance-upload finding actionable instead of speculative. Lens D dismissed several of its own hunters' candidates on inspection and said so, which is the behaviour that makes the rest of its report credible.
+
+Three of this session's tests passed on unfixed code before they were made to bite. That is the `neutralize-the-fix` rule earning its place for the second review running.

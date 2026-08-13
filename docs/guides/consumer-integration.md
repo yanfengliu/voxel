@@ -131,7 +131,7 @@ const runtime = new ThreeRenderRuntime({
 });
 ```
 
-This applies only to worlds whose descriptor carries a `chunkProfile`. A world without one keeps the synchronous path, so turning the option on never silently changes an unprofiled world, and one runtime never mixes the two presentation owners.
+This applies only to worlds whose descriptor carries a `chunkProfile`, and it is a requirement rather than a preference: a runtime with `voxelWorkers` enabled **rejects** an unprofiled world with `three.voxel-profile-required` at `descriptor.chunkProfile`, on both `acceptSnapshot` and `acceptDelta`. There is no silent fallback to the synchronous path — one runtime keeps one presentation owner, so a game that renders both profiled and unprofiled worlds needs a separate runtime for each.
 
 Each revision presents whole. Accepting a snapshot does not display it: workers mesh it off-scene, and it reaches the canvas only when a draw is acknowledged — the runtime's own draw in standalone mode, or `commitFrame` in embedded mode. Until then the previously displayed revision keeps drawing, so a partially meshed world is never visible. `metrics().atomic` reports the pipeline: loaded, nonempty, and in-frustum chunks, presented and failed targets, staging and queue occupancy, and high-water marks. It is null unless the runtime owns a worker pipeline.
 
