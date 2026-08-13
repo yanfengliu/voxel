@@ -1,6 +1,6 @@
 {
   "name": "voxel",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Browser-first voxel and low-poly 3D rendering toolkit for strategy and building games.",
   "private": true,
   "license": "MIT",
@@ -70,8 +70,8 @@
     "studio:check": "npm run build && node scripts/studio.mjs check",
     "studio:edit": "npm run build && node scripts/studio.mjs edit",
     "studio:request": "npm run build && node scripts/studio.mjs request",
-  "studio:sheet": "npm run build && node scripts/studio.mjs sheet",
-  "studio:recipes": "node scripts/studio-recipes.mjs",
+    "studio:sheet": "npm run build && node scripts/studio.mjs sheet",
+    "studio:recipes": "node scripts/studio-recipes.mjs",
     "studio:diversity": "node scripts/studio-diversity.mjs",
     "studio:windmill:search": "node scripts/search-windmill-compact-physics.mjs",
     "pretest:browser": "npm run build",

@@ -1,5 +1,29 @@
 # Changelog
 
+## 1.1.0 — 2026-08-13
+
+Additive API plus six correctness fixes found by a full-codebase adversarial review. The 1.0 tag froze five subpaths; `voxel/physics` was published after it and shipped under the 1.0.0 version by mistake, so this release gives the grown surface a number of its own. No consumer source change is required.
+
+### Added
+
+- `voxel/physics` — the laws of the voxel universe as plain data plus one function that applies them to any rigid body able to report its damping. No solver, no Three.js, no DOM. Present since `ea1b734`; unversioned until now.
+- `MeshSchedulerReceiveResultV1` carries an optional `issue` when a worker rejects a request outright, so the reason it named survives the trip back.
+
+### Fixed
+
+- **A caller's iterator could walk past every public input bound.** Both snapshot and delta validation checked an array's `length` and then copied it with `Array.from`, which consults `Symbol.iterator` first. A length-zero array whose iterator never stopped hung `acceptSnapshot` on the caller's own thread; a finite one delivered 10,000 elements past a limit of 16. Both validators now copy by index.
+- **A worker protocol error wedged a scheduler slot forever.** `protocol-error` carries no job identity — it answers a request the worker could not trust enough to echo — so the scheduler read it as another job's stale output, discarded the diagnostic, and never settled the slot. It was the only reply that request would ever get, so one main-thread/worker bundle skew silently stopped the mesh pipeline. It is now terminal for the slot's active job, reported as `invalid-result` with the worker's issue attached.
+- **An animated batch dropped the frame's other instance updates.** `animate` cleared every queued update range before adding its own, and Three uploads exactly the ranges present at draw time. A delta that moved a non-animated instance in the same frame never reached the GPU, while the CPU matrix, the conservative bounds, and the write metrics all reported the move. Only a pending full upload clears now.
+- **Capture could publish pixels under a manifest describing a different frame.** `resize` and `setView` changed the drawing buffer and the camera without retiring the committed manifest, and the capture fence checked only manifest identity, device generation, and lifecycle. A capture after a resize returned pixels at the new size stamped with the old viewport and camera matrices. Both now retire the manifest, so the existing typed unavailable outcome is reported instead.
+- **A finite descriptor could still produce non-finite geometry.** `worldUnitsPerVoxel` and geometry pivots accepted any finite number, so a voxel coordinate scaled by one produced `Infinity` vertices and a `NaN` bounding sphere. Both are now bounded to what a Float32 position buffer can hold, and the rejection names the value and the range.
+- **A static projective instance matrix broke its own bounding sphere.** Affine validation ran only when a batch also carried animation. The conservative bounds scale a radius by the linear part's Frobenius norm, which bounds nothing for a projective transform, so the instance fell outside its sphere and vanished under frustum culling and the raycaster broad phase. Every instance matrix is now checked; an animated batch keeps reporting the more specific `batch.animation.matrix-affine` it always did.
+
+### Changed
+
+- Input that produced corrupt output is now refused at the boundary rather than accepted: unbounded voxel scales and pivots, and projective instance matrices. A consumer sending any of these was already getting wrong pixels.
+- `nanoid` moved to 3.3.18 in the lockfile to clear GHSA-2v37-7h3g-55p8. It is a build-time-only transitive dependency through `vite` → `postcss`, and the vulnerable `customRandom` lives in nanoid's secure entry; postcss imports `nanoid/non-secure`, which is byte-identical between the two versions. Nothing this package redistributes was ever exposed.
+
+
 ## 1.0.0 — 2026-07-18
 
 The first stable release. Voxel is a browser-first, voxel-first rendering toolkit: a game sends bounded, versioned, structured-clone-safe data, and gets back WebGL frames through Three.js plus metrics, captures, and picking that always describe the frame the canvas actually showed.
@@ -12,7 +36,7 @@ What 1.0 means, and the evidence behind it, is recorded in [the roadmap](docs/pl
 - **Picking and capture.** `pickPresented` and revision-aware capture read the same committed frame, never accepted-but-undrawn state.
 - **Lifecycle.** Explicit runtime states, real context loss and restoration, host-managed frame tickets, borrowed cameras and renderers that Voxel never mutates, and idempotent disposal everywhere.
 - **Consumers.** AoE2 runs Voxel standalone as its sole world renderer; City draws its building wall lane through an embedded, borrowed-renderer runtime. Neither game's types enter this package, and both resolve exactly one Three.js runtime.
-- **Evidence.** 760 unit tests, 11 real-browser tests including visual baselines, a pinned hostile-input fuzz corpus, endurance runs holding resource counts flat across 1,000 edits and 30 real device losses, eight named reference scenes measured on named hardware, a supply-chain gate with zero runtime dependencies, and green Windows/Linux CI.
+- **Evidence.** 760 unit tests, 11 real-browser tests including visual baselines, a pinned hostile-input fuzz corpus, endurance runs holding resource counts flat across 1,000 edits, and 30 real device losses proving reconstruction (a context loss resets Three's memory counters, so that lane cannot observe a leak; the flat-resource claim rests on the repeated-edit test), eight named reference scenes measured on named hardware, a supply-chain gate with zero runtime dependencies, and green Windows/Linux CI.
 
 Deliberately not in 1.0: WebGPU, LOD, streaming, smooth terrain, skeletal animation, transparency-aware voxel merging, engine-owned shadow or post-processing policy, and public registry publication. The reasons are in the roadmap's scope boundaries.
 
