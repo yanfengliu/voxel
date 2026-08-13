@@ -20,6 +20,7 @@ import {
 } from '../../tools/studio/chain-layout.js';
 import { chainRingPart } from '../../tools/studio/chain-link-part.js';
 import { decomposeVoxelsV1 } from '../../tools/studio/voxel-colliders.js';
+import { physicsLawValuesForV1 } from '../../tools/studio/physics-laws.js';
 
 /**
  * The hanging chain, solved.
@@ -180,7 +181,14 @@ export function chainLinkColliderBoxesV1(
     size: fragment.size,
     filled: (x, y, z) => fragment.voxels[x + sx * (y + sy * z)] !== 0,
   });
-  const centre = fragment.size.map((extent) => extent / 2);
+  // A tuple, not `size.map(...)`: mapping a tuple widens it to `number[]`, so
+  // every read below became `number | undefined` the moment this file entered
+  // the typecheck program it had been sitting outside of.
+  const centre = [
+    fragment.size[0] / 2,
+    fragment.size[1] / 2,
+    fragment.size[2] / 2,
+  ] as const;
   return decomposition.boxes.map((box) => ({
     half: [
       (box.size[0] * CHAIN_GRAIN_V1) / 2,
@@ -252,7 +260,12 @@ export async function runChainSimulationV1(
     };
     const description = (anchored
       ? RAPIER.RigidBodyDesc.fixed()
-      : RAPIER.RigidBodyDesc.dynamic())
+      // Air resists both travel and spin, in every lane. A raw Rapier
+      // descriptor starts at zero damping, so a body built here escaped the
+      // law entirely until it was applied at the constructor.
+      : RAPIER.RigidBodyDesc.dynamic()
+        .setLinearDamping(physicsLawValuesForV1(undefined).airDrag)
+        .setAngularDamping(physicsLawValuesForV1(undefined).airSpinDrag))
       .setTranslation(start.x, start.y, 0)
       .setRotation({ x: 0, y: 0, z: start.qz, w: start.qw });
     const body = world.createRigidBody(description);

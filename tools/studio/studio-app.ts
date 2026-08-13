@@ -1741,23 +1741,16 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
       if (wasOpen) {
         // Retirement cleanup is allowed to fail. The visible transition is not:
         // the deleted scene must never remain on screen after it is gone.
-        sceneTransport.freezeExact(lastShownMs);
-        player.setPlayback('loop', performance.now());
-        sceneNotesPanel?.cancelCapture();
-        sceneAnnotationModeOn = false;
-        canvasWrap.classList.remove('scene-annotation-armed');
-        clearViewError();
-        sceneOpen = null;
-        sceneAnnotationFingerprintCache = null;
-        sceneAnnotationDocumentCache = null;
-        selectedPlacementId = null;
+        //
+        // This used to be a hand-copied subset of `closeSceneMode`, and it had
+        // drifted: it never told `liveInteract` or the playground panel the
+        // scene was gone. A live scene's Rapier world therefore outlived the
+        // delete, kept stepping, and pushed poses at the retired snapshot until
+        // the pose delta threw `pose.instance-missing` over the restored model
+        // view — with the Adjust/Interact buttons and the playground panel
+        // still on screen. Closing first and deleting after removes the class.
+        closeSceneMode();
         highlightedPartIndex = null;
-        sceneBoxes = [];
-        sceneUndo.length = 0;
-        sceneRedo.length = 0;
-        marks.replaceChildren();
-        canvas.style.display = 'block';
-        sceneCanvas.style.display = 'none';
         panCenter = [0, 0, 0];
         orbit = clampOrbit({
           ...orbit,

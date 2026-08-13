@@ -62,7 +62,10 @@ function sourceFiles(directory: string): readonly string[] {
         walk(full);
         continue;
       }
-      if (!entry.endsWith('.ts')) continue;
+      // `.mjs` too: `scripts/` is listed as scanned and contains nothing
+      // else, so restricting to `.ts` meant that directory contributed zero
+      // files while every summary read as whole-repository coverage.
+      if (!/\.(?:ts|mjs|js)$/.test(entry)) continue;
       if (entry.startsWith(GENERATED_PREFIX)) continue;
       // This file necessarily spells rates: they are its test data. It is the
       // scanner, not a lane, and the case below proves the scanner still sees

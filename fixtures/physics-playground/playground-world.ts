@@ -24,7 +24,7 @@ import type {
  * The headless twin of the studio's live playground lane.
  *
  * Bodies are built from the same specs the browser lane uses
- * (`playgroundBodySpecsV1`), stepped at the same fixed 1/240 timestep, and
+ * (`playgroundBodySpecsV1`), stepped at the same shared fixed timestep, and
  * read back into the same snapshot shape the shared checks evaluate. That
  * one-source rule is the whole point: a behaviour seen in the studio must
  * be reproducible here, and a regression caught here must be showable
@@ -321,7 +321,7 @@ export class PlaygroundWorldV1 {
     }
   }
 
-  /** Advances exactly one fixed 1/240 s tick. */
+  /** Advances exactly one tick of the shared solver rate. */
   step(): void {
     this.#applyRollingResistance();
     this.#requireWorld().step();

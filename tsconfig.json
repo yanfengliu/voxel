@@ -28,6 +28,8 @@
     "src",
     "tests",
     "tools",
+    "fixtures/chain-consumer",
+    "fixtures/deterministic-math.test.ts",
     "fixtures/machine-works-consumer",
     "fixtures/physics-playground",
     "fixtures/riverfall-consumer",

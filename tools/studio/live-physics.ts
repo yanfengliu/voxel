@@ -536,6 +536,11 @@ export class LivePhysicsSessionV1 {
     const body = this.#world.createRigidBody(
       this.#rapier.RigidBodyDesc.dynamic()
         .setSoftCcdPrediction(SOLVER_SOFT_CCD_PREDICTION_V1)
+        // A spawned ball is a body like any other. This site used to skip the
+        // air law while `#applyRollingResistance` still governed its spin, so
+        // a dropped ball had its rotation damped and its fall not — the exact
+        // opt-out-by-forgetting-to-opt-in the laws exist to make impossible.
+        .setLinearDamping(physicsLawValuesForV1(undefined).airDrag)
         .setTranslation(clampedX, spawn.dropY, 0),
     );
     const collider = this.#world.createCollider(

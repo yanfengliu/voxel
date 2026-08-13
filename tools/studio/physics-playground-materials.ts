@@ -23,24 +23,16 @@ export const PHYSICS_PLAYGROUND_SCHEMA_V1 = 'studio.physics-playground/1' as con
 /** World meters per voxel, shared by every playground recipe and body. */
 export const PLAYGROUND_GRAIN_V1 = 0.25;
 
-/** Fixed solver timestep in seconds. See the note below: this lane has not reached the shared rate yet. */
 /**
- * The playground's tick, which is NOT yet the live lane's 60 Hz.
+ * The playground's tick: the shared rate, like every other lane.
  *
- * Every scene solves at `LIVE_TIMESTEP_SECONDS_V1` now, and this should be
- * that constant: the headless twin and the live session are meant to be one
- * world, and they agreed on 1/240 only because two files happened to write
- * the same literal.
- *
- * Deriving it was tried three times and backed out each time. At 60 Hz the
- * stacking stations rest about 0.05 m into the floor against a 0.02 m
- * tolerance, and none of twelve or sixteen solver iterations, a tighter
- * normalized allowed linear error, or a raised contact natural frequency
- * recovered it. That depth looks like what this solver actually does at a
- * coarser step rather than a bug to tune away, which means the station
- * thresholds and the law damping rates -- all measured at 240 Hz -- need
- * re-measuring before this constant can move. Until then the drift is stated
- * here rather than hidden.
+ * This block used to say the opposite — that the lane had not reached 60 Hz,
+ * that deriving it had been tried three times and backed out, and that the
+ * station thresholds and law damping rates were measured at 240 Hz and needed
+ * re-measuring before the constant could move. The derivation is the very next
+ * line, and has been since the 60 Hz move landed; the note outlived it and
+ * told every later reader that moving this constant was unsafe. The history is
+ * in the devlog, where history belongs.
  */
 export const PLAYGROUND_TIMESTEP_S_V1 = SOLVER_TIMESTEP_SECONDS_V1;
 

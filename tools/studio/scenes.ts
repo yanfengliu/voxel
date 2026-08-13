@@ -233,10 +233,9 @@ function createBallDropScene(): SceneV1 {
  * and says plainly that it is not hanging.
  */
 function createChainLinkStudyScene(): SceneV1 {
-  // The replay is recorded in the solver's own world units, where a voxel is
-  // CHAIN_GRAIN_V1. The links are therefore placed at that grain so the drawn
-  // ring is the same size as the simulated one, and the piers sit clear of the
-  // end links' swept radius.
+  // The links are placed at CHAIN_GRAIN_V1 — the solver's own world unit — so
+  // the drawn ring is the same size as the simulated one, and the piers sit
+  // clear of the end links' swept radius.
   const anchorX = chainCatenaryPoseV1(CHAIN_LINK_COUNT_V1 - 1).x;
   const pierX = anchorX + CHAIN_OUTER_RADIUS_V1 * CHAIN_GRAIN_V1 + 1.3;
   return {
@@ -259,8 +258,9 @@ function createChainLinkStudyScene(): SceneV1 {
           at: [x, lift, 0] as readonly [number, number, number],
           turns: 1,
         }))),
-      // Authored fallback poses only. The replay drives these placements, and
-      // the frame-zero pose is where each link starts before gravity acts.
+      // The opening pose only. Nothing plays these back: the live solver
+      // takes over from here, and `chainLiveSpawnPosesV1` derives the same
+      // curve analytically so the two agree about where the chain starts.
       ...Array.from({ length: CHAIN_LINK_COUNT_V1 }, (_, index) => {
         const pose = chainCatenaryPoseV1(index);
         const anchored = index === 0 || index === CHAIN_LINK_COUNT_V1 - 1;
