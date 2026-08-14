@@ -359,3 +359,20 @@ This is a worse failure mode than an out-of-date fact, because it is addressed t
 
 Comments that say "do not do X yet, because Y" have to be deleted when Y stops being true — the same session, not eventually. A note that records a constraint is a liability the moment the constraint lifts.
 
+## A deferral list is a decision, and deserves the same scrutiny as the fixes
+
+**Anchor:** 2026-08-13. Eight findings deferred at the end of a full-codebase review; five were fixed the same session once the list was read back, including `limit.chunk-overlap-comparisons` rejecting a valid 1,415-chunk world that 1,400 chunks passed.
+
+The review pass ended the way they do: six fixes landed, eight findings written up as "confirmed, not acted on", each with a sentence of reason. The sentences read fine. Read back cold, several of them were fatigue in the shape of judgement — "out of scope for a review pass already this large" is not a property of the finding.
+
+One of the deferred items rejected valid input at the public boundary, which is precisely the class of bug the pass had spent the day fixing. It was deferred because it arrived late in a long list, not because it was smaller.
+
+The distinction worth keeping is between two kinds of "not now":
+
+- **Missing effort.** The fix is understood and the work is ordinary. This is not a deferral, it is stopping — and it should be named as stopping, not dressed as scope.
+- **Missing a number or a decision.** A retention bound with no measured session to size it against; new legibility floors with no measurement of what the canonical render produces; a contract change that needs the owner's call on where the burden sits. Here the missing thing genuinely is not effort, and shipping a guess would be the furniture the owner rule warns about.
+
+Four of the eight survived that test. Five did not.
+
+**How to apply:** when a review pass produces a deferral list, re-read it as a list of decisions before publishing it, and for each entry name the specific missing input. If you cannot name one, the entry is a fix you have not done yet.
+

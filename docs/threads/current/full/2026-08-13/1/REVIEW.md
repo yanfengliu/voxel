@@ -74,22 +74,94 @@ Codex lens F carried this, and its findings matched three the session had alread
 - README and CHANGELOG attributed flat-resource evidence to 30 real device losses; that test's own comment says a context loss resets Three's memory counters, so it cannot see a leak and the claim belongs to the repeated-edit test.
 - `voxel/physics` shipped after the frozen 1.0 tag under version `1.0.0`, with no changelog entry. HEAD is now `1.1.0` with a release section.
 
-## Deliberately not acted on
+## Iteration 1b — five more fixed after a scope challenge
 
-- **`ChunkIndexV1`'s slot map grows without bound within an epoch** and is fully copied per build (lens A, medium). Real, and correctly reasoned; it is a streaming-world concern and no consumer streams yet. Left for its own change, where the bound can be designed against a measured session rather than guessed.
-- **Duplicate chunk-overlap scan and its x-only sweep** (lens A, low): the same ~35 lines maintained twice, redundant for profiled worlds, and pathological for a world one chunk thick in x — it rejects a *valid* snapshot at ~1,415 chunks. Worth fixing; out of scope for a review pass already this large.
-- **Capture carries no output colour-space evidence** (lens E, medium): a borrowed renderer configured for non-sRGB output produces an accepted capture whose colours differ from the documented promise. This is a contract change, not a bug fix.
-- **Deterministic scenario results fold `performance.now()` into their status** (lens E, medium). Confirmed shape; the fix is to separate telemetry from the deterministic result, which touches the scenario contract.
-- **Contact policy is unenforced for bodies that spawn later** (lens C, medium, latent): no current profile combines `contactPolicy` with a spawn queue, so nothing breaks today. The first mechanism fed by spawned parts gets a policy that is silently a decoration.
-- **`#jointedBodies` is grow-only** (lens C, low-medium, latent): a body keeps bearing friction after its joint is detached. Masked by every current scene.
-- **Windmill "visible/legible" proofs enforce sliver-level floors** (lens D, low): 50 contrasting pixels in a 5 % box satisfies "remains legible". The assertion names promise more than the floors enforce.
-- **Two heavyweight live-solve suites solve twice** (lens D, low) with bare timeout literals rather than the measured-work convention.
-- **Eight browser specs have no `pageerror` guard**, including the Interact-lane spec that drives real pointer input against the whole app. The repo's own standard treats page errors as a first-class assertion in nine other specs.
+The first pass deferred eight findings. Reviewing that list honestly, several
+deferrals were fatigue rather than judgement, and one of them was a bug of
+exactly the class the pass had just fixed.
 
-Each of these is a real finding with a grounded location; none was dismissed as wrong.
+### High — a valid snapshot was rejected once a world got thin
 
-## Reviewer notes
+The chunk-overlap sweep sorted on `x` and stopped scanning forward when a chunk
+began past the current chunk's end on that axis. A world *thin in x* — a wall, a
+tower, a corridor — never triggered that break and paid n²/2 comparisons.
+Probed: **1,400 chunks in a single x-slab with zero overlaps are accepted, 1,415
+are rejected** with `limit.chunk-overlap-comparisons`. Correctness never depended
+on the axis; only the cost did, so the sweep now sorts on whichever axis the
+chunks actually spread along. Both halves are pinned — the 2,000-chunk wall is
+accepted, and a deliberate overlap in that same shape is still caught.
 
-Both CLIs did their best work where they could execute rather than only read. Codex lens E's three high findings all came with probe results, and all three reproduced. Claude lens B read the installed Three.js upload path rather than reasoning about it, which is what made the instance-upload finding actionable instead of speculative. Lens D dismissed several of its own hunters' candidates on inspection and said so, which is the behaviour that makes the rest of its report credible.
+The duplicate implementation went at the same time: `snapshot-validation.ts` and
+`delta-final-graph.ts` maintained the same thirty-five lines and the same budget
+literal, and now share `src/core/chunk-overlap.ts`. Profiled worlds skip the
+sweep entirely — equal sizes, grid-aligned origins and distinct grid coordinates
+are a partition, which `assertUniformChunkProfileInternal` already proves, so
+sweeping them again was charged work that could only reach the same answer.
 
-Three of this session's tests passed on unfixed code before they were made to bite. That is the `neutralize-the-fix` rule earning its place for the second review running.
+### Medium — a deterministic result depended on how busy the host was
+
+`PlaygroundScenarioResultV1.status` was `failed ? 'fail' : slow ? 'warn' : 'pass'`,
+where `slow` came from `performance.now()`. The field's own doc comment said
+timing was "reported, never part of the verdict inputs" — the code contradicted
+its documented contract, and the determinism test had to tolerate two runs of one
+scenario disagreeing.
+
+This had already cost something: a loaded full-gate host measured 62 ms and
+81.48 ms steps that turned all-checks-passed runs into reported failures, and the
+repo had built `expectScenarioCorrectV1` plus three explanatory comments around
+it. The verdict is now a pure function of the checks, timing stays in
+`maxStepMs`/`meanStepMs`/`timingNote`, the determinism test asserts equality, and
+the workaround comments are gone.
+
+### Medium — a contact policy that silently applied to nothing
+
+The policy resolves colliders through the built-body map, and a spawn-only body
+is not in it yet, so the policy applied to an empty list and `spawnPlanned` later
+built colliders with Rapier's default groups — colliding through pairs the policy
+never granted. An unnamed spawned body was not inert at all, the inverse of the
+stated guarantee. No profile combines the two today, so the combination is now
+refused at construction with a message naming the bodies and what would satisfy
+it, rather than shipping a policy that is a decoration.
+
+### Low-medium — bearing friction outlived the joint that earned it
+
+`#jointedBodies` was add-only: ids went in on joint creation and never came out,
+not on `detachJoint` and not when `removeBody` took a partner away.
+`#applyRollingResistance` kept charging `bearingFriction` — 25 to 40 times
+`airSpinDrag` — to a body no joint held, though the law is written in the present
+tense. The set is derived from `#joints` now and recomputed on every mutation,
+and `angularDampingOfV1` was added so a test can watch the law act, matching the
+fixture lane's `linearDampingOfV1`.
+
+### Test coverage — eight browser specs asserted nothing about page errors
+
+Including the Interact-lane spec that drives real pointer input against the whole
+app, which is where an incidental exception is most likely and least visible: an
+overlay, HUD, annotation or teardown path can throw without disturbing the poses
+a test reads or the region it screenshots. `tests/browser/page-errors.ts` adds a
+one-line-per-file hook covering all 34 tests, skipped when a test already failed
+so it never masks the real failure. Verified by injecting a `console.error` into
+the studio mount path and watching all five mount tests go red.
+
+## Still not acted on, with reasons
+
+- **`ChunkIndexV1`'s slot map grows without bound within an epoch** and is fully
+  copied on every build, so a long session degrades steadily. Real, and the
+  reviewer's reasoning holds. The fix is a retention bound that fails closed into
+  an epoch replacement, and the right bound is a number measured against a real
+  streaming session — which nothing here streams yet. Guessing it now would be
+  furniture.
+- **Capture carries no output colour-space evidence**, so a borrowed renderer
+  configured for non-sRGB output produces an accepted capture whose colours
+  differ from the documented promise. This is a contract change — new fields on
+  the borrowed-renderer and readback surfaces — not a bug fix, and it wants the
+  owner's call on where the burden sits.
+- **Windmill "visible/legible" proofs enforce sliver-level floors** — 50
+  contrasting pixels in a 5% box satisfies "remains legible". Raising them needs
+  a measurement of what the canonical render actually produces, so the new floors
+  are a stated fraction of a real number rather than a guess. That measurement is
+  the work, and it belongs with someone looking at the renders.
+- **Two heavyweight live-solve suites solve twice** with bare timeout literals.
+  Pure cost, no added independence; deferred only because it touches the two
+  longest-running suites in the gate and deserves its own before/after timing
+  rather than being folded into a correctness pass.

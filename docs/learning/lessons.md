@@ -33,6 +33,7 @@ When a lesson becomes a gate — a test, a lint rule, a fixed command — delete
 - A comment saying "not yet, because Y" is a standing instruction; delete it the session Y stops being true. ([evidence](lessons-evidence.md#a-stale-comment-can-be-a-standing-instruction-not-to-fix-something))
 - A counter-run that stops discriminating is not a smaller problem than a scenario that fails. ([evidence](lessons-evidence.md#the-trebuchet-worked-at-240-hz-and-not-at-60-hz-and-only-the-browser-ran-it-at-60))
 - Anything a search's evidence hashes is frozen from the moment the search starts — prose fields inside declaration objects included. ([evidence](lessons-evidence.md#freeze-the-declaration-before-the-search-not-after))
+- A deferral list is a decision: for each entry name the missing number or call, and if you cannot, it is a fix you have not done yet. ([evidence](lessons-evidence.md#a-deferral-list-is-a-decision-and-deserves-the-same-scrutiny-as-the-fixes))
 - A rule inside the generated canon block is loaded right up until a sync silently drops it, and a line number into AGENTS.md is stale within days — quote the rule instead. ([evidence](lessons-evidence.md#lessons-nobody-reads-are-not-lessons))
 
 ## Solver rate and contacts
