@@ -50,7 +50,10 @@ import {
   type SnapshotCopyMetricsInternal,
   ValidationFailureInternal,
 } from './snapshot-byte-budget.js';
-import { stableMergeSortInternal } from './bounded-sort.js';
+import {
+  findChunkOverlapV1Internal,
+  MAX_CHUNK_OVERLAP_COMPARISONS_V1,
+} from './chunk-overlap.js';
 import {
   assertUniformChunkProfileInternal,
   parseUniformChunkProfileInternal,
@@ -867,39 +870,22 @@ function assertUniqueKeys(values: readonly { readonly key: string }[], path: str
 }
 
 function assertChunksDoNotOverlap(chunks: readonly VoxelChunkV1[]): void {
-  const indexed = stableMergeSortInternal(
-    chunks.map((chunk, index) => ({ chunk, index })),
-    (left, right) => left.chunk.origin.x - right.chunk.origin.x || left.index - right.index,
-  );
-  let comparisons = 0;
-  const maxComparisons = 1_000_000;
-  for (let leftIndex = 0; leftIndex < indexed.length; leftIndex += 1) {
-    const left = indexed[leftIndex]!;
-    const leftMaxX = left.chunk.origin.x + left.chunk.size.x;
-    for (let rightIndex = leftIndex + 1; rightIndex < indexed.length; rightIndex += 1) {
-      const right = indexed[rightIndex]!;
-      if (right.chunk.origin.x >= leftMaxX) break;
-      comparisons++;
-      if (comparisons > maxComparisons) {
-        fail(
-          'limit.chunk-overlap-comparisons',
-          'chunks',
-          'Chunk layout is too complex to validate within the bounded comparison budget.',
-        );
-      }
-      const overlapsY = left.chunk.origin.y < right.chunk.origin.y + right.chunk.size.y
-        && right.chunk.origin.y < left.chunk.origin.y + left.chunk.size.y;
-      const overlapsZ = left.chunk.origin.z < right.chunk.origin.z + right.chunk.size.z
-        && right.chunk.origin.z < left.chunk.origin.z + left.chunk.size.z;
-      if (overlapsY && overlapsZ) {
-        fail(
-          'chunk.overlap',
-          `chunks[${String(right.index)}].origin`,
-          `Chunk overlaps chunks[${String(left.index)}].`,
-        );
-      }
-    }
+  const finding = findChunkOverlapV1Internal(chunks);
+  if (finding === null) return;
+  if (finding.kind === 'budget') {
+    fail(
+      'limit.chunk-overlap-comparisons',
+      'chunks',
+      `Chunk layout needs more than ${String(MAX_CHUNK_OVERLAP_COMPARISONS_V1)} pair `
+      + `comparisons to prove non-overlapping; declare descriptor.chunkProfile so the `
+      + `uniform grid proves it instead, or send fewer chunks per update.`,
+    );
   }
+  fail(
+    'chunk.overlap',
+    `chunks[${String(finding.index)}].origin`,
+    `Chunk overlaps chunks[${String(finding.otherIndex)}].`,
+  );
 }
 
 function assertReferences(snapshot: OwnedRenderSnapshotV1): void {
@@ -974,8 +960,15 @@ export function parseSnapshot(
   );
   const chunks = rawChunks.map((chunk, index) => parseChunk(chunk, `chunks[${String(index)}]`, descriptor.limits, budget));
   assertUniqueKeys(chunks, 'chunks');
-  if (descriptor.chunkProfile) assertUniformChunkProfileInternal(chunks, descriptor.chunkProfile);
-  assertChunksDoNotOverlap(chunks);
+  if (descriptor.chunkProfile) {
+    // Equal sizes, grid-aligned origins, and distinct grid coordinates are a
+    // partition: these chunks cannot intersect. Sweeping them again is charged
+    // validation work that can only reach the same answer — and, on a world
+    // thin in the sweep axis, could reach the comparison budget instead.
+    assertUniformChunkProfileInternal(chunks, descriptor.chunkProfile);
+  } else {
+    assertChunksDoNotOverlap(chunks);
+  }
 
   const rawBatches = list(
     input.batches,

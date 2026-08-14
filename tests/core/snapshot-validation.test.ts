@@ -671,4 +671,52 @@ describe('validateAndCopySnapshotV1', () => {
       issue: { code: 'batch.matrix-affine' },
     });
   });
+  // The overlap sweep sorted on `x` and stopped scanning forward when a chunk
+  // began past the current chunk's end on that axis. A world thin in x — a
+  // wall, a tower, a corridor — never triggered that break and paid n²/2
+  // comparisons, so a valid 1,415-chunk wall was rejected while 1,400 was
+  // accepted. The sweep now sorts on whichever axis the chunks spread along.
+  it('accepts a wall far past the old x-sweep comparison budget', () => {
+    const input = validSnapshot();
+    input.descriptor.limits.maxChunks = 4_096;
+    input.descriptor.limits.maxVoxelsPerChunk = 4_096;
+    input.descriptor.limits.maxTotalBytes = 1_073_741_824;
+    input.chunks = Array.from({ length: 2_000 }, (_, index) => ({
+      key: `chunk:wall-${String(index)}`,
+      incarnation: 1,
+      revision: 1,
+      // One chunk deep in x, two thousand long in z: zero overlaps.
+      origin: { x: 0, y: 0, z: index * 4 },
+      size: { x: 4, y: 4, z: 4 },
+      voxels: new Uint16Array(64),
+      paletteKey: 'palette:terrain',
+      materialKey: 'material:terrain',
+    }));
+
+    expect(validateAndCopySnapshotV1(input)).toMatchObject({ ok: true });
+  });
+
+  it('still catches an overlap in a world thin in the old sweep axis', () => {
+    const input = validSnapshot();
+    input.descriptor.limits.maxChunks = 4_096;
+    input.descriptor.limits.maxVoxelsPerChunk = 4_096;
+    input.descriptor.limits.maxTotalBytes = 1_073_741_824;
+    input.chunks = Array.from({ length: 200 }, (_, index) => ({
+      key: `chunk:wall-${String(index)}`,
+      incarnation: 1,
+      revision: 1,
+      origin: { x: 0, y: 0, z: index * 4 },
+      size: { x: 4, y: 4, z: 4 },
+      voxels: new Uint16Array(64),
+      paletteKey: 'palette:terrain',
+      materialKey: 'material:terrain',
+    }));
+    // Drop one chunk squarely on top of another.
+    input.chunks[150] = { ...input.chunks[150]!, origin: { x: 0, y: 0, z: 40 } };
+
+    expect(validateAndCopySnapshotV1(input)).toMatchObject({
+      ok: false,
+      issue: { code: 'chunk.overlap' },
+    });
+  });
 });

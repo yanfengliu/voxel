@@ -5,7 +5,10 @@ import {
   type VoxelChunkV1,
   type WorldDescriptorV1,
 } from './contracts.js';
-import { stableMergeSortInternal } from './bounded-sort.js';
+import {
+  findChunkOverlapV1Internal,
+  MAX_CHUNK_OVERLAP_COMPARISONS_V1,
+} from './chunk-overlap.js';
 import { ValidationFailureInternal } from './snapshot-byte-budget.js';
 import { assertUniformChunkProfileInternal } from './uniform-profile-validation.js';
 
@@ -61,39 +64,22 @@ function geometryTypedArrayBytes(resource: RenderResourceV1): number {
 }
 
 function overlapIssue(chunks: readonly VoxelChunkV1[]): DeltaFinalGraphIssueInternal | null {
-  const indexed = stableMergeSortInternal(
-    chunks.map((chunk, index) => ({ chunk, index })),
-    (left, right) => left.chunk.origin.x - right.chunk.origin.x || left.index - right.index,
-  );
-  let comparisons = 0;
-  for (let leftIndex = 0; leftIndex < indexed.length; leftIndex += 1) {
-    const left = indexed[leftIndex]!;
-    const leftMaxX = left.chunk.origin.x + left.chunk.size.x;
-    for (let rightIndex = leftIndex + 1; rightIndex < indexed.length; rightIndex += 1) {
-      const right = indexed[rightIndex]!;
-      if (right.chunk.origin.x >= leftMaxX) break;
-      comparisons += 1;
-      if (comparisons > 1_000_000) {
-        return issue(
-          'limit.chunk-overlap-comparisons',
-          'chunks',
-          'Chunk layout is too complex to validate within the bounded comparison budget.',
-        );
-      }
-      const overlapsY = left.chunk.origin.y < right.chunk.origin.y + right.chunk.size.y
-        && right.chunk.origin.y < left.chunk.origin.y + left.chunk.size.y;
-      const overlapsZ = left.chunk.origin.z < right.chunk.origin.z + right.chunk.size.z
-        && right.chunk.origin.z < left.chunk.origin.z + left.chunk.size.z;
-      if (overlapsY && overlapsZ) {
-        return issue(
-          'chunk.overlap',
-          `chunks[${String(right.index)}].origin`,
-          `Chunk overlaps chunks[${String(left.index)}].`,
-        );
-      }
-    }
+  const finding = findChunkOverlapV1Internal(chunks);
+  if (finding === null) return null;
+  if (finding.kind === 'budget') {
+    return issue(
+      'limit.chunk-overlap-comparisons',
+      'chunks',
+      `Chunk layout needs more than ${String(MAX_CHUNK_OVERLAP_COMPARISONS_V1)} pair `
+      + `comparisons to prove non-overlapping; declare descriptor.chunkProfile so the `
+      + `uniform grid proves it instead, or send fewer chunks per update.`,
+    );
   }
-  return null;
+  return issue(
+    'chunk.overlap',
+    `chunks[${String(finding.index)}].origin`,
+    `Chunk overlaps chunks[${String(finding.otherIndex)}].`,
+  );
 }
 
 /** Validates only cross-item and aggregate invariants; each item was validated on ingest. */
