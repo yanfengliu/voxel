@@ -13,7 +13,11 @@ import {
   scenePlaybackPlayerState,
   seekAndPlayScenePlayback,
 } from './scene-replay-browser-support.js';
+import { guardPageErrors } from './page-errors.js';
 
+
+// Every test in this file fails if the page throws or logs an error.
+guardPageErrors();
 /**
  * Studio's consumer replay transport, on a scene the test owns.
  *

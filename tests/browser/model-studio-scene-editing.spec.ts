@@ -4,7 +4,11 @@ import { expect, test } from '@playwright/test';
 import { createServer, type ViteDevServer } from 'vite';
 import type { StudioCatalogV1 } from '../../tools/studio/catalog.js';
 import type { StudioHandleV1, StudioMountOptionsV1 } from '../../tools/studio/studio-app.js';
+import { guardPageErrors } from './page-errors.js';
 
+
+// Every test in this file fails if the page throws or logs an error.
+guardPageErrors();
 /**
  * Editing a scene through the real UI: the behaviours the owner drives by hand —
  * selecting one model then another and having the Edit controls follow, moving

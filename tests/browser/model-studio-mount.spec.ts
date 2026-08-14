@@ -3,7 +3,11 @@ import { resolve } from 'node:path';
 import { expect, test } from '@playwright/test';
 import { createServer, type ViteDevServer } from 'vite';
 import type { StudioHandleV1, StudioMountOptionsV1 } from '../../tools/studio/studio-app.js';
+import { guardPageErrors } from './page-errors.js';
 
+
+// Every test in this file fails if the page throws or logs an error.
+guardPageErrors();
 /**
  * mountStudio's app-level lifecycle: what a mount owns, what a failed mount
  * must give back, and what an omitted capability may not advertise. The

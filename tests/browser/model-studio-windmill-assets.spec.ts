@@ -38,7 +38,11 @@ import {
   compareWindmillPngs,
   inspectWindmillPngFootprint,
 } from './windmill-visual-evidence.js';
+import { guardPageErrors } from './page-errors.js';
 
+
+// Every test in this file fails if the page throws or logs an error.
+guardPageErrors();
 const STUDIO_ROOT = resolve('tools/studio');
 const PURPOSE_REVIEW_VARIANTS = createWindmillPurposeReviewVariantsV1();
 const RECIPE_REVIEW_VARIANTS = PURPOSE_REVIEW_VARIANTS.filter(

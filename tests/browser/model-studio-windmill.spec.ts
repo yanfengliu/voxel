@@ -24,7 +24,11 @@ import {
 import {
   verifyWindmillSelectedPhysicalProof,
 } from './windmill-selected-proof-browser.js';
+import { guardPageErrors } from './page-errors.js';
 
+
+// Every test in this file fails if the page throws or logs an error.
+guardPageErrors();
 const STUDIO_ROOT = resolve('tools/studio');
 const OPPOSITE_EVIDENCE_PITCH_DEGREES = 45;
 

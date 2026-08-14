@@ -4,7 +4,11 @@ import { expect, test, type Locator, type Page } from '@playwright/test';
 import { createServer, type ViteDevServer } from 'vite';
 
 import type { StudioShelfItemKindV1 } from '../../tools/studio/studio-shelf-order.js';
+import { guardPageErrors } from './page-errors.js';
 
+
+// Every test in this file fails if the page throws or logs an error.
+guardPageErrors();
 const STUDIO_ROOT = resolve('tools/studio');
 
 let server: ViteDevServer | undefined;

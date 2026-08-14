@@ -2,7 +2,11 @@ import { resolve } from 'node:path';
 
 import { expect, test, type Page } from '@playwright/test';
 import { createServer, type ViteDevServer } from 'vite';
+import { guardPageErrors } from './page-errors.js';
 
+
+// Every test in this file fails if the page throws or logs an error.
+guardPageErrors();
 const STUDIO_ROOT = resolve('tools/studio');
 
 /**
