@@ -114,13 +114,10 @@ describe('the trebuchet scenarios', () => {
   it('comes to rest after firing', async () => {
     // The arm and counterweight hang on frictionless revolute joints, so
     // nothing in the solver stops them on its own.
-    // Judged by its checks, not by `status === 'pass'`. The runner
-    // downgrades a run to 'warn' when a solver step overran the wall-clock
-    // budget, which says the machine was busy and nothing about the
-    // physics — measured on a loaded full-gate run, this scenario passed
-    // every check with a max step of 81.48 ms and was reported a failure.
-    // `expectScenarioCorrectV1` exists for exactly this and is documented
-    // as such; these two cases were the last ones not using it.
+    // Judged by its checks, which now agrees with the status: the verdict
+    // stopped folding in wall-clock timing, so a loaded host can no longer
+    // turn an all-checks-passed run into a failure the way it did here at a
+    // measured 81.48 ms max step.
     const result = await runPlaygroundScenarioV1(station, 'treb-settles');
     expectScenarioCorrectV1(result);
   }, 300_000);

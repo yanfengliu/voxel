@@ -133,10 +133,11 @@ describe('physics playground smoke', () => {
   it('8. the same deterministic scenario twice gives the same result', async () => {
     const again = await runPlaygroundScenarioV1(falling, 'falling-settle');
     const original = await fallingRun();
-    // Physics only: `status` can differ legitimately because a wall-clock
-    // stall over the 50 ms budget turns 'pass' into 'warn'.
-    expect(again.status).not.toBe('fail');
-    expect(original.status).not.toBe('fail');
+    // The verdict is a pure function of the physics now: timing is reported
+    // but no longer decides it, so two runs of one scenario must agree
+    // exactly rather than merely both avoiding 'fail'.
+    expect(again.status).toBe(original.status);
+    expect(again.status).toBe('pass');
     expect(again.finalBodies.length).toBe(original.finalBodies.length);
     for (const [index, body] of again.finalBodies.entries()) {
       const reference = original.finalBodies[index]!;

@@ -135,4 +135,53 @@ describe('the live lane\'s machine capabilities', () => {
       session.dispose();
     }
   });
+  // `#jointedBodies` was add-only: an id went in when a joint was created and
+  // never came out, not on detach and not when `removeBody` took the partner
+  // away. `#applyRollingResistance` then kept charging `bearingFriction` — 25
+  // to 40 times `airSpinDrag` — to a body no joint held, though the law reads
+  // in the present tense. Every current scene masks it; the first mechanism to
+  // release a free dynamic body would have over-damped its spin in flight.
+  it('stops charging bearing friction once the joint lets go', async () => {
+    const session = await world(PROFILE);
+    try {
+      session.attachJoint({
+        id: 'grip',
+        kind: 'fixed',
+        a: 'carrier',
+        b: 'load',
+        anchorA: [0, 0.6, 0],
+        anchorB: [0, 0, 0],
+      });
+      session.stepOnce();
+      const held = session.angularDampingOfV1('load');
+
+      session.detachJoint('grip');
+      session.stepOnce();
+      const freed = session.angularDampingOfV1('load');
+
+      expect(held, 'a jointed body should carry bearing friction')
+        .toBeGreaterThan(0);
+      expect(freed, 'a freed body should shed it').toBeLessThan(held);
+    } finally {
+      session.dispose();
+    }
+  });
+  // The policy resolves colliders through the built-body map, and a
+  // spawn-only body is not in it yet — so the policy applied to an empty
+  // list, and `spawnPlanned` later built colliders with Rapier's default
+  // groups, colliding through pairs the policy never granted. An unnamed
+  // spawned body was not inert at all, which is the inverse of the promise.
+  it('refuses a contact policy it cannot apply to a spawn-only body', async () => {
+    await expect(LivePhysicsSessionV1.create(
+      {
+        sceneId: 'studio:scene:probe',
+        bodies: [
+          { placementId: 'carrier', kind: 'fixed' },
+          { placementId: 'load', kind: 'dynamic', spawnOnly: true },
+        ],
+        contactPolicy: { pairs: [['carrier', 'load']] },
+      },
+      [source('carrier', [0, 1, 0]), source('load', [0, 1.6, 0])],
+    )).rejects.toThrow(/spawn-only/);
+  });
 });

@@ -280,7 +280,20 @@ export class LivePhysicsSessionV1 {
   readonly #rapier: RapierModule;
   readonly #world: RapierWorld;
   readonly #bodies = new Map<string, LiveBodyInternal>();
-  readonly #jointedBodies = new Set<string>();
+  /**
+   * Bodies a joint currently holds, recomputed from `#joints` on every change.
+   *
+   * It used to be add-only: ids went in when a joint was created and never
+   * came out, not on `detachJoint` and not when `removeBody` took a partner
+   * away. `#applyRollingResistance` then charged `bearingFriction` — 25 to 40
+   * times `airSpinDrag` — to a body no joint held any more, though the law is
+   * written in the present tense ("true when a joint holds this body"). Every
+   * current scene masks it, because their released parts either stay jointed
+   * elsewhere or turn kinematic in the same tick; the first mechanism to drop
+   * a free dynamic body would have over-damped its spin in flight, in both
+   * lanes, with no counter-run able to tell.
+   */
+  #jointedBodies = new Set<string>();
   readonly #joints = new Map<string, {
     readonly joint: RAPIER_TYPES.ImpulseJoint;
     readonly a: string;
@@ -350,6 +363,26 @@ export class LivePhysicsSessionV1 {
     }
     for (const plan of profile.joints ?? []) this.#createJoint(plan);
     if (profile.contactPolicy !== undefined) {
+      // A spawn-only body has no colliders yet, so the policy would resolve
+      // an empty list for it and "apply" to nothing — and when `spawnPlanned`
+      // built it later, its colliders would take Rapier's default groups and
+      // collide with everything the policy never granted. The guarantee is
+      // that a body a policy does not name is inert; for a spawned body it
+      // silently inverted. No profile combines the two today, so this refuses
+      // the combination rather than shipping a policy that is a decoration.
+      const deferred = profile.bodies
+        .filter((plan) => plan.spawnOnly)
+        .map((plan) => plan.placementId);
+      if (deferred.length > 0) {
+        throw new Error(
+          `Scene '${profile.sceneId}' declares a contactPolicy and also `
+          + `spawn-only bodies (${deferred.join(', ')}). A spawn-only body has `
+          + 'no colliders when the policy is applied, so it would be built '
+          + 'later with default groups and collide through pairs the policy '
+          + 'never granted. Give those bodies ordinary plans, or drop the '
+          + 'contactPolicy, until the policy is re-applied at spawn time.',
+        );
+      }
       applyLiveContactPolicyV1(
         profile.contactPolicy,
         profile.bodies.map((plan) => plan.placementId),
@@ -688,13 +721,46 @@ export class LivePhysicsSessionV1 {
         this.#joints.delete(id);
       }
     }
+    // The partner this body was joined to is no longer held by anything.
+    this.#refreshJointedBodies();
     this.#world.removeRigidBody(live.body);
     this.#bodies.delete(placementId);
+  }
+
+  /**
+   * A body's current angular damping, so a test can watch a law act.
+   *
+   * The fixture lane exposes `linearDampingOfV1` for the same reason: a law
+   * that is only applied is a law nothing can check. Bearing friction in
+   * particular is conditional — it is charged while a joint holds the body and
+   * must stop when one lets go — and that condition is unobservable from
+   * poses alone.
+   */
+  angularDampingOfV1(placementId: string): number {
+    this.#assertLive();
+    const live = this.#bodies.get(placementId);
+    if (live === undefined) {
+      throw new Error(
+        `Angular damping was asked for '${placementId}', but no live body `
+        + 'carries that id — it was never built, is still spawn-only, or was '
+        + 'removed.',
+      );
+    }
+    return live.body.angularDamping();
   }
 
   /** Live joint ids, so a caller can ask before detaching. */
   jointIds(): readonly string[] {
     return [...this.#joints.keys()];
+  }
+
+  #refreshJointedBodies(): void {
+    const held = new Set<string>();
+    for (const entry of this.#joints.values()) {
+      held.add(entry.a);
+      held.add(entry.b);
+    }
+    this.#jointedBodies = held;
   }
 
   /** Releases a declared joint — the trigger action. Both bodies stay. */
@@ -710,6 +776,7 @@ export class LivePhysicsSessionV1 {
     }
     this.#world.removeImpulseJoint(entry.joint, true);
     this.#joints.delete(jointId);
+    this.#refreshJointedBodies();
   }
 
   /**
@@ -745,13 +812,12 @@ export class LivePhysicsSessionV1 {
             anchorB, { x: 0, y: 0, z: 0, w: 1 },
           )
           : rapier.JointData.rope(plan.lengthMeters ?? 0, anchorA, anchorB);
-    this.#jointedBodies.add(plan.a);
-    this.#jointedBodies.add(plan.b);
     this.#joints.set(plan.id, {
       joint: this.#world.createImpulseJoint(data, a.body, b.body, true),
       a: plan.a,
       b: plan.b,
     });
+    this.#refreshJointedBodies();
   }
 
   /**

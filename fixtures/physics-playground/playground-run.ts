@@ -180,13 +180,16 @@ export function playgroundResultLineV1(
 /**
  * Asserts a scenario is physically correct: every check passed.
  *
- * Deliberately not `status === 'pass'`. The runner downgrades a run to
- * 'warn' when any solver step exceeded the wall-clock budget, which is a
- * statement about how busy the machine was, not about the physics — a
- * full-gate run on a loaded host measured a 62 ms step and turned an
- * all-checks-passed trebuchet run into a failure. Timing stays in the
- * report, and the preset tests still assert on it, where it is the
- * point of the test rather than a side effect of the host.
+ * Equivalent to `status === 'pass'` now that the verdict is a pure function
+ * of the checks, and still preferable: it names the check that failed instead
+ * of reporting a bare status.
+ *
+ * It exists because the verdict used to fold in wall-clock timing — a loaded
+ * full-gate host measured a 62 ms step and turned an all-checks-passed
+ * trebuchet run into a failure. That is fixed at the source; timing is
+ * reported in `maxStepMs`, `meanStepMs` and `timingNote`, where the preset
+ * tests assert on it because there it is the point rather than a side effect
+ * of how busy the machine was.
  */
 export function expectScenarioCorrectV1(
   result: PlaygroundScenarioResultV1,

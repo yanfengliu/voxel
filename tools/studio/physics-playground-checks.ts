@@ -75,7 +75,18 @@ export interface PlaygroundScenarioResultV1 {
   readonly scenarioId: string;
   readonly sceneId: string;
   readonly ticks: number;
-  readonly status: 'pass' | 'warn' | 'fail';
+  /**
+   * The verdict, from the checks alone.
+   *
+   * It used to be `failed ? 'fail' : slow ? 'warn' : 'pass'`, which made a
+   * wall-clock measurement part of a result that is otherwise a pure function
+   * of the physics — the same scenario could return `pass` or `warn` on
+   * identical inputs depending on host scheduling, and the determinism test
+   * had to tolerate that. Timing is still reported, in `maxStepMs`,
+   * `meanStepMs`, and `timingNote`; it is no longer a verdict input, which is
+   * what the field below always claimed.
+   */
+  readonly status: 'pass' | 'fail';
   readonly checks: readonly PlaygroundCheckResultV1[];
   readonly finalBodies: readonly PlaygroundBodySnapshotV1[];
   /** Count of non-finite numbers seen across every sampled frame. */
@@ -1024,7 +1035,7 @@ export function evaluatePlaygroundScenarioV1(
     scenarioId: scenario.id,
     sceneId: station.sceneId,
     ticks: solverTicksForSecondsV1(scenario.seconds),
-    status: failed ? 'fail' : slow ? 'warn' : 'pass',
+    status: failed ? 'fail' : 'pass',
     checks,
     finalBodies: last ? last.bodies : [],
     nonFiniteSamples: nonFinite,

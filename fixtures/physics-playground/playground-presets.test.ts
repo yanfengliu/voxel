@@ -45,9 +45,10 @@ describe('performance presets', () => {
     expect(station.bodies.length).toBe(501);
     const result = await runPlaygroundScenarioV1(station, 'field-stress-settles');
     console.log(playgroundResultLineV1(result));
-    // 'warn' is an acceptable stress outcome — it means the timing budget
-    // was exceeded and reported, which is this preset's whole job.
-    expect(result.status, playgroundResultLineV1(result)).not.toBe('fail');
+    // The stress preset's job is honest timing, not a frame rate, and the
+    // verdict no longer folds timing in: a slow step is reported in
+    // `maxStepMs` and `timingNote` and leaves the status alone.
+    expect(result.status, playgroundResultLineV1(result)).toBe('pass');
     expect(result.maxStepMs).toBeGreaterThan(0);
   }, 600_000);
 });
