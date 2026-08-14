@@ -232,6 +232,87 @@ test('adjust on an editable live scene moves a model with the mouse', async ({ p
   expect(moved, 'the drag moved the bucket across the ground').toBeGreaterThan(1);
 });
 
+/** Drags across the middle of the stage with one mouse button. */
+async function dragAcrossStage(
+  page: Page,
+  button: 'left' | 'middle',
+  pixels: number,
+): Promise<void> {
+  const stage = page.locator('.stage');
+  const box = await stage.boundingBox();
+  if (!box) throw new Error('the stage has no layout box');
+  const y = box.y + box.height / 2;
+  const x = box.x + box.width / 2;
+  await page.mouse.move(x, y);
+  await page.mouse.down({ button });
+  await page.mouse.move(x + pixels, y, { steps: 8 });
+  await page.mouse.up({ button });
+}
+
+const stageYaw = (page: Page): Promise<number> =>
+  page.evaluate(() => window.voxelStudio!.viewState().yawDegrees);
+
+test('the left button never turns the camera; the middle button always does', async ({ page }) => {
+  // One pointer rule for every view. A left drag that turned the camera
+  // whenever it missed a grabbable body made the most delicate action in the
+  // studio — reaching for a swinging chain link — the one most likely to
+  // fling the view instead.
+  await openLiveScene(page, 'studio:scene:chain-links');
+  expect(await page.evaluate(() => window.voxelStudio!.stageMode())).toBe('interact');
+
+  const interactStart = await stageYaw(page);
+  await dragAcrossStage(page, 'left', 160);
+  expect(await stageYaw(page), 'a left drag in Interact leaves the camera alone')
+    .toBe(interactStart);
+  await dragAcrossStage(page, 'middle', 160);
+  expect(await stageYaw(page), 'a middle drag turns it').not.toBe(interactStart);
+
+  // The same rule on the model stage, which has nothing to grab at all.
+  await page.evaluate(() => { window.voxelStudio!.openFromShelf('studio:starter'); });
+  const modelStart = await stageYaw(page);
+  await dragAcrossStage(page, 'left', 160);
+  expect(await stageYaw(page), 'a left drag on the model stage leaves the camera alone')
+    .toBe(modelStart);
+  await dragAcrossStage(page, 'middle', 160);
+  expect(await stageYaw(page), 'a middle drag turns it').not.toBe(modelStart);
+  await expect(page.locator('.stagehint')).toContainText('middle-drag to turn');
+});
+
+test('one simulation switch stops a live scene that has no authored motion', async ({ page }) => {
+  // Machine Works owns no animated recipe and no moving light, so the switch
+  // that only knew about the scene clock decided it could not move and hid
+  // itself — on the one scene in the catalog that is nothing but simulation.
+  await openLiveScene(page, 'studio:scene:contrast-machines');
+  const control = page.getByRole('button', { name: 'Scene simulation', exact: true });
+  await expect(control).toBeVisible();
+  await expect(control).toHaveText('simulation on');
+
+  const running = await page.evaluate(async () => {
+    const before = window.voxelStudio!.livePhysics().stepped;
+    await new Promise((done) => { setTimeout(done, 400); });
+    return window.voxelStudio!.livePhysics().stepped - before;
+  });
+  expect(running, 'the solver advances while the switch is on').toBeGreaterThan(0);
+
+  await control.click();
+  await expect(control).toHaveText('simulation off');
+  const held = await page.evaluate(async () => {
+    const before = window.voxelStudio!.livePhysics().stepped;
+    await new Promise((done) => { setTimeout(done, 400); });
+    return { before, after: window.voxelStudio!.livePhysics().stepped };
+  });
+  expect(held.after, 'the solver holds exactly where it was').toBe(held.before);
+
+  await control.click();
+  await expect(control).toHaveText('simulation on');
+  const resumed = await page.evaluate(async () => {
+    const before = window.voxelStudio!.livePhysics().stepped;
+    await new Promise((done) => { setTimeout(done, 400); });
+    return window.voxelStudio!.livePhysics().stepped - before;
+  });
+  expect(resumed, 'and starts again from there').toBeGreaterThan(0);
+});
+
 test('clicking under the rail drops balls that settle in the bucket', async ({ page }) => {
   await openLiveScene(page, 'studio:scene:ball-drop');
 

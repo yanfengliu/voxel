@@ -145,6 +145,10 @@ export class StudioLiveInteract {
   readonly #adjustButton: HTMLButtonElement;
   readonly #interactButton: HTMLButtonElement;
   #mode: StudioStageModeV1 = 'adjust';
+  // The studio's one simulation switch, mirrored here so a world built after
+  // the switch was thrown starts in the state the user chose rather than
+  // running for the moment it takes the scene to open.
+  #running = true;
   #profile: LivePhysicsProfileV1 | null = null;
   #session: LivePhysicsSessionV1 | null = null;
   #presentation: LiveScenePresentationDriverV1 | null = null;
@@ -338,6 +342,7 @@ export class StudioLiveInteract {
           return;
         }
         this.#session = session;
+        session.setPaused(!this.#running);
         this.#presentation = createLiveScenePresentationV1(scene.id);
         if (this.#mode === 'interact') {
           this.#hooks.setLivePoseMode(true);
@@ -351,6 +356,27 @@ export class StudioLiveInteract {
         );
       }
     })();
+  }
+
+  /**
+   * Starts or stops the live world — the solver half of the studio's single
+   * "simulation" switch.
+   *
+   * Before this existed, a live scene had two unrelated answers to "is it
+   * running": the scene clock behind the simulation toggle, which only ever
+   * moved authored motion and moving lights, and the solver, which had no
+   * switch outside the playground panel. Machine Works showed no toggle at
+   * all because it has neither an animated recipe nor a light, while
+   * Riverfall showed one that left its water running.
+   */
+  setRunning(on: boolean): void {
+    this.#running = on;
+    this.#session?.setPaused(!on);
+  }
+
+  /** Whether the live world is advancing. */
+  running(): boolean {
+    return this.#running;
   }
 
   /** The live session, for the playground's transport and inspector. */
@@ -452,6 +478,13 @@ export class StudioLiveInteract {
         ? 0
         : nowMs - this.#lastFrameMs;
       this.#lastFrameMs = nowMs;
+      // A stopped world costs nothing: no step, no pose rebuild, no redraw.
+      // The clock is re-anchored above, so resuming does not hand the solver
+      // the whole pause to catch up on.
+      if (!this.#running) {
+        this.#frameHandle = requestAnimationFrame(frame);
+        return;
+      }
       this.#frameElapsedMs = elapsed;
       try {
         const before = performance.now();

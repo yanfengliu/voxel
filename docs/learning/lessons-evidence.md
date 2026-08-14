@@ -388,3 +388,18 @@ The failure mode when fixing it is instructive too. Raising the shared floor to 
 
 **How to apply:** before trusting a threshold, ask how many distinct populations reach it. If more than one, measure each separately — the shared value is calibrated for the tightest and is silently near-noise for the rest. And when raising a shared floor breaks a subset, that subset is a second population, not a regression to tune around.
 
+## Riverfall's water moves, and only its silhouette shows it
+
+The owner's report was "some movement, but too peaceful — I can't see water flowing very much." Measured before theorised, with a headless Playwright driver that framed the fall and diffed consecutive `.stage` screenshots 200 ms apart inside the page: **0.75–1.6% of pixels changed per interval**, mean channel delta under 0.6 of 255.
+
+Riverfall's 321 surface tiles never travel. The reconstruction's entire visible output is a displacement along each tile's own normal — `normalExcursion` `[0.03, 0.44]` world units — plus a lean capped at 0.35 rad. Raising that to `[0.03, 1.8]`, the tilt gain from 8 to 26, and shortening the advected wavelength from 20 to 6 moved the measurement only to **1.8–2.7%**. The screenshot explained the rest: the upstream river surface now visibly bulged past its bank, because that edge is a silhouette against green grass, while the waterfall curtain stayed a perfectly flat slab. Its 20 cells carry normals facing the camera, every tile is the same flat colour at 0.62 opacity, and the scene declares no lights — so displacement inside the sheet has nothing to shade it and nothing to occlude.
+
+The general form: a displacement channel needs something to reveal it. One flat colour with no lighting variation leaves exactly one revealer, the outline, and interior motion is free of visual consequence however large it gets. Anchor: the measurements above, taken 2026-08-14 against `riverfall-fluid-config.ts` at commit `e6769b5`.
+
+## Two switches for one question left the most simulated scene with none
+
+Studio's `simulation on/off` control drove `StudioSceneAnimationTransport`, which owns the scene clock: authored recipe motion, moving point lights, pose replays. Its visibility came from `SceneSessionV1.hasMotion()` — `poseReplay !== null || movingLights > 0 || animatedInstances > 0`.
+
+Machine works has none of those. Every recipe in `machine-works-recipes.ts` declares `periodMs: 0`, the scene carries no lights, and it stopped being a replay scene when every scene went live. The control concluded, correctly on its own terms, that the scene could not move — and hid itself on the one scene in the catalog that is nothing but simulation. The solver's own pause existed only in the physics-playground panel, which `sceneOpened` shows for playground scene ids alone, so Machine works, Riverfall, the windmill and the chain could not be stopped at all. Riverfall failed the other way: two animated recipes (foam 3,000 ms, kelp 5,600 ms) made the switch appear, and turning it off stopped the kelp while the water ran on.
+
+Neither switch was wrong about its own subsystem. The error was letting a user-visible question — is this scene moving? — be answered by whichever subsystem happened to own the control. Anchor: `studio-app.ts` `sceneCanSimulate()` and `StudioLiveInteract.setRunning`, pinned by `model-studio-live-physics.spec.ts` "one simulation switch stops a live scene that has no authored motion", 2026-08-14.

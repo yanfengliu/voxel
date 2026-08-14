@@ -737,7 +737,7 @@ test('Machine Works diagnostic projection exposes the internal slat and stepped-
   }
 });
 
-test('Machine Works rejects authored selection and edits while a real left drag only orbits', async ({ page }) => {
+test('Machine Works rejects authored selection and edits, and a real left drag moves nothing at all', async ({ page }) => {
   await mountMachineWorks(page);
   await page.locator('[data-studio-tab="edit"]').click();
   // Read-only because the solver decides where these bodies sit, not because
@@ -814,8 +814,20 @@ test('Machine Works rejects authored selection and edits while a real left drag 
   expect(afterDrag.scene).toEqual(rejected.before);
   expect(afterDrag.selected).toBeNull();
   expect(afterDrag.outlineLines).toBe(0);
-  expect(afterDrag.view.yawDegrees).not.toBe(rejected.view.yawDegrees);
-  expect(afterDrag.view.pitchDegrees).not.toBe(rejected.view.pitchDegrees);
+  // The left button acts on what is under it and never turns the camera. On a
+  // scene that poses itself there is nothing under it to act on, so the drag
+  // does nothing — it does not quietly become an orbit.
+  expect(afterDrag.view.yawDegrees).toBe(rejected.view.yawDegrees);
+  expect(afterDrag.view.pitchDegrees).toBe(rejected.view.pitchDegrees);
+
+  // The middle button is how this scene is turned, and it still works.
+  await page.mouse.move(startX, startY);
+  await page.mouse.down({ button: 'middle' });
+  await page.mouse.move(startX + 100, startY + 45, { steps: 6 });
+  await page.mouse.up({ button: 'middle' });
+  const afterTurn = await page.evaluate(() => window.voxelStudio!.viewState());
+  expect(afterTurn.yawDegrees).not.toBe(rejected.view.yawDegrees);
+  expect(afterTurn.pitchDegrees).not.toBe(rejected.view.pitchDegrees);
   await settleMachineWorksTo(page, CARRIER_UNDER_WAY_TICKS);
   await page.addStyleTag({
     content: [

@@ -176,7 +176,6 @@ test('Riverfall opens responsively and changes under autonomous wall-clock play'
     () => page.evaluate(() => window.voxelStudio!.livePhysics().stepped),
     { timeout: 5_000 },
   ).toBeGreaterThan(3);
-  await page.evaluate(() => { window.voxelStudio!.setSceneAnimation(false); });
   const opening = await page.evaluate(() => ({
     heartbeat: (window as unknown as {
       __riverfallHeartbeat: {
@@ -206,6 +205,26 @@ test('Riverfall opens responsively and changes under autonomous wall-clock play'
   expect(later.heartbeat.maximumGapMs).toBeLessThan(1_000);
   expect(later.stepped - opening.stepped).toBeGreaterThan(10);
   expect(laterHash).not.toBe(openingHash);
+
+  // The switch that says "simulation" governs the water too. This test used to
+  // turn it off and assert the river ran on regardless, which was true and was
+  // the defect: a scene that says it is stopped and is not stopped is lying
+  // about the only thing that control claims to report.
+  await page.evaluate(() => { window.voxelStudio!.setSceneAnimation(false); });
+  const held = await page.evaluate(async () => {
+    const before = window.voxelStudio!.livePhysics().stepped;
+    await new Promise((done) => { setTimeout(done, 600); });
+    return { before, after: window.voxelStudio!.livePhysics().stepped };
+  });
+  expect(held.after).toBe(held.before);
+
+  await page.evaluate(() => { window.voxelStudio!.setSceneAnimation(true); });
+  const resumed = await page.evaluate(async () => {
+    const before = window.voxelStudio!.livePhysics().stepped;
+    await new Promise((done) => { setTimeout(done, 600); });
+    return window.voxelStudio!.livePhysics().stepped - before;
+  });
+  expect(resumed).toBeGreaterThan(10);
   expect(errors).toEqual([]);
   console.log(
     `autonomous Riverfall: ready and stepping by ${opening.elapsedMs.toFixed(1)} ms; `

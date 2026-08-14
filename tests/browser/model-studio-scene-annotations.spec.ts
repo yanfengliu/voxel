@@ -645,14 +645,15 @@ test('Riverfall pins hide outside their captured view, restore it, and send requ
   // paused solver state so host load cannot spend its 60-second budget solving
   // water that none of the camera, pin, resize, or request assertions observe.
   await page.waitForFunction(() => window.voxelStudio!.livePhysics().running);
-  const settledLiveTick = await page.evaluate(() => {
-    const studio = window.voxelStudio!;
-    studio.settleLive(1);
-    return studio.livePhysics().stepped;
-  });
   const captureEvidence = await page.evaluate(() => {
     const studio = window.voxelStudio!;
+    // The simulation preference goes on first and the deliberate settle comes
+    // after it, because one switch now governs the scene clock and the solver
+    // together: turning the preference on after a settle would restart the
+    // water this workflow means to hold. `settleLive` is the hold — an exact
+    // tick count, chosen for inspection — and it leaves the preference alone.
     studio.setSceneAnimation(true);
+    studio.settleLive(1);
     studio.setDepth(true);
     studio.setEdges(true);
     studio.setLit(false);
@@ -716,6 +717,15 @@ test('Riverfall pins hide outside their captured view, restore it, and send requ
   expect(await page.evaluate(() => window.voxelStudio!.sceneAnnotationMode())).toBe(true);
   expect(await page.evaluate(() => window.voxelStudio!.playerState().playing)).toBe(true);
   await expect(panel.getByLabel('Annotation note')).toBeHidden();
+  // Held again for the long tail below. Play above restarts the solver as well
+  // as the scene clock, and none of the pin, look, resize, or request
+  // assertions that follow observe the water — solving it under host load
+  // would spend this test's budget on nothing it checks.
+  const heldLiveTick = await page.evaluate(() => {
+    const studio = window.voxelStudio!;
+    studio.settleLive(0);
+    return studio.livePhysics().stepped;
+  });
   const captureStage = await stageBox(page);
   const captureX = captureStage.x + captureStage.width / 2;
   const captureY = captureStage.y + captureStage.height / 2;
@@ -785,10 +795,11 @@ test('Riverfall pins hide outside their captured view, restore it, and send requ
   }, { key: SCENE_ANNOTATIONS_KEY, timeMs: pin.timeMs });
   expect(animationFrameStorageReads).toBe(0);
 
-  // Once annotation mode is off, the same left drag is the replay's ordinary
-  // orbit gesture again. The old marker hides because it is a screen/view
-  // capture, not a claim that the screen point follows a world object.
-  await dragStage(page, 95, 40);
+  // Once annotation mode is off, turning the camera is a middle-drag again —
+  // the left button never turns it, in this view or any other. The old marker
+  // hides because it is a screen/view capture, not a claim that the screen
+  // point follows a world object.
+  await dragStageWithButton(page, 95, 40, 'middle');
   expect(await page.evaluate(() => window.voxelStudio!.viewState())).not.toEqual(captureEvidence.view);
   await expect(page.locator('.scene-annotation-marker')).toHaveCount(0);
 
@@ -951,7 +962,10 @@ test('Riverfall pins hide outside their captured view, restore it, and send requ
   expect(sent.scene).not.toHaveProperty('poseReplay');
   expect(sent.capture).not.toHaveProperty('replay');
   expect(JSON.stringify(sent)).not.toContain('translationsBase64');
+  // The solver is exactly where the settle left it: a pin restore, a look
+  // change, a resize, and a request are inspection, and none of them restarts
+  // a held world.
   expect(await page.evaluate(() => window.voxelStudio!.livePhysics().stepped))
-    .toBe(settledLiveTick);
+    .toBe(heldLiveTick);
   expect(errors).toEqual([]);
 });

@@ -451,11 +451,11 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
   // The hint teaches only what this profile offers: without Notes the click
   // is correctly ignored, so the hint must not promise it.
   const modelStageHint = supportsNotes
-    ? 'drag to turn · right-drag or WASD to move view · scroll to zoom · double-click to re-centre · click to pin a note'
-    : 'drag to turn · right-drag or WASD to move view · scroll to zoom · double-click to re-centre';
+    ? 'middle-drag to turn · right-drag or WASD to move view · scroll to zoom · double-click to re-centre · click to pin a note'
+    : 'middle-drag to turn · right-drag or WASD to move view · scroll to zoom · double-click to re-centre';
   const sceneStageHint = 'click a model to select · drag it to move · '
     + 'middle-drag to turn · right-drag or WASD to move view · scroll to zoom';
-  const replaySceneStageHint = 'drag to turn · right-drag or WASD to move view · scroll to zoom · '
+  const replaySceneStageHint = 'middle-drag to turn · right-drag or WASD to move view · scroll to zoom · '
     + 'this scene poses its own models, so they cannot be moved by hand';
   const interactStageHint = 'drag a moving part to pull it, release to let go · '
     + 'nothing is recorded · middle-drag to turn · right-drag or WASD to move view · scroll to zoom';
@@ -716,6 +716,10 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
   }
   const player = new StudioPlayer(session.model.motion.periodMs);
   const sceneTransport = new StudioSceneAnimationTransport(player, view.sceneAnimation, () => performance.now());
+  // The persisted choice reaches the solver too, so a studio reopened with
+  // simulation off does not run a live world for the moment before the first
+  // toggle.
+  liveInteract.setRunning(view.sceneAnimation);
   const noteStore = new NoteStore();
   // The floor, colour, and note anchor the editor, notes, and stage share.
   const state: StudioEditStateV1 = {
@@ -869,8 +873,9 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
       if (sceneOpen !== null) rejectedAutoResize = null;
     },
     resumeSceneAnimation(): boolean {
-      if (sceneOpen === null || sceneSession?.hasMotion() !== true) return false;
-      sceneTransport.setEnabled(true, lastShownMs, true);
+      if (!sceneCanSimulate()) return false;
+      sceneTransport.setEnabled(true, lastShownMs, sceneSession?.hasMotion() === true);
+      liveInteract.setRunning(true);
       persistView();
       // Resume is an explicit retry boundary. If the next moving-light phase
       // still cannot fit, followStage caches that same size once again.
@@ -881,8 +886,9 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
       return true;
     },
     pauseSceneAnimation(): boolean {
-      if (sceneOpen === null || sceneSession?.hasMotion() !== true) return false;
-      sceneTransport.setEnabled(false, lastShownMs, true);
+      if (!sceneCanSimulate()) return false;
+      sceneTransport.setEnabled(false, lastShownMs, sceneSession?.hasMotion() === true);
+      liveInteract.setRunning(false);
       persistView();
       refresh();
       playerBar.syncPlayButton();
@@ -1044,6 +1050,9 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
     setSceneAnimation(on: boolean): boolean {
       const hasMotion = sceneOpen !== null && sceneSession?.hasMotion() === true;
       sceneTransport.setEnabled(on, lastShownMs, hasMotion);
+      // The same switch stops the solver. Anything else means a scene that
+      // says "simulation off" while its water keeps running.
+      liveInteract.setRunning(on);
       persistView();
       if (on && hasMotion) { rejectedAutoResize = null; clearViewError(); }
       refresh();
@@ -1787,7 +1796,6 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
   function syncSceneStatus(scene: SceneV1): void {
     const count = scene.placements.length;
     const lightCount = scene.lights?.length ?? 0;
-    const hasMotion = sceneSession?.hasMotion() === true;
     const recorded = isRecordedReplayScene(scene);
     const liveSolved = isLiveSolvedScene(scene);
     const replay = recorded ? sceneSession?.poseReplayStatus() : null;
@@ -1799,7 +1807,7 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
       : '';
     statusChip.textContent = `scene · ${String(count)} model${count === 1 ? '' : 's'}`
       + sceneLightingStatusSuffix(lightCount, session.lit)
-      + sceneAnimationStatusSuffix(hasMotion, sceneTransport.enabled)
+      + sceneAnimationStatusSuffix(sceneCanSimulate(), sceneTransport.enabled)
       + (recorded ? ' · consumer replay · read-only' : '')
       + (liveSolved ? ' · live physics · solved in browser' : '')
       + (replay?.playback === 'once' ? ' · one shot' : '')
@@ -1811,10 +1819,25 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
         + (latest === undefined || latest === null ? '' : `; ${replayEventEvidence(latest)}`);
   }
 
+  /**
+   * Whether the open scene can move at all: authored motion, a moving light,
+   * or a live solver.
+   *
+   * The simulation switch answers for all three, because from the stage they
+   * are one question. It used to answer only for the scene clock, which
+   * moves animated recipes and lights and nothing else — so Machine Works,
+   * whose every moving part is the solver's answer and which owns neither an
+   * animated recipe nor a light, showed no switch at all, and Riverfall
+   * showed one that left its water running.
+   */
+  function sceneCanSimulate(): boolean {
+    if (sceneOpen === null) return false;
+    return sceneSession?.hasMotion() === true || liveInteract.state().available;
+  }
+
   function syncSceneStageHint(scene: SceneV1): void {
     const replayReadOnly = isSelfPosedScene(scene);
     const lightCount = scene.lights?.length ?? 0;
-    const hasMotion = sceneSession?.hasMotion() === true;
     // In Interact the left button belongs to the live solver, so the hint
     // teaches the solver's affordances instead of selection or scrubbing.
     const normalHint = liveInteract.handlesPointer()
@@ -1827,10 +1850,10 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
       lightCount,
       session.lit,
     );
-    syncStageKeyboardShortcuts(true, hasMotion);
+    syncStageKeyboardShortcuts(true, sceneCanSimulate());
     stageHint.textContent = sceneAnimationStageHint(
       lightingHint,
-      hasMotion,
+      sceneCanSimulate(),
       sceneTransport.enabled,
     );
   }
@@ -1916,7 +1939,7 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
     depthToggle.classList.toggle('on', depthOn);
     lightingControl.sync(session.lit, lightCount);
     sceneAnimationControl.sync(sceneTransport.enabled);
-    sceneAnimationToggle.hidden = !hasMotion;
+    sceneAnimationToggle.hidden = !sceneCanSimulate();
     // A scene has no one model, so the model-only tools step aside, and the
     // scene-only snap toggle steps in.
     wireframeToggle.hidden = true;
@@ -2253,7 +2276,11 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
     });
   }
 
-  type StageGesture = 'none' | 'orbit' | 'pan' | 'move' | 'annotate' | 'live';
+  // 'inert' is a left press that owns the drag and does nothing with it. The
+  // left button never turns the camera, so a press that grabs nothing still
+  // has to consume its own drag — otherwise the release reads as a clean
+  // click and spawns a ball or pins a note nobody asked for.
+  type StageGesture = 'none' | 'orbit' | 'pan' | 'move' | 'annotate' | 'live' | 'inert';
   let gesture: StageGesture = 'none';
   let moved = false;
   let lastX = 0;
@@ -2352,27 +2379,33 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
       gesture = 'none';
       return;
     }
+    // One rule for every view: the left button acts on what is under it, the
+    // middle button turns, the right button pans. Left never turns the camera
+    // — not on the model stage, not in a self-posed scene, and not when a
+    // grab in Interact misses. A pointer whose meaning changes with what it
+    // happened to hit is a pointer nobody can trust with a delicate grab.
     if (event.button === 1) { gesture = 'orbit'; return; }
     if (event.button === 2) { gesture = 'pan'; return; }
     if (event.button !== 0) { gesture = 'none'; return; }
-    if (!sceneOpen) { gesture = 'orbit'; return; }
+    if (!sceneOpen) { gesture = 'inert'; return; }
     if (sceneNotesPanel.editorOpen) { gesture = 'none'; return; }
     if (sceneAnnotationModeOn) {
       gesture = sceneAnnotationGesture.prepare(event) ? 'annotate' : 'none';
       return;
     }
     // In Interact mode the left button belongs to the live solver: a hit on a
-    // dynamic body starts a spring grab, and a miss falls back to orbiting so
-    // the camera never dies. A clean click may still spawn on pointer-up.
+    // dynamic body starts a spring grab, and a miss holds the drag inert
+    // rather than turning the camera under the hand that meant to grab. A
+    // clean click may still spawn on pointer-up.
     if (liveInteract.handlesPointer()) {
-      gesture = liveInteract.pointerDown(cursorRay(event)) ? 'live' : 'orbit';
+      gesture = liveInteract.pointerDown(cursorRay(event)) ? 'live' : 'inert';
       return;
     }
     // Replayed transforms are presented observations, while authored placement
     // boxes describe only the trace's static source. Picking or moving those
-    // boxes would select stale geometry, so every left drag remains a camera
-    // orbit in this read-only view.
-    if (isSelfPosedScene(sceneOpen)) { gesture = 'orbit'; return; }
+    // boxes would select stale geometry, so a left drag does nothing at all in
+    // this read-only view.
+    if (isSelfPosedScene(sceneOpen)) { gesture = 'inert'; return; }
     // Left in a scene selects the model under the cursor and starts dragging it.
     const picked = pickPlacement(event);
     selectPlacement(picked);

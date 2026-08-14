@@ -173,6 +173,15 @@ export async function mountWindmillSceneReviewVariant(
       studio.harness.setEdges(false);
       studio.harness.setSceneAnimation(false);
       studio.harness.drawAt(0);
+      // Both mounts leave their live world running for the captures that
+      // follow, which is what they did before one simulation switch governed
+      // the solver as well as the scene clock, and is the condition
+      // WINDMILL_INTENDED_VIEW_PROOF_V1's floors were measured under. Holding
+      // both sides still instead is the honest comparison and it fails: with
+      // the mill stopped, four of these relocations move 0.000171 to 0.011677
+      // of the frame from the front and exactly nothing from the rear, against
+      // a 0.012 floor. See docs/devlog/detailed/2026-08-14_2026-08-14.md.
+      studio.harness.setSceneAnimation(true);
       return {
         id: variant.id,
         label: variant.label,
