@@ -205,6 +205,31 @@ function canonicalOffsets(offsets: readonly Int3V1[]): readonly Int3V1[] {
  * Rebuild with the immediately previous index to preserve coordinate-slot
  * generations. Removed-coordinate tombstones are retained so a same-identity
  * remove/recreate cycle cannot reuse an earlier generation.
+ *
+ * That retention is unbounded within an epoch, and deliberately so. Every
+ * build copies the whole slot map and adds an `empty` tombstone for each
+ * vacated coordinate, so a world that pages chunks in and out accretes one
+ * permanent entry per coordinate ever occupied — memory that only grows, and
+ * an O(coordinates-ever) copy on every accepted target.
+ *
+ * Both obvious repairs are unsafe as the code stands, which is why neither is
+ * here:
+ *
+ * - *Dropping* old tombstones reopens the hole they exist for. A coordinate
+ *   with no slot starts again at generation 1 (see the `prior === undefined`
+ *   branch below), so an in-flight worker result from the coordinate's
+ *   previous occupancy carries a generation the new occupancy also claims.
+ *   `chunk-index.test.ts` pins the ABA case at generation 4 and would fail.
+ * - *Bounding* them needs a caller that can act on the refusal. The only
+ *   correct response to "this index can no longer prove staleness for old
+ *   coordinates" is a new epoch, and the profiled plan path that calls
+ *   `build` has no epoch-replacement path to fall into.
+ *
+ * So this is bounded by the epoch's lifetime rather than by a budget. It
+ * costs nothing for a world of fixed extent, which is every consumer today;
+ * streaming is outside the current release. The condition that changes this
+ * is a consumer that pages chunks through a long-lived epoch — at which point
+ * the work is an epoch-replacement path in the runtime, not a cap here.
  */
 export class ChunkIndexV1 {
   readonly profile: UniformVoxelChunkProfileV1;

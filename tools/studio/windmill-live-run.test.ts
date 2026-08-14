@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
+import { timeoutForMeasuredWorkMs } from '../../tests/testing/test-timeout.js';
+
 import { createStudioCatalog } from './catalog.js';
 import {
   LIVE_TICKS_PER_SECOND_V1,
@@ -16,6 +18,16 @@ import {
   windmillMilledImpactsV1,
 } from './windmill-production-kinematics.js';
 import { createWindmillScene } from './windmill-scene.js';
+
+/**
+ * One live mill solve, measured on the owner's machine: 141 ms and 102 ms for
+ * the two cases here.
+ *
+ * These carried a bare `600_000` — ten minutes for a tenth of a second of
+ * work. Above the shared floor, so the meta-scan never saw it, but loose
+ * enough to hide almost any regression.
+ */
+const WINDMILL_SOLVE_WORK_MS = 150;
 
 /**
  * The mill actually milling, solved rather than replayed.
@@ -147,7 +159,9 @@ describe('the windmill, solved live', () => {
     }
   });
 
-  it('turns, lifts its hammer, and strikes the anvil repeatedly', { timeout: 600_000 }, async () => {
+  it('turns, lifts its hammer, and strikes the anvil repeatedly', {
+    timeout: timeoutForMeasuredWorkMs(WINDMILL_SOLVE_WORK_MS),
+  }, async () => {
     const run = await runMill();
 
     // A mill that turns. The jammed-bearing failure sat at a hundredth of
@@ -179,7 +193,9 @@ describe('the windmill, solved live', () => {
       .toBeGreaterThan(1);
   });
 
-  it('settles to a loaded speed instead of running away', { timeout: 600_000 }, async () => {
+  it('settles to a loaded speed instead of running away', {
+    timeout: timeoutForMeasuredWorkMs(WINDMILL_SOLVE_WORK_MS),
+  }, async () => {
     const run = await runMill();
     const speeds = run.spins.map(Math.abs);
     const settled = speeds.slice(Math.floor(speeds.length / 2));

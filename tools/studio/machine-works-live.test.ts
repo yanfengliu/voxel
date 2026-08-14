@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
+import { timeoutForMeasuredWorkMs } from '../../tests/testing/test-timeout.js';
+
 import { createStudioCatalog } from './catalog.js';
 import {
   LIVE_TICKS_PER_SECOND_V1,
@@ -33,6 +35,17 @@ import { catalogPartsV1, catalogRecipesV1 } from './studio-library.js';
 
 const TICKS_PER_SECOND = LIVE_TICKS_PER_SECOND_V1;
 const RUN_SECONDS = 32;
+/**
+ * One 32-second solve, measured on the owner's machine: 623 ms and 732 ms for
+ * the two cases here.
+ *
+ * These carried a bare `900_000` before — fifteen minutes for two thirds of a
+ * second of work, which is above the shared floor and so never tripped the
+ * meta-scan, but loose enough that a fourteen-minute regression would have
+ * passed silently. `timeoutForMeasuredWorkMs` states the measurement and lets
+ * the contention allowance do the rest.
+ */
+const MACHINE_WORKS_SOLVE_WORK_MS = 750;
 const BUCKET = MACHINE_WORKS_SCENE_LAYOUT_V1.bucket;
 const BUCKET_X = [
   BUCKET.at[0] - (BUCKET.sizeVoxels[0] * BUCKET.grain) / 2,
@@ -103,7 +116,9 @@ async function runMachine(): Promise<RunV1> {
 }
 
 describe('Machine Works, solved live', () => {
-  it('carries, assembles, releases, and collects one product', { timeout: 900_000 }, async () => {
+  it('carries, assembles, releases, and collects one product', {
+    timeout: timeoutForMeasuredWorkMs(MACHINE_WORKS_SOLVE_WORK_MS),
+  }, async () => {
     const run = await runMachine();
     const coreStationSecond = Math.ceil(MACHINE_WORKS_TICKS.coreAttached / 60) + 1;
     const capStationSecond = Math.ceil(MACHINE_WORKS_TICKS.assembled / 60) + 1;
@@ -150,7 +165,9 @@ describe('Machine Works, solved live', () => {
     }
   });
 
-  it('comes to rest instead of drifting', { timeout: 900_000 }, async () => {
+  it('comes to rest instead of drifting', {
+    timeout: timeoutForMeasuredWorkMs(MACHINE_WORKS_SOLVE_WORK_MS),
+  }, async () => {
     const run = await runMachine();
     const last = run.seconds - 1;
     for (const id of [IDS.base, IDS.core, IDS.cap]) {
