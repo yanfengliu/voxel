@@ -533,7 +533,7 @@ for (const sceneVariant of SCENE_REVIEW_VARIANTS) {
     ));
     expect(differences.some((difference) =>
       difference.differingPixels / difference.totalPixels
-        > WINDMILL_INTENDED_VIEW_PROOF_V1.minimumChangedPixelFraction
+        > WINDMILL_INTENDED_VIEW_PROOF_V1.minimumRelocationChangedPixelFraction
       && difference.maximumChannelDelta
         > WINDMILL_INTENDED_VIEW_PROOF_V1.minimumChangedChannelDelta))
       .toBe(true);
