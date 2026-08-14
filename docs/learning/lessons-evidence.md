@@ -376,3 +376,15 @@ Four of the eight survived that test. Five did not.
 
 **How to apply:** when a review pass produces a deferral list, re-read it as a list of decisions before publishing it, and for each entry name the specific missing input. If you cannot name one, the entry is a fix you have not done yet.
 
+## A floor shared by two populations is calibrated for one and meaningless for the other
+
+**Anchor:** 2026-08-13. `WINDMILL_INTENDED_VIEW_PROOF_V1.minimumChangedPixelFraction` at 0.0001, serving both exact-box removals (98 variants, smallest real detection **0.000359**) and whole-placement relocations (8 cases, tightest **0.024441**). Split into two constants, each at half its own measured minimum.
+
+One constant answered two questions: "is removing this box detectable?" and "is relocating this whole assembly detectable?" It was set at 0.0001 — about a third of the smallest real *removal*, which is a sensible floor for that population. For relocations it sat **244× below** the tightest real case, so "is visible in the composed scene" was satisfied by a tenth of a percent of the change a real relocation produces.
+
+Nothing about reading the constant reveals this. It looks like one tuned number. The tell only appears when you measure both populations and find their true magnitudes two orders of magnitude apart.
+
+The failure mode when fixing it is instructive too. Raising the shared floor to match the relocations immediately broke four removal proofs — and that breakage was the diagnosis, not a setback. A single small box legitimately changes well under one percent of a frame; a whole assembly moving does not. The floors were never the same measurement wearing one name.
+
+**How to apply:** before trusting a threshold, ask how many distinct populations reach it. If more than one, measure each separately — the shared value is calibrated for the tightest and is silently near-noise for the rest. And when raising a shared floor breaks a subset, that subset is a second population, not a regression to tune around.
+

@@ -143,25 +143,32 @@ one-line-per-file hook covering all 34 tests, skipped when a test already failed
 so it never masks the real failure. Verified by injecting a `console.error` into
 the studio mount path and watching all five mount tests go red.
 
-## Still not acted on, with reasons
+## Iteration 1c — the last four, measured
 
-- **`ChunkIndexV1`'s slot map grows without bound within an epoch** and is fully
-  copied on every build, so a long session degrades steadily. Real, and the
-  reviewer's reasoning holds. The fix is a retention bound that fails closed into
-  an epoch replacement, and the right bound is a number measured against a real
-  streaming session — which nothing here streams yet. Guessing it now would be
-  furniture.
-- **Capture carries no output colour-space evidence**, so a borrowed renderer
-  configured for non-sRGB output produces an accepted capture whose colours
-  differ from the documented promise. This is a contract change — new fields on
-  the borrowed-renderer and readback surfaces — not a bug fix, and it wants the
-  owner's call on where the burden sits.
-- **Windmill "visible/legible" proofs enforce sliver-level floors** — 50
-  contrasting pixels in a 5% box satisfies "remains legible". Raising them needs
-  a measurement of what the canonical render actually produces, so the new floors
-  are a stated fraction of a real number rather than a guess. That measurement is
-  the work, and it belongs with someone looking at the renders.
-- **Two heavyweight live-solve suites solve twice** with bare timeout literals.
-  Pure cost, no added independence; deferred only because it touches the two
-  longest-running suites in the gate and deserves its own before/after timing
-  rather than being folded into a correctness pass.
+All four remaining findings were closed. Two needed a measurement, which was taken; one needed a contract decision, which was made narrow enough to be additive; and one turned out to rest on a claim that did not hold.
+
+### The duplicated heavyweight solves — claim did not survive measurement
+
+The finding said both suites "re-solve the entire live scene", costing "minutes of duplicated solver work on every `npm test`". Measured: one 32-second Machine Works solve is **623 ms**, the second case **732 ms**; the windmill's are **141 ms** and **102 ms**. The duplication costs about 0.7 s and 0.1 s respectively, not minutes, and sharing a run would trade two tests' independence for that. Not done, and the premise is recorded so it is not re-proposed.
+
+The other half of the finding was real. Both files carried bare literals — `900_000` and `600_000` — for work measured in hundreds of milliseconds. Those sit *above* the shared floor, so the meta-scan never saw them, but fifteen minutes of budget for two thirds of a second would let almost any regression pass. Both now derive from `timeoutForMeasuredWorkMs` with the measurement stated beside the constant.
+
+### The windmill legibility floors — measured, and one constant was serving two populations
+
+Measured from the canonical renders: across **138 footprint samples** the smallest real asset covers **5,734 pixels** (the floor was 50); across the **8 relocation cases** the tightest moves **2.44%** of pixels in its best camera (the floor was 0.01%, **244x below**).
+
+Raising the shared floor to match the relocations immediately failed four removal proofs — and that failure was the useful part. Removing one exact box legitimately changes well under one percent of the frame: across **98 removal variants** the smallest detection is **0.000359**. One constant had been serving two populations whose true magnitudes differ by two orders of magnitude, which is why the relocation assertion sat near noise for its own population.
+
+They are separate constants now, each set at half the measured minimum of its own population, so a real asset keeps 2x headroom and a regression to a sliver cannot pass. Verified load-bearing by raising the relocation floor past every real detection and watching all eight fail.
+
+### Capture colour space — made detectable rather than redesigned
+
+`docs/design/spec.md` promises captures encode sRGB. `RendererLike` carried no colour-space information, and nothing in `src/three` set or asserted it, so a borrowed renderer configured for linear output produced a capture that satisfied every MIME and dimension check with the wrong colours. Three's own `WebGLRenderer` sets `outputColorSpace`, so a borrowed real renderer always supplies it.
+
+`RendererLike.outputColorSpace` is optional and read only when present — existing custom adapters keep compiling — and capture refuses a non-sRGB renderer with `three.capture.output-color-space`, naming what it found and what would satisfy it. That is the narrow version: the mismatch becomes a named refusal instead of silent wrong colour, without redesigning where the burden sits.
+
+### `ChunkIndexV1`'s unbounded slot map — the mechanism, recorded
+
+This one stays open, and now with the reason rather than an estimate. The retention is not incidental: a coordinate with no slot restarts at generation 1, so dropping a tombstone lets an in-flight worker result from a coordinate's previous occupancy carry a generation the new occupancy also claims. `chunk-index.test.ts` already pins the ABA case at generation 4, so the unsafe repair fails loudly — which is the right state for it to be in.
+
+Bounding rather than dropping is safe in principle, but the only correct response to "this index can no longer prove staleness for old coordinates" is a new epoch, and the profiled plan path that calls `build` has no epoch-replacement path to fall into. So the work is a runtime lifecycle change, not a cap in the index. That, and the condition that would trigger it — a consumer paging chunks through a long-lived epoch, which the current release does not have — is now recorded at the site.
