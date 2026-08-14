@@ -152,11 +152,34 @@ export function createRuntimeCapturePortInternal(
  * Reads the renderer's canvas back as a data URL for one committed frame. The
  * caller fences the draw; this only encodes and bounds the result.
  */
+/**
+ * The only output colour space a capture may claim.
+ *
+ * `SRGBColorSpace` from Three, spelled here so `voxel/three`'s capture path
+ * does not depend on the constant's identity across releases.
+ */
+const CAPTURE_OUTPUT_COLOR_SPACE_V1 = 'srgb';
+
 export function captureRuntimeReadbackDataUrlInternal(
   renderer: RendererLike,
   presented: ThreePresentedManifestV1,
   request: ThreeCaptureReadbackRequestV1,
 ): ThreeCaptureReadbackV1 {
+  // A borrowed renderer decides its own output encoding, and the capture
+  // contract promises sRGB. Checked before the readback so the refusal names
+  // the configuration rather than shipping mis-encoded pixels that pass every
+  // MIME and dimension check.
+  const colorSpace = renderer.outputColorSpace;
+  if (colorSpace !== undefined && colorSpace !== CAPTURE_OUTPUT_COLOR_SPACE_V1) {
+    throw new ThreeCaptureProtocolError(
+      'three.capture.output-color-space',
+      `Capture requires a renderer whose outputColorSpace is `
+      + `'${CAPTURE_OUTPUT_COLOR_SPACE_V1}'; this renderer reports `
+      + `'${colorSpace}', so its pixels would not be the sRGB the capture `
+      + `contract promises. Set outputColorSpace on the borrowed renderer, or `
+      + `let the runtime own one.`,
+    );
+  }
   const dimensions = capturePixelDimensionsV1Internal(presented);
   const toDataURL = renderer.domElement.toDataURL;
   if (typeof toDataURL !== 'function') {

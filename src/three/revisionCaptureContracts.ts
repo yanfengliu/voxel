@@ -160,7 +160,9 @@ export type ThreeCaptureProtocolErrorCodeV1 =
   | 'three.capture.lease-release-failed'
   | 'three.capture.reentrant'
   | 'three.capture.readback-invalid'
-  | 'three.capture.readback-too-large';
+  | 'three.capture.readback-too-large'
+  /** The renderer writes a colour space the capture contract cannot promise. */
+  | 'three.capture.output-color-space';
 
 export class ThreeCaptureProtocolError extends Error {
   readonly code: ThreeCaptureProtocolErrorCodeV1;

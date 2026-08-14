@@ -8,6 +8,8 @@ Additive API plus six correctness fixes found by a full-codebase adversarial rev
 
 - `voxel/physics` — the laws of the voxel universe as plain data plus one function that applies them to any rigid body able to report its damping. No solver, no Three.js, no DOM. Present since `ea1b734`; unversioned until now.
 - `MeshSchedulerReceiveResultV1` carries an optional `issue` when a worker rejects a request outright, so the reason it named survives the trip back.
+- `RendererLike.outputColorSpace` — optional, read only when present. `docs/design/spec.md` promises captures encode sRGB and nothing checked it, so a borrowed renderer configured for linear output produced a capture that passed every MIME and dimension check with the wrong colours. Capture now refuses one, with the new `three.capture.output-color-space` code. Optional so existing custom adapters keep compiling; an exhaustive switch over `ThreeCaptureProtocolErrorCodeV1` gains one case.
+- `WINDMILL_INTENDED_VIEW_PROOF_V1.minimumRelocationChangedPixelFraction` — whole-placement relocation detection had been borrowing the floor calibrated for single-box removals.
 
 ### Fixed
 
@@ -21,6 +23,7 @@ Additive API plus six correctness fixes found by a full-codebase adversarial rev
 ### Changed
 
 - Input that produced corrupt output is now refused at the boundary rather than accepted: unbounded voxel scales and pivots, and projective instance matrices. A consumer sending any of these was already getting wrong pixels.
+- Windmill legibility floors are measured rather than nominal. "Remains legible" was satisfied by 50 foreground pixels against a real minimum of 5,734 across 138 samples, and "is visible in the composed scene" by 0.01% of changed pixels against a tightest real relocation of 2.44% — 244x below. Each floor is now half the measured minimum of its own population, and the two populations are separate constants because removing one small box and relocating a whole assembly differ in magnitude by two orders.
 - `nanoid` moved to 3.3.18 in the lockfile to clear GHSA-2v37-7h3g-55p8. It is a build-time-only transitive dependency through `vite` → `postcss`, and the vulnerable `customRandom` lives in nanoid's secure entry; postcss imports `nanoid/non-secure`, which is byte-identical between the two versions. Nothing this package redistributes was ever exposed.
 
 

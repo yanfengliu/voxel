@@ -29,6 +29,18 @@ export interface RendererLike {
   getSize(target: Vector2): Vector2;
   /** Required when a borrowed renderer grants runtime viewport ownership. */
   getPixelRatio(): number;
+  /**
+   * The colour space this renderer writes to its drawing buffer.
+   *
+   * Optional so existing custom adapters keep compiling, and read only when
+   * present. Three's `WebGLRenderer` sets it, so a borrowed real renderer
+   * always supplies it. `docs/design/spec.md` promises captures encode sRGB,
+   * and nothing checked: a host renderer configured for linear output
+   * produced a capture that satisfied every MIME and dimension check while
+   * its colours were wrong. Capture refuses a non-sRGB renderer now rather
+   * than publishing pixels under a promise it cannot keep.
+   */
+  readonly outputColorSpace?: string;
   dispose(): void;
 }
 

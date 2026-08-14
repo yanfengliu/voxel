@@ -1060,4 +1060,42 @@ describe('ThreeRenderRuntime', () => {
     expect(runtime.captureWithManifest()).not.toMatchObject({ status: 'captured' });
     runtime.dispose();
   });
+  // `docs/design/spec.md` promises captures encode sRGB, and nothing checked
+  // it: a borrowed renderer configured for linear output produced a capture
+  // that satisfied every MIME and dimension check while its colours were
+  // wrong. The refusal names the configuration and what would satisfy it.
+  it('refuses to capture through a renderer that does not write sRGB', () => {
+    const renderer = new FakeRenderer();
+    (renderer as { outputColorSpace?: string }).outputColorSpace = 'srgb-linear';
+    const runtime = new ThreeRenderRuntime({
+      renderer,
+      rendererOwnership: 'borrowed',
+      width: 320,
+      height: 200,
+    });
+    expect(runtime.acceptSnapshot(validSnapshot(1, 'epoch:capture-space')).status)
+      .toBe('accepted');
+    runtime.frame({ nowMs: 0, deltaMs: 0, frameIndex: 0 });
+
+    expect(() => runtime.captureWithManifest())
+      .toThrow(/outputColorSpace|srgb/i);
+    runtime.dispose();
+  });
+
+  it('captures through a renderer that reports sRGB', () => {
+    const renderer = new FakeRenderer();
+    (renderer as { outputColorSpace?: string }).outputColorSpace = 'srgb';
+    const runtime = new ThreeRenderRuntime({
+      renderer,
+      rendererOwnership: 'borrowed',
+      width: 320,
+      height: 200,
+    });
+    expect(runtime.acceptSnapshot(validSnapshot(1, 'epoch:capture-srgb')).status)
+      .toBe('accepted');
+    runtime.frame({ nowMs: 0, deltaMs: 0, frameIndex: 0 });
+
+    expect(runtime.captureWithManifest()).toMatchObject({ status: 'captured' });
+    runtime.dispose();
+  });
 });

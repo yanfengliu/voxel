@@ -145,7 +145,7 @@
       ]
     },
     "dist/meshing/chunk-index.d.ts": {
-      "sha256": "cfba764d07f847bb25be8f02cef72b7d1b0181c8efd5e9dc395e7302781e7da5",
+      "sha256": "b48ec0f0dfb823fe5cab84585603f43eeba15ef6513afccbd710e0c2e1a90970",
       "reachableFrom": [
         "./meshing",
         "./three"
@@ -375,13 +375,13 @@
       ]
     },
     "dist/three/rendererTypes.d.ts": {
-      "sha256": "6e9a6f8cca550a180aa0584afee9d1c64f05ef5099263e09d1f09065562ef7b4",
+      "sha256": "afab652362ca49c5d8479ebcb4e15e5ffad69a21e0147066cd066938e270c26d",
       "reachableFrom": [
         "./three"
       ]
     },
     "dist/three/revisionCaptureContracts.d.ts": {
-      "sha256": "99a2948bea97dd6af8ed775f91606b670eab7098ff1236f03884fc5cfeb56a28",
+      "sha256": "36128018a24b7dc69e5700fbf15fbc0dfbaff846e8d2728e875704f0e2b7e9b9",
       "reachableFrom": [
         "./three"
       ]
