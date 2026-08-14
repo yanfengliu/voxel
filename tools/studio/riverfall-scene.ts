@@ -1,3 +1,4 @@
+import { RIVERFALL_SPRAY_PLACEMENTS_V1 } from './riverfall-spray.js';
 import { RIVERFALL_WATER_OPACITY_V1 } from './riverfall-surface-grid.js';
 import {
   createRiverfallFlowPlacementsV1,
@@ -81,6 +82,18 @@ const FLOW_RELATIONSHIPS: readonly RiverfallRelationshipV1[] =
   }));
 
 /**
+ * Every fleck samples the same solved state the tiles do. It is the same
+ * relation because it is the same claim: this thing shows you where the fluid
+ * is, and decides nothing about where the fluid goes.
+ */
+const SPRAY_RELATIONSHIPS: readonly RiverfallRelationshipV1[] =
+  RIVERFALL_SPRAY_PLACEMENTS_V1.map(({ id }) => ({
+    from: id,
+    relation: 'samples',
+    to: 'riverfall-fluid-state',
+  }));
+
+/**
  * The authored relationship proof is kept beside the scene because SceneV1 is
  * intentionally only renderable placement data, not a game relationship graph.
  */
@@ -94,6 +107,52 @@ export const RIVERFALL_RELATIONSHIPS_V1: readonly RiverfallRelationshipV1[] = [
   ...PLANT_RELATIONSHIPS,
   ...TREE_RELATIONSHIPS,
   ...FLOW_RELATIONSHIPS,
+  ...SPRAY_RELATIONSHIPS,
+];
+
+/**
+ * Daylight over the canyon, and the reason the scene needs any.
+ *
+ * The surface reconstruction leans every tile along the local slope of the
+ * height field precisely so a light can shade a passing wave — that is what
+ * the tilt gain is for. Riverfall then shipped with no light at all, so the
+ * whole channel resolved to nothing: measured on 2026-08-14, the water moved
+ * 0.6–1.8% of the stage's pixels per 200 ms unlit and 7–11% with light on the
+ * same wave field and the same solver.
+ *
+ * Three point lights rather than one, because one leaves the far bank and the
+ * pond floor as flat silhouettes and the scene is read from every angle. The
+ * key stands over the lip where the water breaks, the fill sits low over the
+ * pond so the plunge and its foam are legible from the front, and the third
+ * carries the upstream river, which is otherwise the darkest thing in frame.
+ * All three are static: a moving light would make the water look like it was
+ * moving when it was not, which is the opposite of what this scene is for.
+ */
+const RIVERFALL_LIGHTS_V1 = [
+  {
+    id: 'canyon-key',
+    kind: 'point' as const,
+    at: [-6, 26, 6] as const,
+    color: { r: 255, g: 246, b: 226 },
+    intensity: 2_600,
+    range: 70,
+  },
+  {
+    id: 'pond-fill',
+    kind: 'point' as const,
+    at: [8, 15, 22] as const,
+    color: { r: 214, g: 232, b: 255 },
+    intensity: 1_500,
+    range: 52,
+  },
+  {
+    id: 'river-fill',
+    kind: 'point' as const,
+    at: [-4, 22, -20] as const,
+    color: { r: 232, g: 240, b: 255 },
+    intensity: 1_500,
+    range: 54,
+  },
 ];
 
 export function createRiverfallScene(): SceneV1 {
@@ -116,6 +175,8 @@ export function createRiverfallScene(): SceneV1 {
       ...RIVERFALL_PLANT_PLACEMENTS_V1,
       ...RIVERFALL_TREE_PLACEMENTS_V1,
       ...createRiverfallFlowPlacementsV1(),
+      ...RIVERFALL_SPRAY_PLACEMENTS_V1,
     ],
+    lights: RIVERFALL_LIGHTS_V1,
   };
 }

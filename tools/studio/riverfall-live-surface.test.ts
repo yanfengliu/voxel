@@ -6,6 +6,7 @@ import {
 } from './generated-riverfall-fluid-warm-state.js';
 import { LIVE_TIMESTEP_SECONDS_V1 } from './live-physics.js';
 import { RiverfallLiveSurfaceV1 } from './riverfall-live-surface.js';
+import { RIVERFALL_SPRAY_PLACEMENT_IDS_V1 } from './riverfall-spray.js';
 import { RIVERFALL_SURFACE_CELLS_V1 } from './riverfall-surface-grid.js';
 import { decodeRiverfallFluidWarmStateV1 } from './riverfall-warm-state.js';
 
@@ -22,7 +23,10 @@ describe('the live Riverfall surface', () => {
   it('poses every authored cell from the fluid it just stepped', () => {
     const surface = new RiverfallLiveSurfaceV1();
     const poses = surface.poses();
-    expect(poses.size).toBe(RIVERFALL_SURFACE_CELLS_V1.length);
+    // Every cell, plus one pose for each foam fleck riding a particle.
+    expect(poses.size).toBe(
+      RIVERFALL_SURFACE_CELLS_V1.length + RIVERFALL_SPRAY_PLACEMENT_IDS_V1.length,
+    );
     for (const cell of RIVERFALL_SURFACE_CELLS_V1) {
       const pose = poses.get(cell.id);
       expect(pose, `cell '${cell.id}' has no live pose`).toBeDefined();

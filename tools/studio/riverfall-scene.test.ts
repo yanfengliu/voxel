@@ -14,6 +14,10 @@ import {
   RIVERFALL_RELATIONSHIPS_V1,
   RIVERFALL_TREE_PLACEMENTS_V1,
 } from './riverfall-scene.js';
+import {
+  RIVERFALL_SPRAY_MODEL_ID,
+  RIVERFALL_SPRAY_PLACEMENT_IDS_V1,
+} from './riverfall-spray.js';
 import { sceneOverlapsV1 } from './scene-overlap.js';
 import { validateSceneV1 } from './scene.js';
 import { createStudioRecipeBook } from './recipes.js';
@@ -77,14 +81,19 @@ describe('Riverfall system scene', () => {
     expect(scene.summary ?? '').toContain('nothing is rendered over that lead-in');
   });
 
-  it('hands every surface tile to the live lane rather than to the author', () => {
+  it('hands every surface tile and fleck to the live lane rather than to the author', () => {
     // The fluid owns the tiles: the profile says so, which is what makes the
     // scene read-only and what keeps the authored-overlap check from judging a
-    // tile for sinking into the underfill it is designed to sink into.
+    // tile for sinking into the underfill it is designed to sink into. The
+    // foam flecks are owned on the same terms and for the same reason.
     const posed = Object.keys(RIVERFALL_LIVE_PROFILE_V1.poses ?? {});
-    expect(posed).toHaveLength(RIVERFALL_SURFACE_CELLS_V1.length);
-    expect(new Set(posed))
-      .toEqual(new Set(RIVERFALL_SURFACE_CELLS_V1.map(({ id }) => id)));
+    expect(posed).toHaveLength(
+      RIVERFALL_SURFACE_CELLS_V1.length + RIVERFALL_SPRAY_PLACEMENT_IDS_V1.length,
+    );
+    expect(new Set(posed)).toEqual(new Set([
+      ...RIVERFALL_SURFACE_CELLS_V1.map(({ id }) => id),
+      ...RIVERFALL_SPRAY_PLACEMENT_IDS_V1,
+    ]));
     expect(RIVERFALL_LIVE_PROFILE_V1.sceneId).toBe(scene.id);
     // No bodies: a tile is a presentation of the fluid, never a body that
     // could collide with something.
@@ -269,10 +278,27 @@ describe('Riverfall system scene', () => {
     expect(left.map(({ at }) => at[2])).not.toEqual(right.map(({ at }) => at[2]));
   });
 
-  it('does not overlay a separate drop or foam-particle layer', () => {
+  it('carries foam as solver-ridden flecks, not as authored ripple patches', () => {
+    // The scene refused a foam layer outright until 2026-08-14, on the reading
+    // that one reconstructed sheet should carry the whole flow. Measurement
+    // retired that: the sheet is one flat colour, so in the Studio's default
+    // unlit look its only visible channel is its outline, and the water read
+    // as still. What is allowed back is not what was removed. The old patches
+    // were four fixed ripples pulsing on an authored period; a fleck is
+    // wherever one of the solver's own particles is this frame, which is why
+    // the scene still has no placement on the pulsing 'foam' model.
     expect(RIVERFALL_FOAM_PLACEMENTS_V1).toEqual([]);
     expect(scene.placements.some(
       ({ model }) => model === 'studio:riverfall:foam',
     )).toBe(false);
+    const flecks = scene.placements.filter(
+      ({ model }) => model === RIVERFALL_SPRAY_MODEL_ID,
+    );
+    expect(flecks).toHaveLength(RIVERFALL_SPRAY_PLACEMENT_IDS_V1.length);
+    // Every fleck is posed by the fluid, and stands still on its own.
+    const posed = new Set(Object.keys(RIVERFALL_LIVE_PROFILE_V1.poses ?? {}));
+    for (const fleck of flecks) expect(posed.has(fleck.id), fleck.id).toBe(true);
+    const recipe = createStudioRecipeBook()[RIVERFALL_SPRAY_MODEL_ID];
+    expect(recipe?.motion.periodMs).toBe(0);
   });
 });

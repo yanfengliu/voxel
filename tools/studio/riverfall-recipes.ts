@@ -4,6 +4,7 @@ import type {
   RecipeStepV1,
   RecipeV1,
 } from './recipe.js';
+import { RIVERFALL_SPRAY_MODEL_ID } from './riverfall-spray.js';
 import {
   RIVERFALL_SURFACE_MODEL_ID,
   RIVERFALL_SURFACE_SEAM_MODEL_ID,
@@ -19,6 +20,13 @@ const STILL = {
 
 const EMPTY = { r: 0, g: 0, b: 0 } as const;
 const SURFACE_WATER = { r: 38, g: 126, b: 174 } as const;
+/**
+ * Aerated water, which is why it is nearly white rather than a lighter blue:
+ * foam is water full of air, and air scatters every wavelength. It also has to
+ * carry the scene's motion in the Studio's unlit look, where a colour close to
+ * the sheet's own blue would leave the flecks as invisible as the sheet.
+ */
+const FOAM_WHITE = { r: 206, g: 228, b: 236 } as const;
 
 function box(
   at: readonly [number, number, number],
@@ -212,6 +220,42 @@ export function createRiverfallFluidSurfaceSeamRecipe(): RecipeV1 {
   };
 }
 
+/**
+ * One fleck of foam, drawn where the solver says a parcel of water is.
+ *
+ * A three-axis clump rather than a cube, for two reasons the first draft
+ * proved. A cube at this size reads as a floating crate — a row of them across
+ * the plunge looked like a shelf, not like churn — and a 1x1x1 model is so
+ * featureless that the catalog's own diversity analyzer made it the nearest
+ * neighbour of the windmill anvil, which says more about a degenerate shape
+ * than about either model.
+ *
+ * Seven voxels at a fifth of a unit each: about two thirds of a world unit
+ * across, broken on every axis, and cheap enough that the scene can move a
+ * hundred of them every frame.
+ */
+export function createRiverfallSprayRecipe(): RecipeV1 {
+  return {
+    schemaVersion: 'studio.voxel-recipe/1',
+    id: RIVERFALL_SPRAY_MODEL_ID,
+    label: 'Water fleck',
+    seed: 1,
+    size: [3, 3, 3],
+    summary: 'One aerated fleck riding a solved fluid particle. It is a '
+      + 'presentation of the water, not a body: it never collides, carries no '
+      + 'mass, and adds nothing to the closed particle count it is drawn from.',
+    tags: ['water', 'foam', 'spray', 'fluid'],
+    roles: ['empty', 'foam'],
+    palette: [EMPTY, FOAM_WHITE],
+    steps: [
+      box([1, 0, 1], [1, 3, 1], 'foam', 'Raises the fleck through its own height'),
+      box([0, 1, 1], [3, 1, 1], 'foam', 'Breaks it across the flow'),
+      box([1, 1, 0], [1, 1, 3], 'foam', 'Breaks it along the flow'),
+    ],
+    motion: { ...STILL },
+  };
+}
+
 export function createRiverfallFoamRecipe(): RecipeV1 {
   return {
     schemaVersion: 'studio.voxel-recipe/1',
@@ -313,6 +357,7 @@ export const RIVERFALL_RECIPES = [
   createRiverfallOutflowRecipe(),
   createRiverfallFluidSurfaceRecipe(),
   createRiverfallFluidSurfaceSeamRecipe(),
+  createRiverfallSprayRecipe(),
   createRiverfallFoamRecipe(),
   createRiverfallKelpRecipe(),
   createRiverfallPondweedRecipe(),

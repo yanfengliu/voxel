@@ -1,5 +1,8 @@
 import type { LivePhysicsProfileV1 } from './live-physics.js';
 import { RIVERFALL_SCENE_ID } from './riverfall-flow.js';
+import {
+  RIVERFALL_SPRAY_PLACEMENTS_V1,
+} from './riverfall-spray.js';
 import { RIVERFALL_SURFACE_CELLS_V1 } from './riverfall-surface-grid.js';
 
 /**
@@ -39,8 +42,17 @@ export const RIVERFALL_LIVE_PROFILE_V1: LivePhysicsProfileV1 = Object.freeze({
    * water beneath as the reconstructed field falls, which is the look working,
    * not two models fighting for the same space.
    */
-  poses: Object.fromEntries(RIVERFALL_SURFACE_CELLS_V1.map((cell) => [
-    cell.id,
-    { centre: cell.baseTranslation },
-  ])),
+  poses: Object.fromEntries([
+    ...RIVERFALL_SURFACE_CELLS_V1.map((cell) => [
+      cell.id,
+      { centre: cell.baseTranslation },
+    ] as const),
+    // The flecks belong to the fluid for the same reason the tiles do: their
+    // authored spots are a resting arrangement nobody steers, and the solver
+    // decides where each one actually is on every frame.
+    ...RIVERFALL_SPRAY_PLACEMENTS_V1.map(({ id, at }) => [
+      id,
+      { centre: at },
+    ] as const),
+  ]),
 });

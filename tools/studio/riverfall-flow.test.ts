@@ -100,7 +100,7 @@ describe('Riverfall generated fluid replay', () => {
       advectedWave: {
         phaseRule: 'authored-flow-distance/local-speed-integral/1',
         wavelength: 20,
-        minimumPhaseSpeed: 5,
+        minimumPhaseSpeed: 12,
         localSpeedScale: 0.25,
       },
       loopClosure: {
@@ -117,8 +117,8 @@ describe('Riverfall generated fluid replay', () => {
       normalExcursion: [0.03, 0.44],
       surfaceTilt: {
         rule: 'same-plane-neighbour-slope-least-squares/1',
-        gain: 8,
-        maxRadians: 0.35,
+        gain: 16,
+        maxRadians: 0.5,
       },
     });
     expect(RIVERFALL_FLUID_SURFACE_SUPPORT).toMatchObject({

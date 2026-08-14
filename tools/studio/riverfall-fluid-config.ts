@@ -311,8 +311,21 @@ export function createRiverfallFluidConfigV1(
       },
       advectedWave: {
         phaseRule: 'authored-flow-distance/local-speed-integral/1',
+// Quicker, but no shorter, and the second half of that is a
+        // measurement rather than a preference. Tiles are two units apart, so
+        // a wave has to span several of them or neighbours disagree and the
+        // sheet reads as noise — the p95 adjacent-height gate is 0.08 and the
+        // shortened wavelengths measured 0.1178 at 8 units, 0.0989 at 13, and
+        // 0.0874 at 16, against roughly 0.077 here. Twenty is not a taste; it
+        // is what this tile pitch can carry.
+        //
+        // The phase speed has no such limit, and it is the half that reads as
+        // travel: crests now cross a reach in a third of the time. Amplitude
+        // is deliberately untouched, because the excursion sets how far a foam
+        // fleck must ride above the sheet to stay clear of it, and doubling it
+        // to gain shading would lift every fleck off the water it belongs to.
         wavelength: 20,
-        minimumPhaseSpeed: 5,
+        minimumPhaseSpeed: 12,
         localSpeedScale: 0.25,
       },
       loopClosure: {
@@ -329,8 +342,12 @@ export function createRiverfallFluidConfigV1(
       normalExcursion: [0.03, 0.44],
       surfaceTilt: {
         rule: 'same-plane-neighbour-slope-least-squares/1',
-        gain: 8,
-        maxRadians: 0.35,
+        // Lean is the channel a light actually reads, and until 2026-08-14 the
+        // scene had no light for it to read with. With three, a stronger lean
+        // is what turns the shortened wave into visible relief instead of a
+        // ripple nobody can see.
+        gain: 16,
+        maxRadians: 0.5,
       },
     },
     domain: RIVERFALL_FLUID_DOMAIN_V1,

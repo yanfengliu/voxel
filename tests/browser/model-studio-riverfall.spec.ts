@@ -9,6 +9,7 @@ import {
   RIVERFALL_SURFACE_MODEL_ID,
   RIVERFALL_SURFACE_SEAM_MODEL_ID,
 } from '../../tools/studio/riverfall-surface-grid.js';
+import { RIVERFALL_SPRAY_COUNT_V1 } from '../../tools/studio/riverfall-spray.js';
 
 /**
  * The river, solved in the browser.
@@ -25,16 +26,24 @@ const STUDIO_ROOT = resolve('tools/studio');
 const RIVERFALL_SCENE_ID = 'studio:scene:riverfall';
 const MAX_DIFF_PIXEL_RATIO = 0.002;
 /** Five water structures, six pond plants, ten bank trees, and the tile field. */
-const EXPECTED_INSTANCE_COUNT = 5 + 6 + 10 + RIVERFALL_SURFACE_CELL_COUNT;
+const EXPECTED_INSTANCE_COUNT =
+  5 + 6 + 10 + RIVERFALL_SURFACE_CELL_COUNT + RIVERFALL_SPRAY_COUNT_V1;
 /**
  * 17 before the pond plants; each kelp and weed placement carries its own seed
- * or grain, so the six plants add six single-instance batches.
+ * or grain, so the six plants add six single-instance batches. The 96 foam
+ * flecks add exactly one more: they share a model, a seed and a grain, so they
+ * are one instanced batch however many of them the fluid is carrying. That is
+ * the whole reason a fleck is an instance rather than an object — the scene
+ * moves all 96 every frame for one draw call.
+ *
+ * The renderer geometry count runs two ahead of the batch count because the
+ * ground grid and the selection outline own geometry of their own.
  */
 const EXPECTED_RESOURCE_COUNTS = {
-  instanceBatches: 23,
-  materialResources: 23,
-  geometryResources: 23,
-  rendererGeometries: 23,
+  instanceBatches: 24,
+  materialResources: 24,
+  geometryResources: 24,
+  rendererGeometries: 25,
   rendererTextures: 2,
 } as const;
 /**

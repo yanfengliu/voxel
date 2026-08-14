@@ -31,7 +31,7 @@ describe('Riverfall fluid canonical input', () => {
       '"reconstruction":"visible-particle-compact-kernel-advected-wave-field/3"',
     );
     expect(encoded).toContain(
-      '"surfaceTilt":{"gain":8,"maxRadians":0.35,'
+      '"surfaceTilt":{"gain":16,"maxRadians":0.5,'
       + '"rule":"same-plane-neighbour-slope-least-squares/1"}',
     );
     expect(encoded).toContain('"surfaceModelId":"studio:riverfall:surface-cell"');
@@ -51,7 +51,7 @@ describe('Riverfall fluid canonical input', () => {
       + '"seedRule":"recording-initial-strip-coordinate/1"}',
     );
     expect(encoded).toContain(
-      '"advectedWave":{"localSpeedScale":0.25,"minimumPhaseSpeed":5,'
+      '"advectedWave":{"localSpeedScale":0.25,"minimumPhaseSpeed":12,'
       + '"phaseRule":"authored-flow-distance/local-speed-integral/1",'
       + '"wavelength":20}',
     );

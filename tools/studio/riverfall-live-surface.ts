@@ -13,6 +13,7 @@ import {
   type RiverfallFluidWorkspaceV1,
 } from './riverfall-pbf.js';
 import { RIVERFALL_FLUID_WARM_STATE_V1 } from './generated-riverfall-fluid-warm-state.js';
+import { RiverfallSprayFieldV1 } from './riverfall-spray.js';
 import {
   RIVERFALL_SURFACE_CELLS_V1,
   type RiverfallSurfaceCellV1,
@@ -67,6 +68,7 @@ export class RiverfallLiveSurfaceV1 {
   readonly #velocities: Float32Array;
   readonly #visible: Uint8Array;
   readonly #rawSignals: Float32Array;
+  readonly #spray: RiverfallSprayFieldV1;
   #poses: ReadonlyMap<string, ScenePlacementPoseV1> = new Map();
   #carriedSeconds = 0;
 
@@ -88,6 +90,7 @@ export class RiverfallLiveSurfaceV1 {
     this.#velocities = new Float32Array(witnessCount * 3);
     this.#visible = new Uint8Array(witnessCount);
     this.#rawSignals = new Float32Array(this.#cells.length);
+    this.#spray = new RiverfallSprayFieldV1(this.#config);
     // The generated initial condition is the canonical solver state after
     // burn-in. This instance owns a defensive copy and solves every later
     // state live; opening the scene does not replay motion or synchronously
@@ -173,6 +176,11 @@ export class RiverfallLiveSurfaceV1 {
     return this.#poses;
   }
 
+  /** Particles each foam fleck is riding, for tests and diagnosis. */
+  sprayParticles(): readonly number[] {
+    return this.#spray.heldParticles();
+  }
+
   /** Particles the surface can currently see, for the panel and tests. */
   visibleWitnessCount(): number {
     let visible = 0;
@@ -233,6 +241,10 @@ export class RiverfallLiveSurfaceV1 {
   }
 
   #presentSignals(): void {
+    // The flecks read the same state the tiles do, once per presented frame
+    // rather than once per fixed tick — a catch-up batch reaches one water
+    // state, and one water state has one arrangement of foam on it.
+    this.#spray.update(this.#state);
     const presentation = this.#config.presentation;
     // One frame of the same spatial smoothing the recorded lane applies.
     const smoothed = smoothRiverfallSurfaceSignalsV1(
@@ -268,6 +280,9 @@ export class RiverfallLiveSurfaceV1 {
           maxTiltTangent,
         ),
       });
+    }
+    for (const [placementId, pose] of this.#spray.poses()) {
+      poses.set(placementId, pose);
     }
     this.#poses = poses;
   }
