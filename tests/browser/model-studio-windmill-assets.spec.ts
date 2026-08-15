@@ -49,6 +49,17 @@ const RECIPE_REVIEW_VARIANTS = PURPOSE_REVIEW_VARIANTS.filter(
   (variant): variant is WindmillRecipePurposeReviewVariantV1 =>
     variant.artifact === 'recipe',
 );
+/**
+ * How tall a relocation view is, and how far above the moved anchor it looks.
+ *
+ * Five world units for a relocation near the ground, and more for one higher
+ * up: the Studio's view centre travels the ground plane, so a part standing
+ * six units above it only enters the frame once the frame is tall enough to
+ * reach. What the view has to hold is the moved piece together with the
+ * geometry it moved away from.
+ */
+const WINDMILL_RELOCATION_VIEW_HEIGHT = 5;
+
 const SCENE_REVIEW_VARIANTS = PURPOSE_REVIEW_VARIANTS.filter(
   (variant): variant is WindmillScenePurposeReviewVariantV1 =>
     variant.artifact === 'scene',
@@ -458,13 +469,35 @@ for (const asset of ASSETS) {
 }
 
 for (const sceneVariant of SCENE_REVIEW_VARIANTS) {
-  test(`${sceneVariant.label} is visible in the composed scene`, async ({ page }, testInfo) => {
+  test(`${sceneVariant.label} is visible where it moved`, async ({ page }, testInfo) => {
     test.setTimeout(180_000);
-    const canonical = await mountWindmillStudio(page, studioOrigin);
+    // Both sides of this comparison are held still, and still at tick zero.
+    // A running mill against a static variant measures where the sails had
+    // reached as much as it measures the relocation, and that is what these
+    // floors were once calibrated on.
+    const canonical = await mountWindmillStudio(page, studioOrigin, { holdStill: true });
     await hideStudioChrome(page);
     const defaultCamera = canonical.defaultCamera as WindmillCameraV1;
-    const cameras =
-      WINDMILL_INTENDED_VIEW_PROOF_V1.sceneReviewViews.map((view) => ({
+    // Two cameras that hold the whole mill, and two that hold the move.
+    // A scene-wide quarter view is the review a person actually takes, and
+    // it is kept for the contact sheet; it is not sufficient on its own,
+    // because a part relocated inside the building is invisible in it. The
+    // relocation views point the same two fixed yaws at the midpoint of the
+    // move, so what the proof measures is the thing the variant changed.
+    const midpoint = ([0, 1, 2] as const).map((axis) =>
+      sceneVariant.relocationFrom[axis] + sceneVariant.relocationDelta[axis] / 2);
+    // The Studio's view centre travels the ground plane only, so the aim is
+    // the ground point under the move and the height is what brings the move
+    // itself into frame. At a 30-degree pitch a point h above the ground
+    // sits about 0.87h up the image, so a view roughly twice h holds it.
+    const moveCentre = [midpoint[0]!, 0, midpoint[2]!] as unknown as
+      WindmillCameraV1['center'];
+    const moveViewHeight = Math.max(
+      WINDMILL_RELOCATION_VIEW_HEIGHT,
+      midpoint[1]! * 2 + WINDMILL_RELOCATION_VIEW_HEIGHT / 2,
+    );
+    const cameras = [
+      ...WINDMILL_INTENDED_VIEW_PROOF_V1.sceneReviewViews.map((view) => ({
         name: view.id.replace('scene-', ''),
         camera: {
           center: defaultCamera.center,
@@ -475,9 +508,25 @@ for (const sceneVariant of SCENE_REVIEW_VARIANTS) {
             viewHeight: Math.min(defaultCamera.view.viewHeight, 8),
           },
         },
-      })) satisfies readonly {
+        judged: false,
+      })),
+      ...WINDMILL_INTENDED_VIEW_PROOF_V1.relocationReviewViews.map((view) => ({
+        name: view.id.replace('relocation-', 'move-'),
+        camera: {
+          center: moveCentre,
+          view: {
+            ...defaultCamera.view,
+            yawDegrees: view.yawDegrees,
+            pitchDegrees: view.pitchDegrees,
+            viewHeight: moveViewHeight,
+          },
+        },
+        judged: true,
+      })),
+    ] satisfies readonly {
         readonly name: string;
         readonly camera: WindmillCameraV1;
+        readonly judged: boolean;
       }[];
     const contactTiles: { label: string; image: Buffer }[] = [];
     const canonicalImages: Buffer[] = [];
@@ -531,12 +580,30 @@ for (const sceneVariant of SCENE_REVIEW_VARIANTS) {
         image,
       ),
     ));
-    expect(differences.some((difference) =>
-      difference.differingPixels / difference.totalPixels
+    const measured = differences.map((difference, index) => ({
+      name: cameras[index]!.name,
+      judged: cameras[index]!.judged,
+      changedFraction: difference.differingPixels / difference.totalPixels,
+      maximumChannelDelta: difference.maximumChannelDelta,
+    }));
+    console.log(`relocation detection ${sceneVariant.id}: ${JSON.stringify(measured)}`);
+    // Only a camera that holds the relocation decides the verdict. The
+    // scene-wide pair stays in the contact sheet, and its numbers stay in
+    // the failure message, because how little a misplacement shows from a
+    // whole-mill review is itself worth reading.
+    const detected = measured.filter((entry) => entry.judged
+      && entry.changedFraction
         > WINDMILL_INTENDED_VIEW_PROOF_V1.minimumRelocationChangedPixelFraction
-      && difference.maximumChannelDelta
-        > WINDMILL_INTENDED_VIEW_PROOF_V1.minimumChangedChannelDelta))
-      .toBe(true);
+      && entry.maximumChannelDelta
+        > WINDMILL_INTENDED_VIEW_PROOF_V1.minimumChangedChannelDelta);
+    expect(
+      detected.length,
+      `${sceneVariant.id} was not detectably relocated in either view that `
+      + `frames the move. Measured: ${measured.map((entry) =>
+        `${entry.name} changed ${(entry.changedFraction * 100).toFixed(4)}% of `
+        + `pixels with max channel delta ${String(entry.maximumChannelDelta)}`)
+        .join('; ')}`,
+    ).toBeGreaterThan(0);
     await attachContactSheet(
       page,
       testInfo,

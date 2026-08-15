@@ -24,6 +24,18 @@ export interface WindmillScenePurposeReviewVariantV1 {
   readonly purposeIds: readonly string[];
   readonly expectedFailure: string;
   /**
+   * The one placement this variant moves, and how far.
+   *
+   * Carried so a proof can frame the relocation rather than photograph the
+   * whole mill and hope. Judged from the two scene-wide quarter views alone,
+   * four of these eight relocations changed under 1.2% of the frame from the
+   * front and nothing at all from the rear.
+   */
+  readonly relocatedPlacementId: string;
+  readonly relocationDelta: Vec3;
+  /** The placement's authored anchor before the delta, for that framing. */
+  readonly relocationFrom: Vec3;
+  /**
    * Deliberately static: the review artifact must present its authored
    * relocation, not let the canonical replay restore the selected poses.
    */
@@ -152,6 +164,13 @@ function createVariant(
   spec: SceneRelocationSpecV1,
 ): WindmillScenePurposeReviewVariantV1 {
   const canonical = createWindmillScene();
+  const moved = canonical.placements.find(({ id }) => id === spec.placementId);
+  if (moved === undefined) {
+    throw new Error(
+      `Cannot build Windmill review '${spec.id}': the canonical scene has no `
+      + `placement '${spec.placementId}' to relocate.`,
+    );
+  }
   const placements = Object.freeze(canonical.placements.map((placement) =>
     placement.id === spec.placementId
       ? Object.freeze({
@@ -168,6 +187,9 @@ function createVariant(
     reviewKind: 'relocation',
     purposeIds: spec.purposeIds,
     expectedFailure: spec.expectedFailure,
+    relocatedPlacementId: spec.placementId,
+    relocationDelta: spec.delta,
+    relocationFrom: Object.freeze([...moved.at] as [number, number, number]),
     scene: Object.freeze({
       schemaVersion: VOXEL_SCENE_SCHEMA_V3,
       id: canonical.id,

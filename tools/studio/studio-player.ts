@@ -16,6 +16,16 @@ export interface StudioPlayerBarDepsV1 {
   readonly player: StudioPlayer;
   /** Read to place a dot per moment note along the scrubber. */
   readonly noteStore: NoteStore;
+  /**
+   * Whether a live scene's solver is advancing right now.
+   *
+   * Play/Pause on such a scene is the simulation switch, and the switch is
+   * the only thing that knows: the scene clock behind `player.playing` is
+   * parked at zero on a scene with no authored motion, so reading it labelled
+   * a running machine "Play" and disabled the button that would have stopped
+   * it.
+   */
+  readonly liveRunning: () => boolean;
 }
 
 export interface StudioPlayerBarV1 {
@@ -32,6 +42,18 @@ export interface StudioPlayerBarV1 {
   showSceneTime(timeMs: number): void;
   /** Scene playback has no single model frame or model notes, so those controls stay out of the way. */
   setSceneMode(on: boolean, hasMotion?: boolean): void;
+  /**
+   * Hides the scrubber for a scene that only a solver moves.
+   *
+   * A timeline offers a position in a recording, and a live scene has no
+   * recording to hold a position in: the water is wherever its own solver has
+   * reached, and dragging a slider cannot take it anywhere else. The bar shows
+   * the solver's step count instead, which is the one number that does say
+   * where such a scene is — and is what its browser proofs settle against.
+   */
+  setLiveOnly(on: boolean): void;
+  /** Writes the live readout: solver steps rather than a position in a period. */
+  showLiveSteps(stepped: number): void;
   /** Applies a model's period: enables the controls and sizes the scrubber. */
   applyPeriod(periodMs: number): void;
 }
@@ -67,8 +89,12 @@ export function createStudioPlayerBar(deps: StudioPlayerBarDepsV1): StudioPlayer
   const transport = element('div', 'transport');
   transport.append(stepBack, playButton, stepForward, speedSelect);
 
+  function playing(): boolean {
+    return liveOnly ? deps.liveRunning() : player.playing;
+  }
+
   function syncPlayButton(): void {
-    playButton.textContent = player.playing ? '⏸ Pause' : '▶ Play';
+    playButton.textContent = playing() ? '⏸ Pause' : '▶ Play';
   }
 
   function renderDots(): void {
@@ -100,6 +126,7 @@ export function createStudioPlayerBar(deps: StudioPlayerBarDepsV1): StudioPlayer
   }
 
   function showSceneTime(timeMs: number): void {
+    if (liveOnly) return;
     const period = player.periodMs;
     const shown = period <= 0
       ? 0
@@ -113,6 +140,26 @@ export function createStudioPlayerBar(deps: StudioPlayerBarDepsV1): StudioPlayer
       timeLabel.textContent = `${String(Math.round(shown))} ms of ${String(period)} ms · one shot`;
     }
     if (document.activeElement !== timeline) timeline.value = String(Math.round(shown));
+  }
+
+  let liveOnly = false;
+
+  function setLiveOnly(on: boolean): void {
+    liveOnly = on;
+    timelineWrap.hidden = on;
+    speedSelect.hidden = on;
+    if (on) {
+      timeLabel.textContent = 'live · no timeline';
+      // A live scene has no period, and the period is what usually enables
+      // this button. Its solver is what Play and Pause act on here.
+      playButton.disabled = false;
+    }
+    syncPlayButton();
+  }
+
+  function showLiveSteps(stepped: number): void {
+    timeLabel.textContent =
+      `live · ${stepped.toLocaleString('en-US')} solver steps`;
   }
 
   function setSceneMode(on: boolean, hasMotion = false): void {
@@ -131,7 +178,7 @@ export function createStudioPlayerBar(deps: StudioPlayerBarDepsV1): StudioPlayer
   function applyPeriod(periodMs: number): void {
     player.setPeriod(periodMs, performance.now());
     const period = player.periodMs;
-    playButton.disabled = period <= 0;
+    playButton.disabled = !liveOnly && period <= 0;
     stepBack.disabled = period <= 0;
     stepForward.disabled = period <= 0;
     timeline.disabled = period <= 0;
@@ -142,7 +189,7 @@ export function createStudioPlayerBar(deps: StudioPlayerBarDepsV1): StudioPlayer
   }
 
   playButton.addEventListener('click', () => {
-    if (player.playing) harness.pause(); else harness.play();
+    if (playing()) harness.pause(); else harness.play();
     syncPlayButton();
   });
   stepBack.addEventListener('click', () => { harness.step(-1); syncPlayButton(); });
@@ -159,6 +206,8 @@ export function createStudioPlayerBar(deps: StudioPlayerBarDepsV1): StudioPlayer
     showTime,
     showSceneTime,
     setSceneMode,
+    setLiveOnly,
+    showLiveSteps,
     applyPeriod,
   };
 }

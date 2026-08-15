@@ -65,6 +65,18 @@ export async function mountWindmillStudio(
   studioOrigin: string,
   options: {
     readonly extraOrbitingLightPeriodMs?: number;
+    /**
+     * Leaves the scene held still from the moment it is built, solver
+     * included.
+     *
+     * A proof that compares this mount's pictures against a static review
+     * variant needs both sides still, or it measures where the sails happened
+     * to be as well as the relocation it means to see. Holding from the mount
+     * rather than after it is what makes it reproducible: the live world
+     * builds asynchronously, so a freeze applied a few frames later catches
+     * the mill at whatever phase those frames reached.
+     */
+    readonly holdStill?: boolean;
   } = {},
 ) {
   await page.setViewportSize({ width: 1280, height: 800 });
@@ -81,6 +93,7 @@ export async function mountWindmillStudio(
     sceneId,
     expectedMovingIds,
     extraOrbitingLightPeriodMs,
+    holdStill,
   }) => {
     const studioUrl = new URL('studio-app.ts', window.location.href).href;
     const catalogUrl = new URL('catalog.ts', window.location.href).href;
@@ -185,7 +198,7 @@ export async function mountWindmillStudio(
         center: studio.harness.viewCenter(),
         view: studio.harness.viewState(),
       };
-      studio.harness.setSceneAnimation(true);
+      studio.harness.setSceneAnimation(!holdStill);
       return {
         scene: structuredClone(scene),
         placementIds,
@@ -206,6 +219,7 @@ export async function mountWindmillStudio(
     expectedMovingIds: WINDMILL_MOVING_PLACEMENT_IDS,
     extraOrbitingLightPeriodMs:
       options.extraOrbitingLightPeriodMs ?? null,
+    holdStill: options.holdStill === true,
   });
   // The live world builds asynchronously; until it exists the stage is still
   // drawing authored poses and nothing a caller settles would mean anything.
@@ -215,6 +229,8 @@ export async function mountWindmillStudio(
   // Pause it the instant it exists. The frame loop starts on its own, and a
   // few wall-clock ticks between here and the first settle are exactly the
   // difference between a reproducible tick count and a nearly-reproducible one.
+  // `holdStill` closes the gap: the simulation switch is already off when the
+  // world is built, so it opens paused at tick zero every time.
   const openingTick = await page.evaluate(() => {
     const harness = (window as FocusedWindow).windmillFocused!.harness;
     harness.settleLive(0);

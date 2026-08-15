@@ -543,7 +543,19 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
     setLivePoseMode: (on) => {
       sceneSession?.setLivePoseModeV1(on);
     },
-    redraw: () => { drawFrame(lastShownMs); },
+    redraw: () => {
+      drawFrame(lastShownMs);
+      // The one number that says where a live scene is. It replaces the
+      // elapsed/period readout, which on such a scene names a position in a
+      // recording that does not exist.
+      if (sceneIsLiveOnly()) {
+        playerBar.showLiveSteps(liveInteract.state().stepped);
+        // The live world is built asynchronously, so the frame that opens the
+        // scene finds no solver and labels the button Play. This is the first
+        // moment there is an answer, and every moment after it.
+        playerBar.syncPlayButton();
+      }
+    },
     report: (message) => { showViewError(new Error(message), message); },
     // The hint bar teaches what the left button does, and Interact changes
     // exactly that, so every mode flip re-teaches it.
@@ -1149,7 +1161,12 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
   // functions below, and a few callbacks; the construction panel is created
   // last, inside the rollback, because it is the first thing to touch the
   // game's catalog data and so the first that can fail.
-  const playerBar: StudioPlayerBarV1 = createStudioPlayerBar({ harness, player, noteStore });
+  const playerBar: StudioPlayerBarV1 = createStudioPlayerBar({
+    harness,
+    player,
+    noteStore,
+    liveRunning: () => liveInteract.running() && liveInteract.state().running,
+  });
   const motionPanel: StudioMotionPanelV1 = createStudioMotionPanel({ harness });
   const libraryDetails = createStudioLibraryDetails(harness);
   const shelfPanel: StudioShelfV1 = createStudioShelf({ harness, showTab });
@@ -1835,6 +1852,20 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
     return sceneSession?.hasMotion() === true || liveInteract.state().available;
   }
 
+  /**
+   * Whether the open scene moves only because a solver is stepping it.
+   *
+   * The distinction the transport needs. A scene with authored motion has a
+   * period and a phase, so a scrubber names a real place in it; a scene whose
+   * every moving part is the solver's answer has neither, and Riverfall sits
+   * on the line — its water cannot be scrubbed, but its kelp can, so it keeps
+   * the timeline that its kelp gives meaning to.
+   */
+  function sceneIsLiveOnly(): boolean {
+    if (sceneOpen === null) return false;
+    return liveInteract.state().available && sceneSession?.hasMotion() !== true;
+  }
+
   function syncSceneStageHint(scene: SceneV1): void {
     const replayReadOnly = isSelfPosedScene(scene);
     const lightCount = scene.lights?.length ?? 0;
@@ -1925,6 +1956,8 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
     const lightCount = scene.lights?.length ?? 0;
     const hasMotion = sceneSession?.hasMotion() === true;
     playerBar.setSceneMode(true, hasMotion);
+    // A scene only a solver moves has no timeline to offer.
+    playerBar.setLiveOnly(sceneIsLiveOnly());
     const replayReadOnly = isSelfPosedScene(scene);
     if (replayReadOnly) {
       selectedPlacementId = null;
@@ -2031,6 +2064,7 @@ export function mountStudio(options: StudioMountOptionsV1): StudioHandleV1 {
     // there looking current.
     construction.refresh();
     playerBar.setSceneMode(false);
+    playerBar.setLiveOnly(false);
     playerBar.applyPeriod(model.motion.periodMs);
     playerBar.syncPlayButton();
     modelName.textContent = modelLabelWorkspace.label(model.id, described.label);

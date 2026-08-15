@@ -415,3 +415,15 @@ Riverfall's advected surface wave ran at a 20-unit wavelength across a 10-unit-w
 Measured across four regenerations of the byte-pinned fixture: **0.1178 at wavelength 8, 0.0989 at 13, 0.0874 at 16**, against roughly 0.077 at the 20 already in place. Every shortening failed the gate. Wavelength 8 additionally dropped two reaches below the 0.15 per-cell full-cycle amplitude floor, because the spatial smoothing that keeps the sheet coherent attenuates short wavelengths — the two gates pull in opposite directions and pin the wavelength between them.
 
 The general form: when a field is sampled on a fixed lattice, the lattice sets the finest pattern it can carry, and a "make it more detailed" tuning that ignores that is spending its budget on aliasing. The lever that had no such limit was the phase speed — 5 to 12, so crests cross a reach in a third of the time — which is also the half of the effect that reads as travel. Anchor: `riverfall-fluid-config.ts`, 2026-08-14, gates in `riverfall-flow.test.ts`.
+
+## A visual gate measured the sails, and four variants agreed to four decimals
+
+The windmill's eight composed-scene relocation proofs mount the canonical scene, capture two fixed quarter views, mount a static variant with one placement moved, capture the same two, and require a measurable difference. Both mounts called `setSceneAnimation(false)`, which before 2026-08-14 stopped only the scene clock — so both mills kept turning, at unrelated phases, and a large part of every measured "relocation" was the sails having moved.
+
+The tell was in the numbers all along: with the mills running, the rear view returned **0.0244 to 0.0273 for every variant**, including ones whose relocated part is not visible from behind at all. A per-variant proof returning the same number for every variant is measuring what the variants share.
+
+Held still at tick zero, four of the eight returned exactly **0** from the rear and 0.000171 to 0.011677 from the front, against a floor of 0.012 that was itself derived as half of 0.024441 — one of the sail numbers. The gate had been calibrated on its own artifact.
+
+The repair was two-sided: hold both mounts still from the moment they are built (a freeze applied later catches an asynchronous world at an arbitrary phase, which is why the fixed comparison is byte-identical across runs and the old one was not), and judge each relocation from a camera that frames the move, worth 2-9x the detection of a whole-mill view. The floor is now 0.00074, half the anvil's real 0.0014812.
+
+**Anchor:** 2026-08-14, `windmill-intended-view-proof.ts` `minimumRelocationChangedPixelFraction`, `mountWindmillStudio({ holdStill })`, and `model-studio-windmill-assets.spec.ts` "is visible where it moved". Confirmed to bite by zeroing a relocation delta.

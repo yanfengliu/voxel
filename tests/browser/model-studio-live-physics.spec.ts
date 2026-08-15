@@ -313,6 +313,48 @@ test('one simulation switch stops a live scene that has no authored motion', asy
   expect(resumed, 'and starts again from there').toBeGreaterThan(0);
 });
 
+test('a scene only a solver moves offers no timeline, and Play drives the solver', async ({ page }) => {
+  // A scrubber offers a position in a recording. A live scene has none: the
+  // chain is wherever its solver has reached, and dragging a slider cannot
+  // take it anywhere else. The bar showed one anyway, next to a Play button
+  // that read the scene clock — parked at zero, because this scene has no
+  // authored motion — so a running machine was labelled "Play" and the button
+  // that would have stopped it was disabled.
+  await openLiveScene(page, 'studio:scene:chain-links');
+  await expect(page.locator('.timeline-wrap')).toBeHidden();
+  // Scoped to the transport: the playground panel owns a speed control too.
+  await expect(page.locator('.transport .speed')).toBeHidden();
+  const label = page.locator('.time-label');
+  await expect(label).toHaveText(/^live · [0-9,]+ solver steps$/);
+
+  const transport = page.getByRole('button', { name: /Pause|Play/ });
+  await expect(transport).toHaveText(/Pause/);
+  await expect(transport).toBeEnabled();
+  await transport.click();
+  await expect(transport).toHaveText(/Play/);
+  const held = await page.evaluate(async () => {
+    const before = window.voxelStudio!.livePhysics().stepped;
+    await new Promise((done) => { setTimeout(done, 400); });
+    return { before, after: window.voxelStudio!.livePhysics().stepped };
+  });
+  expect(held.after, 'Pause holds the solver where it stands').toBe(held.before);
+
+  await transport.click();
+  await expect(transport).toHaveText(/Pause/);
+  const resumed = await page.evaluate(async () => {
+    const before = window.voxelStudio!.livePhysics().stepped;
+    await new Promise((done) => { setTimeout(done, 400); });
+    return window.voxelStudio!.livePhysics().stepped - before;
+  });
+  expect(resumed, 'and Play starts it again').toBeGreaterThan(0);
+
+  // Riverfall solves live too, but its kelp and its pond ripple are authored
+  // motion on a real period, so a scrubber there names a real place and stays.
+  await page.evaluate(() => { window.voxelStudio!.openScene('studio:scene:riverfall'); });
+  await expect(page.locator('.timeline-wrap')).toBeVisible();
+  await expect(label).toHaveText(/scrub window/);
+});
+
 test('clicking under the rail drops balls that settle in the bucket', async ({ page }) => {
   await openLiveScene(page, 'studio:scene:ball-drop');
 
