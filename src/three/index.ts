@@ -57,6 +57,21 @@ export {
   type ThreeHostCaptureReadbackLeaseV1,
 } from './revisionCaptureContracts.js';
 export {
+  DEFAULT_NO_INK_LAYER,
+  MOEBIUS_RESOLVE_PRESET,
+  StylizedResolvePass,
+  supportsStylizedResolve,
+  type StylizedResolveOptions,
+  type StylizedResolveRendererLike,
+} from './stylizedResolvePass.js';
+export {
+  FULL_TONE_RANGE,
+  GRADIENT_TONE_SOFTNESS,
+  gamutSafeToneScale,
+  steppedLuminance,
+  type ToneRange,
+} from './stylizedToneBands.js';
+export {
   configureIsometricOrthographicView,
   createIsometricOrthographicCamera,
   projectWorldToViewport,

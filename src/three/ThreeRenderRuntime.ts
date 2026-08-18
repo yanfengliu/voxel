@@ -105,6 +105,8 @@ import {
 import { captureRuntimeCanvasInternal } from './runtimeCapture.js';
 import { initializeRuntimeInternal } from './runtimeInitialization.js';
 import { resizeRuntimeInternal } from './runtimeResize.js';
+import { createStylizedResolvePassInternal, renderStylizedOrDirectInternal, swapStylizedResolvePassInternal } from './runtimeStylizedResolve.js';
+import type { StylizedResolveOptions, StylizedResolvePass } from './stylizedResolvePass.js';
 import type { LegacyRuntimePresentationSurfaceInternal } from './runtimePresentationSurface.js';
 import {
   initializeRuntimeSnapshotMetricsInternal,
@@ -168,6 +170,13 @@ export class ThreeRenderRuntime {
   private lastPresentedFrameContext: ThreeFrameContext | null = null;
   /** The exact manifest of the frame the canvas last presented. */
   private lastPresentedManifest: ThreePresentedManifestV1 | null = null;
+  /**
+   * The frame resolve pass, or null when the game did not ask for one.
+   *
+   * Null rather than a pass configured to do nothing, so the ordinary
+   * path stays exactly one `renderer.render` call.
+   */
+  private stylizedPass: StylizedResolvePass | null = null;
   private cameraGeneration = 0;
   private readonly handleContextLost = (event: Event): void => {
     event.preventDefault();
@@ -234,6 +243,7 @@ export class ThreeRenderRuntime {
     this.center = initialized.center;
     this.zoom = initialized.zoom;
     try {
+      this.stylizedPass = createStylizedResolvePassInternal(initialized, options.stylizedResolve);
       if (this.lifecycleState === 'initializing') {
         this.lifecycleState = 'running';
         setRenderWorldPresentationAvailabilityInternal(this.world, 'available');
@@ -546,6 +556,29 @@ export class ThreeRenderRuntime {
         : null,
     });
   }
+  /**
+   * The live resolve pass, or null when the runtime draws straight to the canvas.
+   *
+   * Exposed because every constant in the pass is a judgement about how a
+   * particular scene should read, and that judgement is made by looking at
+   * rendered frames. A game tuning its look needs the uniforms while the game
+   * is running, not at the next rebuild.
+   */
+  get stylizedResolve(): StylizedResolvePass | null {
+    return this.stylizedPass;
+  }
+  /**
+   * Switches the frame's look, or returns it to a straight canvas draw.
+   *
+   * A resolve step over the finished frame owns no scene content, so swapping
+   * it re-uploads nothing — which is what lets a game offer the look as a
+   * setting rather than as a restart.
+   */
+  setStylizedResolve(options: StylizedResolveOptions | null): void {
+    this.assertAccepting();
+    const setup = { renderer: this.renderer, camera: this.camera, hostKind: this.hostKind, width: this.width, height: this.height, pixelRatio: this.pixelRatio };
+    this.stylizedPass = swapStylizedResolvePassInternal(this.stylizedPass, setup, options);
+  }
   dispose(): void {
     if (this.lifecycleState !== 'disposed') {
       const invalidated = this.hostFrames.dispose();
@@ -562,6 +595,7 @@ export class ThreeRenderRuntime {
         () => this.presentationSurface.disposeInternal(),
         () => this.daylightRig?.dispose(this.scene),
         () => this.scene.remove(this.presentationSurface.rootInternal),
+        () => { this.stylizedPass?.dispose(); this.stylizedPass = null; },
         () => { if (this.rendererOwnership === 'owned') this.renderer.dispose(); },
       ];
       this.presentations.disposeInternal();
@@ -988,7 +1022,9 @@ export class ThreeRenderRuntime {
     }
   }
   private renderCurrent(): void {
-    this.renderer.render(this.scene, this.camera);
+    // The single seam every frame path and the capture path share, so a
+    // stylized capture cannot disagree with the canvas it claims to show.
+    renderStylizedOrDirectInternal(this.stylizedPass, this.renderer, this.scene, this.camera);
     this.renderInfo = snapshotRenderInfoInternal(this.renderer);
   }
   private updateCamera(): void {
@@ -1005,6 +1041,7 @@ export class ThreeRenderRuntime {
     this.width = width;
     this.height = height;
     this.pixelRatio = pixelRatio;
+    this.stylizedPass?.setSize(width * pixelRatio, height * pixelRatio);
     this.retirePresentedManifest();
   }
 

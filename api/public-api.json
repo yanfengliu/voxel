@@ -351,7 +351,7 @@
       ]
     },
     "dist/three/index.d.ts": {
-      "sha256": "e5b3a46b57ea1eadd17fa94196f6bfb00d52fec2b39ec6fa9cc75d4854142bfe",
+      "sha256": "6f253bd2c3bf0b57a1d6165cddc66257c9bc7ad65dc696fd96aa75b3c81ea7e9",
       "reachableFrom": [
         "./three"
       ]
@@ -393,13 +393,25 @@
       ]
     },
     "dist/three/runtimeTypes.d.ts": {
-      "sha256": "19b51d56b14e200648300029336f083f80fc7847dd68fa7af187f895ec67e7ed",
+      "sha256": "043fdc69fa056ee1ede733166f06cab03bfc4144d907d7e1930ae9d7bcf2536d",
+      "reachableFrom": [
+        "./three"
+      ]
+    },
+    "dist/three/stylizedResolvePass.d.ts": {
+      "sha256": "dccec914eb42ac81947f1265c9ec46259280da65f370df751e9fe53ad88c852d",
+      "reachableFrom": [
+        "./three"
+      ]
+    },
+    "dist/three/stylizedToneBands.d.ts": {
+      "sha256": "3e86059444d1e5c6a93ab708da532bcf282ee09c599745f6d0db30ef3f8764eb",
       "reachableFrom": [
         "./three"
       ]
     },
     "dist/three/ThreeRenderRuntime.d.ts": {
-      "sha256": "a2d94b96b6282f3d78686f14fc9ab8800fc620e2dd17254ec8d4a885ae78b7c8",
+      "sha256": "daa6e5a760199843c914dc5370cec8a5eba19ae3d1b475f3965589008816437a",
       "reachableFrom": [
         "./three"
       ]

@@ -16,6 +16,7 @@ import type {
   MaterialPresentation,
 } from './presentationTypes.js';
 import type { RendererFactory, RendererLike } from './rendererTypes.js';
+import type { StylizedResolveOptions } from './stylizedResolvePass.js';
 
 export interface ThreePresentationSnapshot {
   readonly epoch: string;
@@ -120,6 +121,16 @@ export interface ThreeRenderRuntimeOptions {
   readonly tileHeightPixels?: number;
   /** Enables worker-meshed voxel chunks. Omission keeps the synchronous path. */
   readonly voxelWorkers?: ThreeVoxelWorkersV1;
+  /**
+   * Resolves the frame through an ink-and-flat-colour pass instead of drawing
+   * it straight to the canvas.
+   *
+   * Omission is the absence of the pass rather than a neutral configuration of
+   * it, so a game that does not ask for it pays nothing: no second scene
+   * render, no fullscreen resolve, no offscreen targets. See
+   * `StylizedResolveOptions`.
+   */
+  readonly stylizedResolve?: StylizedResolveOptions;
 }
 
 export interface ThreeRenderMetrics {

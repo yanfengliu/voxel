@@ -1,5 +1,32 @@
 # Changelog
 
+## 1.2.0 — 2026-08-17
+
+Additive: an opt-in ink-and-flat-colour resolve pass, so a game built on `voxel/three` can offer a drawn look as a setting rather than reimplementing one. No consumer source change is required, and a runtime that does not ask for it renders exactly as before — one `renderer.render` call, no offscreen targets.
+
+### Added
+
+- `StylizedResolvePass` — resolves a finished frame into flat tone bands with ink contours, from three renders: scene colour into a target carrying a depth texture, view-space normals via `Scene.overrideMaterial`, and a fullscreen resolve. Two edge sources, because a depth break is a silhouette and a normal break is a crease inside one form. Orthographic only: the depth Sobel assumes a linear depth buffer, and the threshold is denominated in **world units** — the pass reads the camera's own near and far each frame — so a value survives a change of depth planes.
+- `ThreeRenderRuntimeOptions.stylizedResolve` and `ThreeRenderRuntime.setStylizedResolve` — opt in at construction, or switch live. The pass owns no scene content, so a swap re-uploads nothing; the replacement is built before the incumbent is released, so a refused swap leaves the current look on screen instead of tearing it down and then failing. `ThreeRenderRuntime.stylizedResolve` exposes the live uniforms, because every constant here is a judgement made against rendered frames rather than reasoned about.
+- `StylizedResolveOptions.saturation` and `.brightness` — gamut-safe and hue-preserving. Quantising luminance does nothing to chroma, so a scene lit for realism stays muted however flat its tones become; these are what make a flattened frame read as drawn. The saturation boost is pulled back to the largest factor that still fits the gamut rather than letting channels clip one at a time, which is what would otherwise turn a chroma boost into a hue shift.
+- `steppedLuminance`, `gamutSafeToneScale`, `FULL_TONE_RANGE`, `GRADIENT_TONE_SOFTNESS`, `ToneRange` — the banding maths, exported so a consumer can predict what the shader will do to a tone.
+- `supportsStylizedResolve` / `StylizedResolveRendererLike` — `RendererLike` describes only what drawing a frame needs, and this pass needs render-target control. A renderer that cannot do it is refused at wire-up naming the three missing members and the remedy, rather than failing as an undefined call mid-frame.
+- `MOEBIUS_RESOLVE_PRESET` — a starting point, not a tuning. How much of a scene becomes line depends on how dense its geometry is at the camera's scale; `aoe2` measured its own and departs from the preset on two of six values.
+
+### Refused rather than silently degraded
+
+- An **embedded host** cannot use `stylizedResolve`: it owns its own draw, so nothing it renders passes through this runtime's seam and the pass would exist, accept tuning, and never touch a pixel. Wire-up throws instead, naming the exported `StylizedResolvePass` as the way to drive it from a host loop.
+- A **perspective view** is refused for the same reason it is out of scope: depth is hyperbolic there, so the same world step reads as a vanishing difference at distance and the contour would thin out and stop — a silent degradation that reads as a tuning problem.
+
+### Notes
+
+- Ink is encoded to display space in the shader. Three converts an authored sRGB colour into its linear working space, and the frame is display-encoded by the time the ink blends, so the raw linear value drew far darker than the colour asked for — invisible with a near-black ink and glaring the first time a style wants a light line.
+- The resolve carries the colour target's alpha instead of forcing opacity, so a canvas created with `alpha: true` still shows the page through pixels nothing drew.
+- `renderer.info` is held across all three renders, because Three resets it per render and the frame would otherwise report the cost of one fullscreen quad whatever the scene contained.
+- The pass clears `shadowMap.autoUpdate` as well as `needsUpdate` for the normal render; clearing only the latter suppresses nothing, since Three's shadow map early-outs only when both are false.
+- `TONE_BAND_GLSL` and `TONE_BAND_UNIFORM_NAMES` are deliberately **not** exported. The first would freeze shader source as hash-pinned public API; the second is test plumbing.
+- No measured constant from any one game ships as a default here. The background lane (`backgroundBands`, `backgroundToneRange`) defaults to the scene lane, so the split is a no-op until a game measures its own; `GRADIENT_TONE_SOFTNESS` is offered with its provenance rather than applied.
+
 ## 1.1.0 — 2026-08-13
 
 Additive API plus six correctness fixes found by a full-codebase adversarial review. The 1.0 tag froze five subpaths; `voxel/physics` was published after it and shipped under the 1.0.0 version by mistake, so this release gives the grown surface a number of its own. No consumer source change is required.
