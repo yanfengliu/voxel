@@ -194,6 +194,24 @@ export function createCartWheelRecipe(): RecipeV1 {
   };
 }
 
+export function createCartKnuckleRecipe(): RecipeV1 {
+  return playgroundRecipe({
+    id: 'studio:pg-cart-knuckle',
+    label: 'Cart steering knuckle',
+    summary: 'The steering plate riding outboard of each front wheel: the '
+      + 'front axle anchors into it, and the kingpin swings it about the '
+      + 'wheel\'s own vertical centre line, so where the plate points, the '
+      + 'wheel rolls. Outboard beside the wheel because every space above '
+      + 'it belongs to the suspension at full compression; the kingpin '
+      + 'pillar between carrier and knuckle is a joint, not drawn, and '
+      + 'the ledger records that honestly.',
+    size: [2, 2, 1],
+    material: 'wood',
+    steps: [boxStep([0, 0, 0], [2, 2, 1], 'wood',
+      'Lays the steering plate the front axle hangs from')],
+  });
+}
+
 export function createCartCargoRecipe(): RecipeV1 {
   return playgroundRecipe({
     id: 'studio:pg-cart-cargo',
@@ -214,6 +232,7 @@ export function createCartRecipesV1(): readonly RecipeV1[] {
     createCartRoadRecipe(),
     createCartChassisRecipe(),
     createCartCarrierRecipe(),
+    createCartKnuckleRecipe(),
     createCartWheelRecipe(),
     createCartCargoRecipe(),
   ];

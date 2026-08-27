@@ -191,3 +191,37 @@ export function setPhysicsJointMotorVelocityV1(
   (joint as RAPIER_TYPES.UnitImpulseJoint)
     .configureMotorVelocity(motor.target, motor.factor);
 }
+
+/**
+ * Retargets the position motor of a live revolute or prismatic joint — the
+ * steering command. Same one-motor-per-axis caveat as the velocity form:
+ * aiming this at a joint driven by a velocity motor replaces the drive
+ * with a spring, so a machine keeps its drives and its servos on
+ * different joints.
+ */
+export function setPhysicsJointMotorPositionV1(
+  joint: RAPIER_TYPES.ImpulseJoint,
+  kind: PhysicsJointKindV1,
+  jointId: string,
+  motor: PhysicsJointMotorPositionV1,
+): void {
+  if (!physicsJointSupportsDrivesV1(kind)) {
+    throw new Error(
+      `Joint '${jointId}' is a ${kind} joint, and only revolute and `
+      + 'prismatic joints carry a position motor. Command one of those, or '
+      + 'change the joint kind.',
+    );
+  }
+  if (!Number.isFinite(motor.target) || !Number.isFinite(motor.stiffness)
+    || !Number.isFinite(motor.damping) || motor.stiffness <= 0
+    || motor.damping < 0) {
+    throw new Error(
+      `Servo command for joint '${jointId}' needs a finite target, a `
+      + 'finite stiffness above zero, and a finite damping at or above '
+      + `zero; got target ${String(motor.target)}, stiffness `
+      + `${String(motor.stiffness)}, damping ${String(motor.damping)}.`,
+    );
+  }
+  (joint as RAPIER_TYPES.UnitImpulseJoint).configureMotorPosition(
+    motor.target, motor.stiffness, motor.damping);
+}

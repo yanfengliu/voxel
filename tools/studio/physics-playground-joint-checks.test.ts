@@ -4,6 +4,7 @@ import {
   evaluateEndsWithinV1,
   evaluateJointTravelWithinLimitsV1,
   playgroundPrismaticCoordinateV1,
+  playgroundRevoluteCoordinateV1,
 } from './physics-playground-joint-checks.js';
 import type {
   PlaygroundBodySnapshotV1,
@@ -135,11 +136,12 @@ describe('joint-travel-within-limits verdicts', () => {
     expect(verdict.detail).toContain('declares no limits');
   });
 
-  it('refuses a revolute joint by name', () => {
+  it('refuses a joint kind with no free coordinate, by name', () => {
     const verdict = evaluateJointTravelWithinLimitsV1(
-      ref, still, stationWith({ ...JOINT, kind: 'revolute', axis: [0, 0, 1] }));
+      ref, still, stationWith({ ...JOINT, kind: 'spherical' }));
     expect(verdict.status).toBe('fail');
-    expect(verdict.detail).toContain('revolute');
+    expect(verdict.detail).toContain('spherical');
+    expect(verdict.detail).toContain('has none');
   });
 
   it('fails when no sampled frame carries both bodies', () => {
@@ -147,6 +149,95 @@ describe('joint-travel-within-limits verdicts', () => {
       ref, [frame(0, [body('base', [0, 2, 0])])], stationWith(JOINT));
     expect(verdict.status).toBe('fail');
     expect(verdict.detail).toContain('never measured');
+  });
+});
+
+describe('the revolute coordinate', () => {
+  const HINGE: PlaygroundJointV1 = {
+    id: 'hinge',
+    kind: 'revolute',
+    a: 'post',
+    b: 'gate',
+    anchorA: [0, 0, 0],
+    anchorB: [0, 0, 0],
+    axis: [0, 1, 0],
+    limits: [-0.7, 0.7],
+    tests: 'A synthetic hinge for exercising the angular verdicts directly.',
+  };
+  const yaw = (radians: number): readonly [number, number, number, number] =>
+    [0, Math.sin(radians / 2), 0, Math.cos(radians / 2)];
+  const rest = {
+    a: body('post', [0, 1, 0]),
+    b: body('gate', [0.5, 1, 0]),
+  };
+
+  it('reads the signed twist about the axis from the build pose', () => {
+    expect(playgroundRevoluteCoordinateV1(
+      HINGE, rest, rest.a, rest.b)).toBeCloseTo(0, 12);
+    expect(playgroundRevoluteCoordinateV1(
+      HINGE, rest, rest.a,
+      body('gate', [0.5, 1, 0], yaw(0.6)))).toBeCloseTo(0.6, 9);
+    expect(playgroundRevoluteCoordinateV1(
+      HINGE, rest, rest.a,
+      body('gate', [0.5, 1, 0], yaw(-0.6)))).toBeCloseTo(-0.6, 9);
+  });
+
+  it('measures relative twist, so turning both bodies together reads zero', () => {
+    expect(playgroundRevoluteCoordinateV1(
+      HINGE, rest,
+      body('post', [0, 1, 0], yaw(1.1)),
+      body('gate', [0.5, 1, 0], yaw(1.1)))).toBeCloseTo(0, 9);
+  });
+
+  it('reads a reflex turn as its short-way signed angle', () => {
+    // yaw(5.0) is the same rotation as yaw(5.0 - 2pi): the delta
+    // quaternion lands in the negative-w hemisphere and the flip
+    // branch is what keeps the answer on (-pi, pi].
+    expect(playgroundRevoluteCoordinateV1(
+      HINGE, rest, rest.a,
+      body('gate', [0.5, 1, 0], yaw(5.0)))).toBeCloseTo(5.0 - 2 * Math.PI, 9);
+  });
+
+  it('measures from the reference pose, not from identity', () => {
+    const cocked = {
+      a: rest.a,
+      b: body('gate', [0.5, 1, 0], yaw(0.4)),
+    };
+    expect(playgroundRevoluteCoordinateV1(
+      HINGE, cocked, cocked.a,
+      body('gate', [0.5, 1, 0], yaw(0.9)))).toBeCloseTo(0.5, 9);
+  });
+
+  it('bounds a hinge and reports the angular unit on a failure', () => {
+    const ref = { check: 'joint-travel-within-limits', jointId: 'hinge', slop: 0.05 };
+    const frames = [
+      frame(0, [rest.a, rest.b]),
+      frame(8, [rest.a, body('gate', [0.5, 1, 0], yaw(0.65))]),
+    ];
+    expect(evaluateJointTravelWithinLimitsV1(
+      ref, frames, stationWith(HINGE)).status).toBe('pass');
+    const over = [
+      ...frames,
+      frame(16, [rest.a, body('gate', [0.5, 1, 0], yaw(0.9))]),
+    ];
+    const verdict = evaluateJointTravelWithinLimitsV1(
+      ref, over, stationWith(HINGE));
+    expect(verdict.status).toBe('fail');
+    expect(verdict.detail).toContain(' rad');
+    expect(verdict.detail).toContain('tick 16');
+  });
+
+  it('fails without a zero reference, naming the missing body', () => {
+    const ref = { check: 'joint-travel-within-limits', jointId: 'hinge', slop: 0.05 };
+    const verdict = evaluateJointTravelWithinLimitsV1(
+      ref,
+      [
+        frame(0, [rest.a]),
+        frame(8, [rest.a, rest.b]),
+      ],
+      stationWith(HINGE));
+    expect(verdict.status).toBe('fail');
+    expect(verdict.detail).toContain('zero reference');
   });
 });
 

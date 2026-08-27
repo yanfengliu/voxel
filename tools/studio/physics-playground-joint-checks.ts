@@ -42,6 +42,51 @@ function frameBody(
   return frame.bodies.find((body) => body.placementId === placementId);
 }
 
+function conjugate(q: Quat): Quat {
+  return [-q[0], -q[1], -q[2], q[3]];
+}
+
+function multiply(a: Quat, b: Quat): Quat {
+  const [ax, ay, az, aw] = a;
+  const [bx, by, bz, bw] = b;
+  return [
+    aw * bx + ax * bw + ay * bz - az * by,
+    aw * by - ax * bz + ay * bw + az * bx,
+    aw * bz + ax * by - ay * bx + az * bw,
+    aw * bw - ax * bx - ay * by - az * bz,
+  ];
+}
+
+/**
+ * The revolute free coordinate at one sampled frame: the signed rotation
+ * about the declared hinge axis since the reference (build) frame.
+ *
+ * The hinge constrains the bodies' relative rotation to that axis, so the
+ * change in relative rotation is itself a rotation about it, and the twist
+ * formula reads its signed angle directly. The result lives in (-π, π];
+ * a hinge that winds past a half turn between samples would alias, which
+ * is why the authoring validator bounds declared revolute limits inside
+ * that range — steering stops are a fraction of it.
+ */
+export function playgroundRevoluteCoordinateV1(
+  joint: PlaygroundJointV1,
+  reference: { readonly a: PlaygroundBodySnapshotV1; readonly b: PlaygroundBodySnapshotV1 },
+  a: PlaygroundBodySnapshotV1,
+  b: PlaygroundBodySnapshotV1,
+): number {
+  const axis = joint.axis ?? [0, 0, 1];
+  const relative0 = multiply(conjugate(reference.a.quaternion), reference.b.quaternion);
+  const relative = multiply(conjugate(a.quaternion), b.quaternion);
+  let delta = multiply(conjugate(relative0), relative);
+  // Same rotation, two encodings: keep the hemisphere that reads as the
+  // short way around, so the angle below is the signed short angle.
+  if (delta[3] < 0) delta = [-delta[0], -delta[1], -delta[2], -delta[3]];
+  const length = Math.hypot(axis[0], axis[1], axis[2]) || 1;
+  const twist = (delta[0] * axis[0] + delta[1] * axis[1] + delta[2] * axis[2])
+    / length;
+  return 2 * Math.atan2(twist, delta[3]);
+}
+
 /**
  * The prismatic free coordinate at one sampled frame: the world separation
  * of the two declared anchors, measured along body a's world-rotated axis.
@@ -89,13 +134,14 @@ export function evaluateJointTravelWithinLimitsV1(
         + "declared joint, or fix the scenario's checks.",
     };
   }
-  if (joint.kind !== 'prismatic') {
+  if (joint.kind !== 'prismatic' && joint.kind !== 'revolute') {
     return {
       check: ref.check,
       status: 'fail',
       detail: `Joint '${ref.jointId}' is ${joint.kind}, and this check reads `
-        + 'the prismatic free coordinate. A revolute-limit check arrives '
-        + 'with the first machine that needs one; today no station does.',
+        + 'the free coordinate of a prismatic or revolute joint — a '
+        + `${joint.kind} joint has none. Name a joint with travel, or drop `
+        + 'the check.',
     };
   }
   if (joint.limits === undefined) {
@@ -104,6 +150,25 @@ export function evaluateJointTravelWithinLimitsV1(
       status: 'fail',
       detail: `Joint '${ref.jointId}' declares no limits, so there is no `
         + 'bound to keep. Declare limits on the joint, or drop the check.',
+    };
+  }
+  const angular = joint.kind === 'revolute';
+  const unit = angular ? ' rad' : ' m';
+  const first = frames[0];
+  const referenceA = first === undefined
+    ? undefined
+    : frameBody(first, joint.a);
+  const referenceB = first === undefined
+    ? undefined
+    : frameBody(first, joint.b);
+  if (angular && (referenceA === undefined || referenceB === undefined)) {
+    return {
+      check: ref.check,
+      status: 'fail',
+      detail: `The first sampled frame is missing '${joint.a}' or `
+        + `'${joint.b}', so the hinge has no zero reference — a revolute `
+        + 'coordinate is an angle from the build pose, and without the '
+        + 'build pose there is nothing to measure from.',
     };
   }
   const [min, max] = joint.limits;
@@ -116,7 +181,14 @@ export function evaluateJointTravelWithinLimitsV1(
     const b = frameBody(frame, joint.b);
     if (!a || !b) continue;
     samples += 1;
-    const coordinate = playgroundPrismaticCoordinateV1(joint, a, b);
+    const coordinate = angular
+      ? playgroundRevoluteCoordinateV1(
+        joint,
+        { a: referenceA!, b: referenceB! },
+        a,
+        b,
+      )
+      : playgroundPrismaticCoordinateV1(joint, a, b);
     const excess = Math.max(min - coordinate, coordinate - max);
     if (excess > worstExcess) {
       worstExcess = excess;
@@ -137,7 +209,7 @@ export function evaluateJointTravelWithinLimitsV1(
     return {
       check: ref.check,
       status: 'fail',
-      detail: `Joint '${ref.jointId}' reached ${worstCoordinate.toFixed(4)} `
+      detail: `Joint '${ref.jointId}' reached ${worstCoordinate.toFixed(4)}${unit} `
         + `at tick ${String(worstTick)}, ${worstExcess.toFixed(4)} past its `
         + `declared [${String(min)}, ${String(max)}] — more than the `
         + `${String(ref.slop)} slop. The limit did not hold.`,
@@ -147,7 +219,7 @@ export function evaluateJointTravelWithinLimitsV1(
     check: ref.check,
     status: 'pass',
     detail: `Joint '${ref.jointId}' stayed within [${String(min)}, `
-      + `${String(max)}] (+${String(ref.slop)} slop) across `
+      + `${String(max)}]${unit} (+${String(ref.slop)} slop) across `
       + `${String(samples)} frames; worst excursion `
       + `${worstExcess.toFixed(4)} beyond a bound.`,
   };

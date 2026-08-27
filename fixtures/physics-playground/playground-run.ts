@@ -111,6 +111,13 @@ function applyAction(world: PlaygroundWorldV1, action: PlaygroundActionV1): void
         factor: action.factor,
       });
       return;
+    case 'motor-position':
+      world.setJointMotorPosition(action.jointId, {
+        target: action.target,
+        stiffness: action.stiffness,
+        damping: action.damping,
+      });
+      return;
     default: {
       const never: never = action;
       throw new Error(`Unknown playground action: ${JSON.stringify(never)}`);

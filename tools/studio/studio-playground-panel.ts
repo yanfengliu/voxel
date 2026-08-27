@@ -268,43 +268,69 @@ export function createStudioPlaygroundPanel(
     if (!live || testCase === undefined) return false;
     let fired = true;
     guarded(() => {
+      // Exhaustive on purpose: a sibling dispatch's trailing else once
+      // detached axles when handed a motor command, and the default's
+      // `never` makes the next action kind a compile error here.
       for (const action of testCase.actions) {
-        if (action.kind === 'spawn') {
-          // A case that already fired finds its body spawned; that is a
-          // stale double-fire, worth a notice rather than a silent no-op.
-          const spawned = live.spawnPlanned(action.placementId, {
-            centre: action.centre,
-            ...(action.velocity ? { velocity: action.velocity } : {}),
-            ...(action.ccd ? { ccd: true } : {}),
-          });
-          if (!spawned) {
-            fired = false;
-            controlNotice = `Case '${testCase.label}' already fired: `
-              + `'${action.placementId}' has spawned and a placement spawns `
-              + 'at most once per run. Reset the station to fire it again.';
+        switch (action.kind) {
+          case 'spawn': {
+            // A case that already fired finds its body spawned; that is
+            // a stale double-fire, worth a notice over a silent no-op.
+            const spawned = live.spawnPlanned(action.placementId, {
+              centre: action.centre,
+              ...(action.velocity ? { velocity: action.velocity } : {}),
+              ...(action.ccd ? { ccd: true } : {}),
+            });
+            if (!spawned) {
+              fired = false;
+              controlNotice = `Case '${testCase.label}' already fired: `
+                + `'${action.placementId}' has spawned and a placement `
+                + 'spawns at most once per run. Reset the station to '
+                + 'fire it again.';
+            }
+            break;
           }
-        } else if (action.kind === 'remove') {
-          live.removeBody(action.placementId);
-        } else if (action.kind === 'impulse') {
-          live.applyImpulse(action.placementId, action.impulse);
-        } else if (action.kind === 'motor-velocity') {
-          // A speed setpoint is state, not an event: commanding it twice
-          // is the same command, so there is no double-fire to report.
-          live.setJointMotorVelocity(action.jointId, {
-            target: action.target,
-            factor: action.factor,
-          });
-        } else if (live.jointIds().includes(action.jointId)) {
-          live.detachJoint(action.jointId);
-        } else {
-          // Same rule as an already-spawned placement: report the honest
-          // outcome instead of returning success for a case that did
-          // nothing. Firing the trebuchet twice hits exactly this.
-          fired = false;
-          controlNotice = `Case '${testCase.label}' already fired: joint `
-            + `'${action.jointId}' is already released, and a declared `
-            + 'joint detaches at most once per run. Reset the station to '
-            + 'fire it again.';
+          case 'remove':
+            live.removeBody(action.placementId);
+            break;
+          case 'impulse':
+            live.applyImpulse(action.placementId, action.impulse);
+            break;
+          case 'motor-velocity':
+            // A speed setpoint is state, not an event: commanding it
+            // twice is the same command, so no double-fire to report.
+            live.setJointMotorVelocity(action.jointId, {
+              target: action.target,
+              factor: action.factor,
+            });
+            break;
+          case 'motor-position':
+            // Same rule: a steering setpoint is re-commanded freely.
+            live.setJointMotorPosition(action.jointId, {
+              target: action.target,
+              stiffness: action.stiffness,
+              damping: action.damping,
+            });
+            break;
+          case 'detach-joint':
+            if (live.jointIds().includes(action.jointId)) {
+              live.detachJoint(action.jointId);
+            } else {
+              // Same rule as an already-spawned placement: report the
+              // honest outcome instead of returning success for a case
+              // that did nothing. Firing the trebuchet twice hits this.
+              fired = false;
+              controlNotice = `Case '${testCase.label}' already fired: `
+                + `joint '${action.jointId}' is already released, and a `
+                + 'declared joint detaches at most once per run. Reset '
+                + 'the station to fire it again.';
+            }
+            break;
+          default: {
+            const never: never = action;
+            throw new Error(
+              `Unhandled playground action: ${JSON.stringify(never)}`);
+          }
         }
       }
       sync();

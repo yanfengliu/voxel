@@ -52,23 +52,27 @@ export function createCartPurposeGraphV1(): PurposeGraphV1 {
       evidence: provenBy(
         'The drive crosses ten meters of potholes, drops the half-meter '
         + 'ledge, brakes, and ends with its cargo still on the deck; the '
-        + 'same run with the suspension welded multiplies peak chassis '
-        + 'vertical acceleration more than threefold, asserted over the '
-        + 'whole drive and over the road span alone (measured 15.1 '
-        + 'against 71.1 m/s2 at authoring, both peaks at the ledge).',
+        + 'same run with suspension and kingpins welded multiplies peak '
+        + 'chassis vertical acceleration more than threefold, asserted '
+        + 'over the whole drive and over the road span alone (measured '
+        + '10.9 against 77.3 m/s2 full-drive and 9.0 against 41.6 on '
+        + 'the road, at authoring).',
         'cart-drive and cart-locked-drive',
       ),
       honestyBoundary: 'A sandbox study: live runs are unrecorded, the '
-        + 'wheels ride the stated smooth-tread simplification, and no '
-        + 'steering exists — the road is straight on purpose.',
+        + 'wheels ride the stated smooth-tread simplification, and the '
+        + 'steering is one shared target on two kingpins — no Ackermann '
+        + 'linkage, no differential, and the road stays straight '
+        + 'because the circle runs on the apron ring instead.',
     }),
     purposeBoundaryV1({
       id: motors,
       kind: 'energy-source',
       label: 'Axle velocity motors',
-      job: 'Power the machine: four acceleration-based drives that hold '
-        + 'target zero as a parking brake, retarget to cruise on command, '
-        + 'and brake by retargeting to zero again.',
+      job: 'Power the machine: two rear acceleration-based drives that '
+        + 'hold target zero as a parking brake, retarget to cruise on '
+        + 'command, and brake by retargeting to zero again; the front '
+        + 'axles roll free so their treads keep their grip for steering.',
       quantity: 'energy',
       visibility: 'visible',
       truncates: 'Whatever fuels the drive; the motor is a solver '
@@ -78,7 +82,9 @@ export function createCartPurposeGraphV1(): PurposeGraphV1 {
         'Stripping the motors from the same drive timeline parks the '
         + 'cart within a meter of its spawn; with them it crosses the '
         + 'road. The parked hold is its own scenario: on the brakes, '
-        + 'every body drifts under 0.08 m for three seconds.',
+        + 'every body drifts under 0.15 m for three seconds (measured '
+        + '0.119 at authoring, nearly all of it the vertical spawn '
+        + 'settle) and the machine goes to sleep.',
         'cart-drive, cart-hold, and the stripped-motor counter-run',
       ),
       honestyBoundary: 'An energy source, stated as one: while a motor '
@@ -91,15 +97,16 @@ export function createCartPurposeGraphV1(): PurposeGraphV1 {
       id: sceneNodeId(SYSTEM, 'solid', 'ground'),
       kind: 'solid',
       label: 'Stage floors',
-      job: 'Carry the road and both ledge landings: four flush tiles '
-        + 'reaching x -18 to +30, past the measured braking point of '
-        + 'every scripted run.',
+      job: 'Carry the road, both ledge landings, and the steering '
+        + 'field: eight flush tiles — the drive lane reaching x -18 '
+        + 'to +30, and the apron ring the full-lock circle sweeps.',
       requiredBy: Object.freeze([need]),
       evidence: provenBy(
         'Every scenario ends with every body on a tile; the '
-        + 'floor-penetration check reads the whole run and the drive '
-        + 'brakes to rest past the pinned x 9.5 plane, inside the far '
-        + 'tile\'s reach of 30 (measured near x 17 at authoring).',
+        + 'floor-penetration check reads the whole run, the drive '
+        + 'brakes to rest past the pinned x 9.5 plane (measured near '
+        + 'x 16.8 at authoring), and the circle closes its loop on '
+        + 'the apron ring.',
         'cart-drive and cart-reverse-run',
       ),
       honestyBoundary: 'Fixed deck slabs; the multiply combine rule reads '
@@ -137,8 +144,9 @@ export function createCartPurposeGraphV1(): PurposeGraphV1 {
       evidence: provenBy(
         'Peak chassis vertical acceleration is pinned under 25 m/s2 '
         + 'sprung and over 45 m/s2 welded, more than threefold apart on '
-        + 'the road span and the whole drive alike (measured 15.1 '
-        + 'against 71.1 at authoring).',
+        + 'the road span and the whole drive alike (measured 10.9 '
+        + 'against 77.3 full-drive, 9.0 against 41.6 on the road, at '
+        + 'authoring).',
         'playground-cart.test.ts, welding the springs multiplies peak '
         + 'chassis vertical acceleration',
       ),
@@ -149,9 +157,10 @@ export function createCartPurposeGraphV1(): PurposeGraphV1 {
       id: sceneNodeId(SYSTEM, 'solid', 'carriers'),
       kind: 'solid',
       label: 'Wheel carriers',
-      job: 'Be the unsprung mass: four knuckles that ride the prismatic '
-        + 'joints and hold the axles, so wheel motion becomes spring '
-        + 'travel instead of deck motion.',
+      job: 'Be the unsprung mass: four blocks that ride the prismatic '
+        + 'joints, so wheel motion becomes spring travel instead of deck '
+        + 'motion. The rear pair holds the axles; the front pair hangs '
+        + 'the steering kingpins.',
       requiredBy: Object.freeze([need]),
       evidence: provenBy(
         'The suspension coordinate is measured between chassis and '
@@ -187,6 +196,25 @@ export function createCartPurposeGraphV1(): PurposeGraphV1 {
         + 'colliders, as racing bodies needed the ideal ball.',
     }),
     purposeNodeV1({
+      id: sceneNodeId(SYSTEM, 'solid', 'knuckles'),
+      kind: 'solid',
+      label: 'Steering knuckles',
+      job: 'Aim the front wheels: two plates riding the kingpins '
+        + 'outboard of the front wheels, each carrying its wheel\'s '
+        + 'axle, so where the plate points, the wheel rolls.',
+      requiredBy: Object.freeze([need]),
+      evidence: provenBy(
+        'The kingpin anchor arithmetic pins both ends of each kingpin '
+        + 'to the wheel\'s own centre line, and the circle run turns the '
+        + 'cart through most of a revolution on them.',
+        'cart-circle',
+      ),
+      honestyBoundary: 'Policy-inert beside the cargo pairs: a knuckle '
+        + 'steers through its joints, and the kingpin pillar between '
+        + 'carrier and plate is a joint, not drawn — the same honesty '
+        + 'as the undrawn axle spokes.',
+    }),
+    purposeNodeV1({
       id: sceneNodeId(SYSTEM, 'solid', 'cargo'),
       kind: 'solid',
       label: 'Unfastened cargo',
@@ -214,7 +242,7 @@ export function createCartPurposeGraphV1(): PurposeGraphV1 {
       evidence: provenBy(
         'Every scenario bounds the measured coordinate inside the '
         + 'declared travel plus stated slop, and the parked machine '
-        + 'sleeps on its brakes (static sag measured 0.041 to 0.043 m '
+        + 'sleeps on its brakes (static sag measured 0.040 to 0.042 m '
         + 'across the corners at authoring).',
         'cart-hold and cart-drive',
       ),
@@ -242,6 +270,28 @@ export function createCartPurposeGraphV1(): PurposeGraphV1 {
         + 'friction comes from the universal law, not this declaration.',
     }),
     purposeNodeV1({
+      id: sceneNodeId(SYSTEM, 'interface', 'kingpins'),
+      kind: 'interface',
+      label: 'Limited, servoed kingpins',
+      job: 'Swing each knuckle about the vertical axis through its '
+        + 'wheel\'s centre: the position motor is the steering servo the '
+        + 'steer cases retarget, and the declared ±0.7 rad stops are '
+        + 'the playground\'s first revolute limits.',
+      requiredBy: Object.freeze([need]),
+      evidence: provenBy(
+        'The steer-lock scenario shoves the servo far past the stops '
+        + 'and bounds the angle the hinge actually reaches; the fixture '
+        + 'suite runs the same shove with the stops stripped and '
+        + 'measures the servo win, so the revolute limit path is proven '
+        + 'live, not assumed from the prismatic one.',
+        'cart-steer-lock and its stripped-limit counter-run',
+      ),
+      honestyBoundary: 'A vertical hinge only: no caster, camber, or '
+        + 'Ackermann — both kingpins take one target, so the inner and '
+        + 'outer wheels fight slightly in a tight circle, and the servo '
+        + 'gains are calibrated by measurement like the springs.',
+    }),
+    purposeNodeV1({
       id: sceneNodeId(SYSTEM, 'interface', 'declared-contacts'),
       kind: 'interface',
       label: 'Declared contact pairs',
@@ -250,8 +300,8 @@ export function createCartPurposeGraphV1(): PurposeGraphV1 {
         + 'through each other instead of grinding.',
       requiredBy: Object.freeze([need]),
       evidence: provenBy(
-        'The generated live profile carries exactly thirty pairs, and '
-        + 'both lanes apply the same policy at build.',
+        'The generated live profile carries exactly fifty-two pairs, '
+        + 'and both lanes apply the same policy at build.',
         'playground-cart.test.ts, the live profile carries the contact '
         + 'policy and both motor kinds',
       ),
@@ -279,6 +329,26 @@ export function createCartPurposeGraphV1(): PurposeGraphV1 {
       ),
       honestyBoundary: 'An impulse-based stop yields before it holds; '
         + 'the stated slop is that measured compliance, not zero.',
+    }),
+    purposeNodeV1({
+      id: sceneNodeId(SYSTEM, 'motion-rule', 'steering-answers'),
+      kind: 'motion-rule',
+      label: 'Steering turns the cart, inside its stops',
+      job: 'Bind the steering chain end to end: a full-lock command '
+        + 'must carry the whole cart around most of a turn inside the '
+        + 'field, with every kingpin angle bounded by the declared '
+        + 'stops plus stated compliance throughout.',
+      requiredBy: Object.freeze([need]),
+      evidence: provenBy(
+        'The circle run sweeps the chassis past 270° accumulated while '
+        + 'net displacement stays inside the field, with suspension and '
+        + 'kingpin coordinates bounded every sampled frame.',
+        'cart-circle',
+      ),
+      honestyBoundary: 'Rear-wheel drive is part of the claim: with '
+        + 'driven front wheels the same command plowed a 9.5 m radius '
+        + 'off the field — the friction circle, measured — so the '
+        + 'steering proof owns the drivetrain layout it requires.',
     }),
     purposeNodeV1({
       id: sceneNodeId(SYSTEM, 'motion-rule', 'powered-energy-honesty'),
@@ -336,9 +406,9 @@ export function createCartPurposeGraphV1(): PurposeGraphV1 {
         + 'motors.',
       requiredBy: Object.freeze([need]),
       evidence: provenInBrowser(
-        'The opened scene reports a live world with fifteen bodies and '
-        + 'eight joints, and firing the drive case carries the chassis '
-        + 'measurably east on screen.',
+        'The opened scene reports a live world with twenty-one bodies '
+        + 'and ten joints, and firing the drive case carries the '
+        + 'chassis measurably east on screen.',
         'the cart drives on command in the live scene',
       ),
       honestyBoundary: 'The live lane stays unrecorded and carries the '

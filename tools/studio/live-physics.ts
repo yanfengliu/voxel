@@ -7,6 +7,7 @@ import {
 } from './live-physics-bodies.js';
 import {
   buildPhysicsJointV1,
+  setPhysicsJointMotorPositionV1,
   setPhysicsJointMotorVelocityV1,
   type PhysicsJointKindV1,
   type PhysicsJointMotorPositionV1,
@@ -736,6 +737,31 @@ export class LivePhysicsSessionV1 {
       );
     }
     setPhysicsJointMotorVelocityV1(entry.joint, entry.kind, jointId, motor);
+  }
+
+  /**
+   * Retargets a joint's position motor — the steer command. Same contract
+   * as the velocity form: the joint must exist and be revolute or
+   * prismatic, and re-commanding a setpoint is an honest no-op.
+   */
+  setJointMotorPosition(
+    jointId: string,
+    motor: {
+      readonly target: number;
+      readonly stiffness: number;
+      readonly damping: number;
+    },
+  ): void {
+    this.#assertLive();
+    const entry = this.#joints.get(jointId);
+    if (entry === undefined) {
+      throw new Error(
+        `Servo command names joint '${jointId}', but no live joint carries `
+        + 'that id — it was never created, was detached, or lost a body. '
+        + 'Rebuild the world to restore declared joints.',
+      );
+    }
+    setPhysicsJointMotorPositionV1(entry.joint, entry.kind, jointId, motor);
   }
 
   /**

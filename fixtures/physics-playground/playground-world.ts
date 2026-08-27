@@ -14,6 +14,7 @@ import {
 import { physicsLawValuesForV1 } from '../../tools/studio/physics-laws.js';
 import {
   buildPhysicsJointV1,
+  setPhysicsJointMotorPositionV1,
   setPhysicsJointMotorVelocityV1,
   type PhysicsJointKindV1,
 } from '../../tools/studio/physics-joint-build.js';
@@ -179,6 +180,25 @@ export class PlaygroundWorldV1 {
       );
     }
     setPhysicsJointMotorVelocityV1(entry.joint, entry.kind, jointId, motor);
+  }
+
+  /** Retargets a joint's position motor — the deterministic steer command. */
+  setJointMotorPosition(
+    jointId: string,
+    motor: {
+      readonly target: number;
+      readonly stiffness: number;
+      readonly damping: number;
+    },
+  ): void {
+    const entry = this.#joints.get(jointId);
+    if (!entry) {
+      throw new Error(
+        `Servo command names joint '${jointId}', but no live joint carries `
+        + 'that id — it was never created, was detached, or lost a body.',
+      );
+    }
+    setPhysicsJointMotorPositionV1(entry.joint, entry.kind, jointId, motor);
   }
 
   /** Recomputed from the live joints, so a released body stops paying. */

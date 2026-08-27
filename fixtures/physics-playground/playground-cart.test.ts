@@ -3,7 +3,11 @@ import { describe, expect, it } from 'vitest';
 import {
   createCartStationV1,
   CART_AXLE_JOINT_IDS_V1,
+  CART_DRIVE_JOINT_IDS_V1,
+  CART_KINGPIN_JOINT_IDS_V1,
   CART_SLAM_TRAVEL_SLOP_V1,
+  CART_STEER_LOCK_SLOP_V1,
+  CART_STEER_LOCK_V1,
   CART_SUSPENSION_JOINT_IDS_V1,
   CART_SUSPENSION_TRAVEL_V1,
 } from '../../tools/studio/physics-playground-cart.js';
@@ -15,6 +19,7 @@ import {
 } from '../../tools/studio/solver-rate.js';
 import {
   playgroundPrismaticCoordinateV1,
+  playgroundRevoluteCoordinateV1,
 } from '../../tools/studio/physics-playground-joint-checks.js';
 import type {
   PlaygroundFrameV1,
@@ -51,14 +56,17 @@ import {
  * determinism double-run, and the pins that keep the drawn geometry and
  * the declared constraints telling one story.
  *
- * Measured baselines (2026-08-26, shared 60 Hz lane): static sag 0.041 to
- * 0.043 m on stiffness 2000; cruise 1.6-1.8 m/s across the potholes and
- * 2.2 m/s past the ledge at target -5, factor 120; peak chassis vertical
- * acceleration 15.1 m/s2 sprung against 71.1 m/s2 welded across the full
- * drive (both peaks land at the ledge drop) and 11.6 against 52.0 over
- * the potholed road alone — the suspension's worth holds in both
- * regimes; the -900 slam caught at 0.295 m by the declared 0.25 m stop
- * (0.045 solver compliance) against 0.424 m with the limit stripped.
+ * Measured baselines (2026-08-26, shared 60 Hz lane, rear drive at
+ * target -7, factor 120): static sag 0.040 to 0.042 m on stiffness
+ * 2000; cruise dips to 0.4 m/s in the pothole exits, peaks 2.3 m/s
+ * between them, and runs 2.6 m/s past the ledge, braking to rest near
+ * x 16.8; peak chassis vertical acceleration 10.9 m/s2 sprung against
+ * 77.3 m/s2 welded across the full drive and 9.0 against 41.6 over the
+ * potholed road alone — the suspension's worth holds in both regimes;
+ * the -900 slam caught at 0.295 m by the declared 0.25 m stop (0.045
+ * solver compliance) against 0.424 m with the limit stripped; the
+ * steering servo's slam into its 0.7 rad stop overshoots a transient
+ * 0.095 rad before settling.
  */
 
 const station = createCartStationV1();
@@ -74,10 +82,13 @@ function scenario(id: string): PlaygroundScenarioV1 {
 interface RideSample {
   readonly tick: number;
   readonly chassisX: number;
+  readonly chassisZ: number;
   readonly chassisVy: number;
   readonly wheelX: number;
   readonly wheelY: number;
   readonly coords: readonly number[];
+  /** Kingpin angles in kingpin-id order, radians from the build pose. */
+  readonly steer: readonly number[];
 }
 
 /**
@@ -119,6 +130,7 @@ async function rideRun(
   });
   const actions: readonly PlaygroundActionV1[] = spec.actions ?? [];
   const samples: RideSample[] = [];
+  const reference: PlaygroundFrameV1 = world.snapshot();
   try {
     for (let tick = 0; tick < solverTicksForSecondsV1(spec.seconds); tick += 1) {
       for (const action of actions) {
@@ -127,6 +139,15 @@ async function rideRun(
           if (overrides?.stripMotors) continue;
           world.setJointMotorVelocity(action.jointId, {
             target: action.target, factor: action.factor,
+          });
+        } else if (action.kind === 'motor-position') {
+          // stripMotors strips the drives; the steering servo and the
+          // springs stay, because a cart with no spring is a different
+          // counter-run than the one that option names.
+          world.setJointMotorPosition(action.jointId, {
+            target: action.target,
+            stiffness: action.stiffness,
+            damping: action.damping,
           });
         } else if (action.kind === 'impulse') {
           world.impulse(action.placementId, action.impulse);
@@ -141,6 +162,7 @@ async function rideRun(
       samples.push({
         tick: frame.tick,
         chassisX: chassis.translation[0],
+        chassisZ: chassis.translation[2],
         chassisVy: chassis.linearVelocity[1],
         wheelX: wheelFl.translation[0],
         wheelY: wheelFl.translation[1],
@@ -151,6 +173,19 @@ async function rideRun(
           const b = frame.bodies.find(
             (body) => body.placementId === joint.b)!;
           return playgroundPrismaticCoordinateV1(joint, a, b);
+        }),
+        steer: CART_KINGPIN_JOINT_IDS_V1.map((id) => {
+          const joint = (built.joints ?? []).find((entry) => entry.id === id)!;
+          const referenceA = reference.bodies.find(
+            (body) => body.placementId === joint.a)!;
+          const referenceB = reference.bodies.find(
+            (body) => body.placementId === joint.b)!;
+          const a = frame.bodies.find(
+            (body) => body.placementId === joint.a)!;
+          const b = frame.bodies.find(
+            (body) => body.placementId === joint.b)!;
+          return playgroundRevoluteCoordinateV1(
+            joint, { a: referenceA, b: referenceB }, a, b);
         }),
       });
     }
@@ -206,12 +241,13 @@ describe('the cart scenarios', () => {
 describe('the suspension is what smooths the ride', () => {
   it('welding the springs multiplies peak chassis vertical acceleration', async () => {
     // The same route, the same speed, the same cargo; the only
-    // difference is lockJoints. Measured across the full drive: 15.1
-    // m/s2 sprung against 71.1 m/s2 locked (both peaks are the ledge
-    // landing); windowed to the potholed road alone: 11.6 against 52.0.
-    // The bounds hold a 1.6x buffer each side, and the threefold ratio
-    // floor is asserted in both regimes so neither the ledge nor the
-    // road is carrying the claim alone.
+    // difference is lockJoints, which welds kingpins as well as springs
+    // so the control has no compliant joint left. Measured at the
+    // rear-drive tune: 10.9 m/s2 sprung against 77.3 m/s2 locked across
+    // the full drive; windowed to the potholed road alone, 9.0 against
+    // 41.6 — a 4.6x gap. The threefold ratio floor is asserted in both
+    // regimes so neither the ledge nor the road carries the claim
+    // alone.
     const sprung = await rideRun(station, 'cart-drive');
     const locked = await rideRun(station, 'cart-locked-drive');
     const sprungFull = peakVerticalAccel(sprung);
@@ -292,6 +328,56 @@ describe('limits and motors are load-bearing, by subtraction', () => {
     expect(peak).toBeGreaterThan(CART_SUSPENSION_TRAVEL_V1);
   }, 240_000);
 
+  it('the servo overruns the steering stops once the limits are stripped', async () => {
+    // The revolute twin of the slam counter-run, and the reason the
+    // builder applies limits through the runtime setLimits path: in the
+    // installed Rapier, declarative revolute limits are silently ignored,
+    // so only a measured overrun distinguishes a working stop from a
+    // decorative declaration. The scenario shoves the servo to 1.2 rad
+    // against stops at 0.7.
+    const stripped = await rideRun(station, 'cart-steer-lock', {
+      stripLimits: true,
+    });
+    const limited = await rideRun(station, 'cart-steer-lock');
+    const strippedPeak = Math.max(...stripped.flatMap(
+      (sample) => sample.steer.map((angle) => Math.abs(angle))));
+    const limitedPeak = Math.max(...limited.flatMap(
+      (sample) => sample.steer.map((angle) => Math.abs(angle))));
+    expect(strippedPeak).toBeGreaterThan(
+      CART_STEER_LOCK_V1 + CART_STEER_LOCK_SLOP_V1);
+    expect(limitedPeak).toBeLessThan(strippedPeak - 0.1);
+  }, 240_000);
+
+  it('the overdriven servo actually reaches the steering stops', async () => {
+    // The same vacuity guard the slam has: if a future servo change
+    // stops short of the stops, the limit check would pass with the
+    // limit idle.
+    const samples = await rideRun(station, 'cart-steer-lock');
+    const peak = Math.max(...samples.flatMap(
+      (sample) => sample.steer.map((angle) => Math.abs(angle))));
+    expect(peak).toBeGreaterThan(CART_STEER_LOCK_V1);
+  }, 240_000);
+
+  it('a left-lock command steers negative coordinates and drifts the cart to +z', async () => {
+    // Every other steering assertion is magnitude-only — symmetric
+    // limits, absolute peaks — so a global sign flip in the coordinate
+    // reader, the servo command, or the convention comment would pass
+    // the whole suite. This is the one signed pin: the circle commands
+    // -0.7, the hinges must sit negative, and the cart must come round
+    // to the +z (left) side of the road.
+    const samples = await rideRun(station, 'cart-circle');
+    const settled = samples.filter(
+      (sample) => sample.tick > solverTicksForSecondsV1(2));
+    const meanSteer = settled.reduce(
+      (sum, sample) => sum
+        + sample.steer.reduce((inner, angle) => inner + angle, 0)
+        / sample.steer.length,
+      0) / settled.length;
+    expect(meanSteer).toBeLessThan(-0.3);
+    const peakZ = Math.max(...samples.map((sample) => sample.chassisZ));
+    expect(peakZ).toBeGreaterThan(4);
+  }, 240_000);
+
   it('stripping the axle motors parks the cart', async () => {
     const samples = await rideRun(station, 'cart-drive', { stripMotors: true });
     const last = samples[samples.length - 1]!;
@@ -308,8 +394,12 @@ describe('the twin forgets a released body, like the live lane', () => {
       // The laws are applied inside step(), so the held reading needs one.
       world.step();
       const before = world.angularDampingOfV1('carrier-fl');
+      // A front carrier is held by two joints since steering landed —
+      // spring and kingpin; the axle moved to the knuckle — and the
+      // bearing law must persist until the LAST one lets go, which is
+      // exactly what this test is for.
       world.detachJoint('suspension-fl');
-      world.detachJoint('axle-fl');
+      world.detachJoint('kingpin-fl');
       world.step();
       const after = world.angularDampingOfV1('carrier-fl');
       // Wood: air spin 0.02 + bearing 0.8 while held; air alone once free
@@ -403,8 +493,24 @@ describe('drawn geometry and declared constraints tell one story', () => {
             - b.centre[axisIndex],
           )).toBeLessThan(0.011 + tolerance);
         }
+      } else if (joint.id.startsWith('kingpin-')) {
+        // Both kingpin anchors resolve to the wheel's build centre: the
+        // steering axis passes through the wheel, not through either of
+        // the bodies it joins, so the tread never scrubs sideways.
+        const wheel = specs.get(`wheel-${joint.id.slice('kingpin-'.length)}`)!;
+        for (const axisIndex of [0, 1, 2] as const) {
+          expect(Math.abs(
+            a.centre[axisIndex] + joint.anchorA[axisIndex]
+            - wheel.centre[axisIndex],
+          )).toBeLessThan(0.011 + tolerance);
+          expect(Math.abs(
+            b.centre[axisIndex] + joint.anchorB[axisIndex]
+            - wheel.centre[axisIndex],
+          )).toBeLessThan(0.011 + tolerance);
+        }
       } else {
-        // anchorA on the carrier resolves to the wheel's build centre.
+        // anchorA on the axle's hub body resolves to the wheel's build
+        // centre — the carrier behind, or the steering knuckle in front.
         for (const axisIndex of [0, 1, 2] as const) {
           expect(Math.abs(
             a.centre[axisIndex] + joint.anchorA[axisIndex]
@@ -430,8 +536,21 @@ describe('drawn geometry and declared constraints tell one story', () => {
     const profile =
       createPhysicsPlaygroundProfilesV1()['studio:scene:physics-cart'];
     expect(profile).toBeDefined();
-    expect(profile!.contactPolicy?.pairs.length).toBe(30);
+    expect(profile!.contactPolicy?.pairs.length).toBe(52);
     const joints = profile!.joints ?? [];
+    for (const id of ['axle-fl', 'axle-fr']) {
+      expect(
+        joints.find((joint) => joint.id === id)?.motorVelocity,
+        `${id} must roll free: driven front wheels understeer off the field`,
+      ).toBeUndefined();
+    }
+    for (const id of ['kingpin-fl', 'kingpin-fr']) {
+      const kingpin = joints.find((joint) => joint.id === id);
+      expect(kingpin?.motorPosition, `${id} carries the steering servo`)
+        .toBeDefined();
+      expect(kingpin?.limits, `${id} carries the steering stops`)
+        .toStrictEqual([-CART_STEER_LOCK_V1, CART_STEER_LOCK_V1]);
+    }
     const suspension = joints.filter(
       (joint) => CART_SUSPENSION_JOINT_IDS_V1.includes(joint.id));
     const axles = joints.filter(
@@ -446,7 +565,10 @@ describe('drawn geometry and declared constraints tell one story', () => {
     }
     for (const joint of axles) {
       expect(joint.kind).toBe('revolute');
-      expect(joint.motorVelocity).toBeDefined();
+      // Rear axles carry the drive; front axles roll free for steering
+      // grip, asserted by id above.
+      expect(joint.motorVelocity !== undefined)
+        .toBe(CART_DRIVE_JOINT_IDS_V1.includes(joint.id));
     }
   });
 });

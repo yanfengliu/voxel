@@ -199,6 +199,52 @@ await page.evaluate(() => {
 });
 await shot('cart-field-after');
 
+// Steering: rebuild parked, snap to full left lock so the turned
+// knuckles and toed wheels read close up, then drive the full-lock
+// circle and frame it twice mid-arc plus once wide over the aprons.
+await page.evaluate(() => window.voxelStudio.playground.reset());
+await page.waitForFunction(() => window.voxelStudio.playground.state().stepped > 30);
+await page.evaluate(() => window.voxelStudio.playground.fireCase('cart-steer-left'));
+await page.waitForTimeout(900);
+await page.evaluate(() => {
+  window.voxelStudio.setViewAngles({ yawDegrees: 320, pitchDegrees: 12, viewHeight: 7 });
+  window.voxelStudio.setViewCentre([-0.5, 1.6, 1.1]);
+});
+await shot('cart-steer-lock-close');
+await page.evaluate(() => window.voxelStudio.playground.fireCase('cart-drive-forward'));
+const cartZ = () => page.evaluate(() => window.voxelStudio.playground.bodies()
+  .find((row) => row.placementId === 'chassis')?.translation[2] ?? 0);
+await page.waitForFunction(() => window.voxelStudio.playground.bodies()
+  .find((row) => row.placementId === 'chassis').translation[2] > 4, undefined, { timeout: 60_000 });
+await page.evaluate(() => {
+  window.voxelStudio.setViewAngles({ yawDegrees: 60, pitchDegrees: 24, viewHeight: 16 });
+  window.voxelStudio.setViewCentre([1.5, 2, 5]);
+});
+await shot('cart-circle-mid');
+await page.waitForFunction(() => window.voxelStudio.playground.bodies()
+  .find((row) => row.placementId === 'chassis').translation[0] < -4, undefined, { timeout: 60_000 });
+await page.evaluate(() => {
+  const chassis = window.voxelStudio.playground.bodies()
+    .find((row) => row.placementId === 'chassis');
+  window.voxelStudio.setViewAngles({ yawDegrees: 150, pitchDegrees: 22, viewHeight: 14 });
+  window.voxelStudio.setViewCentre([
+    chassis.translation[0] + 2.5, 2, chassis.translation[2] - 1,
+  ]);
+});
+await shot('cart-circle-far-side');
+await page.evaluate(() => {
+  const chassis = window.voxelStudio.playground.bodies()
+    .find((row) => row.placementId === 'chassis');
+  window.voxelStudio.setViewAngles({ yawDegrees: 100, pitchDegrees: 40, viewHeight: 30 });
+  // Centred on the cart itself: the panel owns the stage's lower left,
+  // and a field-centred frame parked the machine exactly behind it.
+  window.voxelStudio.setViewCentre([
+    chassis.translation[0] + 2, 2, chassis.translation[2] - 2,
+  ]);
+});
+await shot('cart-circle-aprons-wide');
+console.log('cart circling near z', await cartZ());
+
 await browser.close();
 await server.close();
 console.log('done');

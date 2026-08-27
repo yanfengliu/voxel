@@ -482,6 +482,16 @@ export function playgroundJointSpecsV1(
         + "use a scenario's lockJoints for that.",
       );
     }
+    if (joint.kind === 'revolute' && joint.limits !== undefined
+      && (joint.limits[0] <= -Math.PI || joint.limits[1] >= Math.PI)) {
+      throw new Error(
+        `Revolute joint '${joint.id}' declares limits `
+        + `[${String(joint.limits[0])}, ${String(joint.limits[1])}] rad, but `
+        + 'a hinge stop must sit strictly inside (-π, π): the travel check '
+        + 'reads the short-way angle from the build pose, and a bound at or '
+        + 'past a half turn cannot be told from its own wrap-around.',
+      );
+    }
     for (const [name, gain] of [
       ['motorVelocity.factor', joint.motorVelocity?.factor],
       ['motorPosition.stiffness', joint.motorPosition?.stiffness],

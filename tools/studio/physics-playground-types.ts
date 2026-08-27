@@ -168,6 +168,21 @@ export type PlaygroundActionV1 =
     /** rad/s for a revolute, m/s for a prismatic. */
     readonly target: number;
     readonly factor: number;
+  }
+  | {
+    /**
+     * Retargets a joint's position motor — the steering wheel. The joint
+     * must declare `motorPosition`, for the same reason a drive command
+     * needs a declared drive: a command steers an existing spring toward
+     * a new setpoint, it does not conjure one. Radians for a revolute,
+     * meters for a prismatic.
+     */
+    readonly kind: 'motor-position';
+    readonly atSeconds: number;
+    readonly jointId: string;
+    readonly target: number;
+    readonly stiffness: number;
+    readonly damping: number;
   };
 
 export interface PlaygroundCaseV1 {

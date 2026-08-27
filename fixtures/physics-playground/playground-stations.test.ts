@@ -7,6 +7,7 @@ import {
 } from '../../tools/studio/physics-playground-stations.js';
 import {
   playgroundBodySpecsV1,
+  playgroundJointSpecsV1,
 } from '../../tools/studio/physics-playground-bodies.js';
 import {
   solverTicksForSecondsV1,
@@ -138,25 +139,44 @@ describe('station definitions', () => {
               .filter((action) =>
                 solverTicksForSecondsV1(action.atSeconds) === tick)
               .map((action) => {
-                if (action.kind === 'spawn') {
-                  world.spawn(action.placementId, {
-                    centre: action.centre,
-                    ...(action.velocity ? { velocity: action.velocity } : {}),
-                    ...(action.ccd ? { ccd: true } : {}),
-                  });
-                  return action.placementId;
+                // Exhaustive on purpose: a trailing else here once
+                // detached the cart's four axles when handed a motor
+                // command, and nothing said so.
+                switch (action.kind) {
+                  case 'spawn':
+                    world.spawn(action.placementId, {
+                      centre: action.centre,
+                      ...(action.velocity ? { velocity: action.velocity } : {}),
+                      ...(action.ccd ? { ccd: true } : {}),
+                    });
+                    return action.placementId;
+                  case 'remove':
+                    world.remove(action.placementId);
+                    return null;
+                  case 'impulse':
+                    world.impulse(action.placementId, action.impulse);
+                    return null;
+                  case 'motor-velocity':
+                    world.setJointMotorVelocity(action.jointId, {
+                      target: action.target, factor: action.factor,
+                    });
+                    return null;
+                  case 'motor-position':
+                    world.setJointMotorPosition(action.jointId, {
+                      target: action.target,
+                      stiffness: action.stiffness,
+                      damping: action.damping,
+                    });
+                    return null;
+                  case 'detach-joint':
+                    world.detachJoint(action.jointId);
+                    return null;
+                  default: {
+                    const never: never = action;
+                    throw new Error(
+                      `Unhandled playground action: ${JSON.stringify(never)}`);
+                  }
                 }
-                if (action.kind === 'remove') world.remove(action.placementId);
-                else if (action.kind === 'impulse') {
-                  world.impulse(action.placementId, action.impulse);
-                } else if (action.kind === 'motor-velocity') {
-                  // A drive command, not a release: the old trailing else
-                  // detached the cart's four axles here and nothing said so.
-                  world.setJointMotorVelocity(action.jointId, {
-                    target: action.target, factor: action.factor,
-                  });
-                } else world.detachJoint(action.jointId);
-                return null;
               })
               .filter((id) => id !== null);
             world.step();
@@ -177,6 +197,39 @@ describe('station definitions', () => {
       }
     }
   }, 120_000);
+
+  it('refuses a revolute stop at or past a half turn, naming the wrap', () => {
+    const cart = createPhysicsPlaygroundStationsV1()
+      .find((entry) => entry.sceneId === 'studio:scene:physics-cart')!;
+    const wrapped: PlaygroundStationV1 = {
+      ...cart,
+      joints: (cart.joints ?? []).map((joint) =>
+        joint.id === 'kingpin-fl'
+          ? { ...joint, limits: [-Math.PI, Math.PI] as const }
+          : joint),
+    };
+    expect(() => playgroundJointSpecsV1(
+      wrapped, playgroundBodySpecsV1(wrapped)))
+      .toThrowError(/wrap-around/);
+  });
+
+  it('refuses a joint declaring both motor kinds, naming the erasure', () => {
+    const cart = createPhysicsPlaygroundStationsV1()
+      .find((entry) => entry.sceneId === 'studio:scene:physics-cart')!;
+    const doubled: PlaygroundStationV1 = {
+      ...cart,
+      joints: (cart.joints ?? []).map((joint) =>
+        joint.id === 'axle-rl'
+          ? {
+            ...joint,
+            motorPosition: { target: 0, stiffness: 100, damping: 10 },
+          }
+          : joint),
+    };
+    expect(() => playgroundJointSpecsV1(
+      doubled, playgroundBodySpecsV1(doubled)))
+      .toThrowError(/silently erases/);
+  });
 
   it('every scenario names only cases, bodies, and joints that exist', () => {
     for (const entry of createPhysicsPlaygroundStationsV1()) {
@@ -203,6 +256,19 @@ describe('station definitions', () => {
               joint?.motorVelocity !== undefined,
               `${owner} commands joint ${action.jointId}, which declares no `
               + 'motorVelocity',
+            ).toBe(true);
+            continue;
+          }
+          if (action.kind === 'motor-position') {
+            const joint = joints.find((entry2) => entry2.id === action.jointId);
+            expect(
+              joint !== undefined,
+              `${owner} steers missing joint ${action.jointId}`,
+            ).toBe(true);
+            expect(
+              joint?.motorPosition !== undefined,
+              `${owner} steers joint ${action.jointId}, which declares no `
+              + 'motorPosition',
             ).toBe(true);
             continue;
           }
