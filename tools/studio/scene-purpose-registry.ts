@@ -7,6 +7,7 @@ import {
   createPhysicsPlaygroundPurposeGraphsV1,
 } from './scene-purpose-physics-playground.js';
 import { createTrebuchetPurposeGraphV1 } from './scene-purpose-trebuchet.js';
+import { createCartPurposeGraphV1 } from './scene-purpose-cart.js';
 import {
   createContrastBoardPurposeGraphsV1,
   createGardenPurposeGraphV1,
@@ -46,6 +47,7 @@ Readonly<Record<string, PurposeGraphV1>> {
     createChainPurposeGraphV1(),
     ...createPhysicsPlaygroundPurposeGraphsV1(),
     createTrebuchetPurposeGraphV1(),
+    createCartPurposeGraphV1(),
     ...createContrastBoardPurposeGraphsV1(),
     createLightingLabPurposeGraphV1(),
     createLighting1000PurposeGraphV1(),

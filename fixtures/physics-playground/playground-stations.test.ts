@@ -9,7 +9,11 @@ import {
   playgroundBodySpecsV1,
 } from '../../tools/studio/physics-playground-bodies.js';
 import {
+  solverTicksForSecondsV1,
+} from '../../tools/studio/solver-rate.js';
+import {
   PLAYGROUND_FLOOR_TOP_V1,
+  type PlaygroundActionV1,
 } from '../../tools/studio/physics-playground-types.js';
 import type {
   PlaygroundScenarioResultV1,
@@ -125,11 +129,14 @@ describe('station definitions', () => {
       for (const testCase of entry.cases) {
         const world = PlaygroundWorldV1.create(entry, { rampAngleDegrees: 20 });
         try {
-          const lastTick = Math.max(
-            ...testCase.actions.map((action) => action.atSeconds));
+          // Actions declare seconds; this probe walks ticks of the shared
+          // rate, so the schedule converts the same way the runner does.
+          const lastTick = Math.max(...testCase.actions.map(
+            (action) => solverTicksForSecondsV1(action.atSeconds)));
           for (let tick = 0; tick <= lastTick; tick += 1) {
             const spawnedNow = testCase.actions
-              .filter((action) => action.atSeconds === tick)
+              .filter((action) =>
+                solverTicksForSecondsV1(action.atSeconds) === tick)
               .map((action) => {
                 if (action.kind === 'spawn') {
                   world.spawn(action.placementId, {
@@ -142,6 +149,12 @@ describe('station definitions', () => {
                 if (action.kind === 'remove') world.remove(action.placementId);
                 else if (action.kind === 'impulse') {
                   world.impulse(action.placementId, action.impulse);
+                } else if (action.kind === 'motor-velocity') {
+                  // A drive command, not a release: the old trailing else
+                  // detached the cart's four axles here and nothing said so.
+                  world.setJointMotorVelocity(action.jointId, {
+                    target: action.target, factor: action.factor,
+                  });
                 } else world.detachJoint(action.jointId);
                 return null;
               })
@@ -165,9 +178,40 @@ describe('station definitions', () => {
     }
   }, 120_000);
 
-  it('every scenario names only cases and bodies that exist', () => {
+  it('every scenario names only cases, bodies, and joints that exist', () => {
     for (const entry of createPhysicsPlaygroundStationsV1()) {
       const ids = new Set(entry.bodies.map((body) => body.placementId));
+      const joints = entry.joints ?? [];
+      const checkActions = (owner: string, actions: readonly PlaygroundActionV1[]): void => {
+        for (const action of actions) {
+          if (action.kind === 'detach-joint') {
+            expect(
+              joints.some((joint) => joint.id === action.jointId),
+              `${owner} detaches missing joint ${action.jointId}`,
+            ).toBe(true);
+            continue;
+          }
+          if (action.kind === 'motor-velocity') {
+            const joint = joints.find((entry2) => entry2.id === action.jointId);
+            expect(
+              joint !== undefined,
+              `${owner} commands missing joint ${action.jointId}`,
+            ).toBe(true);
+            // A command retargets an existing drive; a joint with no
+            // declared motor has nothing to retarget.
+            expect(
+              joint?.motorVelocity !== undefined,
+              `${owner} commands joint ${action.jointId}, which declares no `
+              + 'motorVelocity',
+            ).toBe(true);
+            continue;
+          }
+          expect(
+            ids.has(action.placementId),
+            `${owner} names missing body ${action.placementId}`,
+          ).toBe(true);
+        }
+      };
       for (const scenario of entry.scenarios) {
         if (scenario.caseId !== undefined) {
           expect(
@@ -175,21 +219,16 @@ describe('station definitions', () => {
             `${scenario.id} names missing case ${scenario.caseId}`,
           ).toBe(true);
         }
-      }
-      for (const testCase of entry.cases) {
-        for (const action of testCase.actions) {
-          if (action.kind === 'detach-joint') {
-            expect(
-              (entry.joints ?? []).some((joint) => joint.id === action.jointId),
-              `case ${testCase.id} detaches missing joint ${action.jointId}`,
-            ).toBe(true);
-            continue;
-          }
+        checkActions(`scenario ${scenario.id}`, scenario.actions ?? []);
+        for (const locked of scenario.lockJoints ?? []) {
           expect(
-            ids.has(action.placementId),
-            `case ${testCase.id} names missing body ${action.placementId}`,
+            joints.some((joint) => joint.id === locked),
+            `${scenario.id} locks missing joint ${locked}`,
           ).toBe(true);
         }
+      }
+      for (const testCase of entry.cases) {
+        checkActions(`case ${testCase.id}`, testCase.actions);
       }
     }
   });

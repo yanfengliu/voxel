@@ -6,6 +6,12 @@ They live here because the constitution section of AGENTS.md is a verbatim copy 
 
 These rules bind alongside the constitution and may only make it stricter. Where one restates a canon rule, the version here wins for this repository.
 
+## Product direction
+
+Voxel-only. Owner vision, stated 2026-08-26.
+
+- The engine exists to power realistic 3D environment simulations at high performance, drawn in good-enough voxel graphics. When goals compete, simulation realism and measured performance outrank rendering fidelity: the voxel look is the accepted aesthetic, not a placeholder for something fancier, so effort goes to physical truth and frame budget before visual polish. Rendering work still meets the visual gates it has — "good enough" is a priority ranking, not a licence to ship visible defects.
+
 ## Concurrency and commits
 
 Voxel refuses the shared checkout outright: a browser gate boots whatever is on disk, so two sessions in one checkout cannot honestly attribute a whole-app result.

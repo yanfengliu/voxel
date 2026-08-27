@@ -144,6 +144,61 @@ await page.evaluate(() => {
 });
 await shot('trebuchet-field-after');
 
+// Suspension cart: parked on its brakes, a low wheel-level view, the
+// collider overlay proving the smooth tread, the potholes working the
+// springs mid-drive, the ledge nose-over, the landed cart braked, and
+// the whole field in one frame.
+await open('studio:scene:physics-cart');
+await page.waitForFunction(() => window.voxelStudio.playground.state().stepped > 120);
+await page.evaluate(() => {
+  window.voxelStudio.setViewAngles({ yawDegrees: 30, pitchDegrees: 20, viewHeight: 11 });
+  window.voxelStudio.setViewCentre([-1.5, 2, 0]);
+});
+await shot('cart-parked');
+await page.evaluate(() => {
+  window.voxelStudio.setViewAngles({ yawDegrees: 205, pitchDegrees: 6, viewHeight: 7 });
+});
+await shot('cart-parked-low-rear');
+await page.evaluate(() => {
+  window.voxelStudio.playground.selectBody('wheel-fl');
+  window.voxelStudio.playground.setOverlay(true);
+  window.voxelStudio.setViewAngles({ yawDegrees: 330, pitchDegrees: 10, viewHeight: 6 });
+});
+await shot('cart-wheel-overlay');
+await page.evaluate(() => { window.voxelStudio.playground.setOverlay(false); });
+await page.evaluate(() => {
+  window.voxelStudio.setViewAngles({ yawDegrees: 35, pitchDegrees: 22, viewHeight: 15 });
+  window.voxelStudio.setViewCentre([4, 2, 0]);
+});
+await page.evaluate(() => window.voxelStudio.playground.fireCase('cart-drive-forward'));
+const cartX = () => page.evaluate(() => window.voxelStudio.playground.bodies()
+  .find((row) => row.placementId === 'chassis')?.translation[0] ?? 0);
+await page.waitForFunction(() => window.voxelStudio.playground.bodies()
+  .find((row) => row.placementId === 'chassis').translation[0] > 3, undefined, { timeout: 30_000 });
+await shot('cart-potholes-mid');
+await page.waitForFunction(() => window.voxelStudio.playground.bodies()
+  .find((row) => row.placementId === 'chassis').translation[0] > 9.6, undefined, { timeout: 30_000 });
+await page.evaluate(() => {
+  window.voxelStudio.setViewAngles({ yawDegrees: 20, pitchDegrees: 14, viewHeight: 12 });
+  window.voxelStudio.setViewCentre([10.5, 1.5, 0]);
+});
+await shot('cart-ledge-drop');
+await page.waitForFunction(() => window.voxelStudio.playground.bodies()
+  .find((row) => row.placementId === 'chassis').translation[0] > 14, undefined, { timeout: 30_000 });
+await page.evaluate(() => window.voxelStudio.playground.fireCase('cart-stop'));
+await page.waitForTimeout(2000);
+console.log('cart braked near x', await cartX());
+await page.evaluate(() => {
+  window.voxelStudio.setViewAngles({ yawDegrees: 210, pitchDegrees: 18, viewHeight: 13 });
+  window.voxelStudio.setViewCentre([16, 1.5, 0]);
+});
+await shot('cart-landed-braked');
+await page.evaluate(() => {
+  window.voxelStudio.setViewAngles({ yawDegrees: 80, pitchDegrees: 26, viewHeight: 42 });
+  window.voxelStudio.setViewCentre([7, 2, 0]);
+});
+await shot('cart-field-after');
+
 await browser.close();
 await server.close();
 console.log('done');

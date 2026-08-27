@@ -72,7 +72,8 @@ function scenarioActions(
   station: PlaygroundStationV1,
   scenario: PlaygroundScenarioV1,
 ): readonly PlaygroundActionV1[] {
-  if (scenario.caseId === undefined) return [];
+  const own = scenario.actions ?? [];
+  if (scenario.caseId === undefined) return own;
   const found = station.cases.find((entry) => entry.id === scenario.caseId);
   if (!found) {
     throw new Error(
@@ -80,7 +81,10 @@ function scenarioActions(
       + `station '${station.sceneId}' declares no such case.`,
     );
   }
-  return found.actions;
+  // A case is a panel button and fires all at once; a timeline the scenario
+  // scripts for itself — drive, then brake — runs alongside it here, where
+  // `atSeconds` is honoured exactly.
+  return [...found.actions, ...own];
 }
 
 function applyAction(world: PlaygroundWorldV1, action: PlaygroundActionV1): void {
@@ -101,6 +105,12 @@ function applyAction(world: PlaygroundWorldV1, action: PlaygroundActionV1): void
     case 'detach-joint':
       world.detachJoint(action.jointId);
       return;
+    case 'motor-velocity':
+      world.setJointMotorVelocity(action.jointId, {
+        target: action.target,
+        factor: action.factor,
+      });
+      return;
     default: {
       const never: never = action;
       throw new Error(`Unknown playground action: ${JSON.stringify(never)}`);
@@ -120,6 +130,9 @@ export async function runPlaygroundScenarioV1(
   await initPlaygroundRapierV1();
   const world = PlaygroundWorldV1.create(station, {
     ...(scenario.omit !== undefined ? { omit: scenario.omit } : {}),
+    ...(scenario.lockJoints !== undefined
+      ? { lockJoints: scenario.lockJoints }
+      : {}),
     ...(scenario.angleDegrees !== undefined
       ? { rampAngleDegrees: scenario.angleDegrees }
       : station.defaultRampAngleDegrees !== undefined

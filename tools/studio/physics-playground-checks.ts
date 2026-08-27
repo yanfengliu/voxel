@@ -12,6 +12,10 @@ import {
   type PlaygroundScenarioV1,
   type PlaygroundStationV1,
 } from './physics-playground-stations.js';
+import {
+  evaluateEndsWithinV1,
+  evaluateJointTravelWithinLimitsV1,
+} from './physics-playground-joint-checks.js';
 
 /**
  * Size note: this module passed 700 lines when the two conservation laws
@@ -154,6 +158,19 @@ export function playgroundLowestPointV1(
   if (spec.ballRadius !== undefined) {
     return snapshot.translation[1] - spec.ballRadius;
   }
+  if (spec.cylinderZ !== undefined) {
+    // The simulated shape is the smooth tread, so the measurement must be
+    // too: judging a rolling wheel by its drawn corners reads a phantom
+    // 0.104 m burial every time a facet corner points down. The support
+    // point of a cylinder about the body's z axis: half-width along the
+    // axis's vertical share, radius along the rest.
+    const axis = rotate(snapshot.quaternion, [0, 0, 1]);
+    const axialShare = Math.abs(axis[1]);
+    const radialShare = Math.sqrt(Math.max(0, 1 - axialShare * axialShare));
+    return snapshot.translation[1]
+      - spec.cylinderZ.halfWidth * axialShare
+      - spec.cylinderZ.radius * radialShare;
+  }
   let lowest = Number.POSITIVE_INFINITY;
   for (const box of spec.boxes) {
     for (const sx of [-1, 1]) {
@@ -266,6 +283,7 @@ function evaluateCheck(
   ref: PlaygroundCheckRefV1,
   frames: readonly PlaygroundFrameV1[],
   specs: ReadonlyMap<string, PlaygroundBodySpecV1>,
+  station: PlaygroundStationV1,
 ): PlaygroundCheckResultV1 {
   const first = frames[0];
   const last = frames[frames.length - 1];
@@ -512,27 +530,36 @@ function evaluateCheck(
       );
     }
     case 'crossed-plane': {
-      // Convention: playground shots travel toward the negative axis, so
-      // 'crossed' means the final coordinate sits below the threshold. A
-      // future positive-travel station needs a direction field here, not a
-      // silent reuse.
+      // Playground shots travel toward the negative axis, so the default
+      // 'crossed' means the final coordinate sits below the threshold. The
+      // cart is the positive-travel station the old comment here promised a
+      // direction field for: +1 reads crossing as ending above it.
       const body = requireBody(last, ref.placementId, ref.check);
-      const crossed = body.translation[ref.axis] < ref.threshold;
+      const crossed = (ref.direction ?? -1) === -1
+        ? body.translation[ref.axis] < ref.threshold
+        : body.translation[ref.axis] > ref.threshold;
       // Axis 1 is down, so a plane below the floor means falling out of
       // the world; the horizontal axes mean a shot passing a wall. Saying
       // 'tunnel' for both sent a maintainer whose ice stopped on the floor
       // looking for a continuous-collision bug that was never involved.
+      // The failure prose follows the declared direction, because a wrong
+      // explanation is a defect of its own: "expected it to tunnel" once
+      // sent a maintainer chasing a CCD bug for ice that stopped on a
+      // floor, and a stalled cart is a drive problem, not a CCD one.
+      const positive = (ref.direction ?? -1) === 1;
       const passing = ref.axis === 1 ? 'fall past' : 'pass';
-      const beyond = ref.axis === 1
-        ? 'expected it to fall out of the world below that plane'
-        : 'expected it to tunnel through (the documented no-CCD artifact)';
+      const beyond = positive
+        ? 'expected the run to carry it past that plane'
+        : ref.axis === 1
+          ? 'expected it to fall out of the world below that plane'
+          : 'expected it to tunnel through (the documented no-CCD artifact)';
       if (ref.expect === 'crossed' && !crossed) {
         return fail(
           `'${ref.placementId}' stopped at `
           + `${body.translation[ref.axis].toFixed(3)} on axis `
           + `${String(ref.axis)} and never got ${passing} `
           + `${String(ref.threshold)} — ${beyond}. Something is holding it `
-          + 'up that the run expects to be absent.',
+          + (positive ? 'back' : 'up') + ' that the run expects to be absent.',
         );
       }
       if (ref.expect === 'stopped' && crossed) {
@@ -540,10 +567,12 @@ function evaluateCheck(
           `'${ref.placementId}' reached `
           + `${body.translation[ref.axis].toFixed(3)} on axis `
           + `${String(ref.axis)}, beyond ${String(ref.threshold)} — `
-          + (ref.axis === 1
-            ? 'it fell out of the world when something should have held it.'
-            : 'it tunneled through the wall despite continuous collision '
-              + 'detection.'),
+          + (positive
+            ? 'it kept going where the run expected it stopped.'
+            : ref.axis === 1
+              ? 'it fell out of the world when something should have held it.'
+              : 'it tunneled through the wall despite continuous collision '
+                + 'detection.'),
         );
       }
       return pass(
@@ -978,6 +1007,12 @@ function evaluateCheck(
           : `within the ${String(ref.maxDegrees)}° limit.`),
       );
     }
+    // The joint-coordinate family lives in its own module; the cases stay
+    // in this switch so an unimplemented check kind still cannot compile.
+    case 'joint-travel-within-limits':
+      return evaluateJointTravelWithinLimitsV1(ref, frames, station);
+    case 'ends-within':
+      return evaluateEndsWithinV1(ref, frames);
     default: {
       const never: never = ref;
       throw new Error(`Unknown playground check: ${JSON.stringify(never)}`);
@@ -1000,7 +1035,8 @@ export function evaluatePlaygroundScenarioV1(
   frames: readonly PlaygroundFrameV1[],
   timing: PlaygroundTimingV1,
 ): PlaygroundScenarioResultV1 {
-  const checks = scenario.checks.map((ref) => evaluateCheck(ref, frames, specs));
+  const checks = scenario.checks.map(
+    (ref) => evaluateCheck(ref, frames, specs, station));
   const nonFinite = countNonFinite(frames);
   // Reported apart for the same reason they are judged apart: the deepest
   // instant of a landing is not how far anything rests into the ground, and

@@ -1,5 +1,6 @@
 import type { RecipeBookV1, RecipeV1, RecipeStepV1 } from './recipe.js';
 import { createTrebuchetRecipesV1 } from './physics-playground-trebuchet.js';
+import { createCartRecipesV1 } from './physics-playground-cart-recipes.js';
 import {
   PLAYGROUND_MATERIALS_V1,
   type PlaygroundMaterialIdV1,
@@ -556,6 +557,7 @@ export function createPlaygroundTowerBlockRecipe(): RecipeV1 {
 export function createPhysicsPlaygroundRecipeBook(): RecipeBookV1 {
   const recipes = [
     ...createTrebuchetRecipesV1(),
+    ...createCartRecipesV1(),
     createPlaygroundFloorRecipe(),
     createPlaygroundApronRecipe(),
     createPlaygroundBermRecipe(),

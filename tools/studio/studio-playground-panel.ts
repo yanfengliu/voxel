@@ -287,6 +287,13 @@ export function createStudioPlaygroundPanel(
           live.removeBody(action.placementId);
         } else if (action.kind === 'impulse') {
           live.applyImpulse(action.placementId, action.impulse);
+        } else if (action.kind === 'motor-velocity') {
+          // A speed setpoint is state, not an event: commanding it twice
+          // is the same command, so there is no double-fire to report.
+          live.setJointMotorVelocity(action.jointId, {
+            target: action.target,
+            factor: action.factor,
+          });
         } else if (live.jointIds().includes(action.jointId)) {
           live.detachJoint(action.jointId);
         } else {
@@ -390,10 +397,33 @@ export function createStudioPlaygroundPanel(
         row.translation[2] + v[2] + qw * tz + (qx * ty - qy * tx),
       ] as const;
     };
+    // A smooth tread is drawn round, because the overlay's whole job is to
+    // show the simulated shape and the simulated shape is not the voxel
+    // boxes: two sixteen-gon rims at the tread faces plus cross ties.
+    if (spec.cylinderZ !== undefined) {
+      const { radius, halfWidth } = spec.cylinderZ;
+      const sides = 16;
+      const ring = (z: number) => Array.from({ length: sides }, (_, step) => {
+        const angle = (step / sides) * 2 * Math.PI;
+        return [Math.cos(angle) * radius, Math.sin(angle) * radius, z] as const;
+      });
+      const near = ring(-halfWidth);
+      const far = ring(halfWidth);
+      for (let step = 0; step < sides; step += 1) {
+        const next = (step + 1) % sides;
+        segments.push({ kind: 'collider', a: rotate(near[step]!), b: rotate(near[next]!) });
+        segments.push({ kind: 'collider', a: rotate(far[step]!), b: rotate(far[next]!) });
+        if (step % 4 === 0) {
+          segments.push({ kind: 'collider', a: rotate(near[step]!), b: rotate(far[step]!) });
+        }
+      }
+    }
     // The selected body's collider boxes, as 'collider' lines (existing CSS).
-    const boxes = spec.ballRadius !== undefined
-      ? [{ at: [0, 0, 0] as const, half: [spec.ballRadius, spec.ballRadius, spec.ballRadius] as const }]
-      : spec.boxes.slice(0, 48).map((box) => ({ at: box.at, half: box.half }));
+    const boxes = spec.cylinderZ !== undefined
+      ? []
+      : spec.ballRadius !== undefined
+        ? [{ at: [0, 0, 0] as const, half: [spec.ballRadius, spec.ballRadius, spec.ballRadius] as const }]
+        : spec.boxes.slice(0, 48).map((box) => ({ at: box.at, half: box.half }));
     for (const box of boxes) {
       const corner = (sx: number, sy: number, sz: number) => rotate([
         box.at[0] + sx * box.half[0],

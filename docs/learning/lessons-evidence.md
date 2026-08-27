@@ -427,3 +427,13 @@ Held still at tick zero, four of the eight returned exactly **0** from the rear 
 The repair was two-sided: hold both mounts still from the moment they are built (a freeze applied later catches an asynchronous world at an arbitrary phase, which is why the fixed comparison is byte-identical across runs and the old one was not), and judge each relocation from a camera that frames the move, worth 2-9x the detection of a whole-mill view. The floor is now 0.00074, half the anvil's real 0.0014812.
 
 **Anchor:** 2026-08-14, `windmill-intended-view-proof.ts` `minimumRelocationChangedPixelFraction`, `mountWindmillStudio({ holdStill })`, and `model-studio-windmill-assets.spec.ts` "is visible where it moved". Confirmed to bite by zeroing a relocation delta.
+
+## A fix landed in one of two parallel lanes is half a fix
+
+The 2026-08-13 review found bearing friction outliving its joint: the live lane's `#jointedBodies` registry was add-only, so a released body kept paying 0.8 of angular damping — 40× its free-air rate — forever. The fix recomputed the registry on every joint change, a devlog entry recorded it, and the session moved on.
+
+The headless twin had the same registry, copied line for line, and nobody grepped for the copy. `playground-world.ts` kept the add-only version for thirteen days, through a full-codebase review, while the guide's parity paragraph promised the two lanes were one world. Every current scene masked it — their released parts stay jointed elsewhere — so nothing failed; the first machine to free a body would have over-damped it in exactly one lane, and only a lane-comparison would have said which.
+
+Found while giving both lanes joint limits and motors, because that change forced reading both constructions side by side. Two repairs shipped: the twin recomputes on detach and remove (pinned by a test that watches a carrier's damping fall from 0.82 held to 0.02 free), and joint construction itself moved into one shared builder, `physics-joint-build.ts`, so the next joint capability cannot be implemented twice and fixed once.
+
+The general form: when a mechanism exists in two lanes, a defect report against one lane is a defect report against both until the other is read, and the durable repair is to make the mechanism exist once. Anchor: `playground-cart.test.ts` "bearing friction stops when the last joint lets go", `physics-joint-build.ts`, 2026-08-26.

@@ -1,7 +1,17 @@
 import type * as RAPIER_TYPES from '@dimforge/rapier3d-compat';
-import { modelOccupancyV1, decomposeVoxelsV1 } from './voxel-colliders.js';
 import type { StudioModelV1 } from './model.js';
 import { physicsLawValuesForV1 } from './physics-laws.js';
+import {
+  createLiveVoxelBodyV1,
+  type LiveVoxelBodyV1,
+} from './live-physics-bodies.js';
+import {
+  buildPhysicsJointV1,
+  setPhysicsJointMotorVelocityV1,
+  type PhysicsJointKindV1,
+  type PhysicsJointMotorPositionV1,
+  type PhysicsJointMotorVelocityV1,
+} from './physics-joint-build.js';
 import {
   SOLVER_SOFT_CCD_PREDICTION_V1,
   SOLVER_TICKS_PER_SECOND_V1,
@@ -42,14 +52,14 @@ import {
  *   drawn. Spawned balls are the one stated exception: a ball must roll, and
  *   a voxel ball is a stack of boxes, so its collider is its bounding sphere.
  *
- * Ratchet note: this file was already past 500 lines and the trebuchet added
- * about 70 more for joints — creation, `jointIds`, `detachJoint`, and
- * forgetting a removed body's constraints. They live here because a joint
- * is meaningless without the bodies it joins and the disposal path that
- * outlives them; splitting them out would put a lifecycle across two files.
- * The recorded extraction plan is to lift the session's body/collider
- * construction into `live-physics-bodies.ts` — the largest self-contained
- * block — the first time this file grows again.
+ * Ratchet note: this file was already past 500 lines when the trebuchet
+ * added joints. The extraction its previous note recorded has been done —
+ * body/collider construction lives in `live-physics-bodies.ts`, and joint
+ * construction is shared with the headless twin through
+ * `physics-joint-build.ts` (limits and motors made two hand-maintained
+ * copies untenable). What stays is lifecycle: ownership, disposal,
+ * stepping, forces, and the joint registry, which are one story and read
+ * as one. The next growth extracts the grab-spring and wind force block.
  */
 
 export interface LivePhysicsBodyPlanV1 {
@@ -104,6 +114,16 @@ export interface LivePhysicsBodyPlanV1 {
    */
   readonly ballRadius?: number;
   /**
+   * Smooth-tread collider about the model's z axis — the driven-wheel
+   * simplification. A faceted voxel wheel at rest on its own flat is a
+   * chock: measured, ten times the drive torque wheelied the cart
+   * without tipping the wheel over its facet edge.
+   */
+  readonly cylinderZ?: {
+    readonly radius: number;
+    readonly halfWidth: number;
+  };
+  /**
    * The body starts queued and bodiless; `spawnPlanned` gives it physical
    * form later. Its source is kept so the spawned shape is still the
    * placement's own voxels.
@@ -154,15 +174,21 @@ export interface LivePhysicsProfileV1 {
 
 export interface LivePhysicsJointPlanV1 {
   readonly id: string;
-  readonly kind: 'revolute' | 'spherical' | 'rope' | 'fixed';
+  readonly kind: PhysicsJointKindV1;
   readonly a: string;
   readonly b: string;
   readonly anchorA: readonly [number, number, number];
   readonly anchorB: readonly [number, number, number];
-  /** Hinge axis in a's local frame; revolute only. */
+  /** Hinge or slide axis in each body's local frame; revolute and prismatic. */
   readonly axis?: readonly [number, number, number];
   /** Maximum anchor separation in meters; rope only. */
   readonly lengthMeters?: number;
+  /** Travel bounds — radians for a revolute, meters for a prismatic. */
+  readonly limits?: readonly [number, number];
+  /** A drive toward a target speed, live from tick zero; retargetable. */
+  readonly motorVelocity?: PhysicsJointMotorVelocityV1;
+  /** A spring-damper toward a target coordinate — suspension. */
+  readonly motorPosition?: PhysicsJointMotorPositionV1;
 }
 
 export interface LivePlacementSourceV1 {
@@ -254,19 +280,8 @@ const GRAB_DAMPING = 8;
 type RapierModule = typeof RAPIER_TYPES;
 type RapierRigidBody = RapierModule['RigidBody']['prototype'];
 type RapierWorld = RapierModule['World']['prototype'];
-type RapierCollider = RapierModule['Collider']['prototype'];
 
-interface LiveBodyInternal {
-  readonly body: RapierRigidBody;
-  readonly colliders: readonly RapierCollider[];
-  readonly voxelCount: number;
-  /** Kept so the universal law table can be consulted per body. */
-  readonly placementId: string;
-  readonly materialId?: string;
-  /** Contact-gated rolling resistance, when the plan overrides the law. */
-  readonly rollingResistance?: number;
-  readonly pivotDamping?: number;
-}
+type LiveBodyInternal = LiveVoxelBodyV1;
 
 interface GrabInternal {
   readonly placementId: string;
@@ -296,6 +311,7 @@ export class LivePhysicsSessionV1 {
   #jointedBodies = new Set<string>();
   readonly #joints = new Map<string, {
     readonly joint: RAPIER_TYPES.ImpulseJoint;
+    readonly kind: PhysicsJointKindV1;
     readonly a: string;
     readonly b: string;
   }>();
@@ -408,88 +424,10 @@ export class LivePhysicsSessionV1 {
       readonly velocity?: readonly [number, number, number];
     },
   ): void {
-    const rapier = this.#rapier;
-    const centreAt = overrides?.centre ?? source.centre;
-    const [rx, ry, rz, rw] = source.rotation ?? [0, 0, 0, 1];
-    const [vx, vy, vz] = overrides?.velocity
-      ?? source.linearVelocity ?? [0, 0, 0];
-    const [wx, wy, wz] = source.angularVelocity ?? [0, 0, 0];
-    const description = (plan.kind === 'fixed'
-      ? rapier.RigidBodyDesc.fixed()
-      : plan.kind === 'kinematic'
-        ? rapier.RigidBodyDesc.kinematicPositionBased()
-        : rapier.RigidBodyDesc.dynamic())
-      .setTranslation(centreAt[0], centreAt[1], centreAt[2])
-      .setRotation({ x: rx, y: ry, z: rz, w: rw })
-      .setLinvel(vx, vy, vz)
-      .setAngvel({ x: wx, y: wy, z: wz });
-    if (plan.ccd) description.setCcdEnabled(true);
-    // How far ahead this body watches for contact, when it declares one. A
-    // body that falls hard closes more ground in a step than the solver looks
-    // ahead by default, and is resolved already buried; a body that creeps
-    // along a belt does not, and would only nudge its neighbours from too far
-    // away. See SOLVER_SOFT_CCD_PREDICTION_V1.
-    if (plan.softCcdPrediction !== undefined) {
-      description.setSoftCcdPrediction(plan.softCcdPrediction);
-    }
-    // Nothing moves through a vacuum.
-    description.setLinearDamping(physicsLawValuesForV1(plan.material?.id).airDrag);
-    const body = this.#world.createRigidBody(description);
-    const material = plan.material;
-    const combine = material?.combine === 'multiply'
-      ? rapier.CoefficientCombineRule.Multiply
-      : rapier.CoefficientCombineRule.Average;
-    const dress = (desc: RAPIER_TYPES.ColliderDesc): RAPIER_TYPES.ColliderDesc => {
-      if (material === undefined) {
-        return desc.setFriction(0.4).setRestitution(0.05);
-      }
-      return desc
-        .setDensity(material.density)
-        .setFriction(material.friction)
-        .setRestitution(material.restitution)
-        .setFrictionCombineRule(combine)
-        .setRestitutionCombineRule(combine);
-    };
-    const colliders: RapierCollider[] = [];
-    const occupancy = modelOccupancyV1(source.model);
-    const decomposition = decomposeVoxelsV1(occupancy);
-    if (plan.ballRadius !== undefined) {
-      colliders.push(this.#world.createCollider(
-        dress(rapier.ColliderDesc.ball(plan.ballRadius)),
-        body,
-      ));
-    } else {
-      const centre = source.model.size.map((extent) => extent / 2);
-      for (const box of decomposition.boxes) {
-        colliders.push(this.#world.createCollider(
-          dress(rapier.ColliderDesc.cuboid(
-            (box.size[0] * source.grain) / 2,
-            (box.size[1] * source.grain) / 2,
-            (box.size[2] * source.grain) / 2,
-          ).setTranslation(
-            (box.at[0] + box.size[0] / 2 - centre[0]!) * source.grain,
-            (box.at[1] + box.size[1] / 2 - centre[1]!) * source.grain,
-            (box.at[2] + box.size[2] / 2 - centre[2]!) * source.grain,
-          )),
-          body,
-        ));
-      }
-    }
-    this.#bodies.set(source.placementId, {
-      body,
-      colliders,
-      placementId: source.placementId,
-      ...(plan.material?.id !== undefined
-        ? { materialId: plan.material.id }
-        : {}),
-      ...(plan.pivotDamping !== undefined
-        ? { pivotDamping: plan.pivotDamping }
-        : {}),
-      ...(plan.rollingResistance !== undefined
-        ? { rollingResistance: plan.rollingResistance }
-        : {}),
-      voxelCount: decomposition.cells,
-    });
+    this.#bodies.set(
+      source.placementId,
+      createLiveVoxelBodyV1(this.#rapier, this.#world, source, plan, overrides),
+    );
   }
 
   /**
@@ -780,6 +718,27 @@ export class LivePhysicsSessionV1 {
   }
 
   /**
+   * Retargets a joint's velocity motor — the drive command. The joint must
+   * exist and be revolute or prismatic; commanding the same target twice is
+   * an honest no-op, because a speed setpoint is state, not an event.
+   */
+  setJointMotorVelocity(
+    jointId: string,
+    motor: { readonly target: number; readonly factor: number },
+  ): void {
+    this.#assertLive();
+    const entry = this.#joints.get(jointId);
+    if (entry === undefined) {
+      throw new Error(
+        `Motor command names joint '${jointId}', but no live joint carries `
+        + 'that id — it was never created, was detached, or lost a body. '
+        + 'Rebuild the world to restore declared joints.',
+      );
+    }
+    setPhysicsJointMotorVelocityV1(entry.joint, entry.kind, jointId, motor);
+  }
+
+  /**
    * Creates one declared constraint between two live bodies.
    *
    * Shared by world building and `attachJoint`, so a joint made while the
@@ -798,22 +757,9 @@ export class LivePhysicsSessionV1 {
         + 'never spawn-only ones.',
       );
     }
-    const anchorA = { x: plan.anchorA[0], y: plan.anchorA[1], z: plan.anchorA[2] };
-    const anchorB = { x: plan.anchorB[0], y: plan.anchorB[1], z: plan.anchorB[2] };
-    const data = plan.kind === 'revolute'
-      ? rapier.JointData.revolute(anchorA, anchorB, {
-        x: plan.axis?.[0] ?? 0, y: plan.axis?.[1] ?? 0, z: plan.axis?.[2] ?? 1,
-      })
-      : plan.kind === 'spherical'
-        ? rapier.JointData.spherical(anchorA, anchorB)
-        : plan.kind === 'fixed'
-          ? rapier.JointData.fixed(
-            anchorA, { x: 0, y: 0, z: 0, w: 1 },
-            anchorB, { x: 0, y: 0, z: 0, w: 1 },
-          )
-          : rapier.JointData.rope(plan.lengthMeters ?? 0, anchorA, anchorB);
     this.#joints.set(plan.id, {
-      joint: this.#world.createImpulseJoint(data, a.body, b.body, true),
+      joint: buildPhysicsJointV1(rapier, this.#world, plan, a.body, b.body),
+      kind: plan.kind,
       a: plan.a,
       b: plan.b,
     });

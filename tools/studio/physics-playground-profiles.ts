@@ -73,6 +73,7 @@ export function createPhysicsPlaygroundProfileV1(
         ? { rollingResistance: spec.rollingResistance }
         : {}),
       ...(spec.ballRadius !== undefined ? { ballRadius: spec.ballRadius } : {}),
+      ...(spec.cylinderZ !== undefined ? { cylinderZ: spec.cylinderZ } : {}),
       ...(spec.spawnOnly ? { spawnOnly: true } : {}),
     });
     poses[spec.placementId] = {
@@ -95,7 +96,19 @@ export function createPhysicsPlaygroundProfileV1(
       ...(joint.lengthMeters !== undefined
         ? { lengthMeters: joint.lengthMeters }
         : {}),
+      ...(joint.limits !== undefined ? { limits: joint.limits } : {}),
+      ...(joint.motorVelocity !== undefined
+        ? { motorVelocity: joint.motorVelocity }
+        : {}),
+      ...(joint.motorPosition !== undefined
+        ? { motorPosition: joint.motorPosition }
+        : {}),
     })),
+    // A station that is a mechanism names its permitted contacts, and the
+    // live world enforces the same pairs the headless twin does.
+    ...(station.contactPolicy !== undefined
+      ? { contactPolicy: station.contactPolicy }
+      : {}),
   };
 }
 

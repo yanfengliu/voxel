@@ -12,6 +12,14 @@ import {
   PLAYGROUND_TIMESTEP_S_V1,
 } from '../../tools/studio/physics-playground-materials.js';
 import { physicsLawValuesForV1 } from '../../tools/studio/physics-laws.js';
+import {
+  buildPhysicsJointV1,
+  setPhysicsJointMotorVelocityV1,
+  type PhysicsJointKindV1,
+} from '../../tools/studio/physics-joint-build.js';
+import {
+  applyLiveContactPolicyV1,
+} from '../../tools/studio/live-physics-contact-policy.js';
 import type {
   PlaygroundBodySnapshotV1,
   PlaygroundFrameV1,
@@ -66,6 +74,7 @@ export class PlaygroundWorldV1 {
   #bodies = new Map<string, LiveBody>();
   #joints = new Map<string, {
     readonly joint: RAPIER.ImpulseJoint;
+    readonly kind: PhysicsJointKindV1;
     readonly a: string;
     readonly b: string;
   }>();
@@ -97,28 +106,89 @@ export class PlaygroundWorldV1 {
       if (spec.spawnOnly) continue;
       built.#createBody(spec, undefined);
     }
+    const locked = new Set(options.lockJoints ?? []);
+    for (const name of locked) {
+      if (!(station.joints ?? []).some((joint) => joint.id === name)) {
+        throw new Error(
+          `The lockJoints list names '${name}', but station `
+          + `'${station.sceneId}' declares no such joint — subtraction `
+          + "evidence must weld a real constraint, so fix the scenario's "
+          + 'lockJoints list.',
+        );
+      }
+    }
     for (const plan of playgroundJointSpecsV1(station, specs)) {
       const a = built.#bodies.get(plan.a);
       const b = built.#bodies.get(plan.b);
       if (!a || !b) continue;
-      const anchorA = { x: plan.anchorA[0], y: plan.anchorA[1], z: plan.anchorA[2] };
-      const anchorB = { x: plan.anchorB[0], y: plan.anchorB[1], z: plan.anchorB[2] };
-      const data = plan.kind === 'revolute'
-        ? RAPIER.JointData.revolute(anchorA, anchorB, {
-          x: plan.axis![0], y: plan.axis![1], z: plan.axis![2],
-        })
-        : plan.kind === 'spherical'
-          ? RAPIER.JointData.spherical(anchorA, anchorB)
-          : RAPIER.JointData.rope(plan.lengthMeters!, anchorA, anchorB);
+      // A locked joint keeps its anchors and loses its freedom: the builder
+      // ignores limits and motors for a fixed joint, which is the point.
+      const spec = locked.has(plan.id) ? { ...plan, kind: 'fixed' as const } : plan;
       built.#jointedBodies.add(plan.a);
       built.#jointedBodies.add(plan.b);
       built.#joints.set(plan.id, {
-        joint: world.createImpulseJoint(data, a.body, b.body, true),
+        joint: buildPhysicsJointV1(RAPIER, world, spec, a.body, b.body),
+        kind: spec.kind,
         a: plan.a,
         b: plan.b,
       });
     }
+    if (station.contactPolicy !== undefined) {
+      // Mirrors the live lane's refusal: a spawn-only body has no colliders
+      // when the policy is applied, so it would later be built with default
+      // groups and collide through pairs the policy never granted.
+      const deferred = [...specs.values()]
+        .filter((spec) => spec.spawnOnly)
+        .map((spec) => spec.placementId);
+      if (deferred.length > 0) {
+        throw new Error(
+          `Station '${station.sceneId}' declares a contactPolicy and also `
+          + `spawn-only bodies (${deferred.join(', ')}). Give those bodies `
+          + 'ordinary plans or drop the policy; a policy must bind every '
+          + 'collider it governs at build time.',
+        );
+      }
+      // An omitted body takes its pairs with it, exactly as a joint touching
+      // an omitted body is dropped — the mechanism minus a part is still the
+      // declared mechanism, not a different one.
+      const present = [...specs.keys()];
+      const surviving = new Set(present);
+      applyLiveContactPolicyV1(
+        {
+          pairs: station.contactPolicy.pairs.filter(
+            ([a, b]) => surviving.has(a) && surviving.has(b),
+          ),
+        },
+        present,
+        (placementId) => built.#bodies.get(placementId)?.colliders ?? [],
+      );
+    }
     return built;
+  }
+
+  /** Retargets a joint's velocity motor — the deterministic drive command. */
+  setJointMotorVelocity(
+    jointId: string,
+    motor: { readonly target: number; readonly factor: number },
+  ): void {
+    const entry = this.#joints.get(jointId);
+    if (!entry) {
+      throw new Error(
+        `Motor command names joint '${jointId}', but no live joint carries `
+        + 'that id — it was never created, was detached, or lost a body.',
+      );
+    }
+    setPhysicsJointMotorVelocityV1(entry.joint, entry.kind, jointId, motor);
+  }
+
+  /** Recomputed from the live joints, so a released body stops paying. */
+  #refreshJointedBodies(): void {
+    const held = new Set<string>();
+    for (const entry of this.#joints.values()) {
+      held.add(entry.a);
+      held.add(entry.b);
+    }
+    this.#jointedBodies = held;
   }
 
   #requireWorld(): RAPIER.World {
@@ -164,6 +234,19 @@ export class PlaygroundWorldV1 {
     if (spec.ballRadius !== undefined) {
       colliders.push(world.createCollider(
         RAPIER.ColliderDesc.ball(spec.ballRadius)
+          .setDensity(spec.worldDensity)
+          .setFriction(spec.friction)
+          .setRestitution(spec.restitution)
+          .setFrictionCombineRule(rule)
+          .setRestitutionCombineRule(rule),
+        body,
+      ));
+    } else if (spec.cylinderZ !== undefined) {
+      // Rapier's cylinder axis is y; the tread spins about the model's z,
+      // so the collider is rotated a quarter turn about x.
+      colliders.push(world.createCollider(
+        RAPIER.ColliderDesc.cylinder(spec.cylinderZ.halfWidth, spec.cylinderZ.radius)
+          .setRotation({ x: Math.SQRT1_2, y: 0, z: 0, w: Math.SQRT1_2 })
           .setDensity(spec.worldDensity)
           .setFriction(spec.friction)
           .setRestitution(spec.restitution)
@@ -222,6 +305,8 @@ export class PlaygroundWorldV1 {
         this.#joints.delete(id);
       }
     }
+    // The partner this body was joined to is no longer held by anything.
+    this.#refreshJointedBodies();
     this.#requireWorld().removeRigidBody(live.body);
     this.#bodies.delete(placementId);
   }
@@ -238,6 +323,11 @@ export class PlaygroundWorldV1 {
     }
     this.#requireWorld().removeImpulseJoint(entry.joint, true);
     this.#joints.delete(jointId);
+    // Bearing friction is charged while a joint holds the body, so the
+    // registry must forget released bodies the moment the joint goes — the
+    // live lane learned this on 2026-08-13 and this lane had kept the
+    // add-only copy of the same defect.
+    this.#refreshJointedBodies();
   }
 
   /** Damping a body actually carries, so the law tests can read it. */

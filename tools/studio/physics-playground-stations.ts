@@ -5,6 +5,7 @@ import {
 } from './physics-playground-materials.js';
 import { createPlaygroundFieldStationsV1 } from './physics-playground-fields.js';
 import { createTrebuchetStationV1 } from './physics-playground-trebuchet.js';
+import { createCartStationV1 } from './physics-playground-cart.js';
 import { createRollingStationV1 } from './physics-playground-rolling.js';
 import {
   PLAYGROUND_FLOOR_TOP_V1,
@@ -837,6 +838,7 @@ export function createPhysicsPlaygroundStationsV1(): readonly PlaygroundStationV
     structuresStation(),
     createRollingStationV1(),
     createTrebuchetStationV1(),
+    createCartStationV1(),
     ...createPlaygroundFieldStationsV1(),
   ]);
 }

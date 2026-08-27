@@ -1,6 +1,11 @@
 import type {
   PlaygroundMaterialIdV1,
 } from './physics-playground-materials.js';
+import type {
+  PhysicsJointMotorPositionV1,
+  PhysicsJointMotorVelocityV1,
+} from './physics-joint-build.js';
+import type { LiveContactPolicyV1 } from './live-physics-contact-policy.js';
 
 /**
  * The playground's shared data vocabulary: stations, bodies, slopes, spawn
@@ -64,8 +69,16 @@ export interface PlaygroundBodyDefV1 {
     readonly centre: readonly [number, number, number];
     readonly quaternion: readonly [number, number, number, number];
   };
-  /** Primitive collider instead of exact voxel boxes — a stated simplification. */
-  readonly collider?: 'voxel' | 'ball';
+  /**
+   * Primitive collider instead of exact voxel boxes — a stated
+   * simplification. 'ball' is the rolling station's ideal twin.
+   * 'cylinder-z' is a smooth tread about the model's z axis, for driven
+   * wheels: measured, a faceted voxel wheel resting on its flat is a
+   * parking chock — ten times the drive torque pitched the whole cart
+   * nose-up on its suspension without ever tipping the wheel over its
+   * own facet edge.
+   */
+  readonly collider?: 'voxel' | 'ball' | 'cylinder-z';
   /** Continuous collision detection for declared fast bodies. */
   readonly ccd?: boolean;
   /**
@@ -142,6 +155,19 @@ export type PlaygroundActionV1 =
     readonly atSeconds: number;
     readonly placementId: string;
     readonly impulse: readonly [number, number, number];
+  }
+  | {
+    /**
+     * Retargets a joint's velocity motor — the drive pedal. The joint must
+     * declare `motorVelocity`, because a command is a new target for an
+     * existing drive, never a drive conjured onto a passive hinge.
+     */
+    readonly kind: 'motor-velocity';
+    readonly atSeconds: number;
+    readonly jointId: string;
+    /** rad/s for a revolute, m/s for a prismatic. */
+    readonly target: number;
+    readonly factor: number;
   };
 
 export interface PlaygroundCaseV1 {
@@ -174,7 +200,16 @@ export type PlaygroundCheckRefV1 =
      */
     readonly minLeadMeters?: number;
   }
-  | { readonly check: 'crossed-plane'; readonly placementId: string; readonly axis: 0 | 1 | 2; readonly threshold: number; readonly expect: 'crossed' | 'stopped' }
+  | {
+    readonly check: 'crossed-plane';
+    readonly placementId: string;
+    readonly axis: 0 | 1 | 2;
+    readonly threshold: number;
+    /** Travel direction the crossing reads: -1 (the default) ends below
+     * the threshold, +1 ends above it — the cart drives +x. */
+    readonly direction?: 1 | -1;
+    readonly expect: 'crossed' | 'stopped';
+  }
   | { readonly check: 'moved-at-most'; readonly placementId: string; readonly maxTravelMeters: number }
   | { readonly check: 'moved-at-least'; readonly placementId: string; readonly minTravelMeters: number }
   | { readonly check: 'all-finite' }
@@ -280,7 +315,33 @@ export type PlaygroundCheckRefV1 =
     readonly throughSeconds?: number;
   }
   | { readonly check: 'rotated-at-least'; readonly placementId: string; readonly minDegrees: number }
-  | { readonly check: 'rotated-at-most'; readonly placementId: string; readonly maxDegrees: number };
+  | { readonly check: 'rotated-at-most'; readonly placementId: string; readonly maxDegrees: number }
+  | {
+    /**
+     * Every sampled frame keeps a joint's free coordinate inside its
+     * declared limits, give or take the solver's slop. This is what makes
+     * a limit a claim rather than a setting: the suspension that bottoms
+     * out mid-drop must do it at the declared travel, and the counter-run
+     * that removes the limit must fail here.
+     */
+    readonly check: 'joint-travel-within-limits';
+    readonly jointId: string;
+    /** Allowed excursion past a limit in coordinate units, e.g. 0.02. */
+    readonly slop: number;
+  }
+  | {
+    /**
+     * Two bodies end the run within (or beyond) a straight-line distance
+     * of each other. 'near' is cargo still riding its cart; 'apart' is the
+     * control's cargo measured on the ground, which is what makes 'near'
+     * meaningful.
+     */
+    readonly check: 'ends-within';
+    readonly a: string;
+    readonly b: string;
+    readonly maxDistanceMeters: number;
+    readonly expect: 'near' | 'apart';
+  };
 
 export interface PlaygroundScenarioV1 {
   readonly id: string;
@@ -288,11 +349,28 @@ export interface PlaygroundScenarioV1 {
   /** Case whose actions run inside this scenario, if any. */
   readonly caseId?: string;
   /**
+   * Timed actions of the scenario's own, run alongside any case's. A case
+   * is a panel button and fires all at once; a timeline that must drive,
+   * then brake, then coast belongs to the scenario, because only the
+   * deterministic runner honours `atSeconds`.
+   */
+  readonly actions?: readonly PlaygroundActionV1[];
+  /**
    * Bodies left out of this run — executable subtraction evidence. A joint
    * touching an omitted body is dropped with it, and the run's checks state
    * what the machine loses without the part.
    */
   readonly omit?: readonly string[];
+  /**
+   * Joints built as rigid welds instead of their declared kind — the other
+   * half of subtraction evidence. Locking the suspension is how a sprung
+   * ride proves it is the spring doing the work: same cart, same road,
+   * joints that no longer move, and the difference is the mechanism's
+   * contribution. A locked joint keeps its anchors and loses its freedom,
+   * limits, and motors. Like `omit`, this is honoured by the deterministic
+   * runner only; the live lane never runs scenarios.
+   */
+  readonly lockJoints?: readonly string[];
   /** Ramp-angle override in degrees for stations with a 'ramp-angle' slope. */
   readonly angleDegrees?: number;
   /**
@@ -309,16 +387,32 @@ export interface PlaygroundScenarioV1 {
 
 export interface PlaygroundJointV1 {
   readonly id: string;
-  readonly kind: 'revolute' | 'spherical' | 'rope';
+  readonly kind: 'revolute' | 'prismatic' | 'spherical' | 'rope';
   /** The joined placements; every anchor is body-local meters from center. */
   readonly a: string;
   readonly b: string;
   readonly anchorA: readonly [number, number, number];
   readonly anchorB: readonly [number, number, number];
-  /** Hinge axis in a's local frame; revolute only. */
+  /** Hinge or slide axis in each body's local frame; revolute and prismatic. */
   readonly axis?: readonly [number, number, number];
   /** Maximum anchor separation in meters; rope only. */
   readonly lengthMeters?: number;
+  /**
+   * Travel bounds on the free coordinate — radians for a revolute, meters
+   * for a prismatic. A limit is drawn geometry's promise kept by the
+   * solver: suspension bottoms out at its declared travel instead of
+   * wherever the spring gives up.
+   */
+  readonly limits?: readonly [number, number];
+  /**
+   * A powered drive toward a target speed. Declared here it is the joint's
+   * state from tick zero — a parked cart declares target 0, which is a
+   * brake — and a 'motor-velocity' action retargets it while the world
+   * runs.
+   */
+  readonly motorVelocity?: PhysicsJointMotorVelocityV1;
+  /** A spring-damper toward a target coordinate — suspension, not script. */
+  readonly motorPosition?: PhysicsJointMotorPositionV1;
   /** The drawn mechanism this constraint stands in for. */
   readonly tests: string;
 }
@@ -330,6 +424,14 @@ export interface PlaygroundStationV1 {
   readonly bodies: readonly PlaygroundBodyDefV1[];
   readonly slopes: readonly PlaygroundSlopeV1[];
   readonly joints?: readonly PlaygroundJointV1[];
+  /**
+   * The only body pairs allowed to touch, for a station that is a
+   * mechanism. Both lanes apply it — the live world through the profile,
+   * the headless twin at build — so an undeclared contact is inert
+   * everywhere or nowhere. Absent means everything meets everything,
+   * which is what a heap of blocks needs.
+   */
+  readonly contactPolicy?: LiveContactPolicyV1;
   readonly cases: readonly PlaygroundCaseV1[];
   /**
    * Internal PGS passes this station's world uses, when it needs more than the

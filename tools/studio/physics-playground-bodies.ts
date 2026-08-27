@@ -46,6 +46,15 @@ export interface PlaygroundBodySpecV1 {
   readonly boxes: readonly PlaygroundColliderBoxV1[];
   /** Set when the body declares the primitive-ball simplification. */
   readonly ballRadius?: number;
+  /**
+   * Set when the body declares the smooth-tread simplification: a
+   * cylinder about the model's z axis, radius from its x/y extent and
+   * half-width from its z depth.
+   */
+  readonly cylinderZ?: {
+    readonly radius: number;
+    readonly halfWidth: number;
+  };
   /** Coulomb friction and restitution of this body's material. */
   readonly friction: number;
   readonly restitution: number;
@@ -68,6 +77,12 @@ export interface PlaygroundBuildOptionsV1 {
   readonly rampAngleDegrees?: number;
   /** Bodies excluded from this build — scenario subtraction evidence. */
   readonly omit?: readonly string[];
+  /**
+   * Joints built as rigid welds instead of their declared kind — the
+   * mechanism's subtraction evidence. A locked joint keeps its anchors and
+   * loses its freedom, limits, and motors.
+   */
+  readonly lockJoints?: readonly string[];
 }
 
 type Vec3 = readonly [number, number, number];
@@ -243,6 +258,8 @@ function bodySpec(
       if (body.onSlope.align === 'world') {
         if (body.collider === 'ball') {
           support = (Math.max(...model.size) * grain) / 2;
+        } else if (body.collider === 'cylinder-z') {
+          support = (Math.max(model.size[0], model.size[1]) * grain) / 2;
         } else {
           support = 0;
           for (const box of boxes) {
@@ -284,6 +301,16 @@ function bodySpec(
   }
 
   const largestExtent = Math.max(model.size[0], model.size[1], model.size[2]);
+  if (body.collider === 'cylinder-z') {
+    if (model.size[0] !== model.size[1] || model.size[2] >= model.size[0]) {
+      throw new Error(
+        `Body '${body.placementId}' declares a cylinder-z collider, but its `
+        + `model is ${model.size.join('×')} voxels — a tread needs a square `
+        + 'x/y disc extruded along a thinner z, so the radius and width are '
+        + 'unambiguous.',
+      );
+    }
+  }
   return {
     placementId: body.placementId,
     kind: body.kind,
@@ -293,6 +320,14 @@ function bodySpec(
     boxes,
     ...(body.collider === 'ball'
       ? { ballRadius: (largestExtent * grain) / 2 }
+      : {}),
+    ...(body.collider === 'cylinder-z'
+      ? {
+        cylinderZ: {
+          radius: (model.size[0] * grain) / 2,
+          halfWidth: (model.size[2] * grain) / 2,
+        },
+      }
       : {}),
     friction: material.friction,
     restitution: material.restitution,
@@ -397,10 +432,15 @@ export function playgroundJointSpecsV1(
         );
       }
     }
-    if (joint.kind === 'revolute' && joint.axis === undefined) {
+    if (
+      (joint.kind === 'revolute' || joint.kind === 'prismatic')
+      && joint.axis === undefined
+    ) {
       throw new Error(
-        `Revolute joint '${joint.id}' declares no axis; a hinge needs its `
-        + "rotation axis in body a's local frame.",
+        `${joint.kind === 'revolute' ? 'Revolute' : 'Prismatic'} joint `
+        + `'${joint.id}' declares no axis; a ${joint.kind === 'revolute'
+          ? 'hinge needs its rotation axis'
+          : 'slide needs its travel axis'} in the bodies' local frames.`,
       );
     }
     if (joint.kind === 'rope' && joint.lengthMeters === undefined) {
@@ -408,6 +448,52 @@ export function playgroundJointSpecsV1(
         `Rope joint '${joint.id}' declares no lengthMeters; a rope needs `
         + 'its maximum anchor separation.',
       );
+    }
+    const drivable = joint.kind === 'revolute' || joint.kind === 'prismatic';
+    if (!drivable) {
+      for (const [field, present] of [
+        ['limits', joint.limits !== undefined],
+        ['motorVelocity', joint.motorVelocity !== undefined],
+        ['motorPosition', joint.motorPosition !== undefined],
+      ] as const) {
+        if (present) {
+          throw new Error(
+            `Joint '${joint.id}' is a ${joint.kind} joint and declares `
+            + `${field}, but only revolute and prismatic joints have the `
+            + 'free coordinate limits and motors act on. Change the kind '
+            + 'or drop the field.',
+          );
+        }
+      }
+    }
+    if (joint.motorVelocity !== undefined && joint.motorPosition !== undefined) {
+      throw new Error(
+        `Joint '${joint.id}' declares both motorVelocity and motorPosition, `
+        + 'but Rapier carries one motor per axis, so the second '
+        + 'configuration silently erases the first. Declare the spring or '
+        + 'the drive, not both.',
+      );
+    }
+    if (joint.limits !== undefined && !(joint.limits[0] < joint.limits[1])) {
+      throw new Error(
+        `Joint '${joint.id}' declares limits [${String(joint.limits[0])}, `
+        + `${String(joint.limits[1])}], but a travel range needs its lower `
+        + 'bound strictly below its upper. A zero-width range is a weld — '
+        + "use a scenario's lockJoints for that.",
+      );
+    }
+    for (const [name, gain] of [
+      ['motorVelocity.factor', joint.motorVelocity?.factor],
+      ['motorPosition.stiffness', joint.motorPosition?.stiffness],
+      ['motorPosition.damping', joint.motorPosition?.damping],
+    ] as const) {
+      if (gain !== undefined && !(Number.isFinite(gain) && gain > 0)) {
+        throw new Error(
+          `Joint '${joint.id}' declares ${name} = ${String(gain)}, but a `
+          + 'motor gain must be a finite number above zero — zero is a '
+          + 'motor that does nothing, which is the absence of the field.',
+        );
+      }
     }
     if (!specs.has(joint.a) || !specs.has(joint.b)) continue;
     joints.push(joint);
