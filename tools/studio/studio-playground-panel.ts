@@ -7,6 +7,9 @@ import {
 } from './live-physics.js';
 import type { PhysicalOverlaySegmentV1 } from './physical-overlay.js';
 import {
+  playgroundJointOverlaySegmentsV1,
+} from './playground-joint-overlay.js';
+import {
   createPhysicsPlaygroundStationsV1,
   physicsPlaygroundStationV1,
   type PlaygroundStationV1,
@@ -233,8 +236,9 @@ export function createStudioPlaygroundPanel(
     });
   });
   const overlayButton = button('debug view', 'Draws the selected body\'s '
-    + 'collider boxes, contact points and normals, and velocity over the '
-    + 'stage.', () => {
+    + 'collider boxes, contact points and normals, velocity, and joints '
+    + 'over the stage — a hinge as its axis, a slide as its travel with '
+    + 'the stops ticked, a rope as the line it is.', () => {
     deps.overlay.setVisible(!deps.overlay.visible());
     overlayButton.classList.toggle('on', deps.overlay.visible());
     sync();
@@ -406,6 +410,7 @@ export function createStudioPlaygroundPanel(
 
   function overlaySegments(
     row: LiveBodySnapshotV1 | undefined,
+    rows: readonly LiveBodySnapshotV1[],
   ): readonly PhysicalOverlaySegmentV1[] {
     const live = session();
     if (!live || !row || !station) return [];
@@ -492,6 +497,17 @@ export function createStudioPlaygroundPanel(
         ],
       });
     }
+    // The selected body's joints, in their own kind and colour, from the
+    // pure builder whose geometry is unit-tested against the same
+    // conventions the travel checks verify. Live joints only, so a fired
+    // trigger vanishes from the picture the way it vanished from the
+    // world.
+    segments.push(...playgroundJointOverlaySegmentsV1(
+      station.joints ?? [],
+      row,
+      rows,
+      new Set(live.jointIds()),
+    ));
     return segments;
   }
 
@@ -549,7 +565,7 @@ export function createStudioPlaygroundPanel(
     }
     readout.textContent = lines.join('\n');
     if (deps.overlay.visible()) {
-      deps.overlay.setSegments(overlaySegments(row));
+      deps.overlay.setSegments(overlaySegments(row, rows));
       deps.redraw();
     }
   }
@@ -567,6 +583,10 @@ export function createStudioPlaygroundPanel(
         ? null
         : physicsPlaygroundStationV1(scene.id) ?? null;
       root.hidden = station === null;
+      // The previous station's drawing must not outlive its world: the
+      // new session's first sync is seconds away and the old segments
+      // would stand over the wrong scene until it ran.
+      deps.overlay.setSegments([]);
       chosenBody = null;
       spawnCount = 0;
       angle = station?.defaultRampAngleDegrees;

@@ -14,7 +14,7 @@ import type { CompiledPhysicalModelV1 } from './physical-compile.js';
  * is the invariant shown honestly, not a shortcut.
  */
 export interface PhysicalOverlaySegmentV1 {
-  readonly kind: 'collider' | 'sensor' | 'port';
+  readonly kind: 'collider' | 'sensor' | 'port' | 'joint';
   readonly a: readonly [number, number, number];
   readonly b: readonly [number, number, number];
 }

@@ -751,8 +751,10 @@ export function createTrebuchetStationV1(): PlaygroundStationV1 {
       lengthMeters: TREBUCHET_TRIGGER_ROPE_V1,
       tests: 'The trigger: a 24 cm lashing from the tip crossbar\'s east '
         + 'end down to the post beside it, taut under the '
-        + 'counterweight\'s torque until fired. Not drawn — both ends are '
-        + 'drawn, the tie between them is not.',
+        + 'counterweight\'s torque until fired. Not drawn as voxels — '
+        + 'both ends are, the tie is not — but the debug overlay draws '
+        + 'the live constraint as its line, and firing removes it from '
+        + 'the picture with the joint.',
     },
   ];
   return {

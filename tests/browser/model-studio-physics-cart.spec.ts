@@ -93,6 +93,32 @@ test('the cart opens live and parks on its brakes', async ({ page }) => {
   expect(Math.abs(later - early)).toBeLessThan(0.2);
 });
 
+test('the debug overlay draws the selected corner\'s joints', async ({ page }) => {
+  await openCart(page);
+
+  // A front carrier hangs on a spring and carries a kingpin: selecting it
+  // with the overlay on must draw both — the prismatic travel with its
+  // stop ticks (four lines: link, span, two ticks) and the revolute
+  // kingpin (link and axis). Six joint lines minimum, in the overlay's
+  // own kind so a person can tell a constraint from a collider box.
+  await page.evaluate(() => {
+    window.voxelStudio!.playground.selectBody('carrier-fl');
+    window.voxelStudio!.playground.setOverlay(true);
+  });
+  const jointLines = page.locator('.physical-marks line.joint');
+  await expect.poll(async () => jointLines.count()).toBeGreaterThanOrEqual(6);
+  // Collider boxes still draw beside them — joints joined the overlay,
+  // they did not replace it.
+  await expect
+    .poll(async () => page.locator('.physical-marks line.collider').count())
+    .toBeGreaterThan(0);
+
+  await page.evaluate(() => {
+    window.voxelStudio!.playground.setOverlay(false);
+  });
+  await expect.poll(async () => jointLines.count()).toBe(0);
+});
+
 test('the cart drives on command in the live scene', async ({ page }) => {
   await openCart(page);
 

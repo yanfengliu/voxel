@@ -456,10 +456,25 @@ test('the trebuchet holds cocked, fires downrange, and reset re-cocks it', async
   expect(Math.abs((held?.translation[2] ?? 0) - (opening.ball?.translation[2] ?? 9)))
     .toBeLessThan(0.3);
 
+  // The overlay on the cocked arm draws every constraint holding it:
+  // three hinges (link and axis each) plus the trigger rope's one line.
+  await page.evaluate(() => {
+    window.voxelStudio!.playground.selectBody('arm');
+    window.voxelStudio!.playground.setOverlay(true);
+  });
+  const jointLines = page.locator('.physical-marks line.joint');
+  await expect.poll(async () => jointLines.count()).toBe(7);
+
   // Fire: the lashing detaches, the whip carries the ball up and over,
   // and it crosses far downrange in the firing plane.
   expect(await page.evaluate(() =>
     window.voxelStudio!.playground.fireCase('fire'))).toBe(true);
+  // The picture follows the world: the rope's line vanishes with the
+  // joint, and the three hinges keep drawing through the whip.
+  await expect.poll(async () => jointLines.count()).toBe(6);
+  await page.evaluate(() => {
+    window.voxelStudio!.playground.setOverlay(false);
+  });
   // Four seconds of flight, stepped rather than waited for. The ball is well
   // downrange by then and still airborne.
   await page.evaluate(() => { window.voxelStudio!.playground.stepOnce(240); });
