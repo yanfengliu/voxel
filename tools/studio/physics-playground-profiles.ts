@@ -6,6 +6,7 @@ import {
   playgroundBodySpecsV1,
   playgroundJointSpecsV1,
 } from './physics-playground-bodies.js';
+import { SOLVER_SOFT_CCD_PREDICTION_V1 } from './solver-rate.js';
 import {
   createPhysicsPlaygroundStationsV1,
   physicsPlaygroundStationV1,
@@ -51,21 +52,21 @@ export function createPhysicsPlaygroundProfileV1(
         combine: spec.combine,
       },
       ...(spec.ccd ? { ccd: true } : {}),
-      // KNOWN DIVERGENCE, measured 2026-08-13, not yet resolved.
-      //
-      // The headless twin sets `softCcdPrediction` on every dynamic body
-      // (`playground-world.ts#createBody`); nothing sets it here, and Rapier's
-      // default is 0. So the two lanes do not solve the same world, and the
-      // gap is not small: the falling-station drop buries 0.16427 m in the
-      // studio against 0.00342 m headless.
-      //
-      // Setting it here — the obvious fix — was tried and reverted. It takes
-      // the live trebuchet from 23 bricks knocked past a quarter metre to
-      // zero, while the headless trebuchet's 19 scenarios stay green, because
-      // none of them assert the wall coming down. So "match the twin" is not
-      // established as the right target: one lane has to be shown correct
-      // before the other is moved to it, and that is a physics question with
-      // its own measurements, not a line to change here.
+      // Resolved 2026-08-27: soft CCD is a per-body declaration now, and
+      // both lanes read the same one. The twin used to blanket it onto
+      // every dynamic body while this lane set it on none — the recorded
+      // KNOWN DIVERGENCE of 2026-08-13. Measured when the blanket came
+      // off: a six-meter drop lands 0.164 m buried without the watch
+      // and 0.003 m with it, so the falling station, the field piles,
+      // the spawn magazines, and the structures weights declare it —
+      // the studio's visible burial is gone. The blanket also changed
+      // impacts (the twin's throw moves 19 bricks under it, 12
+      // without, worst launch 4.03 m against 5.92), so machines whose
+      // job is hitting things declare nothing and keep the behaviour
+      // this lane always showed on screen.
+      ...(spec.softCcd
+        ? { softCcdPrediction: SOLVER_SOFT_CCD_PREDICTION_V1 }
+        : {}),
       ...(spec.pivotDamping !== undefined
         ? { pivotDamping: spec.pivotDamping }
         : {}),

@@ -828,7 +828,7 @@ export function createTrebuchetStationV1(): PlaygroundStationV1 {
         id: 'treb-fire',
         label: 'Fire: the whip throws the ball downrange',
         caseId: 'fire',
-        // The shot reaches the wall at tick ~974 and the rubble has
+        // The shot reaches the wall at tick ~249 and the rubble has
         // settled well before the window closes. It deliberately stops
         // short of the long rollback: the rebounding ball rolls back up
         // the field at a constant 4.3 m/s because Rapier models no

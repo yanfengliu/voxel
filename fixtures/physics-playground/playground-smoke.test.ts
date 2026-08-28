@@ -4,6 +4,12 @@ import {
   physicsPlaygroundStationV1,
 } from '../../tools/studio/physics-playground-stations.js';
 import {
+  createPhysicsPlaygroundProfileV1,
+} from '../../tools/studio/physics-playground-profiles.js';
+import {
+  SOLVER_SOFT_CCD_PREDICTION_V1,
+} from '../../tools/studio/solver-rate.js';
+import {
   playgroundResultLineV1,
   runPlaygroundScenarioV1,
 } from './playground-run.js';
@@ -57,6 +63,51 @@ describe('physics playground smoke', () => {
     expect(penetration?.status).toBe('pass');
     expect(result.maxFloorPenetration).toBeLessThan(0.02);
   }, 120_000);
+
+  it('2b. a declared soft-CCD watch is what keeps a hard landing out of the floor', async () => {
+    // The falling station's whole burial story, pinned from both sides.
+    // Shipped, the droppers declare `softCcd` and the six-meter landing
+    // barely dents the floor. The counter-run strips the declarations —
+    // the world the studio actually showed for five weeks while the twin
+    // silently blanketed the watch onto everything (the resolved KNOWN
+    // DIVERGENCE) — and the same landing buries more than a tenth of a
+    // meter. Both numbers measured 2026-08-27: 0.0034 against 0.1643.
+    const declared = await fallingRun();
+    expect(declared.maxImpactBurial).toBeLessThan(0.01);
+    const stripped = {
+      ...falling,
+      bodies: falling.bodies.map((body) => {
+        const { softCcd, ...rest } = body;
+        void softCcd;
+        return rest;
+      }),
+    };
+    const bare = await runPlaygroundScenarioV1(stripped, 'falling-settle');
+    expect(bare.maxImpactBurial).toBeGreaterThan(0.1);
+  }, 120_000);
+
+  it('2c. both lanes read the same soft-CCD declarations', () => {
+    // The parity half of the resolved divergence: the live profile must
+    // carry the watch exactly where the body defs declare it, so the
+    // studio and the twin land the same drop. A dropper carries the one
+    // shared distance; a trebuchet brick and the ball carry none.
+    const fallingProfile = createPhysicsPlaygroundProfileV1(falling);
+    for (const id of ['cube-stone-solid', 'cube-wood', 'beam']) {
+      const plan = fallingProfile.bodies.find(
+        (body) => body.placementId === id);
+      expect(plan?.softCcdPrediction, `${id} watches`)
+        .toBe(SOLVER_SOFT_CCD_PREDICTION_V1);
+    }
+    const treb = station('studio:scene:physics-trebuchet');
+    const trebProfile = createPhysicsPlaygroundProfileV1(treb);
+    for (const id of ['ball', 'brick-0-0']) {
+      const plan = trebProfile.bodies.find(
+        (body) => body.placementId === id);
+      expect(plan, `${id} exists`).toBeDefined();
+      expect(plan?.softCcdPrediction, `${id} declares no watch`)
+        .toBeUndefined();
+    }
+  });
 
   it('3. a stationary stack does not immediately explode', async () => {
     const result = await structuresRun();

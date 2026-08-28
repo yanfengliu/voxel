@@ -52,6 +52,13 @@ export const PLAYGROUND_SNAPSHOT_STRIDE_V1 = Math.max(
 export interface PlaygroundRunOptionsV1 {
   /** Wall-clock sampler for the timing report; injectable for tests. */
   readonly now?: () => number;
+  /**
+   * Forces the soft-CCD watch onto every dynamic body — the counter-run
+   * lever proving the per-body declarations matter. This was the twin's
+   * silent blanket for five weeks; tests keep it reachable to measure
+   * what it cost.
+   */
+  readonly softCcdEverywhere?: boolean;
 }
 
 function stationScenario(
@@ -140,6 +147,7 @@ export async function runPlaygroundScenarioV1(
     ...(scenario.lockJoints !== undefined
       ? { lockJoints: scenario.lockJoints }
       : {}),
+    ...(options.softCcdEverywhere ? { softCcdEverywhere: true } : {}),
     ...(scenario.angleDegrees !== undefined
       ? { rampAngleDegrees: scenario.angleDegrees }
       : station.defaultRampAngleDegrees !== undefined

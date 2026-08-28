@@ -61,6 +61,9 @@ function magazineBodies(count: number, edgeZ: number): PlaygroundBodyDefV1[] {
     material: 'stone' as const,
     at: [-4.4 + index * 1.4, FLOOR_TOP, edgeZ] as const,
     spawnOnly: true,
+    // Spawned blocks drop from the panel's release height — falling is
+    // their job, so they watch like the falling station's droppers.
+    softCcd: true,
     tests: 'The visible spawn magazine: the Spawn control takes the next '
       + 'queued block, so added mass has a drawn source instead of appearing '
       + 'from nowhere.',
@@ -76,7 +79,11 @@ function fallingStation(): PlaygroundStationV1 {
     x: number,
     tests: string,
   ): PlaygroundBodyDefV1 => ({
-    placementId, recipeId, kind: 'dynamic', material, at: [x, 6, 0], tests,
+    placementId, recipeId, kind: 'dynamic', material, at: [x, 6, 0],
+    // Falling is this station's whole job: a six-meter drop closes a
+    // quarter meter per step at landing and buried 0.164 m without the
+    // watch (0.003 m with it, measured 2026-08-27).
+    softCcd: true, tests,
   });
   const droppers = ['cube-stone-solid', 'cube-stone-hollow', 'cube-wood', 'beam'];
   return {
@@ -744,6 +751,7 @@ function structuresStation(): PlaygroundStationV1 {
         placementId: 'weight-a',
         recipeId: 'studio:pg-weight',
         kind: 'dynamic',
+        softCcd: true,
         material: 'steel',
         at: [-6, FLOOR_TOP, 5],
         spawnOnly: true,
@@ -754,6 +762,7 @@ function structuresStation(): PlaygroundStationV1 {
         placementId: 'weight-b',
         recipeId: 'studio:pg-weight',
         kind: 'dynamic',
+        softCcd: true,
         material: 'steel',
         at: [-4.8, FLOOR_TOP, 5],
         spawnOnly: true,

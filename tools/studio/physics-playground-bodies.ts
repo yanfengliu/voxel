@@ -62,6 +62,8 @@ export interface PlaygroundBodySpecV1 {
   readonly worldDensity: number;
   readonly combine: 'average' | 'multiply';
   readonly ccd: boolean;
+  /** Soft-CCD watch declared by content that falls hard; see the body type. */
+  readonly softCcd: boolean;
   /** Angular damping standing in for rolling resistance; see the body type. */
   readonly rollingResistance?: number;
   readonly pivotDamping?: number;
@@ -83,6 +85,14 @@ export interface PlaygroundBuildOptionsV1 {
    * loses its freedom, limits, and motors.
    */
   readonly lockJoints?: readonly string[];
+  /**
+   * Forces the soft-CCD watch onto every dynamic body regardless of
+   * declaration — the probe and counter-run lever, honoured by the
+   * deterministic twin only. This was the twin's silent default for five
+   * weeks (the recorded KNOWN DIVERGENCE); keeping it reachable is what
+   * lets a test measure what the blanket cost.
+   */
+  readonly softCcdEverywhere?: boolean;
 }
 
 type Vec3 = readonly [number, number, number];
@@ -334,6 +344,7 @@ function bodySpec(
     worldDensity: material.density / grain ** 3,
     combine: material.combine,
     ccd: body.ccd ?? false,
+    softCcd: body.softCcd ?? false,
     ...(body.pivotDamping !== undefined
       ? { pivotDamping: body.pivotDamping }
       : {}),

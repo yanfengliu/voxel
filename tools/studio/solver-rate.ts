@@ -42,7 +42,7 @@ export function solverTicksForSecondsV1(seconds: number): number {
 /**
  * How far ahead a moving body watches for contact, in world units.
  *
- * Rapier's soft continuous prediction, set on every dynamic body in every lane.
+ * Rapier's soft continuous prediction, declared per body and read by both lanes.
  * The problem it solves is geometric, not numerical: on a drop like the
  * falling station's, a body closes 0.1779 m in a single step while the solver
  * looks 0.002 m ahead, so contact is found only once the body is already

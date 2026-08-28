@@ -339,7 +339,7 @@ The habit: when testing something inside a loop that runs every frame, run at le
 
 ## Finding which two lanes differ is the easy half; proving which one is right is the work
 
-**Anchor:** 2026-08-13. `SOLVER_SOFT_CCD_PREDICTION_V1` (0.25) applied by `fixtures/physics-playground/playground-world.ts` to every dynamic body, applied by `tools/studio/live-physics.ts` only on request, and requested by no profile. Measured gap recorded in `solver-rate.ts`: **0.16427 m of burial against 0.00342 m**. The fix was made and reverted; the divergence is recorded in a comment at the site in `physics-playground-profiles.ts`.
+**Anchor:** 2026-08-13. `SOLVER_SOFT_CCD_PREDICTION_V1` (0.25) applied by `fixtures/physics-playground/playground-world.ts` to every dynamic body, applied by `tools/studio/live-physics.ts` only on request, and requested by no profile. Measured gap recorded in `solver-rate.ts`: **0.16427 m of burial against 0.00342 m**. The fix was made and reverted; the comment at the site in `physics-playground-profiles.ts` records the divergence and, since 2026-08-27, its resolution into a per-body declaration.
 
 Both files carry a comment promising the studio's Interact lane and the headless twin see identical bodies, and both were sincere: the two lanes really do generate their bodies from one set of specs. The divergence lived one layer below that, where each lane turns a spec into a Rapier descriptor — and one of them added a solver setting the other never did. So the parity guarantee was asserted at the layer where the shared input is produced, and broken at the layer where each consumer interprets it.
 

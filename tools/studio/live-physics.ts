@@ -507,6 +507,10 @@ export class LivePhysicsSessionV1 {
     const clampedX = Math.min(spawn.maxX, Math.max(spawn.minX, x));
     const body = this.#world.createRigidBody(
       this.#rapier.RigidBodyDesc.dynamic()
+        // The one watch this session sets itself rather than reading from
+        // a declaration: a rack ball exists to be dropped, its spawn plan
+        // predates the per-body `softCcd` field, and the playground's
+        // declared bodies all flow through plans instead of this path.
         .setSoftCcdPrediction(SOLVER_SOFT_CCD_PREDICTION_V1)
         // A spawned ball is a body like any other. This site used to skip the
         // air law while `#applyRollingResistance` still governed its spin, so

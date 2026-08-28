@@ -81,6 +81,7 @@ export class PlaygroundWorldV1 {
   }>();
   #jointedBodies = new Set<string>();
   #tick = 0;
+  #softCcdEverywhere = false;
 
   private constructor(
     world: RAPIER.World,
@@ -103,6 +104,7 @@ export class PlaygroundWorldV1 {
     }
     const specs = playgroundBodySpecsV1(station, options);
     const built = new PlaygroundWorldV1(world, specs);
+    built.#softCcdEverywhere = options.softCcdEverywhere ?? false;
     for (const spec of specs.values()) {
       if (spec.spawnOnly) continue;
       built.#createBody(spec, undefined);
@@ -229,8 +231,7 @@ export class PlaygroundWorldV1 {
     const centre = overrides?.centre ?? spec.centre;
     const description = (spec.kind === 'fixed'
       ? RAPIER.RigidBodyDesc.fixed()
-      : RAPIER.RigidBodyDesc.dynamic()
-        .setSoftCcdPrediction(SOLVER_SOFT_CCD_PREDICTION_V1))
+      : RAPIER.RigidBodyDesc.dynamic())
       .setTranslation(centre[0], centre[1], centre[2])
       .setRotation({
         x: spec.rotation[0],
@@ -238,6 +239,23 @@ export class PlaygroundWorldV1 {
         z: spec.rotation[2],
         w: spec.rotation[3],
       });
+    // Declared, not blanket. This lane set the watch on every dynamic
+    // body for five weeks while the live lane set it on none — the
+    // recorded KNOWN DIVERGENCE — so every number this lane pinned was
+    // measured in a world the studio never ran. Measured on the throw
+    // the day the blanket came off (2026-08-27): the twin's trebuchet
+    // moves 12 bricks past a quarter meter without the watch and 19
+    // with it, worst single brick 5.92 m against 4.03 — the watch
+    // spreads an impact the discrete step delivers as one launch, and
+    // which count is "right" is chaotic-regime detail no law pins.
+    // What is not detail: a six-meter drop lands 0.164 m buried
+    // without the watch and 0.003 m with it. So content that falls
+    // hard declares it, impact machines do not, and both lanes read
+    // the same declaration.
+    if (spec.kind !== 'fixed'
+      && (spec.softCcd || this.#softCcdEverywhere)) {
+      description.setSoftCcdPrediction(SOLVER_SOFT_CCD_PREDICTION_V1);
+    }
     if (overrides?.velocity) {
       description.setLinvel(
         overrides.velocity[0], overrides.velocity[1], overrides.velocity[2],

@@ -82,6 +82,18 @@ export interface PlaygroundBodyDefV1 {
   /** Continuous collision detection for declared fast bodies. */
   readonly ccd?: boolean;
   /**
+   * Soft-CCD contact watch for content that falls hard, at the shared
+   * SOLVER_SOFT_CCD_PREDICTION_V1 distance. Declared per body because the
+   * needed distance is speed-shaped: a six-meter drop closes a quarter
+   * meter in one step and lands already buried without it, while the same
+   * watch on a thrown projectile engages the wall a quarter meter early
+   * and spreads the very impact a trebuchet exists to deliver — measured
+   * on the twin's throw as the worst-hit brick flying 4.03 m under a
+   * blanket watch against 5.92 m without one. One value, declared only
+   * where falling is the job.
+   */
+  readonly softCcd?: boolean;
+  /**
    * Rolling resistance, as an angular damping factor (1/s).
    *
    * This is a modelled force, not a stabiliser, and it is here because

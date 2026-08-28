@@ -46,6 +46,19 @@ async function shot(name) {
 await open('studio:scene:physics-falling');
 await page.waitForFunction(() => window.voxelStudio.playground.state().stepped > 40);
 await shot('falling-midfall');
+// The landing instant, low and close: this is the frame where the
+// six-meter drop buried 0.164 m before soft CCD was declared on the
+// droppers, so this shot is the visual half of that fix.
+await page.waitForFunction(() => window.voxelStudio.playground.state().stepped > 66);
+await page.evaluate(() => {
+  window.voxelStudio.setViewAngles({ yawDegrees: 15, pitchDegrees: 6, viewHeight: 5 });
+  window.voxelStudio.setViewCentre([0, 1, 0]);
+});
+await shot('falling-landing-low');
+await page.evaluate(() => {
+  window.voxelStudio.setViewAngles({ yawDegrees: 35, pitchDegrees: 30 });
+  window.voxelStudio.setViewCentre([0, 2, 0]);
+});
 await page.waitForFunction(() => window.voxelStudio.playground.state().stepped > 700);
 await shot('falling-settled');
 await page.evaluate(() => {
@@ -128,14 +141,26 @@ await page.evaluate(() => {
 await page.waitForTimeout(1500);
 await shot('trebuchet-inflight');
 // The wall standing, framed on its own, just before the ball arrives.
+// Composition matters as much as timing: the first version of this shot
+// sat at pitch 16 and viewHeight 20 centred past the wall, which renders
+// the 12 m floor strip as a grazing sliver where a 1.7 m wall is eight
+// unrecognisable pixels — and it shipped twice because nobody looked at
+// the frame. Waits are on the ball's own position now, not blind timers.
 await page.evaluate(() => {
-  window.voxelStudio.setViewAngles({ yawDegrees: 60, pitchDegrees: 16, viewHeight: 20 });
-  window.voxelStudio.setViewCentre([0, 2, -32]);
+  window.voxelStudio.setViewAngles({ yawDegrees: 35, pitchDegrees: 22, viewHeight: 9 });
+  window.voxelStudio.setViewCentre([0, 1.2, -24.5]);
 });
 await shot('trebuchet-wall-before-impact');
-await page.waitForTimeout(1400);
+await page.waitForFunction(() => (window.voxelStudio.playground.bodies()
+  .find((row) => row.placementId === 'ball')?.translation[2] ?? 0) < -23,
+undefined, { timeout: 30_000 });
+await page.waitForTimeout(400);
 await shot('trebuchet-wall-struck');
-await page.waitForTimeout(1800);
+await page.waitForTimeout(2200);
+await page.evaluate(() => {
+  window.voxelStudio.setViewAngles({ yawDegrees: 35, pitchDegrees: 24, viewHeight: 14 });
+  window.voxelStudio.setViewCentre([0, 1.2, -26]);
+});
 await shot('trebuchet-wall-rubble');
 // And the whole field, so the throw and its consequence read together.
 await page.evaluate(() => {

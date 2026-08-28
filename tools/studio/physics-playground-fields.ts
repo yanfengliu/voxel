@@ -48,6 +48,10 @@ function fieldStation(
       recipeId: `studio:pg-block-${material}`,
       kind: 'dynamic',
       material,
+      // The pile drops in from height; without the watch its landing
+      // buried 0.050 m — a wrist-deep transient the resting-depth
+      // tolerance never sees (0.004 with it, measured 2026-08-27).
+      softCcd: true,
       at: [
         -4.95 + column * 1.1 + nudge,
         1.5 + layer * 1.3,
