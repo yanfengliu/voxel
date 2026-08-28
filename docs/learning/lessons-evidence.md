@@ -437,3 +437,15 @@ The headless twin had the same registry, copied line for line, and nobody greppe
 Found while giving both lanes joint limits and motors, because that change forced reading both constructions side by side. Two repairs shipped: the twin recomputes on detach and remove (pinned by a test that watches a carrier's damping fall from 0.82 held to 0.02 free), and joint construction itself moved into one shared builder, `physics-joint-build.ts`, so the next joint capability cannot be implemented twice and fixed once.
 
 The general form: when a mechanism exists in two lanes, a defect report against one lane is a defect report against both until the other is read, and the durable repair is to make the mechanism exist once. Anchor: `playground-cart.test.ts` "bearing friction stops when the last joint lets go", `physics-joint-build.ts`, 2026-08-26.
+
+## A log gives a duration, never the budget it was measured against
+
+**Anchor:** 2026-08-28. The claim "`model-studio-windmill-assets.spec.ts:279` passed on Windows in 60.0 s against a 60 s budget" was written into four documents and a source comment, and was false: that test declares `test.setTimeout(180_000)` at its own site, so it was at a third of its allowance. Corrected against the reporter's own output, which prints both halves.
+
+The CI log records when each test started. Subtracting consecutive timestamps gives a duration, and that part was right — 60.0 s is what the test took. The budget it was measured against lives in the spec file, and no log carries it. "At 100% of its budget" was a ratio computed from one measured number and one assumed one, and the assumption was the suite default, which that test had overridden two lines below its own name.
+
+What makes it worth an entry is that the false number was *load-bearing and persuasive*. It was the justification for building a margin gate at all — the story that a test could sit exactly at its ceiling while passing, invisible to everything. The story was true. The example was not, and it was the example that had been checked.
+
+Measuring it properly moved the finding somewhere better. `model-studio-machine-works.spec.ts:612` takes **53.0 s alone on the author's workstation, of the 60 s the lane then gave every test — 88%**. That is a stronger version of the same claim, on the machine where nothing was failing, and it was available the whole time to anyone who ran the suite and looked at a margin instead of an outcome.
+
+Two rules follow. A ratio needs both of its terms from the same source, or it is an assumption wearing a measurement's clothes. And when a number exists only to justify a decision already made, that is exactly when to re-derive it — the first review of this change did not catch it either, because it was quoted from the author's own notes rather than from the file.

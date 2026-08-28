@@ -333,10 +333,17 @@ export interface VoxelStudioHarnessV1 {
    * The live solver's current state for the open scene: body, collider and
    * joint counts, spawn tally, the grabbed placement, and steps taken. All
    * zeros with running=false when no live world exists.
+   *
+   * `running` means the world **exists**, not that it is advancing. A scene
+   * whose simulation switch is off reports `running: true` and never moves,
+   * which is what lets a driver wait for the world and then settle it to an
+   * exact tick. Whether it is advancing is `sceneAnimation()`. The name is
+   * kept because every driver in the suite waits on it; read it as "built".
    */
   livePhysics(): {
     readonly available: boolean;
     readonly mode: 'adjust' | 'interact';
+    /** The world exists. Not whether it is advancing — see above. */
     readonly running: boolean;
     readonly bodies: number;
     readonly colliders: number;
@@ -586,10 +593,17 @@ export interface HarnessHostV1 {
    * The live solver's current state for the open scene: body, collider and
    * joint counts, spawn tally, the grabbed placement, and steps taken. All
    * zeros with running=false when no live world exists.
+   *
+   * `running` means the world **exists**, not that it is advancing. A scene
+   * whose simulation switch is off reports `running: true` and never moves,
+   * which is what lets a driver wait for the world and then settle it to an
+   * exact tick. Whether it is advancing is `sceneAnimation()`. The name is
+   * kept because every driver in the suite waits on it; read it as "built".
    */
   livePhysics(): {
     readonly available: boolean;
     readonly mode: 'adjust' | 'interact';
+    /** The world exists. Not whether it is advancing — see above. */
     readonly running: boolean;
     readonly bodies: number;
     readonly colliders: number;

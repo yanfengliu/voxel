@@ -176,14 +176,20 @@ test('Riverfall opens responsively and changes under autonomous wall-clock play'
     window.voxelStudio!.openScene(sceneId);
   }, RIVERFALL_SCENE_ID);
 
+  // Both waits are for the world to exist and start moving, which is what
+  // `mountRiverfall` above already allows 30 s for — the same condition on the
+  // same scene had two budgets six times apart in one file, and the smaller one
+  // was also below the lane's own assertion budget. A budget under the floor
+  // opts its wait out of the floor every other wait gets, which is the shape
+  // that took this suite down on 2026-08-07 and again five weeks later.
   await page.waitForFunction(
     () => window.voxelStudio!.livePhysics().running,
     undefined,
-    { timeout: 5_000 },
+    { timeout: 30_000 },
   );
   await expect.poll(
     () => page.evaluate(() => window.voxelStudio!.livePhysics().stepped),
-    { timeout: 5_000 },
+    { timeout: 30_000 },
   ).toBeGreaterThan(3);
   const opening = await page.evaluate(() => ({
     heartbeat: (window as unknown as {

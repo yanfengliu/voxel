@@ -20,7 +20,11 @@ jobs:
   node-24-complete:
     name: Node 24 complete (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 30
+    # The Windows leg of this job finished in 29m28s against the 30 minutes it
+    # used to be given, and that was a run which gave up on four browser tests
+    # early. A green run does strictly more work than a red one, so the budget
+    # that looked sufficient was already the next failure.
+    timeout-minutes: 60
     strategy:
       fail-fast: false
       matrix:

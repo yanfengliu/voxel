@@ -610,6 +610,14 @@ test('Machine Works isolated mechanism views expose the kinematic stator study a
 });
 
 test('Machine Works diagnostic projection exposes the internal slat and stepped-drum wrap', async ({ page }) => {
+  // This test mounts a second Studio, builds a projection rig from the
+  // determinism trace, and photographs it. Measured alone on a workstation on
+  // 2026-08-28: **53.0 s** — it is not a fast test anywhere, which is why it
+  // was the one CI killed at the lane's old flat sixty. The same budget the
+  // windmill's asset sweep takes for the same reason; the suite default is a
+  // third of it and this test would spend nearly all of that on the machine it
+  // was written on.
+  test.setTimeout(180_000);
   await page.setViewportSize({ width: 1280, height: 800 });
   const response = await page.goto(studioOrigin, { waitUntil: 'load' });
   expect(response?.ok()).toBe(true);

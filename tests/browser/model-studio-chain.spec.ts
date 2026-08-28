@@ -55,13 +55,26 @@ test('the chain falls under gravity, solved live', async ({ page }) => {
   await page.evaluate((sceneId) => {
     const harness = window.voxelStudio!;
     harness.openScene(sceneId);
+    // Switched off before the world exists, so it is built already paused
+    // rather than paused shortly after it starts running. A live scene
+    // free-runs on the wall clock from the moment its solver is ready, and
+    // the ticks it puts away while the test is still making round trips are
+    // as many as the machine is slow: CI reached tick 54 before the first
+    // settle asked for tick 30, and a solver runs forward only.
+    harness.setSceneAnimation(false);
     harness.setLit(true);
     harness.setEdges(true);
     harness.setDepth(true);
   }, CHAIN_SCENE_ID);
   // The live world builds asynchronously; until it exists there is nothing to
-  // settle and the stage is still drawing authored poses.
+  // settle and the stage is still drawing authored poses. `running` here means
+  // the world exists rather than that it is advancing — the switch above has
+  // already stopped it — so this waits for a built world, not a moving one.
   await page.waitForFunction(() => window.voxelStudio!.livePhysics().running);
+  // Belt and braces, and the same pairing Machine Works and the windmill use:
+  // the switch above keeps the tick count at zero, and this pins it there for
+  // any path that could still have started the loop.
+  await page.evaluate(() => { window.voxelStudio!.settleLive(0); });
 
   const opened = await page.evaluate(() => {
     const harness = window.voxelStudio!;
@@ -116,9 +129,10 @@ test('the chain falls under gravity, solved live', async ({ page }) => {
   };
 
   // Barely moved: held on a flattened curve, each ring already leaning along
-  // it. Half a second rather than tick zero, because the world builds
-  // asynchronously and starts stepping on its own before any test can reach
-  // it; a tick it is certain to have passed is reachable, and tick zero is not.
+  // it. Half a second rather than tick zero because that is the picture worth
+  // having — the rings have taken up their lean without having fallen. The
+  // world is paused at tick zero when this runs, so the target is reached by
+  // stepping exactly thirty times on any machine.
   await settleTo(30, 0, 10);
   await expect(page.locator('.scene-canvas'))
     .toHaveScreenshot('model-studio-chain-held.png', {

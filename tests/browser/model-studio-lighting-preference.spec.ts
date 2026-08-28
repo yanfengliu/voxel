@@ -271,19 +271,49 @@ test('bare Space pauses and resumes an owned animated scene without stealing con
   expect(await page.evaluate(() => window.voxelStudio!.playerState().timeMs))
     .toBe(paused.timeMs);
 
+  // Stamp the resume inside the page, so what bounds the advance below is the
+  // page's own elapsed time and not this test's round trip out to it. The old
+  // form budgeted the advance at a flat 200 ms of wall clock and so measured
+  // the round trip instead: CI read 541.9 ms from a player that was behaving
+  // perfectly. A capture-phase listener runs ahead of the studio's own handler,
+  // so the elapsed time it yields is very slightly long — the generous
+  // direction, which is the one a bound may err in.
+  await page.evaluate(() => {
+    const stamped = window as unknown as { __resumeSeenAtMs?: number };
+    delete stamped.__resumeSeenAtMs;
+    document.addEventListener('keydown', (event) => {
+      if (event.code === 'Space') stamped.__resumeSeenAtMs = performance.now();
+    }, { capture: true, once: true });
+  });
   await page.keyboard.press('Space');
-  const resumed = await page.evaluate(() => window.voxelStudio!.playerState());
+  const resumed = await page.evaluate(() => {
+    const state = window.voxelStudio!.playerState();
+    const seenAt = (window as unknown as { __resumeSeenAtMs?: number })
+      .__resumeSeenAtMs;
+    // Read after the state, so the elapsed window fully contains it.
+    return {
+      state,
+      sinceResumeMs: seenAt === undefined ? null : performance.now() - seenAt,
+    };
+  });
+  expect(resumed.state.playing).toBe(true);
+  expect(
+    resumed.sinceResumeMs,
+    'the page never saw the Space keydown that resumes it',
+  ).not.toBeNull();
   const resumeAdvanceMs = (
-    resumed.timeMs - paused.timeMs + resumed.periodMs
-  ) % resumed.periodMs;
-  expect(resumed.playing).toBe(true);
-  expect(resumeAdvanceMs).toBeLessThan(200);
+    resumed.state.timeMs - paused.timeMs + resumed.state.periodMs
+  ) % resumed.state.periodMs;
+  // The claim, which is what the old budget was reaching for: resuming does not
+  // hand the player the whole pause to catch up on. It can only have advanced
+  // by the time that has passed since the page saw the key.
+  expect(resumeAdvanceMs).toBeLessThanOrEqual(resumed.sinceResumeMs! + 2);
   expect(await storedPrefs(page)).toMatchObject({ sceneAnimation: true });
   await expect(page.getByRole('button', { name: /Pause/ }))
     .toHaveAttribute('aria-keyshortcuts', 'Space');
   await page.waitForTimeout(120);
   expect(await page.evaluate(() => window.voxelStudio!.playerState().timeMs))
-    .not.toBe(resumed.timeMs);
+    .not.toBe(resumed.state.timeMs);
 
   await page.keyboard.press('Shift+Space');
   expect(await page.evaluate(() => window.voxelStudio!.playerState().playing)).toBe(true);

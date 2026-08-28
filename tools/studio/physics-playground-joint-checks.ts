@@ -22,6 +22,22 @@ import type {
 type Vec3 = readonly [number, number, number];
 type Quat = readonly [number, number, number, number];
 
+/**
+ * All a joint coordinate reads from a body: where it is and how it is
+ * turned.
+ *
+ * Both lanes' snapshots satisfy it. The recorded lane's adds principal inertia
+ * for the energy verdicts and the live lane's adds a world centre of mass and
+ * a voxel count, and a coordinate that demanded either whole type would be a
+ * coordinate only one lane could call — which is what the debug overlay's test
+ * found when it handed a live pose to the function the overlay is supposed to
+ * agree with.
+ */
+export interface PlaygroundBodyPoseV1 {
+  readonly translation: Vec3;
+  readonly quaternion: Quat;
+}
+
 function rotate(quaternion: Quat, vector: Vec3): Vec3 {
   const [qx, qy, qz, qw] = quaternion;
   const [vx, vy, vz] = vector;
@@ -70,9 +86,9 @@ function multiply(a: Quat, b: Quat): Quat {
  */
 export function playgroundRevoluteCoordinateV1(
   joint: PlaygroundJointV1,
-  reference: { readonly a: PlaygroundBodySnapshotV1; readonly b: PlaygroundBodySnapshotV1 },
-  a: PlaygroundBodySnapshotV1,
-  b: PlaygroundBodySnapshotV1,
+  reference: { readonly a: PlaygroundBodyPoseV1; readonly b: PlaygroundBodyPoseV1 },
+  a: PlaygroundBodyPoseV1,
+  b: PlaygroundBodyPoseV1,
 ): number {
   const axis = joint.axis ?? [0, 0, 1];
   const relative0 = multiply(conjugate(reference.a.quaternion), reference.b.quaternion);
@@ -96,8 +112,8 @@ export function playgroundRevoluteCoordinateV1(
  */
 export function playgroundPrismaticCoordinateV1(
   joint: PlaygroundJointV1,
-  a: PlaygroundBodySnapshotV1,
-  b: PlaygroundBodySnapshotV1,
+  a: PlaygroundBodyPoseV1,
+  b: PlaygroundBodyPoseV1,
 ): number {
   const axis = joint.axis ?? [0, 0, 1];
   const worldAxis = rotate(a.quaternion, axis);
