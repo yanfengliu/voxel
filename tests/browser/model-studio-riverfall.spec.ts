@@ -253,6 +253,12 @@ test('Riverfall opens responsively and changes under autonomous wall-clock play'
 test('Riverfall solves its water in the browser and plays back nothing', async ({
   page,
 }) => {
+  // Settles the fluid to four separate ticks, samples motion across six
+  // one-second intervals, and takes four captures. Measured on the slowest
+  // leg on 2026-08-28: **86.5 s on windows-latest**, passing, against the
+  // 120 s it then had — 72%, three points under the margin gate. Its own
+  // budget, so the suite default can be sized for tests that are not this.
+  test.setTimeout(180_000);
   const errors: string[] = [];
   page.on('pageerror', (error) => errors.push(error.message));
   page.on('console', (message) => {

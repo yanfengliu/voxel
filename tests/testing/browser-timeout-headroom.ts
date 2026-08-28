@@ -65,23 +65,36 @@ class BrowserTimeoutHeadroomReporter implements Reporter {
   readonly #consumers: BudgetConsumerV1[] = [];
 
   onTestEnd(test: TestCase, result: TestResult): void {
-    // A test that never ran spent nothing, and a test with no budget at all
-    // has no margin to measure — `timeout: 0` is Playwright's "unlimited".
-    if (result.status === 'skipped' || test.timeout <= 0) return;
+    // Only attempts that passed. The question this gate asks is how much of
+    // its budget a *working* test needs, and an attempt that was killed at the
+    // budget answers a different one — it would enter the report at 100% and
+    // read as a margin finding when the run has already reported it as a
+    // failure. With `retries: 1` set for the Windows runner's socket
+    // exhaustion, that case is reachable: a test can fail an attempt and pass
+    // the next one, and it is the passing attempt that measures the work.
+    //
+    // A test with no budget has no margin to measure — `timeout: 0` is
+    // Playwright's "unlimited".
+    if (result.status !== 'passed' || test.timeout <= 0) return;
     const file = relative(process.cwd(), test.location.file)
       .split('\\').join('/');
+    // The title as well as the line: `windmill-assets:279` is eight generated
+    // tests sharing one `test()` call, and naming them all `:279` produces a
+    // report where one identifier carries several different numbers and no
+    // reader can tell which of them is the slow one.
+    const title = test.titlePath().filter((part) => part !== '').pop() ?? '';
     this.#consumers.push({
-      id: `${file}:${String(test.location.line)}`,
+      id: `${file}:${String(test.location.line)} ${title}`,
       durationMs: result.duration,
       budgetMs: test.timeout,
     });
   }
 
   /**
-   * Returns a promise because that is the only shape Playwright honours: the
-   * declared signature is `Promise<{ status }> | void`, so a plain object
-   * returned synchronously does not typecheck and would not change the run's
-   * status if it did.
+   * Returns a promise because that is the shape the declared signature takes:
+   * `Promise<{ status }> | void`, so a plain object returned synchronously
+   * does not typecheck. Playwright itself awaits the result, so a sync object
+   * would work at runtime — this is a type constraint, not a runtime one.
    */
   onEnd(result: FullResult): Promise<{ status: FullResult['status'] } | undefined> {
     const ranked = [...this.#consumers].sort((a, b) => share(b) - share(a));

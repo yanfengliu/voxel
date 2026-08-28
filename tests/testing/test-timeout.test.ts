@@ -97,9 +97,24 @@ describe('no test opts itself out of the contention allowance', () => {
     const repoRoot = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
     const files = globSync('**/*.test.ts', { cwd: repoRoot })
       .map((f) => f.split('\\').join('/'))
-      // `tests/browser/**` are Playwright specs on their own gate and their own
-      // timeout semantics; `tmp/**` and `.claude/**` are excluded from this suite
-      // entirely (see vitest.config.ts), so they cannot arm anything.
+      // `tests/browser/**` are Playwright specs, whose per-test budgets this
+      // scan cannot read: they come from `playwright.config.ts` and from
+      // `test.setTimeout()` calls, not from the literals this file greps for.
+      // Their margins are gated instead by
+      // `tests/testing/browser-timeout-headroom.ts`, which fails a passing run
+      // whose slowest test spent over 75% of whatever it was allowed.
+      //
+      // This exemption used to say Playwright specs had "their own gate and
+      // their own timeout config"; on 2026-08-28 they had neither, and that
+      // sentence is what let the browser lane run for five weeks on a flat
+      // sixty seconds nothing had measured. The gate above now exists. What
+      // still has no gate is the *intra-test* literal — a `{ timeout: 30_000 }`
+      // on a single wait inside a browser spec is below this file's 45,000
+      // allowance and no scan reads it. Two of the 2026-08-28 defects were
+      // exactly that. See `docs/learning/defect-register.md`.
+      //
+      // `tmp/**` and `.claude/**` are excluded from this suite entirely (see
+      // vitest.config.ts), so they cannot arm anything.
       // `node_modules/` is not ours to police: a dependency shipping a
       // `.test.ts` would fail this gate on foreign code.
       .filter((f) => !f.startsWith('tests/browser/') && !f.startsWith('tmp/')

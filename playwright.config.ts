@@ -5,17 +5,22 @@ import { CONTENTION_ALLOWANCE_MS } from './tests/testing/test-timeout.js';
 /**
  * Budgets sized for the test they guard, and the same on every machine.
  *
- * A shared CI runner rasterises in software on a core it does not own, and
- * runs this suite between 1.2x and 2.4x slower than the workstation these
- * budgets were first written on. That was enough: the Machine Works projection
- * was killed at sixty seconds on GitHub's runners, and Riverfall's overhead
- * frame could not be captured inside Playwright's unstated five-second
- * assertion default. Both were reported as product failures for five weeks.
+ * A shared CI runner rasterises in software on a core it does not own. Linux
+ * runs this suite 1.2x to 2.4x slower than the workstation these budgets were
+ * first written on, and Windows is slower again — up to 3.3x Linux on the same
+ * test. That was enough: the Machine Works projection was killed at sixty
+ * seconds, and Riverfall's overhead frame could not be captured inside
+ * Playwright's unstated five-second assertion default. Both were reported as
+ * product failures for five weeks.
  *
  * The multiplier is the smaller half of the story. Machine Works already took
- * 53.0 s of its 60 s here; a 1.2x host was all it needed. A budget nothing is
- * measured against does not fail on the slow machine, it fails on the first
- * machine slower than the one nobody checked the margin on.
+ * 53.0 s of its 60 s on the workstation; a 1.2x host was all it needed. A
+ * budget nothing is measured against does not fail on the slow machine, it
+ * fails on the first machine slower than the one nobody checked the margin on.
+ *
+ * Every number below is therefore taken on **windows-latest**, the slowest leg.
+ * An earlier revision took them here and on Linux, and would have put the
+ * margin gate below three of the tests it exists to watch.
  *
  * There is deliberately no `process.env.CI` branch. The whole defect was that
  * the gate which ran locally was not the gate that ran on CI, and a budget that
@@ -32,53 +37,46 @@ import { CONTENTION_ALLOWANCE_MS } from './tests/testing/test-timeout.js';
  */
 
 /**
- * The slowest test this default has to hold, measured alone on a workstation
- * on 2026-08-28: 19.9 s for `model-studio-riverfall.spec.ts:247`.
+ * The slowest test this default has to hold, measured on the slowest leg —
+ * `model-studio-scene-annotations.spec.ts:639`, **65.5 s on windows-latest**,
+ * from the first green-on-Linux run of 2026-08-28.
  *
- * The two tests above it do not use this default. `windmill-assets:279` and
- * `machine-works:612` each declare `test.setTimeout(180_000)` at their own
- * site, with their own measurement beside it, because a suite default sized
- * for its heaviest member stops being a budget for everything else — the
- * margin gate below can only say something useful about a test whose budget
- * was chosen for that test.
+ * Measured there and not here on purpose. The workstation figure for the same
+ * test is a fraction of this, Windows runs the suite up to 3.3x slower than
+ * Linux, and the first version of this constant was a local number that would
+ * have put the margin gate below three of the tests it is meant to watch.
  *
- * `machine-works:612` is the one worth remembering: **53.0 s on the machine
- * this suite was written on**, against the flat 60 s the lane used to give
- * everything. It was never a fast test that CI made slow. It was a test at 88%
- * of its budget locally, which nothing was watching, and which therefore
- * crossed the moment it ran anywhere slower.
+ * The three heavy tests do not use this default. `windmill-assets:279`,
+ * `machine-works:612` and `riverfall:247` each declare `test.setTimeout` at
+ * their own site with their own measurement beside it, because a default sized
+ * for the heaviest member stops being a budget for anything else — the margin
+ * gate can only say something true about a test whose budget was chosen for
+ * that test.
  */
-const SLOWEST_DEFAULT_TEST_MS = 19_900;
+const SLOWEST_DEFAULT_TEST_ON_CI_MS = 65_500;
 
-/**
- * What a runner adds on top of the allowance, measured across this suite on
- * 2026-08-28 by comparing local durations with the same tests on GitHub's
- * Linux runner: `riverfall:144` stretched 1.2x, `windmill-assets:279` 1.4x,
- * `riverfall:247` 2.4x. At the worst of those, the 19.9 s above becomes 47.8 s,
- * so this covers the gap between the allowance's flat charge and a slow host
- * multiplying the work itself.
- */
-const SLOW_HOST_MARGIN_MS = 55_000;
-
-/**
- * 19,900 + 45,000 + 55,000 = 119,900 ms.
- *
- * `CONTENTION_ALLOWANCE_MS` is the flat cost `tests/testing/test-timeout.ts`
- * charges for a machine that is not the author's; the margin above is what a
- * slow host additionally does to the work itself. Only the allowance is taken
- * from that module, not its four-times multiple, which would put this at
- * 124,600 on its own and 285,000 if fed a figure already measured on a runner.
- * That second form was written here first, and under it the slowest test on
- * record reads as a quarter of its allowance and the margin gate below could
- * never fire — a budget large enough to hide the thing it is measuring.
- */
 const BROWSER_TEST_BUDGET_MS =
-  SLOWEST_DEFAULT_TEST_MS + CONTENTION_ALLOWANCE_MS + SLOW_HOST_MARGIN_MS;
+  SLOWEST_DEFAULT_TEST_ON_CI_MS + CONTENTION_ALLOWANCE_MS;
 
 export default defineConfig({
   testDir: './tests/browser',
   fullyParallel: false,
-  retries: 0,
+  // One retry, for one measured reason: the Windows runner exhausts its socket
+  // buffers under this suite and answers a navigation with
+  // `net::ERR_NO_BUFFER_SPACE` — observed on 2026-08-28 at test 41 of 116,
+  // with the other 115 passing either side of it. That is the operating system
+  // running out of a resource, not the app being wrong, and it lands on a
+  // different test each run.
+  //
+  // It does not hide a broken test: a deterministic failure fails twice, which
+  // is what every defect this suite caught on 2026-08-28 did. And Playwright
+  // reports a test that needed its retry as *flaky* rather than as passed, so
+  // the retry is visible in the run's own summary instead of silent.
+  //
+  // The durable fix is fewer sockets — 23 spec files each start their own Vite
+  // server and load the module graph through it — and that is recorded in
+  // `docs/learning/defect-register.md` rather than done here.
+  retries: 1,
   workers: 1,
   reporter: [
     ['line'],
@@ -95,12 +93,21 @@ export default defineConfig({
   timeout: BROWSER_TEST_BUDGET_MS,
   expect: {
     // Playwright takes no per-matcher screenshot budget here, so this covers
-    // every web-first assertion, and it is the budget Riverfall's overhead
-    // capture blew: the canvas is static by then, but a runner starved of
-    // animation frames could not deliver two identical captures inside five
-    // seconds. Four times that, and the same number everywhere, for the reason
-    // the header gives. It is the one term still not derived from a
-    // measurement — the CI log gives only a lower bound of five seconds.
+    // every web-first assertion. It is the budget Riverfall's overhead capture
+    // blew, and the log is specific about where: "waiting for element to be
+    // stable", which is the actionability check — two animation-frame samples
+    // of the canvas's *bounding box*, before any pixel is read. On a runner
+    // starved of animation frames those two samples are far apart.
+    //
+    // Stated precisely because it was first written down as "could not deliver
+    // two identical captures", which is a different mechanism (pixel content)
+    // that the failing check never looks at. If this budget turns out not to
+    // fix it, the box really is moving, and the fix is the resize path rather
+    // than a larger number here.
+    //
+    // Four times the default, and the same number everywhere. It is the one
+    // term still not derived from a measurement — the CI log gives only a
+    // lower bound of five seconds.
     timeout: 20_000,
   },
   use: {
