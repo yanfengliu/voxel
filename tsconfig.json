@@ -31,6 +31,7 @@
     "fixtures/chain-consumer",
     "fixtures/deterministic-math.test.ts",
     "fixtures/machine-works-consumer",
+    "fixtures/oak-ecosystem-consumer",
     "fixtures/physics-playground",
     "fixtures/riverfall-consumer",
     "fixtures/windmill-consumer",

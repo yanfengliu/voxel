@@ -6,6 +6,18 @@ Unlike a lesson, an entry stays after it becomes a gate. This is the standing li
 
 Newest first.
 
+## 2026-08-30 — The oak node collar occupied the shaft volume it claimed only to clarify
+
+**Symptom, as reported.** The final critic blocker called the branching-node collar a "detached open zero-thickness node-collar overlay around the full shaft" and required a genuinely fused, non-overlapping surface without a repository-rule exemption.
+
+**What the investigation found.** Every occupied parent submitted one full mass-bearing octagonal shaft plus a second concentric three-ring collar over its terminal interval. Calling the collar presentation-only removed it from the biomass diagnostic but did not remove its co-located triangles or duplicated enclosed material from the rendered world. The collision oracle later preserved the collar's wider middle ring accurately, which made the measurement exact while leaving the object physically impossible.
+
+**Root cause.** Readability and material truth were modeled as separate placements. The allometry gate reconstructed only the instance named `:shaft`, purpose accountability described the collar as an excluded marker, and no gate required exactly one public shaft surface per structural organ. Those three agreements hid the duplicated volume from one another.
+
+**Outcome.** An occupied parent now uses one four-ring regular-octagon profile whose final 16% replaces the ordinary taper, rises to one bounded node-flare peak and returns to the true distal taper. The same ring law feeds geometry and allometry; no collar resource, batch or instance exists. Across all twelve day-100 dimensioned wood organs, fresh mass divided by mass reconstructed from the actual Float32 public resources and matrices is 0.999999935–1.000000092.
+
+**How it is checked from now on.** `oak-wood-surface.test.ts` requires one shaft instance for every active structural organ, no collar resource or batch, four unique positive-area rings on each occupied-parent resource, exactly one connected triangle strip over every adjacent interval and an open distal port. `oak-allometry.test.ts` groups every distinct public ring and sums every transformed octagonal-frustum interval. `oak-organ-conflicts.test.ts` places an unrelated valid shaft inside the flare peak but outside the endpoint-only interpolation and requires an overlap. Purpose evidence resolves those exact executable titles.
+
 ## 2026-08-28 — `main` had not seen a green CI run in five weeks
 
 **Symptom, as reported.** "Fix github CI", followed by: "You need to proactively monitor these things instead of hearing about it from me."

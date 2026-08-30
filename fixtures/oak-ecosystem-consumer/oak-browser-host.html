@@ -1,0 +1,193 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="icon" href="data:,">
+    <title>Pedunculate oak ecosystem case study</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        font-family: ui-monospace, "Cascadia Mono", monospace;
+        --ink: #f0edd8;
+        --muted: #aeb59f;
+        --panel: #182019eb;
+        --line: #607054;
+        --accent: #d7ca72;
+        --danger: #e69769;
+      }
+
+      * { box-sizing: border-box; }
+
+      html,
+      body,
+      main {
+        width: 100%;
+        height: 100%;
+        margin: 0;
+        overflow: hidden;
+      }
+
+      body {
+        color: var(--ink);
+        background: #8eabbb;
+      }
+
+      canvas {
+        display: block;
+        width: 100%;
+        height: 100%;
+      }
+
+      .hud {
+        position: absolute;
+        inset: 1rem auto auto 1rem;
+        width: min(22rem, calc(100% - 2rem));
+        max-height: calc(100% - 2rem);
+        overflow: auto;
+        padding: 1rem;
+        border: 1px solid var(--line);
+        border-radius: 0.35rem;
+        background: var(--panel);
+        box-shadow: 0 0.75rem 2.5rem #0b140c66;
+        backdrop-filter: blur(5px);
+      }
+
+      h1 {
+        margin: 0;
+        font: 700 1rem/1.3 ui-monospace, "Cascadia Mono", monospace;
+        letter-spacing: 0.04em;
+      }
+
+      .subtitle,
+      .status {
+        margin: 0.35rem 0 0.85rem;
+        color: var(--muted);
+        font-size: 0.76rem;
+        line-height: 1.45;
+      }
+
+      fieldset {
+        margin: 0 0 0.75rem;
+        padding: 0.65rem;
+        border: 1px solid #485443;
+      }
+
+      legend {
+        padding: 0 0.35rem;
+        color: var(--accent);
+        font-size: 0.72rem;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+      }
+
+      .controls {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 0.4rem;
+      }
+
+      button {
+        min-height: 2.75rem;
+        padding: 0.45rem 0.55rem;
+        border: 1px solid #758266;
+        border-radius: 0.2rem;
+        color: var(--ink);
+        background: #263126;
+        font: inherit;
+        font-size: 0.73rem;
+        cursor: pointer;
+      }
+
+      button:hover { background: #344333; }
+      button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+      button[aria-pressed="true"] { border-color: var(--accent); background: #4a5030; }
+      button[data-stress][aria-pressed="true"] { border-color: var(--danger); background: #53362d; }
+
+      dl {
+        display: grid;
+        grid-template-columns: minmax(8.5rem, 1fr) auto;
+        gap: 0.25rem 0.75rem;
+        margin: 0;
+        font-size: 0.72rem;
+        line-height: 1.35;
+      }
+
+      dt { color: var(--muted); }
+      dd { margin: 0; font-variant-numeric: tabular-nums; text-align: right; }
+
+      .fatal {
+        position: absolute;
+        inset: 1rem;
+        z-index: 2;
+        display: grid;
+        place-items: center;
+        padding: 2rem;
+        color: #fff4ed;
+        background: #351c18ee;
+        font: 700 0.9rem/1.5 ui-monospace, monospace;
+        white-space: pre-wrap;
+      }
+    </style>
+  </head>
+  <body>
+    <main data-oak-app aria-label="Pedunculate oak ecosystem simulation">
+      <canvas data-oak-canvas aria-label="Rendered oak and soil plot"></canvas>
+      <section class="hud" aria-label="Simulation controls and diagnostics">
+        <h1>QUERCUS ROBUR / CASE STUDY 01</h1>
+        <p class="subtitle">A young oak exchanging carbon, water, nitrogen and phosphorus with a bounded soil plot.</p>
+
+        <fieldset>
+          <legend>Time and view</legend>
+          <div class="controls">
+            <button type="button" data-command="toggle-pause" aria-pressed="false">Pause</button>
+            <button type="button" data-command="growth-mode" aria-pressed="true">Season / growth</button>
+            <button type="button" data-command="wind-mode" aria-pressed="false">Wind inspection</button>
+            <button type="button" data-command="root-cutaway" aria-pressed="false">Root cutaway</button>
+          </div>
+        </fieldset>
+
+        <fieldset>
+          <legend>Environment interventions</legend>
+          <div class="controls">
+            <button type="button" data-command="rain">Rain pulse</button>
+            <button type="button" data-command="low-water" data-stress aria-pressed="false">Low water</button>
+            <button type="button" data-command="low-n" data-stress aria-pressed="false">Low nitrogen</button>
+            <button type="button" data-command="low-p" data-stress aria-pressed="false">Low phosphorus</button>
+          </div>
+        </fieldset>
+
+        <fieldset>
+          <legend>Camera</legend>
+          <div class="controls">
+            <button type="button" data-view="hero" aria-pressed="true">Hero</button>
+            <button type="button" data-view="side" aria-pressed="false">Side</button>
+            <button type="button" data-view="overhead" aria-pressed="false">Overhead</button>
+            <button type="button" data-command="reset">Reset experiment</button>
+          </div>
+        </fieldset>
+
+        <fieldset aria-label="Live diagnostics">
+          <legend>Live diagnostics</legend>
+          <dl data-oak-diagnostics>
+            <dt>Age</dt><dd data-diagnostic="age">—</dd>
+            <dt>Height</dt><dd data-diagnostic="height">—</dd>
+            <dt>Leaf area</dt><dd data-diagnostic="leaf-area">—</dd>
+            <dt>Leaf water potential</dt><dd data-diagnostic="water-potential">—</dd>
+            <dt>Carbon store</dt><dd data-diagnostic="carbon">—</dd>
+            <dt>Nitrogen store</dt><dd data-diagnostic="nitrogen">—</dd>
+            <dt>Phosphorus store</dt><dd data-diagnostic="phosphorus">—</dd>
+            <dt>Water residual</dt><dd data-diagnostic="water-residual">—</dd>
+            <dt>Carbon residual</dt><dd data-diagnostic="carbon-residual">—</dd>
+            <dt>N residual</dt><dd data-diagnostic="nitrogen-residual">—</dd>
+            <dt>P residual</dt><dd data-diagnostic="phosphorus-residual">—</dd>
+            <dt>Presented revision</dt><dd data-diagnostic="revision">—</dd>
+            <dt>GPU resources</dt><dd data-diagnostic="resources">—</dd>
+          </dl>
+        </fieldset>
+        <p class="status" data-oak-status role="status" aria-live="polite">Starting deterministic oak fixture…</p>
+      </section>
+    </main>
+    <script type="module" src="./oak-browser-host.ts"></script>
+  </body>
+</html>
