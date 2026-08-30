@@ -102,4 +102,46 @@ describe('oak browser camera material fit', () => {
     expect(cutaway.rootShaftsNdc.coarse).not.toBeNull();
     expect(cutaway.rootShaftsNdc.aggregateFine).not.toBeNull();
   });
+
+  it('remeasures an intentionally free camera without snapping it back into a preset', () => {
+    const simulation = createOakSimulationV1({
+      seed: 0x51a7_0a4b,
+      timeScale: OAK_DEFAULT_TIME_SCALE_V1,
+    });
+    simulation.advanceHostTicks(oakHostTicksForBiologicalDaysV1(13));
+    const frame = buildOakRenderFrameV1(simulation.projection());
+    const camera = new PerspectiveCamera(34, 1, 0.005, 25);
+    fitOakBrowserCameraV1(
+      camera,
+      'hero',
+      simulation.snapshot(),
+      frame.snapshot,
+      VIEWPORT,
+      HUD_RIGHT_PX,
+      false,
+    );
+    camera.position.x += 0.4;
+    camera.position.z -= 0.2;
+    camera.updateMatrixWorld(true);
+    const position = camera.position.toArray();
+    const quaternion = camera.quaternion.toArray();
+    const projection = camera.projectionMatrix.toArray();
+
+    const measured = fitOakBrowserCameraV1(
+      camera,
+      'hero',
+      simulation.snapshot(),
+      frame.snapshot,
+      VIEWPORT,
+      HUD_RIGHT_PX,
+      false,
+      'always',
+    );
+
+    expect(camera.position.toArray()).toEqual(position);
+    expect(camera.quaternion.toArray()).toEqual(quaternion);
+    expect(camera.projectionMatrix.toArray()).toEqual(projection);
+    expect(measured.distanceM).toBeGreaterThan(0);
+    expect(measured.fittedVertexCount).toBeGreaterThan(measured.fittedOrganCount);
+  });
 });

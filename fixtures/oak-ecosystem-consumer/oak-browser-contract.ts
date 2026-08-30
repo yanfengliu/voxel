@@ -15,6 +15,26 @@ export type OakBrowserCommandV1 =
 
 export type OakBrowserCameraV1 = 'hero' | 'side' | 'overhead';
 export type OakBrowserInspectionModeV1 = 'growth' | 'wind';
+export type OakBrowserNavigationModeV1 = 'preset' | 'free';
+
+export interface OakBrowserNavigationEvidenceV1 {
+  readonly mode: OakBrowserNavigationModeV1;
+  /** The deterministic view restored by its button or by double-click. */
+  readonly anchorPreset: OakBrowserCameraV1;
+  readonly orbit: Readonly<{
+    readonly yawDegrees: number;
+    readonly pitchDegrees: number;
+    readonly viewHeightM: number;
+  }>;
+  readonly centerM: Readonly<{ x: number; y: number; z: number }>;
+  /** Actual Three camera state, kept separate so controller evidence cannot hide a snapback. */
+  readonly presentedCamera: Readonly<{
+    readonly positionM: Readonly<{ x: number; y: number; z: number }>;
+    readonly quaternion: Readonly<{ x: number; y: number; z: number; w: number }>;
+    readonly fovDegrees: number;
+    readonly projectionMatrix: readonly number[];
+  }>;
+}
 
 export interface OakBrowserViewportV1 {
   readonly width: number;
@@ -70,6 +90,7 @@ export interface OakBrowserEvidenceV1 {
   readonly inspectionMode: OakBrowserInspectionModeV1;
   readonly rootCutaway: boolean;
   readonly camera: OakBrowserCameraV1;
+  readonly navigation: OakBrowserNavigationEvidenceV1;
   readonly cameraFit: OakBrowserCameraFitV1;
   readonly viewport: OakBrowserViewportV1;
   readonly hostLighting: OakBrowserHostLightingV1;

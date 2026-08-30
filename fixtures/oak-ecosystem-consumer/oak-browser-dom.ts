@@ -23,3 +23,29 @@ export function displayOakFatal(error: unknown): void {
   fatal.textContent = `Oak case study could not continue.\n\n${message}`;
   document.body.append(fatal);
 }
+
+export function bindOakDataButtonsV1<Value extends string>(
+  controls: readonly HTMLButtonElement[],
+  dataKey: 'command' | 'view',
+  activate: (value: Value) => void,
+  onFailure: (error: unknown) => void,
+): () => void {
+  const removers: (() => void)[] = [];
+  for (const control of controls) {
+    const value = control.dataset[dataKey] as Value | undefined;
+    if (value === undefined) continue;
+    const listener = (): void => {
+      try {
+        activate(value);
+      } catch (error) {
+        onFailure(error);
+        throw error;
+      }
+    };
+    control.addEventListener('click', listener);
+    removers.push(() => { control.removeEventListener('click', listener); });
+  }
+  return () => {
+    for (const remove of removers.splice(0)) remove();
+  };
+}

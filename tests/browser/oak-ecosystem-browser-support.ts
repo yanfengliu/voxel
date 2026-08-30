@@ -1,4 +1,4 @@
-import type { Page } from '@playwright/test';
+import { expect, type Page } from '@playwright/test';
 import type { Buffer } from 'node:buffer';
 
 import type {
@@ -39,6 +39,62 @@ export interface OakRootPathPixelStatisticsV1 {
   readonly maximumLuminanceContrast: number;
   readonly meanPathLuminance: number;
   readonly medianContrastedWidthPixels: number;
+}
+
+export function expectOakSubjectFramedV1(evidence: OakBrowserEvidenceV1): void {
+  const bounds = evidence.cameraFit.subjectBoundsNdc;
+  expect(evidence.cameraFit.fittedOrganCount).toBeGreaterThan(0);
+  expect(evidence.cameraFit.fittedOrganCount).toBeLessThanOrEqual(
+    evidence.simulation.diagnostics.organCount,
+  );
+  if (evidence.cameraFit.focus === 'root-cutaway') {
+    expect(evidence.cameraFit.fittedOrganCount).toBe(evidence.simulation.diagnostics.organCount);
+  } else if (evidence.simulation.diagnostics.fineRootLengthM > 0) {
+    expect(evidence.cameraFit.fittedOrganCount).toBeLessThan(
+      evidence.simulation.diagnostics.organCount,
+    );
+  }
+  expect(evidence.cameraFit.fittedVertexCount).toBeGreaterThan(
+    evidence.cameraFit.fittedOrganCount,
+  );
+  expect(evidence.cameraFit.subjectClearOfHud).toBe(true);
+  expect(bounds.minX).toBeGreaterThan(evidence.cameraFit.hudRightNdc);
+  expect(bounds.maxX).toBeLessThan(0.98);
+  expect(bounds.minY).toBeGreaterThan(-0.9);
+  expect(bounds.maxY).toBeLessThan(0.9);
+  expect(bounds.maxX - bounds.minX).toBeGreaterThan(0.15);
+  expect(bounds.maxY - bounds.minY).toBeGreaterThan(0.15);
+  if (!evidence.cameraFit.hudReserved) {
+    expect(Math.abs((bounds.minX + bounds.maxX) / 2)).toBeLessThan(0.08);
+  }
+}
+
+export async function dragOakCanvas(
+  page: Page,
+  button: 'left' | 'middle' | 'right',
+  dx: number,
+  dy: number,
+): Promise<void> {
+  const bounds = await page.locator('[data-oak-canvas]').boundingBox();
+  if (bounds === null) throw new Error('Cannot drag the oak canvas: it has no layout bounds.');
+  const x = bounds.x + bounds.width * 0.75;
+  const y = bounds.y + bounds.height * 0.5;
+  await page.mouse.move(x, y);
+  await page.mouse.down({ button });
+  await page.mouse.move(x + dx, y + dy, { steps: 8 });
+  await page.mouse.up({ button });
+}
+
+export async function settleOakFrames(page: Page, count = 3): Promise<void> {
+  await page.evaluate((frameCount) => new Promise<void>((resolveFrames) => {
+    let remaining = frameCount;
+    const advance = (): void => {
+      remaining -= 1;
+      if (remaining <= 0) resolveFrames();
+      else requestAnimationFrame(advance);
+    };
+    requestAnimationFrame(advance);
+  }), count);
 }
 
 export async function analyzeOakRootPathPixels(

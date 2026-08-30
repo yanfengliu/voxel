@@ -25,6 +25,12 @@ export const DEFAULT_ORBIT: OrbitStateV1 = {
   viewHeight: 14,
 };
 
+export interface OrbitLimitsV1 {
+  readonly pitchLimitDegrees: number;
+  readonly minViewHeight: number;
+  readonly maxViewHeight: number;
+}
+
 const PITCH_LIMIT = 85;
 /**
  * The ordinary Studio inspection range. A quarter-unit view makes the
@@ -33,19 +39,30 @@ const PITCH_LIMIT = 85;
  */
 export const ORBIT_MIN_VIEW_HEIGHT = 0.25;
 export const ORBIT_MAX_VIEW_HEIGHT = 256;
+export const STUDIO_ORBIT_LIMITS: OrbitLimitsV1 = {
+  pitchLimitDegrees: PITCH_LIMIT,
+  minViewHeight: ORBIT_MIN_VIEW_HEIGHT,
+  maxViewHeight: ORBIT_MAX_VIEW_HEIGHT,
+};
 /** Opening an asset keeps the established comfortable framing; wheel input may travel farther. */
 export const AUTO_FIT_MIN_VIEW_HEIGHT = 3;
 export const AUTO_FIT_MAX_VIEW_HEIGHT = 80;
 /** Preserve the established flat-camera depth planes through the old range. */
 const MIN_FLAT_EYE_DISTANCE = 100;
 
-export function clampOrbit(state: OrbitStateV1): OrbitStateV1 {
+export function clampOrbit(
+  state: OrbitStateV1,
+  limits: OrbitLimitsV1 = STUDIO_ORBIT_LIMITS,
+): OrbitStateV1 {
   return {
     yawDegrees: ((state.yawDegrees % 360) + 360) % 360,
-    pitchDegrees: Math.min(PITCH_LIMIT, Math.max(-PITCH_LIMIT, state.pitchDegrees)),
+    pitchDegrees: Math.min(
+      limits.pitchLimitDegrees,
+      Math.max(-limits.pitchLimitDegrees, state.pitchDegrees),
+    ),
     viewHeight: Math.min(
-      ORBIT_MAX_VIEW_HEIGHT,
-      Math.max(ORBIT_MIN_VIEW_HEIGHT, state.viewHeight),
+      limits.maxViewHeight,
+      Math.max(limits.minViewHeight, state.viewHeight),
     ),
   };
 }
@@ -83,16 +100,24 @@ export function dragOrbit(
   state: OrbitStateV1,
   dxPixels: number,
   dyPixels: number,
+  limits: OrbitLimitsV1 = STUDIO_ORBIT_LIMITS,
 ): OrbitStateV1 {
   return clampOrbit({
     yawDegrees: state.yawDegrees - dxPixels * 0.45,
     pitchDegrees: state.pitchDegrees + dyPixels * 0.35,
     viewHeight: state.viewHeight,
-  });
+  }, limits);
 }
 
-export function zoomOrbit(state: OrbitStateV1, wheelSteps: number): OrbitStateV1 {
-  return clampOrbit({ ...state, viewHeight: state.viewHeight * Math.pow(1.12, wheelSteps) });
+export function zoomOrbit(
+  state: OrbitStateV1,
+  wheelSteps: number,
+  limits: OrbitLimitsV1 = STUDIO_ORBIT_LIMITS,
+): OrbitStateV1 {
+  return clampOrbit({
+    ...state,
+    viewHeight: state.viewHeight * Math.pow(1.12, wheelSteps),
+  }, limits);
 }
 
 /** The point the camera looks at; panning slides it across the ground. */
@@ -114,12 +139,13 @@ export function moveOrbitCenter(
   forward: number,
   right: number,
   distance: number,
+  limits: OrbitLimitsV1 = STUDIO_ORBIT_LIMITS,
 ): OrbitCenterV1 {
   const magnitude = Math.hypot(forward, right);
   if (magnitude === 0 || distance === 0) return center;
   const normalizedForward = forward / magnitude;
   const normalizedRight = right / magnitude;
-  const yaw = (clampOrbit(state).yawDegrees * Math.PI) / 180;
+  const yaw = (clampOrbit(state, limits).yawDegrees * Math.PI) / 180;
   const forwardX = -Math.sin(yaw);
   const forwardZ = -Math.cos(yaw);
   const rightX = Math.cos(yaw);
@@ -143,9 +169,11 @@ export function panOrbit(
   dxPixels: number,
   dyPixels: number,
   heightPixels: number,
+  limits: OrbitLimitsV1 = STUDIO_ORBIT_LIMITS,
 ): OrbitCenterV1 {
-  const worldPerPixel = clampOrbit(state).viewHeight / Math.max(1, heightPixels);
-  const yaw = (clampOrbit(state).yawDegrees * Math.PI) / 180;
+  const clamped = clampOrbit(state, limits);
+  const worldPerPixel = clamped.viewHeight / Math.max(1, heightPixels);
+  const yaw = (clamped.yawDegrees * Math.PI) / 180;
   // Screen right and the ground projection of screen up, in world XZ.
   const rightX = Math.cos(yaw);
   const rightZ = -Math.sin(yaw);

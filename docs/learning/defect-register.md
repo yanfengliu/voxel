@@ -6,6 +6,18 @@ Unlike a lesson, an entry stays after it becomes a gate. This is the standing li
 
 Newest first.
 
+## 2026-08-30 — The oak case study had camera presets but no camera controls
+
+**Symptom, as reported.** “I should be able to control the camera just like in the scene and model studio: middle mouse, left click, right click, keyboard WASD, etc.”
+
+**What the investigation found.** The canvas was not focusable and the host wired only view and experiment buttons. It had no pointer, wheel or held-key routing. Worse, every simulation frame and resize called the preset fitter, so adding a controller without separating preset and free-camera state would have made each manual move snap back immediately.
+
+**Root cause.** Acceptance covered fixed-view fit, screenshots, resize and capture but never the interaction contract used by Studio. The host had no presentation-only manual-camera state or evidence distinct from the simulation and its fitted presets.
+
+**Outcome.** The oak host now reuses Studio’s orbit, pan, zoom and held-key laws through an oak-scale adapter: left-click focuses and never orbits, middle-drag turns, right-drag pans, the wheel zooms, and held WASD moves camera-relative across the ground plane. Manual navigation changes presentation only, survives biological updates and resize, reports preset-versus-free evidence, clears input on blur, visibility loss and disposal, and returns to an exactly fitted anchor preset through its view buttons or a canvas double-click.
+
+**How it is checked from now on.** `oak-ecosystem.spec.ts` drives the real canvas through every mouse button, wheel and each held WASD key, proves left-click and navigation do not mutate biology, proves movement stops on release and HUD buttons retain keyboard ownership, and proves free navigation survives simulation and resize before an exact preset refit. `oak-browser-camera.test.ts` separately proves the manual camera can be remeasured without being fitted away; the existing fixed-camera screenshot sweep remains unchanged.
+
 ## 2026-08-30 — The oak node collar occupied the shaft volume it claimed only to clarify
 
 **Symptom, as reported.** The final critic blocker called the branching-node collar a "detached open zero-thickness node-collar overlay around the full shaft" and required a genuinely fused, non-overlapping surface without a repository-rule exemption.

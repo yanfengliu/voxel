@@ -52,6 +52,8 @@ The private browser host supplies the camera, sky fill, directional sun and shad
 
 Hero, side, overhead and root-cutaway views fit the accepted public-geometry vertices rather than biological centerline proxies, and the interactive host exposes pause, accelerated growth, wind inspection, rainfall, independent low-water, low-nitrogen and low-phosphorus regimes, reset and live ledger diagnostics.
 
+The inspection surface follows Studio’s one-pointer contract: left-click owns focus and never orbits, middle-drag turns, right-drag pans, wheel input zooms, and held WASD moves camera-relative across the ground plane. Those inputs change disposable presentation state only. A free camera survives live biology updates and viewport resize until a view button, root cutaway, reset or canvas double-click deliberately refits the accepted public geometry.
+
 ## Evidence hierarchy
 
 | Mechanism or form | Literature constrains | Fixture still assumes |

@@ -1,10 +1,5 @@
 import {
-  AmbientLight,
   Color,
-  DirectionalLight,
-  HemisphereLight,
-  Object3D,
-  PCFShadowMap,
   PerspectiveCamera,
   Scene,
   WebGLRenderer,
@@ -22,7 +17,13 @@ import {
 import { createOakSimulationV1 } from './oak-simulation.js';
 import { fitOakBrowserCameraV1 } from './oak-browser-camera.js';
 import { createOakBrowserFrameClockV1 } from './oak-browser-frame-clock.js';
+import { createOakBrowserLightingV1 } from './oak-browser-lighting.js';
 import {
+  createOakBrowserNavigationV1,
+  type OakBrowserNavigationHandleV1,
+} from './oak-browser-navigation.js';
+import {
+  bindOakDataButtonsV1,
   displayOakFatal,
   formatOakDiagnostic,
   requiredOakElement,
@@ -38,8 +39,6 @@ import type {
 } from './oak-browser-contract.js';
 const CASE_STUDY_SEED = 0x51a7_0a4b;
 const RAIN_PULSE_LITERS = OAK_PARAMETERS_V1.forcing.ambientWeeklyRainLiters;
-const SHADOW_CAMERA_HALF_WIDTH_M = 0.34;
-const SHADOW_MAP_SIZE = 1_024;
 interface HostPresentationState {
   inspectionMode: OakBrowserInspectionModeV1;
   rootCutaway: boolean;
@@ -62,30 +61,7 @@ function mountOakBrowserHost(): OakBrowserHarnessV1 {
   const scene = new Scene();
   scene.background = new Color(0x8eabbb);
   const renderer = new WebGLRenderer({ canvas, alpha: false, antialias: true });
-  renderer.shadowMap.enabled = true;
-  renderer.shadowMap.type = PCFShadowMap;
-  const skyFill = new HemisphereLight(0xdcecf2, 0xb69a76, 1.65);
-  skyFill.name = 'oak-fixture-sky-fill';
-  const ambientBounce = new AmbientLight(0xdfe8dc, 0.75);
-  const sunTarget = new Object3D();
-  sunTarget.name = 'oak-fixture-sun-target';
-  sunTarget.position.set(0, -0.08, 0);
-  const sun = new DirectionalLight(0xffe2a3, 2.7);
-  sun.name = 'oak-fixture-shadow-sun';
-  sun.position.set(-0.75, 1.45, 0.62);
-  sun.target = sunTarget;
-  sun.castShadow = true;
-  sun.shadow.mapSize.set(SHADOW_MAP_SIZE, SHADOW_MAP_SIZE);
-  sun.shadow.camera.left = -SHADOW_CAMERA_HALF_WIDTH_M;
-  sun.shadow.camera.right = SHADOW_CAMERA_HALF_WIDTH_M;
-  sun.shadow.camera.top = SHADOW_CAMERA_HALF_WIDTH_M;
-  sun.shadow.camera.bottom = -SHADOW_CAMERA_HALF_WIDTH_M;
-  sun.shadow.camera.near = 0.4;
-  sun.shadow.camera.far = 2.5;
-  sun.shadow.camera.updateProjectionMatrix();
-  sun.shadow.bias = -0.00008;
-  sun.shadow.normalBias = 0.0004;
-  scene.add(skyFill, ambientBounce, sun, sunTarget);
+  const lighting = createOakBrowserLightingV1(scene, renderer);
   const camera = new PerspectiveCamera(34, 1, 0.005, 25);
   const simulation = createOakSimulationV1({
     seed: CASE_STUDY_SEED,
@@ -103,6 +79,8 @@ function mountOakBrowserHost(): OakBrowserHarnessV1 {
   const frameClock = createOakBrowserFrameClockV1();
   let previousRenderFrame: OakRenderFrameV1 | null = null;
   let fittedView = '';
+  let navigation: OakBrowserNavigationHandleV1 | null = null;
+  let previousAnimationTimestampMs: number | null = null;
   let viewport: OakBrowserViewportV1 = {
     width: Math.max(1, Math.floor(root.getBoundingClientRect().width)),
     height: Math.max(1, Math.floor(root.getBoundingClientRect().height)),
@@ -142,6 +120,7 @@ function mountOakBrowserHost(): OakBrowserHarnessV1 {
       ? null
       : hud.getBoundingClientRect().right;
     const view = `${snapshot.epoch}:${presentation.rootCutaway}:${preset}:${hudRightPx === null}`;
+    const freeCamera = navigation?.isFree() === true;
     cameraFit = fitOakBrowserCameraV1(
       camera,
       preset,
@@ -150,9 +129,10 @@ function mountOakBrowserHost(): OakBrowserHarnessV1 {
       viewport,
       hudRightPx,
       presentation.rootCutaway,
-      !force && view === fittedView,
+      freeCamera ? 'always' : !force && view === fittedView,
     );
     fittedView = view;
+    if (!freeCamera) navigation?.syncFromFittedPreset(preset, cameraFit.distanceM);
   };
   const renderFrame = (frame = frameClock.manualFrame()): void => {
     runtime.frame(frame);
@@ -252,7 +232,9 @@ function mountOakBrowserHost(): OakBrowserHarnessV1 {
       if (command === 'toggle-pause') control.textContent = state.paused ? 'Resume' : 'Pause';
     }
     for (const control of viewControls) {
-      control.setAttribute('aria-pressed', String(control.dataset.view === presentation.camera));
+      control.setAttribute('aria-pressed', String(
+        navigation?.isFree() !== true && control.dataset.view === presentation.camera,
+      ));
     }
   };
 
@@ -280,21 +262,17 @@ function mountOakBrowserHost(): OakBrowserHarnessV1 {
     if (!previousRenderFrame) {
       throw new Error('Oak browser evidence requires an accepted render frame.');
     }
+    if (navigation === null) throw new Error('Oak browser evidence requires camera navigation.');
     return {
       ready,
       disposed,
       inspectionMode: presentation.inspectionMode,
       rootCutaway: presentation.rootCutaway,
       camera: presentation.camera,
+      navigation: navigation.evidence(),
       cameraFit,
       viewport: { ...viewport },
-      hostLighting: {
-        policy: 'oak-fixture-private',
-        shadowMapEnabled: renderer.shadowMap.enabled,
-        sunCastsShadow: sun.castShadow,
-        shadowMapSize: sun.shadow.mapSize.width,
-        shadowCameraHalfWidthM: SHADOW_CAMERA_HALF_WIDTH_M,
-      },
+      hostLighting: lighting.evidence(),
       simulation: simulation.snapshot(),
       render: previousRenderFrame.metrics,
       runtime: runtime.metrics(),
@@ -320,6 +298,7 @@ function mountOakBrowserHost(): OakBrowserHarnessV1 {
       setStatus('Wind inspection: authoritative organ poses follow a bounded 3–6 m/s breeze.');
     } else if (command === 'root-cutaway') {
       presentation.rootCutaway = !presentation.rootCutaway;
+      navigation?.beginPreset(presentation.camera);
       setStatus(presentation.rootCutaway
         ? 'Root cutaway: dark coarse path; pale aggregate cohort width is a visibility glyph.'
         : 'Root cutaway disabled.');
@@ -346,6 +325,7 @@ function mountOakBrowserHost(): OakBrowserHarnessV1 {
       presentation.inspectionMode = 'growth';
       presentation.rootCutaway = false;
       presentation.camera = 'hero';
+      navigation?.beginPreset('hero');
       setStatus('Experiment reset to the identical seed and ambient boundary regime.');
     }
     presentSimulation();
@@ -355,6 +335,7 @@ function mountOakBrowserHost(): OakBrowserHarnessV1 {
 
   const chooseCamera = (preset: OakBrowserCameraV1): OakBrowserEvidenceV1 => {
     if (disposed) throw new Error(`Cannot choose oak camera '${preset}': host is disposed.`);
+    navigation?.beginPreset(preset);
     fitCamera(preset, true);
     renderFrame();
     updateDiagnostics();
@@ -381,6 +362,20 @@ function mountOakBrowserHost(): OakBrowserHarnessV1 {
     return evidence();
   };
 
+  navigation = createOakBrowserNavigationV1({
+    root,
+    surface: canvas,
+    camera,
+    viewport: () => viewport,
+    onViewChanged: () => {
+      fitCamera(presentation.camera, false);
+      renderFrame();
+      updateDiagnostics();
+      syncControls();
+    },
+    onRefit: (preset) => { chooseCamera(preset); },
+  });
+
   const resize = (): void => {
     if (disposed) return;
     const bounds = root.getBoundingClientRect();
@@ -396,7 +391,10 @@ function mountOakBrowserHost(): OakBrowserHarnessV1 {
     ) return;
     viewport = next;
     runtime.resize(viewport.width, viewport.height, viewport.pixelRatio);
-    fitCamera(presentation.camera, true);
+    if (navigation?.isFree() === true) {
+      navigation.apply();
+      fitCamera(presentation.camera, false);
+    } else fitCamera(presentation.camera, true);
     renderFrame();
     updateDiagnostics();
   };
@@ -408,11 +406,11 @@ function mountOakBrowserHost(): OakBrowserHarnessV1 {
     disposed = true;
     cancelAnimationFrame(animationFrame);
     resizeObserver.disconnect();
+    navigation?.dispose();
     for (const remove of listeners.splice(0)) remove();
     window.removeEventListener('beforeunload', dispose);
     runtime.dispose();
-    scene.remove(skyFill, ambientBounce, sun, sunTarget);
-    sun.shadow.dispose();
+    lighting.dispose();
     renderer.dispose();
     renderer.forceContextLoss();
   };
@@ -427,45 +425,41 @@ function mountOakBrowserHost(): OakBrowserHarnessV1 {
     dispose,
   };
 
-  for (const control of controls) {
-    const command = control.dataset.command as OakBrowserCommandV1 | undefined;
-    if (command === undefined) continue;
-    const listener = (): void => {
-      try {
-        issueCommand(command);
-      } catch (error) {
-        dispose();
-        displayOakFatal(error);
-        throw error;
-      }
-    };
-    control.addEventListener('click', listener);
-    listeners.push(() => { control.removeEventListener('click', listener); });
-  }
-  for (const control of viewControls) {
-    const preset = control.dataset.view as OakBrowserCameraV1 | undefined;
-    if (preset === undefined) continue;
-    const listener = (): void => {
-      try {
-        chooseCamera(preset);
-      } catch (error) {
-        dispose();
-        displayOakFatal(error);
-        throw error;
-      }
-    };
-    control.addEventListener('click', listener);
-    listeners.push(() => { control.removeEventListener('click', listener); });
-  }
+  const failControl = (error: unknown): void => {
+    dispose();
+    displayOakFatal(error);
+  };
+  listeners.push(bindOakDataButtonsV1<OakBrowserCommandV1>(
+    controls,
+    'command',
+    (command) => { issueCommand(command); },
+    failControl,
+  ));
+  listeners.push(bindOakDataButtonsV1<OakBrowserCameraV1>(
+    viewControls,
+    'view',
+    (preset) => { chooseCamera(preset); },
+    failControl,
+  ));
 
   const animate = (timestampMs: number): void => {
     if (disposed) return;
     try {
+      const navigationElapsedMs = previousAnimationTimestampMs === null
+        ? 0
+        : Math.min(50, Math.max(0, timestampMs - previousAnimationTimestampMs));
+      previousAnimationTimestampMs = timestampMs;
+      const navigationMoved = navigation?.advanceFrame(navigationElapsedMs) === true;
       const sample = frameClock.animationFrame(timestampMs, !simulation.snapshot().paused);
       if (sample.hostTicks > 0) {
         simulation.advanceHostTicks(sample.hostTicks);
         presentSimulation(sample.frame);
+      } else if (navigationMoved) {
+        fitCamera(presentation.camera, false);
+        renderFrame(sample.frame);
+        updateDiagnostics();
       } else renderFrame(sample.frame);
+      if (navigationMoved) syncControls();
       animationFrame = requestAnimationFrame(animate);
     } catch (error) {
       dispose();
@@ -480,6 +474,7 @@ function mountOakBrowserHost(): OakBrowserHarnessV1 {
     ready = true;
     syncControls();
     setStatus('Live growth inspection running from a deterministic acorn state.');
+    navigation.attach();
     animationFrame = requestAnimationFrame(animate);
     return harness;
   } catch (error) {

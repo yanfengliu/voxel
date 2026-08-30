@@ -83,6 +83,8 @@ interface RenderedSubjectV1 {
   readonly size: Vector3;
 }
 
+export type OakBrowserCameraRetentionV1 = boolean | 'always';
+
 function renderedSubject(
   renderSnapshot: RenderSnapshotV1,
   rootCutaway: boolean,
@@ -153,7 +155,7 @@ export function fitOakBrowserCameraV1(
   viewport: OakBrowserViewportV1,
   hudRightPx: number | null,
   rootCutaway: boolean,
-  retainCurrentView = false,
+  retainCurrentView: OakBrowserCameraRetentionV1 = false,
 ): OakBrowserCameraFitV1 {
   const diagnostics = snapshot.diagnostics;
   const subject = renderedSubject(renderSnapshot, rootCutaway);
@@ -197,11 +199,12 @@ export function fitOakBrowserCameraV1(
 
   let distanceM = camera.position.distanceTo(center);
   let bounds = projectBounds(camera, subject.points);
-  const retained = retainCurrentView
-    && bounds.minX > safeLeftNdc + FRAME_MARGIN_NDC
-    && bounds.maxX < FRAME_RIGHT_NDC
-    && bounds.minY > -RETAIN_VERTICAL_LIMIT_NDC
-    && bounds.maxY < RETAIN_VERTICAL_LIMIT_NDC;
+  const retained = retainCurrentView === 'always'
+    || (retainCurrentView
+      && bounds.minX > safeLeftNdc + FRAME_MARGIN_NDC
+      && bounds.maxX < FRAME_RIGHT_NDC
+      && bounds.minY > -RETAIN_VERTICAL_LIMIT_NDC
+      && bounds.maxY < RETAIN_VERTICAL_LIMIT_NDC);
   if (!retained) {
     camera.aspect = viewport.width / viewport.height;
     camera.filmOffset = -desiredCenterNdc

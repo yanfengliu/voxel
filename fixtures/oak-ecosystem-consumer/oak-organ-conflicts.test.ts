@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
+import { timeoutForMeasuredWorkMs } from '../../tests/testing/test-timeout.js';
+
 import type {
   OakOrganSnapshotV1,
   OakRenderProjectionStateV1,
@@ -198,7 +200,7 @@ describe('oak organ topology and rendered conflict gate', () => {
       conflict.kind === 'organ-volume-overlap'
       && conflict.organKeys.includes(axillaryBranch.key)
       && conflict.organKeys.includes(continuation.key))).toBe(true);
-  });
+  }, timeoutForMeasuredWorkMs(28_081));
 
   it('retains an integrated node-flare peak in the public-geometry conflict oracle', () => {
     const state = runProjection(100);
