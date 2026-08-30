@@ -10,6 +10,8 @@ Voxel receives only a versioned, plain-data projection and derives disposable ge
 
 ## Implemented slice
 
+Run `npm run oak` from the repository root to start the fixture host at `http://127.0.0.1:5181/fixtures/oak-ecosystem-consumer/oak-browser-host.html` and open it in the default browser.
+
 The implemented organism is a deterministic `Quercus robur` seedling from imbibition through three early shoot flushes, with a terminal first-season senescence and leaf-transfer path used as a conservation check.
 
 This is an early-growth calibration hypothesis, not a field-calibrated tree-growth forecast.

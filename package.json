@@ -66,6 +66,7 @@
     "benchmark:lights": "npm run build && node scripts/benchmark-clustered-lights.mjs",
     "benchmark:scenes": "npm run build && node scripts/record-reference-scenes.mjs",
     "inspect:frames": "npm run build && node scripts/inspect-frames.mjs",
+    "oak": "vite --host 127.0.0.1 --port 5181 --strictPort --open /fixtures/oak-ecosystem-consumer/oak-browser-host.html",
     "studio": "vite --config tools/studio/vite.config.ts",
     "studio:check": "npm run build && node scripts/studio.mjs check",
     "studio:edit": "npm run build && node scripts/studio.mjs edit",
