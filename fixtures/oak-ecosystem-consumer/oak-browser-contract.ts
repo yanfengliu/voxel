@@ -55,6 +55,13 @@ export interface OakBrowserProjectedShaftV1 {
   readonly tip: Readonly<{ x: number; y: number }>;
 }
 
+export interface OakBrowserProjectedVoxelV1 {
+  readonly x: number;
+  readonly y: number;
+  readonly color: Readonly<{ r: number; g: number; b: number }>;
+  readonly role: 'wood' | 'root' | 'leaf' | 'seed-bud' | 'litter';
+}
+
 export interface OakBrowserCameraFitV1 {
   readonly focus: 'tree' | 'root-cutaway';
   readonly hudReserved: boolean;
@@ -69,6 +76,8 @@ export interface OakBrowserCameraFitV1 {
   readonly subjectClearOfHud: boolean;
   /** Unique rendered organs fitted; non-cutaway views deliberately exclude root batches. */
   readonly fittedOrganCount: number;
+  /** Fallen-litter voxel instances whose exact cube vertices participate in the fit. */
+  readonly fittedLitterVoxelCount: number;
   /** Vertices from the accepted render frame that define subjectBoundsNdc. */
   readonly fittedVertexCount: number;
   readonly rootShaftsNdc: Readonly<{
@@ -92,6 +101,8 @@ export interface OakBrowserEvidenceV1 {
   readonly camera: OakBrowserCameraV1;
   readonly navigation: OakBrowserNavigationEvidenceV1;
   readonly cameraFit: OakBrowserCameraFitV1;
+  /** Bounded exact centres from accepted plant batches, never soil or contact refill. */
+  readonly projectedPlantVoxels: readonly OakBrowserProjectedVoxelV1[];
   readonly viewport: OakBrowserViewportV1;
   readonly hostLighting: OakBrowserHostLightingV1;
   readonly simulation: OakSimulationSnapshotV1;
@@ -100,7 +111,7 @@ export interface OakBrowserEvidenceV1 {
 }
 
 export interface OakBrowserHarnessV1 {
-  /** Issues the same domain command as its corresponding visible control. */
+  /** Issues the visible command; one crossed intent is retained and overflow is rejected. */
   command(command: OakBrowserCommandV1): OakBrowserEvidenceV1;
   /** Chooses and refits one of the case study's deterministic camera presets. */
   setCamera(camera: OakBrowserCameraV1): OakBrowserEvidenceV1;
@@ -108,6 +119,8 @@ export interface OakBrowserHarnessV1 {
   advanceHostTicks(count: number): OakBrowserEvidenceV1;
   /** Advances biology for a bounded experiment, restoring the prior pause state afterward. */
   advanceBiologicalTicks(count: number): OakBrowserEvidenceV1;
+  /** Temporarily hides only plant instance batches for a rendered soil-only counter-run. */
+  setPlantVisibilityForEvidence(visible: boolean): OakBrowserEvidenceV1;
   evidence(): OakBrowserEvidenceV1;
   capture(): ThreeCaptureResult;
   dispose(): void;

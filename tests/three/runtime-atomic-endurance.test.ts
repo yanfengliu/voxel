@@ -57,10 +57,6 @@ function editedSnapshot(revision: number, epoch: string, solid: boolean) {
     surfaceModel: 'opaque',
     missingNeighbor: 'empty',
   };
-  snapshot.resources = snapshot.resources.filter(
-    (resource) => resource.kind === 'palette' || resource.kind === 'material',
-  );
-  snapshot.batches = [];
   snapshot.chunks = [{
     ...source,
     key: 'chunk:0',
@@ -106,6 +102,9 @@ function occupancyOf(atomic: ThreeAtomicPipelineMetricsV1 | null): Record<string
     gpuStagingBytes: atomic.gpuStagingBytes,
     pendingRetiredBundles: atomic.pendingRetiredBundles,
     pendingRetirements: atomic.pendingRetirements,
+    materialResources: atomic.materialResources,
+    geometryResources: atomic.geometryResources,
+    instanceBatches: atomic.instanceBatches,
     queuedJobs: atomic.queuedJobs,
     queuedBytes: atomic.queuedBytes,
     queuedWorkerEvents: atomic.queuedWorkerEvents,
@@ -204,6 +203,10 @@ describe('atomic pipeline endurance', () => {
       cpuStagingBytes: 0,
       gpuStagingBytes: 0,
       pendingRetiredBundles: 0,
+      pendingRetirements: 0,
+      materialResources: 1,
+      geometryResources: 1,
+      instanceBatches: 1,
       queuedJobs: 0,
       queuedBytes: 0,
       queuedWorkerEvents: 0,
@@ -217,6 +220,22 @@ describe('atomic pipeline endurance', () => {
     expect(atomicRoot.children).toHaveLength(1);
     runtime.dispose();
     expect(atomicRoot.children).toHaveLength(0);
+    expect(runtime.metrics().atomic).toMatchObject({
+      preparedTargets: 0,
+      cpuStagingBytes: 0,
+      gpuStagingBytes: 0,
+      pendingRetiredBundles: 0,
+      pendingRetirements: 0,
+      materialResources: 0,
+      geometryResources: 0,
+      instanceBatches: 0,
+      loadedChunks: 0,
+      nonemptyChunks: 0,
+      queuedJobs: 0,
+      queuedBytes: 0,
+      queuedWorkerEvents: 0,
+      liveWorkers: 0,
+    });
   }, 120_000);
 
   it(`keeps resources flat across ${String(EPOCH_REPLACEMENTS)} epoch replacements`, () => {

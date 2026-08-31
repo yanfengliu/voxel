@@ -1,7 +1,10 @@
+import type { Buffer } from 'node:buffer';
+
 import { expect, type Page } from '@playwright/test';
 
 import type { OakBrowserEvidenceV1 } from '../../fixtures/oak-ecosystem-consumer/oak-browser-contract.js';
 import {
+  analyzeOakImageDifference,
   advanceOakBiologicalTicks,
   clickOakCommand,
   disposeOakCaseStudy,
@@ -34,6 +37,25 @@ function expectPresentedCameraMatchesNavigation(evidence: OakBrowserEvidenceV1):
   expect(actualYawDegrees).toBeCloseTo(orbit.yawDegrees, 8);
   expect(actualPitchDegrees).toBeCloseTo(orbit.pitchDegrees, 8);
   expect(actualViewHeightM).toBeCloseTo(orbit.viewHeightM, 8);
+}
+
+async function expectOakCanvasMateriallyChanged(
+  page: Page,
+  before: Buffer,
+  label: string,
+  minimumChangedPixelRatio: number,
+): Promise<Buffer> {
+  const after = await page.locator('[data-oak-canvas]').screenshot({ animations: 'disabled' });
+  const difference = await analyzeOakImageDifference(page, before, after);
+  expect(
+    difference.materiallyChangedPixelRatio,
+    `${label} must change the pixels presented by the runtime`,
+  ).toBeGreaterThan(minimumChangedPixelRatio);
+  expect(
+    difference.maximumChannelDelta,
+    `${label} must produce a material channel change`,
+  ).toBeGreaterThan(24);
+  return after;
 }
 
 async function beginCapturedOakDrag(page: Page): Promise<number> {
@@ -98,6 +120,7 @@ export async function expectOakStudioNavigationContractV1(
 ): Promise<void> {
   await openOakCaseStudy(page, origin);
   const paused = await clickOakCommand(page, 'toggle-pause');
+  expect(paused.simulation.paused).toBe(true);
   const canvas = page.locator('[data-oak-canvas]');
   const hint = page.locator('[data-camera-hint]');
   await expect(canvas).toHaveAttribute('tabindex', '0');
@@ -112,7 +135,9 @@ export async function expectOakStudioNavigationContractV1(
   expect(afterLeft.navigation).toEqual(paused.navigation);
   expect(afterLeft.simulation).toEqual(paused.simulation);
 
+  const beforeTurnPixels = await canvas.screenshot({ animations: 'disabled' });
   await dragOakCanvas(page, 'middle', 120, -40);
+  await settleOakFrames(page);
   const turned = await oakEvidence(page);
   expect(turned.navigation.mode).toBe('free');
   expect(turned.navigation.orbit.yawDegrees).not.toBe(paused.navigation.orbit.yawDegrees);
@@ -121,18 +146,33 @@ export async function expectOakStudioNavigationContractV1(
   expect(turned.navigation.centerM).toEqual(paused.navigation.centerM);
   expectPresentedCameraMatchesNavigation(turned);
   await expect(page.locator('[data-view][aria-pressed="true"]')).toHaveCount(0);
+  const turnedPixels = await expectOakCanvasMateriallyChanged(
+    page,
+    beforeTurnPixels,
+    'middle-drag orbit',
+    0.01,
+  );
 
   await dragOakCanvas(page, 'right', 80, 30);
+  await settleOakFrames(page);
   const panned = await oakEvidence(page);
   expect(panned.navigation.centerM).not.toEqual(turned.navigation.centerM);
   expect(panned.navigation.orbit).toEqual(turned.navigation.orbit);
+  const pannedPixels = await expectOakCanvasMateriallyChanged(
+    page,
+    turnedPixels,
+    'right-drag pan',
+    0.01,
+  );
   await page.mouse.wheel(0, 100);
+  await settleOakFrames(page);
   const zoomed = await oakEvidence(page);
   expect(zoomed.navigation.orbit.viewHeightM).toBeGreaterThan(
     panned.navigation.orbit.viewHeightM,
   );
   expect(zoomed.navigation.centerM).toEqual(panned.navigation.centerM);
   expectPresentedCameraMatchesNavigation(zoomed);
+  await expectOakCanvasMateriallyChanged(page, pannedPixels, 'wheel zoom', 0.01);
 
   const directions: readonly {
     readonly key: 'w' | 'a' | 's' | 'd';
@@ -148,6 +188,7 @@ export async function expectOakStudioNavigationContractV1(
     await setOakCamera(page, 'overhead');
     await canvas.focus();
     const before = (await oakEvidence(page)).navigation.centerM;
+    const beforeMovePixels = await canvas.screenshot({ animations: 'disabled' });
     await page.keyboard.down(key);
     try {
       await expect.poll(async () => {
@@ -159,6 +200,12 @@ export async function expectOakStudioNavigationContractV1(
       const later = (await oakEvidence(page)).navigation.centerM;
       expect(sign * (later[axis] - before[axis]))
         .toBeGreaterThan(sign * (firstMoved[axis] - before[axis]) + 0.0001);
+      await expectOakCanvasMateriallyChanged(
+        page,
+        beforeMovePixels,
+        `held ${key.toUpperCase()} movement`,
+        0.002,
+      );
     } finally {
       await page.keyboard.up(key);
     }

@@ -27,10 +27,12 @@ const FRAME_RIGHT_NDC = 0.94;
 const FRAME_MARGIN_NDC = 0.035;
 
 const CAMERA_DIRECTIONS: Readonly<Record<OakBrowserCameraV1, readonly [number, number, number]>> = {
-  hero: [0.67, 0.68, 0.9],
+  hero: [0.72, 0.64, 0.28],
   side: [1, 0.5, 0.015],
   overhead: [0, 1, 0.001],
 };
+// The ordinary hero azimuth cancels the declared fine-root x/z vector in projection.
+const ROOT_CUTAWAY_HERO_DIRECTION = [0.72, 0.64, 0.9] as const;
 
 interface ProjectedBounds {
   minX: number;
@@ -79,6 +81,7 @@ function centerProjectedBounds(
 interface RenderedSubjectV1 {
   readonly points: readonly OakVec3V1[];
   readonly organCount: number;
+  readonly litterVoxelCount: number;
   readonly center: Vector3;
   readonly size: Vector3;
 }
@@ -106,6 +109,7 @@ function renderedSubject(
   return {
     points,
     organCount: geometry.organKeys.length,
+    litterVoxelCount: geometry.litterVoxelCount,
     center: minimum.clone().add(maximum).multiplyScalar(0.5),
     size: maximum.clone().sub(minimum),
   };
@@ -116,8 +120,9 @@ function positionCamera(
   preset: OakBrowserCameraV1,
   center: Vector3,
   distance: number,
+  directionTuple: readonly [number, number, number],
 ): void {
-  const direction = new Vector3(...CAMERA_DIRECTIONS[preset]).normalize();
+  const direction = new Vector3(...directionTuple).normalize();
   camera.up.set(0, preset === 'overhead' ? 0 : 1, preset === 'overhead' ? -1 : 0);
   camera.position.copy(center).addScaledVector(direction, distance);
   camera.lookAt(center);
@@ -168,7 +173,10 @@ export function fitOakBrowserCameraV1(
     ? Math.max(MIN_CUTAWAY_RADIUS_M, subject.size.x / 2, subject.size.z / 2)
     : Math.max(MIN_CROWN_RADIUS_M, subject.size.x / 2, subject.size.z / 2);
   const center = subject.center;
-  const cameraDirection = new Vector3(...CAMERA_DIRECTIONS[preset]).normalize();
+  const directionTuple = rootCutaway && preset === 'hero'
+    ? ROOT_CUTAWAY_HERO_DIRECTION
+    : CAMERA_DIRECTIONS[preset];
+  const cameraDirection = new Vector3(...directionTuple).normalize();
   const halfDepth = subject.points.reduce((depth, point) => Math.max(
     depth,
     Math.abs(
@@ -218,7 +226,7 @@ export function fitOakBrowserCameraV1(
       halfDepth + 0.06,
     );
     for (let iteration = 0; iteration < 12; iteration += 1) {
-      positionCamera(camera, preset, center, distanceM);
+      positionCamera(camera, preset, center, distanceM, directionTuple);
       bounds = projectBounds(camera, subject.points);
       bounds = centerProjectedBounds(camera, subject.points, bounds, desiredCenterNdc);
       const horizontalRatio = (bounds.maxX - bounds.minX) / (targetHalfWidthNdc * 2);
@@ -240,7 +248,7 @@ export function fitOakBrowserCameraV1(
       if (ratio <= 1.001) break;
       distanceM = halfDepth + (distanceM - halfDepth) * ratio * 1.025;
     }
-    positionCamera(camera, preset, center, distanceM);
+    positionCamera(camera, preset, center, distanceM, directionTuple);
     bounds = projectBounds(camera, subject.points);
     bounds = centerProjectedBounds(camera, subject.points, bounds, desiredCenterNdc);
   }
@@ -252,6 +260,7 @@ export function fitOakBrowserCameraV1(
     subjectBoundsNdc: bounds,
     subjectClearOfHud: bounds.minX > safeLeftNdc + FRAME_MARGIN_NDC,
     fittedOrganCount: subject.organCount,
+    fittedLitterVoxelCount: subject.litterVoxelCount,
     fittedVertexCount: subject.points.length,
     rootShaftsNdc: rootCutaway
       ? {

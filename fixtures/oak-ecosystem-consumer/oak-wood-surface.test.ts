@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { buildOakRenderFrameV1 } from './oak-render-adapter.js';
+import { buildOakContinuousAnalysisSnapshotV1 } from './oak-continuous-render-analysis.js';
 import {
   createOakSimulationV1,
   oakHostTicksForBiologicalDaysV1,
@@ -13,7 +13,7 @@ import {
   oakWoodProfileAtTaperV1,
 } from './oak-wood-shape.js';
 
-describe('oak public wood surface', () => {
+describe('oak continuous wood analysis surface', () => {
   it('derives one continuous positive node-flare profile from each taper', () => {
     for (const [taperIndex, taperRatio] of OAK_TAPER_RATIOS_V1.entries()) {
       const profile = oakWoodProfileAtTaperV1(taperIndex, true);
@@ -47,37 +47,37 @@ describe('oak public wood surface', () => {
     const simulation = createOakSimulationV1();
     simulation.advanceHostTicks(oakHostTicksForBiologicalDaysV1(100));
     const state = simulation.projection();
-    const frame = buildOakRenderFrameV1(state, {
+    const snapshot = buildOakContinuousAnalysisSnapshotV1(state, {
       rootCutaway: { axis: 'x', planeM: 0, keep: 'less-than' },
     });
     const structural = state.organs.filter((organ) =>
       organ.stage !== 'abscised' && organ.healthFraction > 0
       && ['stem', 'branch', 'coarse-root', 'fine-root-cohort'].includes(organ.kind));
-    const shaftKeys = frame.snapshot.batches.flatMap(({ instanceKeys }) =>
+    const shaftKeys = snapshot.batches.flatMap(({ instanceKeys }) =>
       instanceKeys.filter((key) => key.endsWith(':shaft'))).sort();
     expect(shaftKeys).toEqual(structural.map((organ) => `oak:${organ.key}:shaft`).sort());
-    const allInstanceKeys = frame.snapshot.batches.flatMap(({ instanceKeys }) => instanceKeys);
+    const allInstanceKeys = snapshot.batches.flatMap(({ instanceKeys }) => instanceKeys);
     for (const organ of structural) {
       expect(allInstanceKeys.filter((key) => key.startsWith(`oak:${organ.key}:`)))
         .toEqual([`oak:${organ.key}:shaft`]);
     }
-    expect(frame.snapshot.resources.some(({ key }) => key.includes('node-collar'))).toBe(false);
-    expect(frame.snapshot.batches.some(({ key }) => key === 'batch:oak:junctions')).toBe(false);
+    expect(snapshot.resources.some(({ key }) => key.includes('node-collar'))).toBe(false);
+    expect(snapshot.batches.some(({ key }) => key === 'batch:oak:junctions')).toBe(false);
 
     const structuralKeys = new Set(structural.map((organ) => organ.key));
     const occupiedParents = new Set(structural
       .filter((organ) => organ.parentKey !== null && structuralKeys.has(organ.parentKey))
       .map((organ) => organ.parentKey));
-    const flaredKeys = frame.snapshot.batches
+    const flaredKeys = snapshot.batches
       .filter(({ key }) => key.includes(':node-flared:'))
       .flatMap(({ instanceKeys }) => instanceKeys)
       .sort();
     expect(flaredKeys).toEqual([...occupiedParents].map((key) => `oak:${key}:shaft`).sort());
 
-    const flaredGeometryKeys = new Set(frame.snapshot.batches
+    const flaredGeometryKeys = new Set(snapshot.batches
       .filter(({ key }) => key.includes(':node-flared:'))
       .map(({ geometryKey }) => geometryKey));
-    for (const resource of frame.snapshot.resources) {
+    for (const resource of snapshot.resources) {
       if (resource.kind !== 'geometry' || !flaredGeometryKeys.has(resource.key)) continue;
       const ringYs = [...new Set(Array.from(
         { length: resource.positions.length / 3 },

@@ -214,6 +214,12 @@ export interface ThreeAtomicPipelineMetricsV1 {
   readonly presentedTargets: number;
   /** Targets that went terminal instead of presenting. */
   readonly failedTargets: number;
+  /** Material resources retained by the displayed atomic revision. */
+  readonly materialResources: number;
+  /** Authored geometry resources retained by the displayed atomic revision. */
+  readonly geometryResources: number;
+  /** Instance batches retained by the displayed atomic revision. */
+  readonly instanceBatches: number;
   /** Chunks in the displayed revision, and how many of each kind. */
   readonly loadedChunks: number;
   /** Loaded chunks that produced geometry; an all-empty chunk produces none. */

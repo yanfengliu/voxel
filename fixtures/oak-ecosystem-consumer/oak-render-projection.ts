@@ -139,27 +139,40 @@ function segmentProjection(
 export function oakLeafColorV1(leaf: OakLeafOrganSnapshotV1): Srgb8ColorV1 {
   const stress = clamp01(Math.max(leaf.stressFraction, 1 - leaf.relativeWaterContentFraction));
   const chlorophyll = clamp01(leaf.chlorophyllFraction);
-  if (leaf.stage === 'senescing') {
-    return {
-      r: Math.round(174 + stress * 18),
-      g: Math.round(125 - stress * 42),
-      b: Math.round(34 - stress * 8),
-      a: 255,
-    };
-  }
   if (leaf.stage === 'abscised') return { r: 105, g: 68, b: 36, a: 255 };
-  const base = leaf.stage === 'expanding'
-    ? { r: 54, g: 148, b: 50 }
-    : { r: 37, g: 116, b: 43 };
-  const chlorophyllLoss = 1 - chlorophyll;
-  const green = Math.round(base.g - chlorophyllLoss * 62 - stress * 17);
-  const red = Math.round(base.r + chlorophyllLoss * 82 + stress * 10);
+  const mix = (
+    start: Readonly<{ r: number; g: number; b: number }>,
+    end: Readonly<{ r: number; g: number; b: number }>,
+    amount: number,
+  ): Readonly<{ r: number; g: number; b: number }> => ({
+    r: start.r + (end.r - start.r) * amount,
+    g: start.g + (end.g - start.g) * amount,
+    b: start.b + (end.b - start.b) * amount,
+  });
+  const healthy = leaf.stage === 'expanding'
+    ? { r: 72, g: 154, b: 82 }
+    : { r: 63, g: 141, b: 83 };
+  const chlorotic = { r: 178, g: 163, b: 72 };
+  const chlorophyllLoss = clamp01((0.82 - chlorophyll) / 0.47);
+  let color = mix(healthy, chlorotic, chlorophyllLoss);
+  if (leaf.stage === 'senescing') {
+    const progress = clamp01((0.55 - chlorophyll) / 0.4);
+    color = progress < 0.72
+      ? mix(color, { r: 200, g: 119, b: 50 }, progress / 0.72)
+      : mix(
+        { r: 200, g: 119, b: 50 },
+        { r: 139, g: 73, b: 49 },
+        (progress - 0.72) / 0.28,
+      );
+  }
+  const luminance = color.r * 0.2126 + color.g * 0.7152 + color.b * 0.0722;
+  color = mix(color, { r: luminance, g: luminance, b: luminance }, stress * 0.28);
   return {
-    // Water stress primarily changes turgor/pose. It only dulls living tissue;
-    // chlorophyll loss drives yellowing, and brown is reserved for senescence.
-    r: red,
-    g: green,
-    b: Math.round(base.b + chlorophyllLoss * 8 - stress * 4),
+    // Water stress primarily changes turgor/pose and only desaturates this cue;
+    // chlorophyll owns olive/yellow and phenology owns amber/russet.
+    r: Math.round(color.r * (1 - stress * 0.07)),
+    g: Math.round(color.g * (1 - stress * 0.07)),
+    b: Math.round(color.b * (1 - stress * 0.07)),
     a: 255,
   };
 }

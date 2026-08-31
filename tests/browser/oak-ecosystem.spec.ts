@@ -29,14 +29,19 @@ import {
   setOakCamera,
   totalSoilWaterLiters,
 } from './oak-ecosystem-browser-support.js';
+import { expectOakPresentationQueueContractV1 } from './oak-ecosystem-lifecycle-support.js';
 import { expectOakStudioNavigationContractV1 } from './oak-ecosystem-navigation-support.js';
+import {
+  expectOakAtomicResourceChurnV1,
+  expectOakAtomicResourceTeardownV1,
+} from './oak-ecosystem-resource-support.js';
 
 guardPageErrors();
 const REPOSITORY_ROOT = resolve('.');
 const VIEWPORT = { width: 960, height: 720 };
 const FIRST_FLUSH_TICKS = oakHostTicksForBiologicalDaysV1(13);
 const DROUGHT_COMPARISON_TICKS = oakHostTicksForBiologicalDaysV1(100);
-const THREE_FLUSH_VISUAL_TICKS = oakHostTicksForBiologicalDaysV1(100);
+const MATURE_VISUAL_TICKS = oakHostTicksForBiologicalDaysV1(100);
 
 let server: ViteDevServer | undefined;
 let origin = '';
@@ -93,14 +98,21 @@ test('mounts one live oak through the real Three runtime with domain controls', 
     shadowMapSize: 1_024,
     shadowCameraHalfWidthM: 0.34,
   });
-  expect(evidence.runtime.materialResources).toBeGreaterThan(0);
-  expect(evidence.runtime.geometryResources).toBeGreaterThan(0);
-  expect(evidence.runtime.instanceBatches).toBeGreaterThan(0);
+  expect(evidence.render.resourceCount).toBe(8);
+  expect(evidence.render.batchCount).toBe(6);
+  expect(evidence.render.tissueVoxelInstances).toBeGreaterThan(0);
+  expect(evidence.runtime.atomic?.loadedChunks).toBe(1);
+  expect(evidence.runtime.atomic?.nonemptyChunks).toBe(1);
+  expect(evidence.runtime.atomic?.inFrustumChunks).toBe(1);
+  expect(evidence.runtime.atomic?.liveWorkers).toBe(2);
+  expect(evidence.render.chunkCount).toBe(1);
+  expect(evidence.render.occupiedSoilVoxels).toBeGreaterThan(0);
+  expect(evidence.runtime.rendererGeometries).toBeGreaterThanOrEqual(2);
   expect(evidence.runtime.drawCalls).toBeGreaterThan(0);
   expect(evidence.runtime.drawCalls)
     .toBeGreaterThanOrEqual(evidence.render.primaryContentPassDrawCalls);
   expect(evidence.runtime.triangles)
-    .toBeGreaterThanOrEqual(evidence.render.primaryContentPassTriangles);
+    .toBeGreaterThanOrEqual(evidence.render.minimumPrimaryContentPassTriangles);
   expect(evidence.render.skippedTooShortOrNonpositiveRadiusSegments).toBe(0);
   expect(evidence.render.skippedJunctionConsumedSegments).toBe(0);
   await expect(page.locator('[data-oak-canvas]')).toHaveCount(1);
@@ -108,6 +120,12 @@ test('mounts one live oak through the real Three runtime with domain controls', 
   await expect(page.locator('[data-view]')).toHaveCount(3);
   await expect(page.locator('[data-diagnostic="age"]')).not.toHaveText('—');
   await expect(page.locator('[data-diagnostic="revision"]')).toHaveText(/^\d+$/u);
+});
+
+test('initial readiness gates controls and pending commands cross exact revisions FIFO', async ({
+  page,
+}) => {
+  await expectOakPresentationQueueContractV1(page, origin);
 });
 
 test('oak inspection uses the Studio pointer, wheel, and held-WASD camera contract', async ({ page }) => {
@@ -234,30 +252,10 @@ test('the first flush adds biological topology and keeps GPU resources bounded',
     initial.simulation.diagnostics.organCount,
   );
   expect(grown.simulation.diagnostics.leafCount).toBeGreaterThan(0);
-  expect(grown.runtime.instances).toBeGreaterThan(initial.runtime.instances);
+  expect(grown.render.tissueVoxelInstances).toBeGreaterThan(initial.render.tissueVoxelInstances);
   expectOakSubjectFramedV1(grown);
   expect(grown.cameraFit.distanceM).not.toBe(initial.cameraFit.distanceM);
-
-  const samples = await page.evaluate((count) => {
-    const harness = window.oakEcosystem;
-    if (harness === undefined) throw new Error('Oak resource evidence needs its harness.');
-    const values = [];
-    for (let index = 0; index < count; index += 1) {
-      const evidence = harness.advanceBiologicalTicks(1);
-      if (index % 20 === 19) {
-        values.push({
-          materialResources: evidence.runtime.materialResources,
-          geometryResources: evidence.runtime.geometryResources,
-          instanceBatches: evidence.runtime.instanceBatches,
-          rendererGeometries: evidence.runtime.rendererGeometries,
-          rendererTextures: evidence.runtime.rendererTextures,
-        });
-      }
-    }
-    return values;
-  }, 120);
-  expect(samples.length).toBeGreaterThan(1);
-  expect(new Set(samples.map((sample) => JSON.stringify(sample))).size).toBe(1);
+  await expectOakAtomicResourceChurnV1(page, grown);
 });
 
 test('fixed cameras, root cutaway, resize, capture, and teardown stay coherent', async ({ page }) => {
@@ -273,7 +271,7 @@ test('fixed cameras, root cutaway, resize, capture, and teardown stay coherent',
     }, visible);
   };
   const captureFramedCamera = async (
-    stage: 'first-flush' | 'three-flush',
+    stage: 'first-flush' | 'mature',
     camera: 'hero' | 'side' | 'overhead',
   ): Promise<{ distanceM: number; hash: string }> => {
     await setHudVisible(false);
@@ -309,11 +307,11 @@ test('fixed cameras, root cutaway, resize, capture, and teardown stay coherent',
   }
 
   await clickOakCommand(page, 'reset');
-  await advanceOakBiologicalTicks(page, THREE_FLUSH_VISUAL_TICKS);
+  await advanceOakBiologicalTicks(page, MATURE_VISUAL_TICKS);
 
   await commandOakHarness(page, 'reset');
   await commandOakHarness(page, 'low-water');
-  await advanceOakBiologicalTicks(page, THREE_FLUSH_VISUAL_TICKS);
+  await advanceOakBiologicalTicks(page, MATURE_VISUAL_TICKS);
   await setHudVisible(false);
   const held = await refitOakCamera(page, 'overhead');
   const heldLeaf = held.simulation.organs.find((organ) => organ.kind === 'leaf');
@@ -343,7 +341,7 @@ test('fixed cameras, root cutaway, resize, capture, and teardown stay coherent',
   const windPixels = await analyzeOakImageDifference(page, heldImage, deflectedImage);
   expect(windPixels.materiallyChangedPixelRatio).toBeGreaterThan(0.03);
   expect(windPixels.maximumChannelDelta).toBeGreaterThan(32);
-  await expect(canvas).toHaveScreenshot('oak-three-flush-drought-peak-wind-overhead.png', {
+  await expect(canvas).toHaveScreenshot('oak-mature-drought-peak-wind-overhead.png', {
     animations: 'disabled',
     maxDiffPixelRatio: 0.002,
   });
@@ -351,13 +349,23 @@ test('fixed cameras, root cutaway, resize, capture, and teardown stay coherent',
   const restoredLeaf = restored.simulation.organs.find((organ) => organ.kind === 'leaf');
   expect(restoredLeaf?.direction).toEqual(heldLeaf?.direction);
   await commandOakHarness(page, 'reset');
-  await advanceOakBiologicalTicks(page, THREE_FLUSH_VISUAL_TICKS);
+  await advanceOakBiologicalTicks(page, MATURE_VISUAL_TICKS);
   await setHudVisible(true);
   await setOakCamera(page, 'hero');
+  await expect(hud).toBeVisible();
+  await expect(hud.getByRole('heading', { name: 'QUERCUS ROBUR / CASE STUDY 01' }))
+    .toBeVisible();
+  await expect(hud.locator('[data-command]')).toHaveCount(9);
+  await expect(hud.locator('[data-diagnostic="age"]')).not.toHaveText('—');
+  await expect(page).toHaveScreenshot('oak-mature-hud-hero-page.png', {
+    animations: 'disabled',
+    fullPage: true,
+    maxDiffPixelRatio: 0.002,
+  });
 
   const imageHashes = new Set<string>();
   for (const camera of ['hero', 'side', 'overhead'] as const) {
-    const capture = await captureFramedCamera('three-flush', camera);
+    const capture = await captureFramedCamera('mature', camera);
     imageHashes.add(capture.hash);
     expect(capture.hash).not.toBe(firstFlush.get(camera)?.hash);
   }
@@ -372,7 +380,8 @@ test('fixed cameras, root cutaway, resize, capture, and teardown stay coherent',
   const cutawayEvidence = await refitOakCamera(page, 'hero');
   expectOakSubjectFramedV1(cutawayEvidence);
   expect(cutawayEvidence.cameraFit.focus).toBe('root-cutaway');
-  expect(cutawayEvidence.runtime.instances).toBeGreaterThan(wholeTreeEvidence.runtime.instances);
+  expect(cutawayEvidence.render.tissueVoxelInstances)
+    .toBeGreaterThan(wholeTreeEvidence.render.tissueVoxelInstances);
   const coarseRootShaft = cutawayEvidence.cameraFit.rootShaftsNdc.coarse;
   const fineRootShaft = cutawayEvidence.cameraFit.rootShaftsNdc.aggregateFine;
   expect(coarseRootShaft).not.toBeNull();
@@ -399,7 +408,7 @@ test('fixed cameras, root cutaway, resize, capture, and teardown stay coherent',
   expect(createHash('sha256').update(afterCutaway).digest('hex')).not.toBe(
     createHash('sha256').update(beforeCutaway).digest('hex'),
   );
-  await expect(canvas).toHaveScreenshot('oak-three-flush-framed-root-cutaway-hero.png', {
+  await expect(canvas).toHaveScreenshot('oak-mature-framed-root-cutaway-hero.png', {
     animations: 'disabled',
     maxDiffPixelRatio: 0.002,
   });
@@ -429,6 +438,5 @@ test('fixed cameras, root cutaway, resize, capture, and teardown stay coherent',
   expect(disposed.before.runtime.state).toBe('running');
   expect(disposed.after.disposed).toBe(true);
   expect(disposed.after.runtime.state).toBe('disposed');
-  expect(disposed.after.runtime.rendererGeometries).toBe(0);
-  expect(disposed.after.runtime.rendererTextures).toBe(0);
+  expectOakAtomicResourceTeardownV1(disposed.before, disposed.after);
 });

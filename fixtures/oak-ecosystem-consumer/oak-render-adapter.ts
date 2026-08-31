@@ -1,98 +1,42 @@
-import type {
-  InstanceBatchV1,
-  MaterialResourceV1,
-  PatchBatchInstancesV1,
-  RenderDeltaV1,
-  RenderOperationV1,
-  RenderSnapshotV1,
-} from '../../src/core/index.js';
+import type { InstanceBatchV1, PatchBatchInstancesV1, RenderDeltaV1, RenderOperationV1, RenderSnapshotV1, VoxelChunkV1 } from '../../src/core/index.js';
 import type { OakRenderProjectionStateV1 } from './oak-types.js';
 import {
-  createOakLeafGeometryV1,
-  createOakSoilCubeGeometryV1,
-  createOakWoodShaftGeometryV1,
-  OAK_LEAF_MATERIAL_KEY_V1,
-  OAK_LEAF_VARIANT_DESCRIPTORS_V1,
-  OAK_SOIL_MATERIAL_KEY_V1,
-  OAK_TAPER_RATIOS_V1,
-  OAK_WOOD_MATERIAL_KEY_V1,
-} from './oak-render-geometry.js';
-import {
-  buildOakInstanceRecordsV1,
   type OakRenderInstanceRecordV1,
   type OakRenderProjectionOptionsV1,
   type OakRootCutawayV1,
 } from './oak-render-projection.js';
-import { presentOakRootCutawayRecordsV1 } from './oak-root-cutaway-presentation.js';
+import {
+  buildOakSoilVoxelResourcesV1,
+  OAK_SOIL_VOXEL_CHUNK_PROFILE_V1,
+  OAK_SOIL_VOXEL_WORLD_UNITS_PER_VOXEL_V1,
+} from './oak-soil-voxel.js';
+import {
+  oakSoilContactInstanceRecordsV1,
+  OAK_SOIL_CONTACT_VOXEL_BATCH_KEY_V1,
+} from './oak-soil-contact-voxels.js';
+import {
+  createOakFallenLitterVoxelMaterialV1,
+  OAK_FALLEN_LITTER_VOXEL_BATCH_KEY_V1,
+} from './oak-fallen-litter-voxel.js';
+import {
+  OAK_RENDER_BATCH_DEFINITIONS_V1,
+  type OakRenderBatchDefinitionV1,
+} from './oak-render-batch-definitions.js';
+import {
+  createOakTissueVoxelGeometryV1,
+  createOakTissueVoxelMaterialsV1,
+  OAK_MAX_TISSUE_VOXELS_PER_BATCH_V1,
+} from './oak-tissue-voxel-projection.js';
+import {
+  buildOakCachedRenderProjectionsV1,
+  type OakRenderProjectionCacheHitsV1,
+  type OakRenderProjectionCacheV1,
+} from './oak-render-projection-cache.js';
 
 export type { OakRootCutawayV1 } from './oak-render-projection.js';
 
 const WORLD_ID = 'world:oak-ecosystem-case-study';
-const MAX_INSTANCES_PER_BATCH = 65_536;
-const WOOD_GEOMETRY_KEYS = OAK_TAPER_RATIOS_V1.map((_, index) =>
-  `geometry:oak:frustum:taper-${String(index)}`);
-const NODE_FLARED_WOOD_GEOMETRY_KEYS = OAK_TAPER_RATIOS_V1.map((_, index) =>
-  `geometry:oak:frustum:node-flared:taper-${String(index)}`);
-
-interface BatchDefinition {
-  readonly key: string;
-  readonly geometryKey: string;
-  readonly materialKey: string;
-  readonly castShadow: boolean;
-  readonly receiveShadow: boolean;
-}
-
-const BATCH_DEFINITIONS: readonly BatchDefinition[] = Object.freeze([
-  ...WOOD_GEOMETRY_KEYS.map((geometryKey, index) => ({
-    key: `batch:oak:wood:taper-${String(index)}`,
-    geometryKey,
-    materialKey: OAK_WOOD_MATERIAL_KEY_V1,
-    castShadow: true,
-    receiveShadow: true,
-  })),
-  ...NODE_FLARED_WOOD_GEOMETRY_KEYS.map((geometryKey, index) => ({
-    key: `batch:oak:wood:node-flared:taper-${String(index)}`,
-    geometryKey,
-    materialKey: OAK_WOOD_MATERIAL_KEY_V1,
-    castShadow: true,
-    receiveShadow: true,
-  })),
-  ...NODE_FLARED_WOOD_GEOMETRY_KEYS.map((geometryKey, index) => ({
-    key: `batch:oak:root:node-flared:taper-${String(index)}`,
-    geometryKey,
-    materialKey: OAK_WOOD_MATERIAL_KEY_V1,
-    castShadow: true,
-    receiveShadow: true,
-  })),
-  ...WOOD_GEOMETRY_KEYS.map((geometryKey, index) => ({
-    key: `batch:oak:root:taper-${String(index)}`,
-    geometryKey,
-    materialKey: OAK_WOOD_MATERIAL_KEY_V1,
-    castShadow: true,
-    receiveShadow: true,
-  })),
-  ...OAK_LEAF_VARIANT_DESCRIPTORS_V1.map((variant) => ({
-    key: `batch:oak:leaf:${variant.id}`,
-    geometryKey: variant.geometryKey,
-    materialKey: OAK_LEAF_MATERIAL_KEY_V1,
-    castShadow: true,
-    receiveShadow: true,
-  })),
-  {
-    key: 'batch:oak:buds-and-acorns',
-    geometryKey: WOOD_GEOMETRY_KEYS[0]!,
-    materialKey: OAK_WOOD_MATERIAL_KEY_V1,
-    castShadow: true,
-    receiveShadow: true,
-  },
-  {
-    key: 'batch:oak:soil',
-    geometryKey: 'geometry:oak:soil-cube',
-    materialKey: OAK_SOIL_MATERIAL_KEY_V1,
-    castShadow: false,
-    receiveShadow: true,
-  },
-]);
+const MAX_INSTANCES_PER_BATCH = OAK_MAX_TISSUE_VOXELS_PER_BATCH_V1;
 
 export interface OakRenderOptionsV1 extends OakRenderProjectionOptionsV1 {
   /** Presentation revision independent of a possibly paused biological revision. */
@@ -113,14 +57,23 @@ export interface OakRenderMetricsV1 {
   readonly nonEmptyBatchCount: number;
   /** Geometry-group submissions in one primary colour pass; excludes shadows. */
   readonly primaryContentPassDrawCalls: number;
-  readonly instanceCount: number;
-  readonly leafInstances: number;
-  readonly woodSegments: number;
-  readonly rootSegments: number;
-  readonly nodeFlaredWoodSegments: number;
-  readonly soilInstances: number;
-  /** Instanced triangles submitted in one primary colour pass; excludes shadows. */
-  readonly primaryContentPassTriangles: number;
+  readonly leafOrganCount: number;
+  readonly woodOrganCount: number;
+  readonly rootOrganCount: number;
+  readonly chunkCount: number;
+  readonly occupiedSoilVoxels: number;
+  readonly carvedSoilVoxelsForTissue: number;
+  readonly soilContactVoxels: number;
+  readonly soilVisibleFaces: number;
+  readonly tissueVoxelInstances: number;
+  readonly leafVoxels: number;
+  readonly woodVoxels: number;
+  readonly rootVoxels: number;
+  readonly seedBudVoxels: number;
+  readonly fallenLitterLeafCount: number;
+  readonly fallenLitterVoxels: number;
+  /** Instanced-cube triangle floor; the worker-meshed chunk adds triangles after acceptance. */
+  readonly minimumPrimaryContentPassTriangles: number;
   readonly retainedTypedArrayBytes: number;
   readonly skippedTooShortOrNonpositiveRadiusSegments: number;
   readonly skippedJunctionConsumedSegments: number;
@@ -129,31 +82,12 @@ export interface OakRenderMetricsV1 {
 export interface OakRenderFrameV1 {
   readonly snapshot: RenderSnapshotV1;
   readonly metrics: OakRenderMetricsV1;
-}
-
-function materials(): readonly MaterialResourceV1[] {
-  const common = {
-    kind: 'material' as const,
-    incarnation: 1,
-    revision: 1,
-    shading: 'standard' as const,
-    // Every procedural geometry carries neutral-white vertex colours; the
-    // authoritative organ/soil state then supplies the visible instance tint.
-    vertexColors: true,
-    transparent: false,
-    opacity: 1,
-    roughness: 0.96,
-    metalness: 0,
-  };
-  return [
-    { ...common, key: OAK_WOOD_MATERIAL_KEY_V1, color: { r: 255, g: 255, b: 255, a: 255 }, doubleSided: false },
-    { ...common, key: OAK_LEAF_MATERIAL_KEY_V1, color: { r: 255, g: 255, b: 255, a: 255 }, doubleSided: true, roughness: 0.9 },
-    { ...common, key: OAK_SOIL_MATERIAL_KEY_V1, color: { r: 255, g: 255, b: 255, a: 255 }, doubleSided: false },
-  ];
+  readonly projectionCache: OakRenderProjectionCacheV1;
+  readonly projectionCacheHits: OakRenderProjectionCacheHitsV1;
 }
 
 function batchFromRecords(
-  definition: BatchDefinition,
+  definition: OakRenderBatchDefinitionV1,
   records: readonly OakRenderInstanceRecordV1[],
   revision: number,
 ): InstanceBatchV1 {
@@ -179,6 +113,21 @@ function batchFromRecords(
   };
 }
 
+function recordsInPatchOrder(
+  records: readonly OakRenderInstanceRecordV1[], previous: InstanceBatchV1 | undefined,
+): readonly OakRenderInstanceRecordV1[] {
+  if (previous === undefined) return records;
+  const byKey = new Map(records.map((record) => [record.key, record]));
+  const retained = previous.instanceKeys.flatMap((key) => {
+    const record = byKey.get(key);
+    if (record !== undefined) byKey.delete(key);
+    return record === undefined ? [] : [record];
+  });
+  const appended = [...byKey.values()].sort((left, right) =>
+    left.key < right.key ? -1 : left.key > right.key ? 1 : 0);
+  return [...retained, ...appended];
+}
+
 function arrayEqual(left: ArrayLike<number>, right: ArrayLike<number>): boolean {
   if (left.length !== right.length) return false;
   for (let index = 0; index < left.length; index += 1) {
@@ -196,7 +145,6 @@ function batchPatchLayoutEqual(left: InstanceBatchV1, right: InstanceBatchV1): b
     && left.incarnation === right.incarnation
     && left.geometryKey === right.geometryKey
     && left.materialKey === right.materialKey
-    && orderedKeysEqual(left.instanceKeys, right.instanceKeys)
     && left.colors !== undefined
     && right.colors !== undefined
     && left.animation === undefined
@@ -207,6 +155,7 @@ function batchPatchLayoutEqual(left: InstanceBatchV1, right: InstanceBatchV1): b
 
 function batchContentEqual(left: InstanceBatchV1, right: InstanceBatchV1): boolean {
   return batchPatchLayoutEqual(left, right)
+    && orderedKeysEqual(left.instanceKeys, right.instanceKeys)
     && arrayEqual(left.matrices, right.matrices)
     && arrayEqual(left.colors!, right.colors!);
 }
@@ -222,7 +171,51 @@ function typedArrayBytes(snapshot: RenderSnapshotV1): number {
   for (const batch of snapshot.batches) {
     bytes += batch.matrices.byteLength + (batch.colors?.byteLength ?? 0);
   }
+  for (const chunk of snapshot.chunks) bytes += chunk.voxels.byteLength;
   return bytes;
+}
+
+function vectorEqual(
+  left: Readonly<{ x: number; y: number; z: number }>,
+  right: Readonly<{ x: number; y: number; z: number }>,
+): boolean {
+  return left.x === right.x && left.y === right.y && left.z === right.z;
+}
+
+function chunkLayoutEqual(left: VoxelChunkV1, right: VoxelChunkV1): boolean {
+  return left.key === right.key
+    && left.incarnation === right.incarnation
+    && left.paletteKey === right.paletteKey
+    && left.materialKey === right.materialKey
+    && vectorEqual(left.origin, right.origin)
+    && vectorEqual(left.size, right.size);
+}
+
+function chunkContentEqual(left: VoxelChunkV1, right: VoxelChunkV1): boolean {
+  return chunkLayoutEqual(left, right) && arrayEqual(left.voxels, right.voxels);
+}
+
+function visibleVoxelFaceCount(chunk: VoxelChunkV1): number {
+  const { x: sizeX, y: sizeY, z: sizeZ } = chunk.size;
+  const occupied = (x: number, y: number, z: number): boolean => {
+    if (x < 0 || y < 0 || z < 0 || x >= sizeX || y >= sizeY || z >= sizeZ) return false;
+    return chunk.voxels[x + sizeX * (z + sizeZ * y)] !== 0;
+  };
+  let faces = 0;
+  for (let y = 0; y < sizeY; y += 1) {
+    for (let z = 0; z < sizeZ; z += 1) {
+      for (let x = 0; x < sizeX; x += 1) {
+        if (!occupied(x, y, z)) continue;
+        if (!occupied(x - 1, y, z)) faces += 1;
+        if (!occupied(x + 1, y, z)) faces += 1;
+        if (!occupied(x, y - 1, z)) faces += 1;
+        if (!occupied(x, y + 1, z)) faces += 1;
+        if (!occupied(x, y, z - 1)) faces += 1;
+        if (!occupied(x, y, z + 1)) faces += 1;
+      }
+    }
+  }
+  return faces;
 }
 
 /** Project validated consumer-owned biology into public Voxel contracts. */
@@ -242,39 +235,38 @@ export function buildOakRenderFrameV1(
       + `${String(previousFrame.snapshot.revision)}.`,
     );
   }
-  const projection = buildOakInstanceRecordsV1(
+  const projections = buildOakCachedRenderProjectionsV1(
     state,
-    BATCH_DEFINITIONS.map((definition) => definition.key),
-    options,
+    renderRevision,
+    options.rootCutaway,
+    reusesPreviousEpoch ? previousFrame?.projectionCache : undefined,
   );
-  const presentedRecords = options.rootCutaway === undefined
-    ? projection.records
-    : presentOakRootCutawayRecordsV1(state.organs, projection.records);
-  const geometry = [
-    ...OAK_TAPER_RATIOS_V1.map((_, index) =>
-      createOakWoodShaftGeometryV1(WOOD_GEOMETRY_KEYS[index]!, index, false)),
-    ...OAK_TAPER_RATIOS_V1.map((_, index) =>
-      createOakWoodShaftGeometryV1(
-        NODE_FLARED_WOOD_GEOMETRY_KEYS[index]!,
-        index,
-        true,
-        false,
-      )),
-    ...OAK_LEAF_VARIANT_DESCRIPTORS_V1.map(createOakLeafGeometryV1),
-    createOakSoilCubeGeometryV1(),
+  const { tissue, soil: soilCandidate, litter } = projections.cache;
+  const geometry = createOakTissueVoxelGeometryV1();
+  const resources = [
+    ...createOakTissueVoxelMaterialsV1(),
+    createOakFallenLitterVoxelMaterialV1(),
+    ...buildOakSoilVoxelResourcesV1(),
+    geometry,
   ];
+  const recordsByBatch = new Map(tissue.records);
+  recordsByBatch.set(OAK_FALLEN_LITTER_VOXEL_BATCH_KEY_V1, litter.records);
+  recordsByBatch.set(
+    OAK_SOIL_CONTACT_VOXEL_BATCH_KEY_V1,
+    oakSoilContactInstanceRecordsV1(soilCandidate.contactVoxels),
+  );
   const previousBatches = new Map(
     reusesPreviousEpoch && previousFrame
       ? previousFrame.snapshot.batches.map((batch) => [batch.key, batch] as const)
       : [],
   );
-  const batches = BATCH_DEFINITIONS.map((definition) => {
+  const batches = OAK_RENDER_BATCH_DEFINITIONS_V1.map((definition) => {
+    const previous = previousBatches.get(definition.key);
     const candidate = batchFromRecords(
       definition,
-      presentedRecords.get(definition.key)!,
+      recordsInPatchOrder(recordsByBatch.get(definition.key)!, previous),
       renderRevision,
     );
-    const previous = previousBatches.get(candidate.key);
     return previous && batchContentEqual(previous, candidate)
       ? { ...candidate, revision: previous.revision }
       : candidate;
@@ -282,6 +274,10 @@ export function buildOakRenderFrameV1(
   if (batches.some((batch) => batch.instanceKeys.length > MAX_INSTANCES_PER_BATCH)) {
     throw new Error('Oak render projection exceeded its fixed per-batch instance budget.');
   }
+  const previousChunk = reusesPreviousEpoch ? previousFrame?.snapshot.chunks[0] : undefined;
+  const soilChunk = previousChunk && chunkContentEqual(previousChunk, soilCandidate.chunk)
+    ? { ...soilCandidate.chunk, revision: previousChunk.revision }
+    : soilCandidate.chunk;
   const snapshot: RenderSnapshotV1 = {
     schemaVersion: 'voxel.render-snapshot/1',
     descriptor: {
@@ -294,57 +290,65 @@ export function buildOakRenderFrameV1(
         forwardAxis: '-z',
         chunkRounding: 'floor',
         metersPerWorldUnit: 1,
-        worldUnitsPerVoxel: { x: 1, y: 1, z: 1 },
+        worldUnitsPerVoxel: OAK_SOIL_VOXEL_WORLD_UNITS_PER_VOXEL_V1,
       },
       colorEncoding: 'srgb8-straight-alpha',
-      capabilities: ['geometry-resources', 'instance-batches'],
+      capabilities: ['voxel-chunks', 'geometry-resources', 'instance-batches'],
+      chunkProfile: OAK_SOIL_VOXEL_CHUNK_PROFILE_V1,
       limits: {
-        maxResources: 16,
-        maxPaletteEntries: 1,
+        maxResources: resources.length,
+        maxPaletteEntries: 6,
         maxChunks: 1,
-        maxBatches: BATCH_DEFINITIONS.length,
-        maxVoxelsPerChunk: 1,
-        maxGeometryVertices: 1_024,
-        maxGeometryIndices: 4_096,
+        maxBatches: OAK_RENDER_BATCH_DEFINITIONS_V1.length,
+        maxVoxelsPerChunk: soilChunk.voxels.length,
+        maxGeometryVertices: geometry.positions.length / 3,
+        maxGeometryIndices: geometry.indices.length,
         maxInstancesPerBatch: MAX_INSTANCES_PER_BATCH,
         maxTotalBytes: 134_217_728,
       },
     },
     revision: renderRevision,
-    resources: [...materials(), ...geometry],
-    chunks: [],
+    resources,
+    chunks: [soilChunk],
     batches,
   };
-  const geometryByKey = new Map(geometry.map((resource) => [resource.key, resource]));
   const nonEmptyBatches = batches.filter((batch) => batch.instanceKeys.length > 0);
-  const primaryContentPassDrawCalls = nonEmptyBatches.reduce((sum, batch) =>
-    sum + geometryByKey.get(batch.geometryKey)!.groups.length, 0);
-  const primaryContentPassTriangles = nonEmptyBatches.reduce((sum, batch) =>
-    sum + batch.instanceKeys.length * geometryByKey.get(batch.geometryKey)!.indices.length / 3, 0);
-  const count = (prefix: string): number => batches
-    .filter((batch) => batch.key.startsWith(prefix))
-    .reduce((sum, batch) => sum + batch.instanceKeys.length, 0);
+  const soilVisibleFaces = visibleVoxelFaceCount(soilChunk);
+  const organCount = (...kinds: readonly string[]): number => tissue.organMetrics
+    .filter((metric) => kinds.includes(metric.kind)).length;
   return {
     snapshot,
+    projectionCache: projections.cache,
+    projectionCacheHits: projections.hits,
     metrics: {
       simulationRevision: state.revision,
       renderRevision,
       resourceCount: snapshot.resources.length,
       batchCount: batches.length,
       nonEmptyBatchCount: nonEmptyBatches.length,
-      primaryContentPassDrawCalls,
-      instanceCount: batches.reduce((sum, batch) => sum + batch.instanceKeys.length, 0),
-      leafInstances: count('batch:oak:leaf:'),
-      woodSegments: count('batch:oak:wood:'),
-      rootSegments: count('batch:oak:root:'),
-      nodeFlaredWoodSegments: count('batch:oak:wood:node-flared:')
-        + count('batch:oak:root:node-flared:'),
-      soilInstances: presentedRecords.get('batch:oak:soil')!.length,
-      primaryContentPassTriangles,
+      primaryContentPassDrawCalls: nonEmptyBatches.length + 1,
+      leafOrganCount: organCount('leaf'),
+      woodOrganCount: organCount('stem', 'branch'),
+      rootOrganCount: organCount('coarse-root', 'fine-root-cohort'),
+      chunkCount: 1,
+      occupiedSoilVoxels: soilCandidate.metrics.occupiedVoxelCount,
+      carvedSoilVoxelsForTissue: soilCandidate.metrics.carvedTissueVoxelCount,
+      soilContactVoxels: soilCandidate.metrics.contactVoxelCount,
+      soilVisibleFaces,
+      tissueVoxelInstances: tissue.tissueVoxelCount,
+      leafVoxels: tissue.leafVoxelCount,
+      woodVoxels: tissue.woodVoxelCount,
+      rootVoxels: tissue.rootVoxelCount,
+      seedBudVoxels: tissue.seedBudVoxelCount,
+      fallenLitterLeafCount: litter.leafMetrics.length,
+      fallenLitterVoxels: litter.voxelCount,
+      minimumPrimaryContentPassTriangles:
+        (tissue.tissueVoxelCount + litter.voxelCount + soilCandidate.metrics.contactVoxelCount)
+        * geometry.indices.length / 3,
       retainedTypedArrayBytes: typedArrayBytes(snapshot),
       skippedTooShortOrNonpositiveRadiusSegments:
-        projection.skippedInvalidDimension,
-      skippedJunctionConsumedSegments: projection.skippedJunctionConsumed,
+        tissue.skippedTooShortOrNonpositiveRadiusSegments,
+      skippedJunctionConsumedSegments: tissue.skippedJunctionConsumedSegments,
     },
   };
 }
@@ -397,7 +401,7 @@ function patchBetween(
   };
 }
 
-/** Build only changed instance slots; static materials and geometry never churn. */
+/** Build changed tissue slots and soil chunks; static resources never churn. */
 export function buildOakRenderDeltaV1(
   previous: OakRenderFrameV1,
   next: OakRenderFrameV1,
@@ -410,6 +414,36 @@ export function buildOakRenderDeltaV1(
   }
   const previousByKey = new Map(previous.snapshot.batches.map((batch) => [batch.key, batch]));
   const operations: RenderOperationV1[] = [];
+  const previousChunks = new Map(previous.snapshot.chunks.map((chunk) => [chunk.key, chunk]));
+  const nextChunkKeys = new Set(next.snapshot.chunks.map((chunk) => chunk.key));
+  for (const chunk of next.snapshot.chunks) {
+    const before = previousChunks.get(chunk.key);
+    if (!before) {
+      operations.push({ op: 'put-chunk', chunk });
+      continue;
+    }
+    if (chunkContentEqual(before, chunk)) {
+      if (chunk.revision !== before.revision) {
+        throw new Error(
+          `Unchanged oak chunk '${chunk.key}' changed revision from ${String(before.revision)} `
+          + `to ${String(chunk.revision)}; build the next frame with previousFrame so content `
+          + 'revisions remain truthful.',
+        );
+      }
+      continue;
+    }
+    if (chunk.revision <= before.revision) {
+      throw new Error(
+        `Changed oak chunk '${chunk.key}' revision must advance beyond ${String(before.revision)}.`,
+      );
+    }
+    operations.push({ op: 'put-chunk', chunk });
+  }
+  for (const chunk of previous.snapshot.chunks) {
+    if (!nextChunkKeys.has(chunk.key)) {
+      operations.push({ op: 'remove-chunk', key: chunk.key, incarnation: chunk.incarnation });
+    }
+  }
   for (const batch of next.snapshot.batches) {
     const before = previousByKey.get(batch.key);
     if (!before) operations.push({ op: 'put-batch', batch });

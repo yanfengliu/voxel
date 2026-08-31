@@ -5,7 +5,7 @@ import {
   oakAllometricWoodRadiusMForOrganV1,
   oakWoodMassVolumeDiagnosticV1,
 } from './oak-allometry.js';
-import { buildOakRenderFrameV1 } from './oak-render-adapter.js';
+import { buildOakContinuousAnalysisSnapshotV1 } from './oak-continuous-render-analysis.js';
 import {
   createOakSimulationV1,
   oakHostTicksForBiologicalDaysV1,
@@ -44,14 +44,14 @@ function polygonArea(vertices: readonly Point3[]): number {
 }
 
 function projectedShaftVolumeM3(
-  frame: ReturnType<typeof buildOakRenderFrameV1>,
+  snapshot: ReturnType<typeof buildOakContinuousAnalysisSnapshotV1>,
   organKey: string,
 ): number {
   const instanceKey = `oak:${organKey}:shaft`;
-  const batch = frame.snapshot.batches.find((candidate) =>
+  const batch = snapshot.batches.find((candidate) =>
     candidate.instanceKeys.includes(instanceKey));
   if (!batch) throw new Error(`Missing projected shaft '${instanceKey}'.`);
-  const geometry = frame.snapshot.resources.find((candidate) =>
+  const geometry = snapshot.resources.find((candidate) =>
     candidate.kind === 'geometry' && candidate.key === batch.geometryKey);
   if (!geometry || geometry.kind !== 'geometry') {
     throw new Error(`Missing projected shaft geometry '${batch.geometryKey}'.`);
@@ -157,7 +157,7 @@ describe('oak dimensioned-wood allometry', () => {
   it('matches owned fresh mass to every actual projected day-100 shaft', () => {
     const simulation = createOakSimulationV1();
     const snapshot = simulation.advanceHostTicks(oakHostTicksForBiologicalDaysV1(100));
-    const frame = buildOakRenderFrameV1(simulation.projection());
+    const analysisSnapshot = buildOakContinuousAnalysisSnapshotV1(simulation.projection());
     const activeWood = snapshot.organs.filter((organ) =>
       organ.stage !== 'abscised' && isOakDimensionedWoodKindV1(organ.kind));
     expect(activeWood.length).toBeGreaterThan(3);
@@ -165,7 +165,7 @@ describe('oak dimensioned-wood allometry', () => {
       const freshMassKg = organ.pools.carbonKg
           / OAK_PARAMETERS_V1.growth.structuralCarbonFractionOfDryMass
         + organ.pools.waterLiters * OAK_PARAMETERS_V1.mechanics.waterDensityKgPerLiter;
-      const projectedMassKg = projectedShaftVolumeM3(frame, organ.key)
+      const projectedMassKg = projectedShaftVolumeM3(analysisSnapshot, organ.key)
         * OAK_PARAMETERS_V1.mechanics.greenWoodDensityKgPerM3;
       const ratio = freshMassKg / projectedMassKg;
       expect(ratio, organ.key).toBeCloseTo(1, 5);

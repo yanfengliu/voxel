@@ -43,6 +43,7 @@ export function collectAtomicPipelineMetricsInternal(
 ): ThreeAtomicPipelineMetricsV1 {
   const staging = atomic.pipeline.stagingMetricsInternal();
   const driver = atomic.driver.metricsInternal();
+  const displayed = staging.displayedBundle?.metricsInternal();
   return Object.freeze({
     preparedTargets: staging.preparedTargets,
     cpuStagingBytes: staging.cpuStagingBytes,
@@ -53,8 +54,11 @@ export function collectAtomicPipelineMetricsInternal(
     pendingRetirements: staging.pendingRetirements,
     presentedTargets: staging.presentedTargets,
     failedTargets: staging.failedTargets,
-    loadedChunks: staging.displayedBundle?.chunkPresenterInternal.count ?? 0,
-    nonemptyChunks: staging.displayedBundle?.chunkPresenterInternal.visibleCount ?? 0,
+    materialResources: displayed?.materials ?? 0,
+    geometryResources: displayed?.geometries ?? 0,
+    instanceBatches: displayed?.instanceBatches ?? 0,
+    loadedChunks: displayed?.chunks ?? 0,
+    nonemptyChunks: displayed?.visibleChunks ?? 0,
     inFrustumChunks: inFrustumChunkCountInternal(staging.displayedBundle, camera),
     queuedJobs: staging.scheduler.queuedJobs,
     queuedBytes: staging.scheduler.queuedBytes,

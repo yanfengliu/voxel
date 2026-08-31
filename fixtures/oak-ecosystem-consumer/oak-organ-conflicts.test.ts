@@ -6,7 +6,7 @@ import type {
   OakOrganSnapshotV1,
   OakRenderProjectionStateV1,
 } from './oak-types.js';
-import { buildOakRenderFrameV1 } from './oak-render-adapter.js';
+import { buildOakContinuousAnalysisSnapshotV1 } from './oak-continuous-render-analysis.js';
 import { inspectOakOrganGeometryConflictsV1 } from './oak-organ-conflicts.js';
 import {
   createOakSimulationV1,
@@ -28,8 +28,8 @@ function runProjection(days: number): OakRenderProjectionStateV1 {
 }
 
 function reportFor(state: OakRenderProjectionStateV1) {
-  const frame = buildOakRenderFrameV1(state, ROOT_PROJECTION);
-  return inspectOakOrganGeometryConflictsV1(state, frame.snapshot);
+  const snapshot = buildOakContinuousAnalysisSnapshotV1(state, ROOT_PROJECTION);
+  return inspectOakOrganGeometryConflictsV1(state, snapshot);
 }
 
 function replaceOrgans(
@@ -202,15 +202,15 @@ describe('oak organ topology and rendered conflict gate', () => {
       && conflict.organKeys.includes(continuation.key))).toBe(true);
   }, timeoutForMeasuredWorkMs(28_081));
 
-  it('retains an integrated node-flare peak in the public-geometry conflict oracle', () => {
+  it('retains an integrated node-flare peak in the private continuous-geometry oracle', () => {
     const state = runProjection(100);
-    const frame = buildOakRenderFrameV1(state, ROOT_PROJECTION);
-    const batch = frame.snapshot.batches.find((candidate) =>
+    const snapshot = buildOakContinuousAnalysisSnapshotV1(state, ROOT_PROJECTION);
+    const batch = snapshot.batches.find((candidate) =>
       candidate.key.includes(':node-flared:') && candidate.instanceKeys.length > 0)!;
     const instanceKey = batch.instanceKeys[0]!;
     const slot = batch.instanceKeys.indexOf(instanceKey);
     const matrix = batch.matrices.subarray(slot * 16, slot * 16 + 16);
-    const geometry = frame.snapshot.resources.find((candidate) =>
+    const geometry = snapshot.resources.find((candidate) =>
       candidate.kind === 'geometry' && candidate.key === batch.geometryKey)!;
     if (geometry.kind !== 'geometry') throw new Error('Expected node-flared geometry.');
     const ringYs = [...new Set(Array.from(

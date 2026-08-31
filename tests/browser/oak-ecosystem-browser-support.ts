@@ -57,6 +57,9 @@ export function expectOakSubjectFramedV1(evidence: OakBrowserEvidenceV1): void {
   expect(evidence.cameraFit.fittedVertexCount).toBeGreaterThan(
     evidence.cameraFit.fittedOrganCount,
   );
+  expect(evidence.cameraFit.fittedLitterVoxelCount).toBe(
+    evidence.render.fallenLitterVoxels,
+  );
   expect(evidence.cameraFit.subjectClearOfHud).toBe(true);
   expect(bounds.minX).toBeGreaterThan(evidence.cameraFit.hudRightNdc);
   expect(bounds.maxX).toBeLessThan(0.98);
@@ -338,8 +341,19 @@ export async function openOakCaseStudy(
       }.`,
     );
   }
-  await page.waitForFunction(() => window.oakEcosystem?.evidence().ready === true);
-  return oakEvidence(page);
+  const evidence = await page.waitForFunction(() => {
+    const candidate = window.oakEcosystem?.evidence();
+    return candidate?.ready === true
+      && candidate.runtime.acceptedRevision === candidate.runtime.presentedRevision
+      && candidate.runtime.presentedRevision === candidate.render.renderRevision
+      ? candidate
+      : false;
+  });
+  try {
+    return await evidence.jsonValue() as OakBrowserEvidenceV1;
+  } finally {
+    await evidence.dispose();
+  }
 }
 
 export async function oakEvidence(page: Page): Promise<OakBrowserEvidenceV1> {
@@ -352,25 +366,65 @@ export async function oakEvidence(page: Page): Promise<OakBrowserEvidenceV1> {
   });
 }
 
+async function waitForOakPresentation(
+  page: Page,
+  renderRevision: number,
+): Promise<OakBrowserEvidenceV1> {
+  const presented = await page.waitForFunction((targetRevision) => {
+    const candidate = window.oakEcosystem?.evidence();
+    return candidate?.ready === true
+      && candidate.runtime.acceptedRevision === candidate.runtime.presentedRevision
+      && candidate.runtime.presentedRevision === candidate.render.renderRevision
+      && candidate.runtime.presentedRevision >= targetRevision
+      ? candidate
+      : false;
+  }, renderRevision);
+  try {
+    return await presented.jsonValue() as OakBrowserEvidenceV1;
+  } finally {
+    await presented.dispose();
+  }
+}
+
+async function waitForOakRenderAdvance(
+  page: Page,
+  previousRenderRevision: number,
+): Promise<number> {
+  const advanced = await page.waitForFunction((previousRevision) => {
+    const revision = window.oakEcosystem?.evidence().render.renderRevision;
+    return revision !== undefined && revision > previousRevision ? revision : false;
+  }, previousRenderRevision);
+  try {
+    return await advanced.jsonValue() as number;
+  } finally {
+    await advanced.dispose();
+  }
+}
+
 export async function clickOakCommand(
   page: Page,
   command: OakBrowserCommandV1,
 ): Promise<OakBrowserEvidenceV1> {
+  const before = await oakEvidence(page);
   await page.locator(`[data-command="${command}"]`).click();
-  return oakEvidence(page);
+  const targetRevision = await waitForOakRenderAdvance(page, before.render.renderRevision);
+  return waitForOakPresentation(page, targetRevision);
 }
 
 export async function commandOakHarness(
   page: Page,
   command: OakBrowserCommandV1,
 ): Promise<OakBrowserEvidenceV1> {
-  return page.evaluate((fixtureCommand) => {
+  const before = await oakEvidence(page);
+  await page.evaluate((fixtureCommand) => {
     const harness = window.oakEcosystem;
     if (harness === undefined) {
       throw new Error('Cannot command the oak fixture: the browser harness is not mounted.');
     }
-    return harness.command(fixtureCommand);
+    harness.command(fixtureCommand);
   }, command);
+  const targetRevision = await waitForOakRenderAdvance(page, before.render.renderRevision);
+  return waitForOakPresentation(page, targetRevision);
 }
 
 export async function setOakCamera(
@@ -398,26 +452,28 @@ export async function advanceOakHostTicks(
   page: Page,
   count: number,
 ): Promise<OakBrowserEvidenceV1> {
-  return page.evaluate((ticks) => {
+  const target = await page.evaluate((ticks) => {
     const harness = window.oakEcosystem;
     if (harness === undefined) {
       throw new Error('Cannot advance oak time: the browser harness is not mounted.');
     }
     return harness.advanceHostTicks(ticks);
   }, count);
+  return waitForOakPresentation(page, target.render.renderRevision);
 }
 
 export async function advanceOakBiologicalTicks(
   page: Page,
   count: number,
 ): Promise<OakBrowserEvidenceV1> {
-  return page.evaluate((ticks) => {
+  const target = await page.evaluate((ticks) => {
     const harness = window.oakEcosystem;
     if (harness === undefined) {
       throw new Error('Cannot run an oak experiment: the browser harness is not mounted.');
     }
     return harness.advanceBiologicalTicks(ticks);
   }, count);
+  return waitForOakPresentation(page, target.render.renderRevision);
 }
 
 export async function disposeOakCaseStudy(page: Page) {

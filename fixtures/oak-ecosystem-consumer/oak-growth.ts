@@ -433,13 +433,18 @@ function allocateGrowth(state: MutableOakStateV1): void {
 function senesceLeaves(state: MutableOakStateV1, day: number): void {
   if (day >= OAK_PARAMETERS_V1.growth.senescenceDay) {
     state.phenology = 'senescence';
+    const senescenceAgeDays = day - OAK_PARAMETERS_V1.growth.senescenceDay + 1;
+    const seasonalChlorophyllCeiling = Math.max(
+      OAK_PARAMETERS_V1.growth.minimumSenescentChlorophyllFraction,
+      OAK_PARAMETERS_V1.growth.newOrgan.leafChlorophyllFraction
+        - OAK_PARAMETERS_V1.growth.senescentChlorophyllLossPerDay * senescenceAgeDays,
+    );
     for (const leaf of state.organs.filter((organ) => organ.kind === 'leaf')) {
       if (leaf.stage !== 'abscised') {
         leaf.stage = 'senescing';
-        leaf.chlorophyllFraction = Math.max(
-          OAK_PARAMETERS_V1.growth.minimumSenescentChlorophyllFraction,
-          (leaf.chlorophyllFraction ?? 1)
-            - OAK_PARAMETERS_V1.growth.senescentChlorophyllLossPerDay,
+        leaf.chlorophyllFraction = Math.min(
+          leaf.chlorophyllFraction ?? seasonalChlorophyllCeiling,
+          seasonalChlorophyllCeiling,
         );
       }
     }

@@ -7,6 +7,7 @@ import type {
   OakRenderProjectionStateV1,
   OakVec3V1,
 } from './oak-types.js';
+import { OAK_FALLEN_LITTER_VOXEL_BATCH_KEY_V1 } from './oak-fallen-litter-voxel.js';
 
 export interface OakRenderedTriangleV1 {
   readonly a: OakVec3V1;
@@ -47,14 +48,14 @@ function transformPoint(matrix: ArrayLike<number>, point: OakVec3V1): OakVec3V1 
 }
 
 function instanceOrganKey(instanceKey: string): string | null {
-  const match = /^oak:(organ:[0-9]+:[0-9]+)(?::(?:shaft|junction))?$/.exec(instanceKey);
+  const match = /^oak:(organ:[0-9]+:[0-9]+)(?::|$)/u.exec(instanceKey);
   return match?.[1] ?? null;
 }
 
-function forEachRenderedOrganInstance(
+function forEachRenderedInstance(
   snapshot: RenderSnapshotV1,
   visit: (
-    organKey: string,
+    instanceKey: string,
     batchKey: string,
     geometry: GeometryResourceV1,
     matrix: ArrayLike<number>,
@@ -66,10 +67,8 @@ function forEachRenderedOrganInstance(
     const geometry = resources.get(batch.geometryKey);
     if (!geometry) continue;
     batch.instanceKeys.forEach((instanceKey, slot) => {
-      const organKey = instanceOrganKey(instanceKey);
-      if (organKey === null) return;
       visit(
-        organKey,
+        instanceKey,
         batch.key,
         geometry,
         batch.matrices.subarray(slot * 16, slot * 16 + 16),
@@ -80,19 +79,25 @@ function forEachRenderedOrganInstance(
 
 export interface OakRenderedSubjectGeometryV1 {
   readonly organKeys: readonly string[];
+  readonly litterVoxelCount: number;
   readonly vertices: readonly OakVec3V1[];
 }
 
-/** Exact public-geometry vertices and organs used to fit an oak render frame. */
+/** Exact public-geometry vertices and visible biological content used to fit an oak frame. */
 export function oakRenderedSubjectGeometryV1(
   snapshot: RenderSnapshotV1,
   includeRoots: boolean,
 ): OakRenderedSubjectGeometryV1 {
   const organKeys = new Set<string>();
   const vertices: OakVec3V1[] = [];
-  forEachRenderedOrganInstance(snapshot, (organKey, batchKey, geometry, matrix) => {
-    if (!includeRoots && batchKey.startsWith('batch:oak:root:')) return;
-    organKeys.add(organKey);
+  let litterVoxelCount = 0;
+  forEachRenderedInstance(snapshot, (instanceKey, batchKey, geometry, matrix) => {
+    const organKey = instanceOrganKey(instanceKey);
+    const isLitter = batchKey === OAK_FALLEN_LITTER_VOXEL_BATCH_KEY_V1;
+    if (organKey === null && !isLitter) return;
+    if (!includeRoots && batchKey === 'batch:oak:root-voxels') return;
+    if (organKey !== null) organKeys.add(organKey);
+    if (isLitter) litterVoxelCount += 1;
     for (let offset = 0; offset < geometry.positions.length; offset += 3) {
       vertices.push(transformPoint(matrix, {
         x: geometry.positions[offset]!,
@@ -101,7 +106,7 @@ export function oakRenderedSubjectGeometryV1(
       }));
     }
   });
-  return { organKeys: [...organKeys], vertices };
+  return { organKeys: [...organKeys], litterVoxelCount, vertices };
 }
 
 function appendTriangleMesh(
@@ -177,7 +182,9 @@ export function oakRenderedOrgansV1(
     triangles: [],
     sweeps: [],
   } satisfies OakRenderedOrganV1]));
-  forEachRenderedOrganInstance(snapshot, (organKey, _batchKey, geometry, matrix) => {
+  forEachRenderedInstance(snapshot, (instanceKey, _batchKey, geometry, matrix) => {
+    const organKey = instanceOrganKey(instanceKey);
+    if (organKey === null) return;
     const shape = byKey.get(organKey);
     if (!shape) return;
     if (shape.organ.kind === 'leaf') appendTriangleMesh(shape, geometry, matrix);
