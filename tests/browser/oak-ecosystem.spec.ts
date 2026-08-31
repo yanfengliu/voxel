@@ -121,10 +121,38 @@ test('mounts one live oak through the real Three runtime with domain controls', 
   await expect(page.locator('[data-command]')).toHaveCount(9);
   await expect(page.locator('[data-view]')).toHaveCount(3);
   await expect(page.locator('[data-diagnostic="age"]')).not.toHaveText('—');
+  const frameRate = page.locator('[data-diagnostic="fps"]');
+  await expect(frameRate).toHaveText(/^\d+(?:\.\d)? FPS$/u);
+  await expect(frameRate).toBeInViewport();
+  expect(Number.parseFloat(await frameRate.innerText())).toBeGreaterThan(0);
   await expect(page.locator('[data-diagnostic="wind"]')).toHaveText(/m\/s$/u);
   await expect(page.locator('[data-diagnostic="rain"]')).toHaveText('inactive');
   await expect(page.locator('[data-diagnostic="topsoil-water"]')).toHaveText(/% v\/v$/u);
   await expect(page.locator('[data-diagnostic="revision"]')).toHaveText(/^\d+$/u);
+});
+
+test('render frame rate follows the RAF timeline and keeps measuring while biology is paused', async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    const nativeRequestAnimationFrame = window.requestAnimationFrame.bind(window);
+    const testWindow = window as typeof window & { setOakTestRafHz: (value: number) => void };
+    let syntheticFramesPerSecond = 30;
+    let syntheticTimestampMs = 0;
+    testWindow.setOakTestRafHz = (value) => { syntheticFramesPerSecond = value; };
+    window.requestAnimationFrame = (callback) => nativeRequestAnimationFrame(() => {
+      syntheticTimestampMs += 1_000 / syntheticFramesPerSecond;
+      callback(syntheticTimestampMs);
+    });
+  });
+  await openOakCaseStudy(page, origin);
+  const paused = await clickOakCommand(page, 'toggle-pause');
+  expect(paused.simulation.paused).toBe(true);
+  await page.evaluate(() => {
+    const testWindow = window as typeof window & { setOakTestRafHz: (value: number) => void };
+    testWindow.setOakTestRafHz(20);
+  });
+  await expect(page.locator('[data-diagnostic="fps"]')).toHaveText('20.0 FPS');
 });
 
 test('initial readiness gates controls and pending commands cross exact revisions FIFO', async ({
@@ -367,6 +395,7 @@ test('fixed cameras, root cutaway, resize, capture, and teardown stay coherent',
   const environmentReadout = hud.locator('[data-environment-readout]');
   await expect(environmentReadout).toBeInViewport();
   await expect(hud.locator('[data-oak-status]')).toBeInViewport();
+  await expect(hud.locator('[data-diagnostic="fps"]')).toBeInViewport();
   for (const diagnostic of [
     'wind', 'rain', 'wind-voxels', 'topsoil-water', 'topsoil-nitrogen', 'topsoil-phosphorus',
   ]) {
@@ -378,6 +407,8 @@ test('fixed cameras, root cutaway, resize, capture, and teardown stay coherent',
   await expect(page).toHaveScreenshot('oak-mature-hud-hero-page.png', {
     animations: 'disabled',
     fullPage: true,
+    mask: [hud.locator('[data-diagnostic="fps"]')],
+    maskColor: '#202a20',
     maxDiffPixelRatio: 0.002,
   });
 

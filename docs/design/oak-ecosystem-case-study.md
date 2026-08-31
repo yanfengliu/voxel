@@ -20,6 +20,8 @@ The soil microcosm contains eight heterogeneous 0.2 m cells in two depth layers,
 
 The outer host advances on the repository's shared 60 Hz step while physiology, soil chemistry, allocation and phenology run at their own explicit biological cadences. The browser maps real RAF timestamps through an eight-tick bounded accumulator, so 60, 120 and 240 Hz displays advance the same biological time and paused elapsed time is discarded rather than caught up.
 
+The information panel reports recent successful RAF-driven canvas presentation cadence separately as `Render frame rate`. Every foreground RAF runtime attempt contributes elapsed time, only calls returning a presented manifest contribute a frame, and repeated unavailable attempts therefore decay to zero. That volatile display value excludes manual renders, resets across hidden-tab transitions and is neither the fixed simulation rate nor GPU-completion or compositor evidence.
+
 Every organ has a stable local identity and generation, a parent edge, a biological stage, authoritative pose, geometry, tissue pools and stress state.
 
 The shoot uses successive internodes, one leaf per node, oak's 2/5 spiral phyllotaxis and an axillary branch relationship; roots retain a taproot and a bounded spatial fine-root cohort rather than claiming resolved root topology.

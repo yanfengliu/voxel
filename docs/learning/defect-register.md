@@ -6,6 +6,18 @@ Unlike a lesson, an entry stays after it becomes a gate. This is the standing li
 
 Newest first.
 
+## 2026-08-31 — The oak exposed renderer counts but not whether frames were arriving slowly
+
+**Symptom, as reported.** “Rendering feels slow. Show FPS somewhere on the info panel.”
+
+**What the investigation found.** The HUD reported presented revision and GPU resource counts, and the browser host mapped `requestAnimationFrame` timestamps into the fixed-step simulation clock, but no visible value described the cadence at which successful canvas frames were actually presented. The available `60 Hz` simulation step and cumulative runtime frame count could both produce a plausible but false FPS number because neither measures recent wall-clock presentation cadence.
+
+**Root cause.** Renderer diagnostics were treated as inventory and revision evidence only. The case study had no bounded presentation-timing instrument, so a viewer could perceive slowness but could not distinguish a slow display loop from accelerated biological time, a paused simulation or remembered target-rate documentation.
+
+**Outcome.** A compact above-fold `Render frame rate` row now observes every foreground RAF-driven `runtime.frame` attempt and counts a frame only when that call returns a presented manifest. It publishes a one-decimal recent cadence after a half-second warm-up, updates at most four times per second, retains a missed-frame interval so a visible stall is not smoothed away, decays to `0.0 FPS` across repeated unavailable frames, continues while biological time is paused, excludes manual command, resize, camera and test-harness renders, and resets across hidden-tab transitions. The readout is volatile display telemetry: it is not simulation authority, GPU completion time, compositor scanout or a hardware-independent performance promise.
+
+**How it is checked from now on.** A deterministic sampler gate drives synthetic `30`, `60`, `120` and `240 Hz` presented timestamps, requires warm-up before publication, observes a missed-frame reduction, expires a healthy value after repeated unavailable attempts, proves recovery and later-window eviction, rejects exact duplicate or reversed time, verifies hidden-tab reset plus listener disposal, and checks that the host glue ignores manual timestamps while preserving undefined runtime results as failures. A real-browser control starts a `30 Hz` RAF timestamp stream, pauses biology, switches that stream to `20 Hz` and requires convergence to exactly `20.0 FPS`, so neither the fixed `60 Hz` simulation target nor a pre-pause cached value can pass as telemetry. The ordinary mount gate separately requires the above-fold value to leave `measuring…`, carry a positive numeric `FPS` unit and remain separate from the simulation evidence contract; it deliberately sets no machine-dependent minimum. Page-level and HUD-bearing wind baselines mask only the changing digits while retaining the label and row geometry, and the same mask prevents volatile telemetry from satisfying weather or organ-motion pixel thresholds.
+
 ## 2026-08-30 — The oak's environment computed weather and soil state without making either legible
 
 **Symptom, as reported.** “Even though you claim to have numerical simulations of everything in its environment, it is very hard for me to see whether anything is going on. I see no animation for rain or wind, and the soil looks completely flat and therefore fake. These are just some simple examples of the flaws I noticed.”

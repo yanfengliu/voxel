@@ -12,6 +12,7 @@ import {
 import { createOakSimulationV1 } from './oak-simulation.js';
 import { fitOakBrowserCameraV1 } from './oak-browser-camera.js';
 import { createOakBrowserFrameClockV1 } from './oak-browser-frame-clock.js';
+import { mountOakBrowserPresentedFpsReadoutV1, recordOakBrowserRafPresentationV1 } from './oak-browser-presented-fps.js';
 import { enqueueOakPendingCommandV1 } from './oak-browser-command-queue.js';
 import { projectOakBrowserVoxelsV1 } from './oak-browser-voxel-evidence.js';
 import {
@@ -59,6 +60,7 @@ function mountOakBrowserHost(): OakBrowserHarnessV1 {
       node,
     ]),
   );
+  const fpsReadout = mountOakBrowserPresentedFpsReadoutV1(requiredOakElement('[data-diagnostic="fps"]'), document);
   const controls = Array.from(document.querySelectorAll<HTMLButtonElement>('[data-command]'));
   const viewControls = Array.from(document.querySelectorAll<HTMLButtonElement>('[data-view]'));
   const listeners: (() => void)[] = [];
@@ -162,8 +164,9 @@ function mountOakBrowserHost(): OakBrowserHarnessV1 {
       queueMicrotask(() => { if (!disposed && !presentationPending) issueCommand(queuedCommand); });
     }
   };
-  const renderFrame = (frame = frameClock.manualFrame()): void => {
-    runtime.frame(frame);
+  const renderFrame = (frame = frameClock.manualFrame(), rafTimestampMs?: number): void => {
+    const presented = runtime.frame(frame);
+    recordOakBrowserRafPresentationV1(fpsReadout, rafTimestampMs, presented);
     refreshReady();
   };
 
@@ -175,7 +178,7 @@ function mountOakBrowserHost(): OakBrowserHarnessV1 {
     }
   };
 
-  const presentSimulation = (frame = frameClock.manualFrame()): void => {
+  const presentSimulation = (frame = frameClock.manualFrame(), rafTimestampMs?: number): void => {
     const simulationSnapshot = weather.sync(simulation);
     const weatherPresentation = weather.presentation();
     renderRevision += 1;
@@ -212,7 +215,7 @@ function mountOakBrowserHost(): OakBrowserHarnessV1 {
     }
     previousRenderFrame = next;
     fitCamera(presentation.camera, false);
-    renderFrame(frame);
+    renderFrame(frame, rafTimestampMs);
     updateDiagnostics();
   };
 
@@ -403,6 +406,7 @@ function mountOakBrowserHost(): OakBrowserHarnessV1 {
     navigation?.dispose();
     for (const remove of listeners.splice(0)) remove();
     window.removeEventListener('beforeunload', dispose);
+    fpsReadout.dispose();
     runtime.dispose();
     lighting.dispose();
     renderer.dispose();
@@ -451,16 +455,16 @@ function mountOakBrowserHost(): OakBrowserHarnessV1 {
         !presentationPending && !simulation.snapshot().paused,
       );
       if (presentationPending) {
-        renderFrame(sample.frame);
+        renderFrame(sample.frame, timestampMs);
         updateDiagnostics();
       } else if (sample.hostTicks > 0) {
         weather.advanceHostTicks(simulation, sample.hostTicks);
-        presentSimulation(sample.frame);
+        presentSimulation(sample.frame, timestampMs);
       } else if (navigationMoved) {
         fitCamera(presentation.camera, false);
-        renderFrame(sample.frame);
+        renderFrame(sample.frame, timestampMs);
         updateDiagnostics();
-      } else renderFrame(sample.frame);
+      } else renderFrame(sample.frame, timestampMs);
       weather.clearExpired(simulation.snapshot());
       if (navigationMoved) syncControls();
       animationFrame = requestAnimationFrame(animate);

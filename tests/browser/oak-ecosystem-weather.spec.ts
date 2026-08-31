@@ -199,25 +199,31 @@ test('three ordered gust frames move both airflow voxels and the actual oak pixe
   await advanceOakBiologicalTicks(page, MATURE_TICKS);
   await refitOakCamera(page, 'hero');
   const canvas = page.locator('[data-oak-canvas]');
+  const fps = page.locator('[data-diagnostic="fps"]');
+  const captureWindFrame = () => canvas.screenshot({
+    animations: 'disabled' as const,
+    mask: [fps],
+    maskColor: '#202a20',
+  });
 
   const first = await commandOakHarness(page, 'wind-mode');
   expect(first.weather.windVoxelCount).toBeGreaterThan(50);
   expect(first.weather.windSpeedMPerS).toBeGreaterThanOrEqual(3);
-  const fullFrames = [await canvas.screenshot({ animations: 'disabled' })];
+  const fullFrames = [await captureWindFrame()];
   await setWeatherVisible(page, false);
-  const plantFrames = [await canvas.screenshot({ animations: 'disabled' })];
+  const plantFrames = [await captureWindFrame()];
   await setWeatherVisible(page, true);
 
   const second = await advanceOakBiologicalTicks(page, 30);
-  fullFrames.push(await canvas.screenshot({ animations: 'disabled' }));
+  fullFrames.push(await captureWindFrame());
   await setWeatherVisible(page, false);
-  plantFrames.push(await canvas.screenshot({ animations: 'disabled' }));
+  plantFrames.push(await captureWindFrame());
   await setWeatherVisible(page, true);
 
   const third = await advanceOakBiologicalTicks(page, 60);
-  fullFrames.push(await canvas.screenshot({ animations: 'disabled' }));
+  fullFrames.push(await captureWindFrame());
   await setWeatherVisible(page, false);
-  plantFrames.push(await canvas.screenshot({ animations: 'disabled' }));
+  plantFrames.push(await captureWindFrame());
   await setWeatherVisible(page, true);
 
   expect(second.weather.windTravelM).toBeGreaterThan(first.weather.windTravelM);
@@ -255,11 +261,11 @@ test('three ordered gust frames move both airflow voxels and the actual oak pixe
     maxDiffPixelRatio: 0.002,
   });
   await expect(canvas).toHaveScreenshot('oak-weather-wind-lull-hero.png', {
-    animations: 'disabled', maxDiffPixelRatio: 0.002,
+    animations: 'disabled', mask: [fps], maskColor: '#202a20', maxDiffPixelRatio: 0.002,
   });
   await refitOakCamera(page, 'overhead');
   await expect(canvas).toHaveScreenshot('oak-weather-wind-lull-overhead.png', {
-    animations: 'disabled', maxDiffPixelRatio: 0.002,
+    animations: 'disabled', mask: [fps], maskColor: '#202a20', maxDiffPixelRatio: 0.002,
   });
 
   const reset = await commandOakHarness(page, 'reset');
