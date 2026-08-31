@@ -38,9 +38,10 @@ import {
   type HostFrameTicketRecordInternal,
 } from './runtimeHostFrameTicket.js';
 import {
-  freezeFrameContextInternal,
-  requireDimensionInternal,
-} from './runtimeInputValidation.js';
+  assertEmbeddedHostProtocolInternal,
+  unavailableHostFrameResultInternal,
+} from './runtimeHostFrameAvailability.js';
+import { freezeFrameContextInternal, requireDimensionInternal } from './runtimeInputValidation.js';
 import { validateThreePresentationInternal } from './presentationValidation.js';
 import {
   acceptDeltaInternal,
@@ -97,7 +98,7 @@ import {
   restoreLateHostFrameInternal,
   type RuntimeHostFrameRestoreOpsInternal,
 } from './runtimeHostFrameRestore.js';
-import { runRuntimeDisposalInternal } from './runtimeDisposal.js';
+import { RuntimeDeferredDisposalInternal } from './runtimeDisposal.js';
 import {
   registerRuntimeBorrowedCameraSwapInternal,
   unregisterRuntimeBorrowedCameraSwapInternal,
@@ -164,8 +165,7 @@ export class ThreeRenderRuntime {
   private zoom: number;
   private contextLosses = 0;
   private contextRestorations = 0;
-  private disposalActions: readonly (() => void)[] | null = null;
-  private disposalInProgress = false;
+  private readonly deferredDisposal = new RuntimeDeferredDisposalInternal();
   private readonly hostFrames = new HostFrameTicketLedgerInternal<PreparedHostFrameInternal>();
   private lastPresentedFrameContext: ThreeFrameContext | null = null;
   /** The exact manifest of the frame the canvas last presented. */
@@ -389,6 +389,12 @@ export class ThreeRenderRuntime {
         'Embedded hosts own the final renderer draw and must use frame tickets.',
       );
     }
+    if (this.deferredDisposal.operationActiveInternal) {
+      throw new Error(
+        'A standalone atomic frame cannot reenter while another atomic frame is activating or '
+          + 'committing; wait for the current frame call to return.',
+      );
+    }
     this.assertAccepting();
     const frozenContext = freezeFrameContextInternal(context);
     if (this.lifecycleState === 'lost') return;
@@ -426,7 +432,9 @@ export class ThreeRenderRuntime {
       return undefined;
     }
     if (this.atomicFrames) {
-      const atomicOutcome = this.atomicFrames.standaloneFrameInternal(frozenContext);
+      const atomicOutcome = this.runFrameOperationInternal(
+        () => this.atomicFrames!.standaloneFrameInternal(frozenContext),
+      );
       if (atomicOutcome !== 'no-atomic-target') return atomicOutcome;
     }
     const prepared = this.prepareFrameInternal(frozenContext);
@@ -446,36 +454,46 @@ export class ThreeRenderRuntime {
   }
 
   prepareFrame(context: ThreeFrameContext): ThreePrepareFrameResult {
-    this.assertEmbeddedHostProtocol();
-    return this.prepareFrameInternal(freezeFrameContextInternal(context));
+    assertEmbeddedHostProtocolInternal(this.hostKind);
+    return this.runFrameOperationInternal(
+      () => this.prepareFrameInternal(freezeFrameContextInternal(context)),
+    );
   }
   commitFrame(ticket: ThreePreparedFrameTicket): ThreePresentedManifestV1 {
-    this.assertEmbeddedHostProtocol();
-    const manifest = this.commitFrameTicketInternal(ticket);
-    if (!manifest) {
+    assertEmbeddedHostProtocolInternal(this.hostKind);
+    return this.runFrameOperationInternal(() => {
+      const manifest = this.commitFrameTicketInternal(ticket);
+      if (manifest) return manifest;
+      if (this.hasRuntimeEndedAfterCallbacks()) {
+        throw new ThreeRuntimeProtocolError(
+          'three.frame-ticket.late',
+          'The runtime ended while the prepared host frame was being committed.',
+        );
+      }
       throw new ThreeRuntimeProtocolError(
         'three.frame-ticket.stale-device',
         'The prepared host frame was interrupted by a device transition.',
       );
-    }
-    return manifest;
+    });
   }
   abortFrame(ticket: ThreePreparedFrameTicket): void {
-    this.assertEmbeddedHostProtocol();
-    const record = this.hostFrames.consume(
-      ticket,
-      this.lifecycleState,
-      this.deviceGeneration,
-      // A restoration ticket is outstanding while restoring, so aborting one
-      // must not be mistaken for a stale pre-loss ticket: that would mask the
-      // host's own draw failure and strand this frame's retained presentation.
-      { allowRestoring: this.lifecycleState === 'restoring' },
-    );
-    try {
-      this.restoreAbortedHostFrame(record);
-    } finally {
-      this.presentations.releaseHostFrameInternal(record);
-    }
+    assertEmbeddedHostProtocolInternal(this.hostKind);
+    this.runFrameOperationInternal(() => {
+      const record = this.hostFrames.consume(
+        ticket,
+        this.lifecycleState,
+        this.deviceGeneration,
+        // A restoration ticket is outstanding while restoring, so aborting one
+        // must not be mistaken for a stale pre-loss ticket: that would mask the
+        // host's own draw failure and strand this frame's retained presentation.
+        { allowRestoring: this.lifecycleState === 'restoring' },
+      );
+      try {
+        this.restoreAbortedHostFrame(record);
+      } finally {
+        this.presentations.releaseHostFrameInternal(record);
+      }
+    });
   }
   setView(center: IsometricViewCenter, zoom = this.zoom): void {
     this.assertAccepting();
@@ -580,14 +598,16 @@ export class ThreeRenderRuntime {
     this.stylizedPass = swapStylizedResolvePassInternal(this.stylizedPass, setup, options);
   }
   dispose(): void {
+    let actions: readonly (() => void)[] | undefined;
     if (this.lifecycleState !== 'disposed') {
       const invalidated = this.hostFrames.dispose();
       if (invalidated) this.presentations.releaseHostFrameInternal(invalidated);
       this.lifecycleState = 'disposed';
-      this.disposalActions = [
+      actions = [
         () => { unregisterRuntimeBorrowedCameraSwapInternal(this); },
         () => this.contextCanvas?.removeEventListener('webglcontextlost', this.handleContextLost),
         () => this.contextCanvas?.removeEventListener('webglcontextrestored', this.handleContextRestored),
+        () => this.presentations.disposeInternal(),
         () => this.world.dispose(),
         () => {
           if (this.atomic) disposeRuntimeAtomicSetupInternal(this.atomic, this.scene);
@@ -598,18 +618,15 @@ export class ThreeRenderRuntime {
         () => { this.stylizedPass?.dispose(); this.stylizedPass = null; },
         () => { if (this.rendererOwnership === 'owned') this.renderer.dispose(); },
       ];
-      this.presentations.disposeInternal();
       this.lastPresentedFrameContext = null;
       this.lastPresentedManifest = null;
       this.renderInfo = EMPTY_RENDER_INFO_INTERNAL;
     }
-    if (!this.disposalActions || this.disposalInProgress) return;
-    this.disposalInProgress = true;
-    const { remaining, firstError } = runRuntimeDisposalInternal(this.disposalActions);
-    this.disposalActions = remaining.length > 0 ? remaining : null;
-    this.disposalInProgress = false;
-    if (firstError instanceof Error) throw firstError;
-    if (firstError !== undefined) throw new Error('Runtime disposal failed.', { cause: firstError });
+    this.deferredDisposal.requestInternal(actions);
+  }
+
+  private runFrameOperationInternal<Result>(operation: () => Result): Result {
+    return this.deferredDisposal.runOperationInternal(operation);
   }
 
   private atomicOwnsCandidateInternal(
@@ -618,7 +635,6 @@ export class ThreeRenderRuntime {
     return this.atomicFrames?.ownsCandidateInternal(candidate) ?? false;
   }
 
-  /** Binds live runtime state for the atomic frame flow. */
   private atomicFrameOpsInternal(): RuntimeAtomicFrameOpsInternal {
     return {
       isRunning: () => this.lifecycleState === 'running',
@@ -653,7 +669,6 @@ export class ThreeRenderRuntime {
     };
   }
 
-  /** Exposes only committed presented state to the capture coordinator. */
   private captureRuntimePortInternal(): RevisionCaptureRuntimePortInternal {
     return createRuntimeCapturePortInternal({
       captureOwnership: () => (this.hostKind === 'embedded' ? 'host' : 'runtime'),
@@ -679,12 +694,12 @@ export class ThreeRenderRuntime {
     context: Readonly<ThreeFrameContext>,
   ): ThreePrepareFrameResult {
     this.assertAccepting();
-    if (this.lifecycleState === 'lost') return this.unavailableFrameResult();
+    if (this.lifecycleState === 'lost') return unavailableHostFrameResultInternal(this.lifecycleState, this.deviceGeneration);
     // An embedded host owns the draw, so it can never call frame(); the frame
     // ticket is its only draw protocol and restoration must complete through
     // it, or the runtime stays restoring for the rest of the session.
     if (this.lifecycleState === 'restoring') {
-      if (this.hostKind !== 'embedded') return this.unavailableFrameResult();
+      if (this.hostKind !== 'embedded') return unavailableHostFrameResultInternal(this.lifecycleState, this.deviceGeneration);
       return prepareHostRestorationFrameInternal(context, this.restorationOpsInternal());
     }
     this.hostFrames.beginPreparation();
@@ -731,13 +746,13 @@ export class ThreeRenderRuntime {
         if (!this.reconcilePresentation(
           presentation,
           () => this.isRunningAttempt(generation),
-        )) return this.unavailableFrameResult();
+        )) return unavailableHostFrameResultInternal(this.lifecycleState, this.deviceGeneration);
       }
-      if (!this.isRunningAttempt(generation)) return this.unavailableFrameResult();
+      if (!this.isRunningAttempt(generation)) return unavailableHostFrameResultInternal(this.lifecycleState, this.deviceGeneration);
       phase = 'animate';
       mayNeedRollback = true;
       this.presentationSurface.animateInternal(context.nowMs);
-      if (!this.isRunningAttempt(generation)) return this.unavailableFrameResult();
+      if (!this.isRunningAttempt(generation)) return unavailableHostFrameResultInternal(this.lifecycleState, this.deviceGeneration);
       const record = this.hostFrames.issue({
         context,
         pending,
@@ -771,22 +786,23 @@ export class ThreeRenderRuntime {
       }
       if (this.isRunningAttempt(generation)) this.transitionToFailed(phase, error);
       if (this.isFrameUnavailableAfterCallbacks()) {
-        return this.unavailableFrameResult();
+        return unavailableHostFrameResultInternal(this.lifecycleState, this.deviceGeneration);
       }
       throw error;
     } finally {
       this.hostFrames.finishPreparation();
     }
   }
-  /** Live-state closures the embedded host's atomic frame drives. */
   private atomicHostFrameOpsInternal(): RuntimeAtomicHostFrameOpsInternal {
     return {
       deviceGeneration: () => this.deviceGeneration,
+      isRunningAttempt: (generation) => this.isRunningAttempt(generation),
+      hasRuntimeEndedAfterCallbacks: () => this.hasRuntimeEndedAfterCallbacks(),
       presentedCanonicalState: () => presentedCanonicalStateForPresentationInternal(this.world),
       finishPreparation: () => { this.hostFrames.finishPreparation(); },
       issueTicket: (payload, generation) => this.hostFrames.issue(payload, generation),
       isFrameUnavailableAfterCallbacks: () => this.isFrameUnavailableAfterCallbacks(),
-      unavailableFrameResult: () => this.unavailableFrameResult(),
+      unavailableFrameResult: () => unavailableHostFrameResultInternal(this.lifecycleState, this.deviceGeneration),
     };
   }
   /** Live-state closures the embedded restoration frame drives. */
@@ -806,7 +822,7 @@ export class ThreeRenderRuntime {
       },
       beginPreparation: () => { this.hostFrames.beginPreparation(); },
       finishPreparation: () => { this.hostFrames.finishPreparation(); },
-      unavailableFrameResult: () => this.unavailableFrameResult(),
+      unavailableFrameResult: () => unavailableHostFrameResultInternal(this.lifecycleState, this.deviceGeneration),
       transitionToRestoreFailure: (reason) => { this.transitionToFailed('restore', reason); },
       isFrameUnavailableAfterCallbacks: () => this.isFrameUnavailableAfterCallbacks(),
     };
@@ -997,28 +1013,10 @@ export class ThreeRenderRuntime {
       camera: this.camera,
     });
   }
-  private unavailableFrameResult(): ThreePrepareFrameResult {
-    if (this.lifecycleState !== 'lost' && this.lifecycleState !== 'restoring') {
-      throw new Error(`A frame became unavailable while ${this.lifecycleState}.`);
-    }
-    return Object.freeze({
-      status: 'unavailable',
-      reason: this.lifecycleState === 'lost' ? 'context-lost' : 'restoring',
-      deviceGeneration: this.deviceGeneration,
-    });
-  }
   private rollbackReservedFrame(frames: number, cameraGeneration: number): void {
     if (this.frames === frames + 1) this.frames = frames;
     if (this.cameraGeneration === cameraGeneration + 1) {
       this.cameraGeneration = cameraGeneration;
-    }
-  }
-  private assertEmbeddedHostProtocol(): void {
-    if (this.hostKind !== 'embedded') {
-      throw new ThreeRuntimeProtocolError(
-        'three.host.embedded-only',
-        'Host-managed frame tickets are available only in embedded host mode.',
-      );
     }
   }
   private renderCurrent(): void {

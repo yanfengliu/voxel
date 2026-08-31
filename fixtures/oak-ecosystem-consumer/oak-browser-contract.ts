@@ -1,5 +1,6 @@
 import type { ThreeCaptureResult, ThreeRenderMetrics } from '../../src/three/index.js';
 import type { OakRenderMetricsV1 } from './oak-render-adapter.js';
+import type { OakWeatherPresentationEvidenceV1 } from './oak-weather-voxel-presentation.js';
 import type { OakSimulationSnapshotV1 } from './oak-types.js';
 
 export type OakBrowserCommandV1 =
@@ -106,6 +107,8 @@ export interface OakBrowserEvidenceV1 {
   readonly viewport: OakBrowserViewportV1;
   readonly hostLighting: OakBrowserHostLightingV1;
   readonly simulation: OakSimulationSnapshotV1;
+  /** Honest voxel cues; numerical pools and organ poses remain in `simulation`. */
+  readonly weather: OakWeatherPresentationEvidenceV1;
   readonly render: OakRenderMetricsV1;
   readonly runtime: ThreeRenderMetrics;
 }
@@ -121,6 +124,8 @@ export interface OakBrowserHarnessV1 {
   advanceBiologicalTicks(count: number): OakBrowserEvidenceV1;
   /** Temporarily hides only plant instance batches for a rendered soil-only counter-run. */
   setPlantVisibilityForEvidence(visible: boolean): OakBrowserEvidenceV1;
+  /** Temporarily hides only the representative weather batch for an organ-motion counter-run. */
+  setWeatherVisibilityForEvidence(visible: boolean): OakBrowserEvidenceV1;
   evidence(): OakBrowserEvidenceV1;
   capture(): ThreeCaptureResult;
   dispose(): void;

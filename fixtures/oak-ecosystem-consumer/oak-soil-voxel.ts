@@ -6,12 +6,23 @@ import {
   type OakSoilCarvedMacroVoxelV1,
   type OakSoilContactVoxelV1,
 } from './oak-soil-contact-voxels.js';
+import {
+  oakSoilSurfaceAtWorldVoxelColumnV1,
+  OAK_SOIL_SURFACE_BOTTOM_WORLD_VOXEL_Y_V1,
+  OAK_SOIL_SURFACE_COARSE_PITCH_M_V1,
+  OAK_SOIL_SURFACE_COLUMN_SIZE_V1,
+  OAK_SOIL_SURFACE_WORLD_VOXEL_ORIGIN_V1,
+} from './oak-soil-surface.js';
+import {
+  oakSoilOrderedThresholdV1,
+  oakSoilWaterThresholdV1,
+} from './oak-soil-state-field.js';
 import { oakSoilTissueCarveIndicesV1 } from './oak-soil-tissue-carving.js';
 import type { OakRenderProjectionStateV1, OakSoilCellSnapshotV1 } from './oak-types.js';
 import { OAK_TISSUE_VOXEL_PITCH_M_V1 } from './oak-tissue-voxel-projection.js';
 
 /** One coarse soil macrovoxel spans exactly five cells of the shared tissue lattice. */
-export const OAK_SOIL_VOXEL_SIZE_M_V1 = OAK_TISSUE_VOXEL_PITCH_M_V1 * 5;
+export const OAK_SOIL_VOXEL_SIZE_M_V1 = OAK_SOIL_SURFACE_COARSE_PITCH_M_V1;
 /** Four cells are the smallest top stratum deeper than the fixture's 24 mm acorn. */
 export const OAK_SOIL_VOXEL_TOP_STRATUM_DEPTH_V1 = 4;
 export const OAK_SOIL_VOXEL_ACORN_CLEARANCE_M_V1 = OAK_TISSUE_VOXEL_PITCH_M_V1;
@@ -20,6 +31,7 @@ export const OAK_SOIL_VOXEL_PALETTE_KEY_V1 = 'palette:oak:soil-voxel';
 export const OAK_SOIL_VOXEL_MATERIAL_KEY_V1 = 'material:oak:soil-voxel';
 
 export const OAK_SOIL_VOXEL_RULE_IDS_V1 = Object.freeze([
+  'soil-connected-relief-surface',
   'soil-cutaway-cross-section',
   'soil-tissue-clearance',
   'soil-litter-transfer',
@@ -27,8 +39,16 @@ export const OAK_SOIL_VOXEL_RULE_IDS_V1 = Object.freeze([
   'soil-top-boundary',
 ]);
 
-export const OAK_SOIL_VOXEL_CHUNK_ORIGIN_V1 = Object.freeze({ x: -20, y: -40, z: -20 });
-export const OAK_SOIL_VOXEL_CHUNK_SIZE_V1 = Object.freeze({ x: 40, y: 40, z: 40 });
+export const OAK_SOIL_VOXEL_CHUNK_ORIGIN_V1 = Object.freeze({
+  x: OAK_SOIL_SURFACE_WORLD_VOXEL_ORIGIN_V1.x,
+  y: OAK_SOIL_SURFACE_BOTTOM_WORLD_VOXEL_Y_V1,
+  z: OAK_SOIL_SURFACE_WORLD_VOXEL_ORIGIN_V1.z,
+});
+export const OAK_SOIL_VOXEL_CHUNK_SIZE_V1 = Object.freeze({
+  x: OAK_SOIL_SURFACE_COLUMN_SIZE_V1.x,
+  y: 40,
+  z: OAK_SOIL_SURFACE_COLUMN_SIZE_V1.z,
+});
 export const OAK_SOIL_VOXEL_WORLD_UNITS_PER_VOXEL_V1 = Object.freeze({
   x: OAK_SOIL_VOXEL_SIZE_M_V1, y: OAK_SOIL_VOXEL_SIZE_M_V1, z: OAK_SOIL_VOXEL_SIZE_M_V1,
 });
@@ -49,20 +69,20 @@ export const OAK_SOIL_VOXEL_PALETTE_INDICES_V1 = Object.freeze({
 
 /** Fixed display calibrations; authoritative cell amounts remain the inputs. */
 export const OAK_SOIL_VOXEL_STATE_SCALE_V1 = Object.freeze({
-  nitrogenKgPerM3: 0.005, labilePhosphorusKgPerM3: 0.0006, litterCarbonKgPerM3: 0.025,
+  nitrogenKgPerM3: 0.005,
+  labilePhosphorusKgPerM3: 0.0006,
+  litterCarbonKgPerM3: 0.025,
 });
 
 const PALETTE_COLORS: readonly Srgb8ColorV1[] = Object.freeze([
   Object.freeze({ r: 0, g: 0, b: 0, a: 0 }),
-  Object.freeze({ r: 112, g: 85, b: 62, a: 255 }),
-  Object.freeze({ r: 96, g: 76, b: 60, a: 255 }),
-  Object.freeze({ r: 102, g: 94, b: 59, a: 255 }),
-  Object.freeze({ r: 119, g: 96, b: 54, a: 255 }),
-  Object.freeze({ r: 91, g: 67, b: 48, a: 255 }),
+  Object.freeze({ r: 138, g: 105, b: 75, a: 255 }),
+  Object.freeze({ r: 92, g: 70, b: 52, a: 255 }),
+  Object.freeze({ r: 113, g: 94, b: 66, a: 255 }),
+  Object.freeze({ r: 124, g: 98, b: 65, a: 255 }),
+  Object.freeze({ r: 108, g: 76, b: 50, a: 255 }),
 ]);
 
-const TOP_LOCAL_Y = OAK_SOIL_VOXEL_CHUNK_SIZE_V1.y - 1;
-const STRATUM_MIN_LOCAL_Y = TOP_LOCAL_Y - OAK_SOIL_VOXEL_TOP_STRATUM_DEPTH_V1 + 1;
 const SOIL_MIN_M = OAK_SOIL_VOXEL_CHUNK_ORIGIN_V1.y * OAK_SOIL_VOXEL_SIZE_M_V1;
 const SOIL_MAX_M = 0;
 
@@ -151,17 +171,7 @@ function finiteNonnegative(value: number, path: string): number {
   return value;
 }
 
-/** World-stable rank field without the short repetition of a tiled Bayer matrix. */
-function orderedThreshold(x: number, y: number, z: number, salt: number): number {
-  let hash = Math.imul(x, 0x9e3779b1) ^ Math.imul(y, 0x85ebca6b)
-    ^ Math.imul(z, 0xc2b2ae35) ^ Math.imul(salt, 0x27d4eb2f);
-  hash ^= hash >>> 16;
-  hash = Math.imul(hash, 0x7feb352d);
-  hash ^= hash >>> 15;
-  hash = Math.imul(hash, 0x846ca68b);
-  hash ^= hash >>> 16;
-  return ((hash >>> 0) + 0.5) / 0x1_0000_0000;
-}
+export { oakSoilWaterThresholdV1 } from './oak-soil-state-field.js';
 
 function prepareSoilCell(cell: OakSoilCellSnapshotV1): PreparedSoilCellV1 {
   const sizeX = finiteNonnegative(cell.sizeM.x, `Soil cell '${cell.key}' sizeM.x`);
@@ -261,18 +271,20 @@ function paletteIndexForState(
   x: number,
   y: number,
   z: number,
-  litterEligible: boolean,
+  exposedTop: boolean,
 ): number {
-  const materialThreshold = orderedThreshold(x, y, z, 0);
-  const litterEnd = litterEligible ? state.litter * 0.2 : 0;
+  const waterThreshold = oakSoilWaterThresholdV1(x, y, z, exposedTop);
+  if (waterThreshold < state.water) {
+    return OAK_SOIL_VOXEL_PALETTE_INDICES_V1.moistMineral;
+  }
+  const materialThreshold = oakSoilOrderedThresholdV1(x, y, z, 0);
+  const litterEnd = exposedTop ? state.litter * 0.08 : 0;
   if (materialThreshold < litterEnd) return OAK_SOIL_VOXEL_PALETTE_INDICES_V1.litter;
-  const phosphorusEnd = litterEnd + state.phosphorus * 0.12;
+  const phosphorusEnd = litterEnd + state.phosphorus * 0.035;
   if (materialThreshold < phosphorusEnd) return OAK_SOIL_VOXEL_PALETTE_INDICES_V1.phosphorus;
-  const nitrogenEnd = phosphorusEnd + state.nitrogen * 0.15;
+  const nitrogenEnd = phosphorusEnd + state.nitrogen * 0.045;
   if (materialThreshold < nitrogenEnd) return OAK_SOIL_VOXEL_PALETTE_INDICES_V1.nitrogen;
-  return orderedThreshold(x, y, z, 1) < state.water
-    ? OAK_SOIL_VOXEL_PALETTE_INDICES_V1.moistMineral
-    : OAK_SOIL_VOXEL_PALETTE_INDICES_V1.dryMineral;
+  return OAK_SOIL_VOXEL_PALETTE_INDICES_V1.dryMineral;
 }
 
 function quantizedCutBoundaryWorldVoxel(cutaway: OakRootCutawayV1): number {
@@ -338,27 +350,36 @@ export function buildOakSoilVoxelChunkV1(
   for (let localY = 0; localY < OAK_SOIL_VOXEL_CHUNK_SIZE_V1.y; localY += 1) {
     const worldVoxelY = OAK_SOIL_VOXEL_CHUNK_ORIGIN_V1.y + localY;
     const worldY = (worldVoxelY + 0.5) * OAK_SOIL_VOXEL_SIZE_M_V1;
-    const topStratum = localY >= STRATUM_MIN_LOCAL_Y;
     for (let localZ = 0; localZ < OAK_SOIL_VOXEL_CHUNK_SIZE_V1.z; localZ += 1) {
       const worldVoxelZ = OAK_SOIL_VOXEL_CHUNK_ORIGIN_V1.z + localZ;
       const worldZ = (worldVoxelZ + 0.5) * OAK_SOIL_VOXEL_SIZE_M_V1;
       for (let localX = 0; localX < OAK_SOIL_VOXEL_CHUNK_SIZE_V1.x; localX += 1) {
         const worldVoxelX = OAK_SOIL_VOXEL_CHUNK_ORIGIN_V1.x + localX;
         const worldX = (worldVoxelX + 0.5) * OAK_SOIL_VOXEL_SIZE_M_V1;
+        const surface = oakSoilSurfaceAtWorldVoxelColumnV1(worldVoxelX, worldVoxelZ);
+        if (surface === null) continue;
+        const stratumMinLocalY = surface.topLocalVoxelY
+          - OAK_SOIL_VOXEL_TOP_STRATUM_DEPTH_V1 + 1;
+        const topStratum = localY >= stratumMinLocalY
+          && localY <= surface.topLocalVoxelY;
         const cutawayWorldVoxel = cutaway?.axis === 'z' ? worldVoxelZ : worldVoxelX;
         const topCandidate = topStratum
           && (!cutaway || (cutaway.keep === 'less-than'
             ? cutawayWorldVoxel <= crossVoxel!
             : cutawayWorldVoxel >= crossVoxel!));
         const crossSectionCandidate = Boolean(
-          cutaway && !topStratum && cutawayWorldVoxel === crossVoxel,
+          cutaway && localY < stratumMinLocalY && cutawayWorldVoxel === crossVoxel,
         );
         if (!topCandidate && !crossSectionCandidate) continue;
         const localIndex = oakSoilVoxelLocalIndexV1(localX, localY, localZ);
         const cell = resolveSoilCell(cells, worldX, worldY, worldZ);
         sampledCells.add(cell.key);
         const paletteIndex = paletteIndexForState(
-          cell.state, worldVoxelX, worldVoxelY, worldVoxelZ, localY === TOP_LOCAL_Y,
+          cell.state,
+          worldVoxelX,
+          worldVoxelY,
+          worldVoxelZ,
+          localY === surface.topLocalVoxelY,
         );
         const carvedForAcorn = oakAcornCarvesVoxelV1(
           acorns, worldX, worldY, worldZ, OAK_SOIL_VOXEL_SIZE_M_V1,

@@ -71,7 +71,11 @@ ops: RuntimeIngestOpsInternal,
         message: 'The atomic voxel worker runtime requires a uniform chunk profile.',
       };
     }
-    const reserved = ops.atomicFrames.reserveAdmissionInternal(prepared.prepared.candidate);
+    const reserved = ops.atomicFrames.reserveAdmissionInternal(
+      prepared.prepared.candidate,
+      undefined,
+      prepared.prepared.base,
+    );
     if ('rejection' in reserved) return { status: 'rejected', ...reserved.rejection };
     const applied = commitPreparedSnapshotIntoRenderWorld(ops.world, prepared.prepared);
     if (applied.status === 'accepted') ingestMetrics.accepted += 1;

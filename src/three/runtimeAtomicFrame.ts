@@ -132,13 +132,18 @@ export class RuntimeAtomicFrameCoordinatorInternal {
   reserveAdmissionInternal(
     candidate: CanonicalCandidateInternal,
     preparedDelta?: PreparedRenderDeltaInternal,
+    snapshotBase?: CanonicalCandidateInternal | null,
   ): RuntimeAtomicReserveResultInternal {
     const reject = (code: string, message: string) => ({
       rejection: { code, path: '$', message },
     });
     let reservation;
     try {
-      reservation = this.setup.pipeline.reserveForCandidateInternal(candidate, preparedDelta);
+      reservation = this.setup.pipeline.reserveForCandidateInternal(
+        candidate,
+        preparedDelta,
+        snapshotBase,
+      );
     } catch (error) {
       return reject(
         'three.voxel-plan-invalid',
@@ -226,6 +231,15 @@ export class RuntimeAtomicFrameCoordinatorInternal {
     if (outcome.status === 'unavailable') return undefined;
     if (outcome.status === 'idle') return this.idleFrameInternal(context);
     const { prepared } = outcome;
+    if (this.ops.hasRuntimeEndedAfterCallbacks()) {
+      try {
+        prepared.frameCommit.abortInternal();
+      } catch {
+        // Runtime disposal owns the remaining cleanup debt.
+      }
+      this.settleLeaseInternal(prepared.lease);
+      return undefined;
+    }
     try {
       this.ops.renderCurrent();
     } catch (error) {
@@ -324,7 +338,11 @@ export class RuntimeAtomicFrameCoordinatorInternal {
    * replanning every frame.
    */
   private ensureTargetInternal(pending: CanonicalCandidateInternal): void {
-    if (this.setup.pipeline.activeTargetInternal !== null) {
+    const active = this.setup.pipeline.activeTargetInternal;
+    if (active !== null
+      && active.worldId === pending.worldId
+      && active.epoch === pending.epoch
+      && active.revision === pending.revision) {
       this.recoveryKey = null;
       this.recoveryAttempts = 0;
       return;
@@ -343,6 +361,7 @@ export class RuntimeAtomicFrameCoordinatorInternal {
       this.ops.transitionToFailed('prepare', error);
       throw error;
     }
+    let lastAttempt: string;
     if (reservation.status === 'reserved') {
       const activation = this.setup.pipeline.activateInternal(reservation.handle);
       if (activation.status === 'pending' || activation.status === 'ready') {
@@ -350,13 +369,26 @@ export class RuntimeAtomicFrameCoordinatorInternal {
         this.recoveryAttempts = 0;
         return;
       }
+      if (activation.status === 'rejected' || activation.status === 'blocked') {
+        lastAttempt = `activation ${activation.status}: ${activation.reason}`;
+      } else if (activation.status === 'failed') {
+        lastAttempt = `activation failed: ${activation.terminal.message}`;
+      } else {
+        lastAttempt = 'activation disposed';
+      }
+    } else if (reservation.status === 'rejected' || reservation.status === 'blocked') {
+      lastAttempt = `reservation ${reservation.status}: ${reservation.reason}`;
+    } else if (reservation.status === 'failed') {
+      lastAttempt = `reservation failed: ${reservation.terminal.message}`;
+    } else {
+      lastAttempt = 'reservation disposed';
     }
     this.recoveryAttempts += 1;
     if (this.recoveryAttempts >= RUNTIME_ATOMIC_MAX_RECOVERY_ATTEMPTS_INTERNAL) {
       const terminal = this.setup.pipeline.lastTerminalInternal;
       const error = new Error(
         `Atomic recovery admission failed ${String(this.recoveryAttempts)} times `
-        + `for revision ${String(pending.revision)} (${reservation.status}`
+        + `for revision ${String(pending.revision)} (${lastAttempt}`
         + `${terminal ? `; last terminal: ${terminal.message}` : ''}).`,
       );
       this.ops.transitionToFailed('prepare', error);

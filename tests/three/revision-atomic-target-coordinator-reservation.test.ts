@@ -157,6 +157,50 @@ describe('revision-atomic target coordinator admission reservation', () => {
     harness.coordinator.disposeInternal();
   });
 
+  it('keeps finalization fenced through committed-lease settlement', () => {
+    const harness = createCoordinatorHarnessInternal();
+    expect(harness.coordinator.admitInternal(
+      coordinatorTargetPlanInternal(1, []),
+    )).toMatchObject({ status: 'ready' });
+    const lease = harness.coordinator.readyLeaseInternal!;
+    const next = coordinatorTargetPlanInternal(2, [], 2);
+    const reservation = harness.coordinator.prepareAdmissionInternal(next);
+    if (reservation.status !== 'reserved') throw new Error('Expected a reservation.');
+
+    lease.activate();
+    lease.commit();
+    expect(lease.stateInternal).toBe('committed');
+    expect(harness.coordinator.activateAdmissionInternal(reservation.handle)).toMatchObject({
+      status: 'blocked', reason: 'presentation-in-flight',
+    });
+    expect(harness.coordinator.activeTargetInternal).toMatchObject({ revision: 1 });
+    expect(harness.coordinator.settleLeaseInternal(lease)).toMatchObject({ status: 'presented' });
+    expect(harness.coordinator.prepareAdmissionInternal(next)).toMatchObject({
+      status: 'reserved',
+    });
+    harness.coordinator.disposeInternal();
+  });
+
+  it('keeps rollback fenced through aborted-lease settlement', () => {
+    const harness = createCoordinatorHarnessInternal();
+    expect(harness.coordinator.admitInternal(
+      coordinatorTargetPlanInternal(1, []),
+    )).toMatchObject({ status: 'ready' });
+    const lease = harness.coordinator.readyLeaseInternal!;
+    lease.activate();
+    lease.abort();
+    expect(lease.stateInternal).toBe('aborted');
+    const next = coordinatorTargetPlanInternal(2, [], 2);
+    expect(harness.coordinator.prepareAdmissionInternal(next)).toMatchObject({
+      status: 'blocked', reason: 'presentation-in-flight',
+    });
+    expect(harness.coordinator.settleLeaseInternal(lease)).toMatchObject({ status: 'aborted' });
+    expect(harness.coordinator.prepareAdmissionInternal(next)).toMatchObject({
+      status: 'reserved',
+    });
+    harness.coordinator.disposeInternal();
+  });
+
   it('disposal cancels the outstanding reservation', () => {
     const harness = createCoordinatorHarnessInternal();
     const reservation = harness.coordinator.prepareAdmissionInternal(

@@ -7,6 +7,7 @@ import {
   OAK_SEED_BUD_VOXEL_BATCH_KEY_V1,
   OAK_WOOD_VOXEL_BATCH_KEY_V1,
 } from './oak-tissue-voxel-projection.js';
+import { OAK_WEATHER_VOXEL_BATCH_KEY_V1 } from './oak-weather-voxel-presentation.js';
 
 const PLANT_BATCH_KEYS = new Set([
   OAK_WOOD_VOXEL_BATCH_KEY_V1,
@@ -28,5 +29,20 @@ export function setOakBrowserPlantVisibilityForEvidenceV1(
     matched += 1;
   });
   if (matched === 0) throw new Error('Oak plant visibility evidence found no presented Voxel batches.');
+  return matched;
+}
+
+/** Test-evidence switch that isolates actual organ pixels from the airflow cue. */
+export function setOakBrowserWeatherVisibilityForEvidenceV1(
+  scene: Scene,
+  visible: boolean,
+): number {
+  let matched = 0;
+  scene.traverse((object) => {
+    if (object.name !== OAK_WEATHER_VOXEL_BATCH_KEY_V1) return;
+    object.visible = visible;
+    matched += 1;
+  });
+  if (matched === 0) throw new Error('Oak weather visibility evidence found no presented Voxel batch.');
   return matched;
 }

@@ -18,6 +18,7 @@ import {
 } from './oak-tissue-voxel-projection.js';
 import { buildOakTissueVoxelProjectionV1 } from './oak-tissue-union-lattice.js';
 import { roundOakTissueCellV1 } from './oak-tissue-lattice.js';
+import { oakSoilSurfaceAtFineCellV1 } from './oak-soil-surface.js';
 
 const PITCH = OAK_TISSUE_VOXEL_PITCH_M_V1;
 const LITTER_KEY = /^oak-litter:(organ:[0-9]+:[0-9]+):fallen-leaf-voxel:(-?[0-9]+):(-?[0-9]+)$/u;
@@ -75,6 +76,16 @@ function exactSurfaceCell(matrix: ArrayLike<number>): string {
   return `${String(x)}:${String(z)}`;
 }
 
+function localSurfaceForMatrix(
+  matrix: ArrayLike<number>,
+  rootCutaway?: { readonly axis: 'x' | 'z'; readonly planeM: number; readonly keep: 'less-than' | 'greater-than' },
+) {
+  const [x, , z] = roundOakTissueCellV1([matrix[12]!, matrix[13]!, matrix[14]!]);
+  const surface = oakSoilSurfaceAtFineCellV1(x, z, rootCutaway);
+  if (surface === null) throw new Error(`Litter cell ${String(x)}:${String(z)} has no retained soil.`);
+  return surface;
+}
+
 describe('oak fallen-leaf voxel litter', () => {
   it('lays every abscised leaf as one exact, lobed, non-overlapping soil-contact silhouette', () => {
     const simulation = createOakSimulationV1();
@@ -102,17 +113,40 @@ describe('oak fallen-leaf voxel litter', () => {
     }
 
     const occupied = new Set<string>();
+    const levelsByLeaf = new Map<string, Set<number>>();
     for (const record of litter.records) {
       const cell = exactSurfaceCell(record.matrix);
       expect(occupied.has(cell), cell).toBe(false);
       occupied.add(cell);
-      expect(record.matrix[13]! - record.matrix[5]! / 2).toBe(0);
+      const surface = localSurfaceForMatrix(record.matrix);
+      expect(record.matrix[13]! - record.matrix[5]! / 2).toBe(surface.topM);
+      const leafKey = LITTER_KEY.exec(record.key)?.[1];
+      if (leafKey === undefined) throw new Error(`Cannot recover leaf key from '${record.key}'.`);
+      const levels = levelsByLeaf.get(leafKey) ?? new Set<number>();
+      levels.add(surface.topM);
+      levelsByLeaf.set(leafKey, levels);
       expect(record.color.r).toBeGreaterThan(record.color.g);
       expect(record.color.g).toBeGreaterThan(record.color.b);
     }
+    expect([...levelsByLeaf.values()].every((levels) => levels.size === 1)).toBe(true);
+    const centroidDistances = fallenLeaves.map((leaf) => {
+      const records = litter.records.filter(({ key }) => key.startsWith(`oak-litter:${leaf.key}:`));
+      const centroidX = records.reduce((sum, record) => sum + record.matrix[12]!, 0) / records.length;
+      const centroidZ = records.reduce((sum, record) => sum + record.matrix[14]!, 0) / records.length;
+      const sourceX = leaf.positionM.x + leaf.direction.x * leaf.lengthM * 0.5;
+      const sourceZ = leaf.positionM.z + leaf.direction.z * leaf.lengthM * 0.5;
+      return Math.hypot(centroidX - sourceX, centroidZ - sourceZ);
+    });
+    expect(Math.max(...centroidDistances)).toBeLessThan(0.2);
+    expect(centroidDistances.reduce((sum, distance) => sum + distance, 0)
+      / centroidDistances.length).toBeLessThan(0.13);
     for (const record of [...tissue.records.values()].flat()) {
-      if (!(record.matrix[13]! - PITCH / 2 < PITCH
-        && record.matrix[13]! + PITCH / 2 > 0)) continue;
+      const [x, , z] = roundOakTissueCellV1([
+        record.matrix[12]!, record.matrix[13]!, record.matrix[14]!,
+      ]);
+      const surface = oakSoilSurfaceAtFineCellV1(x, z);
+      if (surface === null || !(record.matrix[13]! - PITCH / 2 < surface.topM + PITCH
+        && record.matrix[13]! + PITCH / 2 > surface.topM)) continue;
       expect(occupied.has(exactSurfaceCell(record.matrix)), record.key).toBe(false);
     }
   });
@@ -134,7 +168,11 @@ describe('oak fallen-leaf voxel litter', () => {
     for (let slot = 0; slot < cutawayLitter.instanceKeys.length; slot += 1) {
       const matrix = cutawayLitter.matrices.subarray(slot * 16, slot * 16 + 16);
       expect(matrix[12]! + matrix[0]! / 2, cutawayLitter.instanceKeys[slot]).toBeLessThanOrEqual(0);
-      expect(matrix[13]! - matrix[5]! / 2, cutawayLitter.instanceKeys[slot]).toBe(0);
+      const localSurface = localSurfaceForMatrix(matrix, {
+        axis: 'x', planeM: 0, keep: 'less-than',
+      });
+      expect(matrix[13]! - matrix[5]! / 2, cutawayLitter.instanceKeys[slot])
+        .toBe(localSurface.topM);
     }
   });
 
@@ -154,8 +192,10 @@ describe('oak fallen-leaf voxel litter', () => {
     const surfaceDepth = Math.floor(maxZ / PITCH) - Math.ceil(minZ / PITCH);
     const removedFullSortMaterializations = surfaceWidth * surfaceDepth * fallenLeafCount;
     expect(removedFullSortMaterializations).toBe(400_000);
-    expect(litter.anchorCandidatesTested).toBeLessThan(50);
-    expect(litter.anchorQueueInsertions * 100).toBeLessThan(removedFullSortMaterializations);
+    expect(litter.anchorCandidatesTested).toBeLessThan(100);
+    expect(Math.max(...litter.leafMetrics.map(({ anchorCandidatesTested }) =>
+      anchorCandidatesTested))).toBeLessThan(5);
+    expect(litter.anchorQueueInsertions).toBeLessThan(4_000);
 
     // Wall time is reported with only a categorical guard because host load is
     // not a deterministic verdict. The work-count counter-run above is the gate.
@@ -199,7 +239,7 @@ describe('oak fallen-leaf voxel litter', () => {
     for (let slot = 0; slot < fallen.instanceKeys.length; slot += 1) {
       const matrix = fallen.matrices.subarray(slot * 16, slot * 16 + 16);
       expect([matrix[0], matrix[5], matrix[10]]).toEqual([PITCH, PITCH, PITCH]);
-      expect(matrix[13]! - matrix[5]! / 2).toBe(0);
+      expect(matrix[13]! - matrix[5]! / 2).toBe(localSurfaceForMatrix(matrix).topM);
     }
     const delta = buildOakRenderDeltaV1(before, after);
     expect(delta.operations.some((operation) =>

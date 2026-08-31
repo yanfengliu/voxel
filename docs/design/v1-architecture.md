@@ -412,6 +412,8 @@ Host rendering creates an acknowledgement boundary. The additive API is:
 
 prepareFrame applies deterministic animation for the proposed frame, prepares any complete target revision, snapshots the proposed scene/pick/camera state, and returns an opaque single-use ticket. It does not advance presented state. The host draws its scene and then calls commitFrame only after that draw succeeds. A draw failure, context loss, or disposal calls abortFrame, which restores the previous displayed scene and disposes uncommitted resources.
 
+An unavailable prepare reports `context-lost` or `restoring`. Synchronous callbacks raised by an atomic scene swap cannot dismantle that swap in place: teardown is deferred through each `prepareFrame`, `commitFrame` or `abortFrame` call. Disposal during prepare rolls back the activated target and rejects with the existing `three.frame-ticket.late` protocol error before issuing a ticket, disposal during commit ends that consumed ticket with the same code, and disposal during abort lets the rollback finish before teardown.
+
 Only one ticket may be outstanding. A duplicate, foreign, stale-device, already-used, or late ticket rejects with a stable code. State accepted while a ticket is outstanding remains the next target and cannot be folded into that ticket.
 
 The existing frame(context) method remains the runtime-rendered convenience wrapper:

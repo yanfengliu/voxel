@@ -49,6 +49,11 @@ interface CoordinatorReservationInternal {
   readonly record: CoordinatorTargetRecordInternal | null;
 }
 
+function presentationSettlementPending(record: CoordinatorTargetRecordInternal | null): boolean {
+  const leaseState = record?.lease?.stateInternal;
+  return leaseState !== undefined && leaseState !== 'prepared';
+}
+
 /**
  * Joins target planning, worker scheduling, exact completion, and off-scene
  * Three staging. Runtime frame ownership deliberately remains outside.
@@ -141,13 +146,11 @@ export class RevisionAtomicTargetCoordinatorInternal {
     this.#supersedeReservationInternal();
     this.#retryRetiringInternal();
     const target = plan.target;
-    // The in-flight window spans the whole presentation transaction: swapped
-    // covers the draw, and published covers canonical finalization — whose
-    // synchronous waiter callbacks can reenter acceptance. Admitting during
-    // either would retire the very frame being committed, so both are
-    // refused; the acceptance succeeds retried after the frame settles.
-    if (this.#current?.lease?.stateInternal === 'swapped'
-      || this.#current?.lease?.stateInternal === 'published') {
+    // The in-flight window spans draw, publication, finalization/rollback and
+    // coordinator settlement. Disposal and waiter callbacks can reenter after
+    // a scene lease becomes committed or aborted but before #current is
+    // cleared, so every state after prepared remains fenced until settlement.
+    if (presentationSettlementPending(this.#current)) {
       return Object.freeze({
         status: 'blocked',
         target,
@@ -216,10 +219,8 @@ export class RevisionAtomicTargetCoordinatorInternal {
     this.#reservation = null;
     const plan = reservation.plan;
     const target = plan.target;
-    // Same window as reservation: swapped or published means a presentation
-    // transaction is between its draw and its settlement.
-    if (this.#current?.lease?.stateInternal === 'swapped'
-      || this.#current?.lease?.stateInternal === 'published') {
+    // Revalidate the same full transaction window after canonical commit.
+    if (presentationSettlementPending(this.#current)) {
       this.#releaseReservationInternal(reservation, 'blocked');
       return Object.freeze({
         status: 'blocked',

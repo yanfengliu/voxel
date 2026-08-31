@@ -10,16 +10,16 @@ import type { OakRenderInstanceRecordV1 } from './oak-render-projection.js';
 export const OAK_AGGREGATE_FINE_ROOT_DISPLAY_RADIUS_M_V1 = 0.0012;
 
 export const OAK_CUTAWAY_COARSE_ROOT_COLOR_V1: Srgb8ColorV1 = Object.freeze({
-  r: 44,
-  g: 29,
-  b: 18,
+  r: 178,
+  g: 102,
+  b: 48,
   a: 255,
 });
 
 export const OAK_CUTAWAY_AGGREGATE_FINE_ROOT_COLOR_V1: Srgb8ColorV1 = Object.freeze({
-  r: 216,
-  g: 181,
-  b: 112,
+  r: 228,
+  g: 211,
+  b: 174,
   a: 255,
 });
 

@@ -11,6 +11,7 @@ import {
 import {
   oakHostTicksForBiologicalDaysV1,
 } from '../../fixtures/oak-ecosystem-consumer/oak-simulation.js';
+import { OAK_RAIN_FALL_TICKS_V1 } from '../../fixtures/oak-ecosystem-consumer/oak-weather-voxel-presentation.js';
 import { guardPageErrors } from './page-errors.js';
 import {
   analyzeOakImageDifference,
@@ -42,6 +43,7 @@ const VIEWPORT = { width: 960, height: 720 };
 const FIRST_FLUSH_TICKS = oakHostTicksForBiologicalDaysV1(13);
 const DROUGHT_COMPARISON_TICKS = oakHostTicksForBiologicalDaysV1(100);
 const MATURE_VISUAL_TICKS = oakHostTicksForBiologicalDaysV1(100);
+const RAIN_RESPONSE_TICKS = OAK_RAIN_FALL_TICKS_V1 + oakHostTicksForBiologicalDaysV1(7);
 
 let server: ViteDevServer | undefined;
 let origin = '';
@@ -98,8 +100,8 @@ test('mounts one live oak through the real Three runtime with domain controls', 
     shadowMapSize: 1_024,
     shadowCameraHalfWidthM: 0.34,
   });
-  expect(evidence.render.resourceCount).toBe(8);
-  expect(evidence.render.batchCount).toBe(6);
+  expect(evidence.render.resourceCount).toBe(9);
+  expect(evidence.render.batchCount).toBe(7);
   expect(evidence.render.tissueVoxelInstances).toBeGreaterThan(0);
   expect(evidence.runtime.atomic?.loadedChunks).toBe(1);
   expect(evidence.runtime.atomic?.nonemptyChunks).toBe(1);
@@ -119,6 +121,9 @@ test('mounts one live oak through the real Three runtime with domain controls', 
   await expect(page.locator('[data-command]')).toHaveCount(9);
   await expect(page.locator('[data-view]')).toHaveCount(3);
   await expect(page.locator('[data-diagnostic="age"]')).not.toHaveText('—');
+  await expect(page.locator('[data-diagnostic="wind"]')).toHaveText(/m\/s$/u);
+  await expect(page.locator('[data-diagnostic="rain"]')).toHaveText('inactive');
+  await expect(page.locator('[data-diagnostic="topsoil-water"]')).toHaveText(/% v\/v$/u);
   await expect(page.locator('[data-diagnostic="revision"]')).toHaveText(/^\d+$/u);
 });
 
@@ -204,7 +209,7 @@ test('drought lowers oak water status and paired rain causes a measured low-wate
 
   const noPulse = await advanceOakBiologicalTicks(
     page,
-    oakHostTicksForBiologicalDaysV1(7),
+    RAIN_RESPONSE_TICKS,
   );
 
   await clickOakCommand(page, 'reset');
@@ -218,7 +223,7 @@ test('drought lowers oak water status and paired rain causes a measured low-wate
   await clickOakCommand(page, 'rain');
   const rained = await advanceOakBiologicalTicks(
     page,
-    oakHostTicksForBiologicalDaysV1(7),
+    RAIN_RESPONSE_TICKS,
   );
   expect(rained.simulation.environmentRegime.water).toBe('low');
   expect(rained.simulation.diagnostics.meanLeafWaterPotentialMpa)
@@ -259,6 +264,10 @@ test('the first flush adds biological topology and keeps GPU resources bounded',
 });
 
 test('fixed cameras, root cutaway, resize, capture, and teardown stay coherent', async ({ page }) => {
+  // Nine exact captures plus the cutaway pixel instrument measured beyond the
+  // 110.5 s suite default on Windows on 2026-08-31. Keep the same 180 s budget
+  // as the oak milestone sweep, which performs a comparable evidence capture.
+  test.setTimeout(180_000);
   await openOakCaseStudy(page, origin);
   await clickOakCommand(page, 'toggle-pause');
   await clickOakCommand(page, 'reset');
@@ -355,6 +364,15 @@ test('fixed cameras, root cutaway, resize, capture, and teardown stay coherent',
   await expect(hud).toBeVisible();
   await expect(hud.getByRole('heading', { name: 'QUERCUS ROBUR / CASE STUDY 01' }))
     .toBeVisible();
+  const environmentReadout = hud.locator('[data-environment-readout]');
+  await expect(environmentReadout).toBeInViewport();
+  await expect(hud.locator('[data-oak-status]')).toBeInViewport();
+  for (const diagnostic of [
+    'wind', 'rain', 'wind-voxels', 'topsoil-water', 'topsoil-nitrogen', 'topsoil-phosphorus',
+  ]) {
+    await expect(environmentReadout.locator(`[data-diagnostic="${diagnostic}"]`))
+      .toBeInViewport();
+  }
   await expect(hud.locator('[data-command]')).toHaveCount(9);
   await expect(hud.locator('[data-diagnostic="age"]')).not.toHaveText('—');
   await expect(page).toHaveScreenshot('oak-mature-hud-hero-page.png', {
@@ -396,13 +414,19 @@ test('fixed cameras, root cutaway, resize, capture, and teardown stay coherent',
   const coarseRootPixels = await analyzeOakRootPathPixels(page, afterCutaway, coarseRootShaft);
   const fineRootPixels = await analyzeOakRootPathPixels(page, afterCutaway, fineRootShaft);
   expect(coarseRootPixels.projectedLengthPixels).toBeGreaterThan(12);
-  expect(coarseRootPixels.contrastedSamples).toBeGreaterThanOrEqual(4);
-  expect(coarseRootPixels.maximumLuminanceContrast).toBeGreaterThan(12);
-  expect(coarseRootPixels.medianContrastedWidthPixels).toBeGreaterThanOrEqual(2);
+  expect(coarseRootPixels.contrastedSamples, JSON.stringify(coarseRootPixels))
+    .toBeGreaterThanOrEqual(4);
+  expect(coarseRootPixels.maximumLuminanceContrast, JSON.stringify(coarseRootPixels))
+    .toBeGreaterThan(12);
+  expect(coarseRootPixels.medianContrastedWidthPixels, JSON.stringify(coarseRootPixels))
+    .toBeGreaterThanOrEqual(2);
   expect(fineRootPixels.projectedLengthPixels).toBeGreaterThan(12);
-  expect(fineRootPixels.contrastedSamples).toBeGreaterThanOrEqual(4);
-  expect(fineRootPixels.maximumLuminanceContrast).toBeGreaterThan(12);
-  expect(fineRootPixels.medianContrastedWidthPixels).toBeGreaterThanOrEqual(2);
+  expect(fineRootPixels.contrastedSamples, JSON.stringify(fineRootPixels))
+    .toBeGreaterThanOrEqual(4);
+  expect(fineRootPixels.maximumLuminanceContrast, JSON.stringify(fineRootPixels))
+    .toBeGreaterThan(12);
+  expect(fineRootPixels.medianContrastedWidthPixels, JSON.stringify(fineRootPixels))
+    .toBeGreaterThanOrEqual(2);
   expect(fineRootPixels.meanPathLuminance - coarseRootPixels.meanPathLuminance)
     .toBeGreaterThan(35);
   expect(createHash('sha256').update(afterCutaway).digest('hex')).not.toBe(

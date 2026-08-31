@@ -32,6 +32,13 @@ import {
   type OakRenderProjectionCacheHitsV1,
   type OakRenderProjectionCacheV1,
 } from './oak-render-projection-cache.js';
+import {
+  buildOakWeatherVoxelPresentationV1,
+  createOakWeatherVoxelMaterialV1,
+  type OakWeatherPresentationEvidenceV1,
+  type OakWeatherPresentationInputV1,
+  OAK_WEATHER_VOXEL_BATCH_KEY_V1,
+} from './oak-weather-voxel-presentation.js';
 
 export type { OakRootCutawayV1 } from './oak-render-projection.js';
 
@@ -47,6 +54,11 @@ export interface OakRenderOptionsV1 extends OakRenderProjectionOptionsV1 {
    */
   readonly previousFrame?: OakRenderFrameV1;
   readonly rootCutaway?: OakRootCutawayV1;
+  /** Fixture-owned weather cue state; numerical environment state remains in `state`. */
+  readonly weatherPresentation?: Omit<
+    OakWeatherPresentationInputV1,
+    'rootCutaway' | 'occupiedCubeCentersM'
+  >;
 }
 
 export interface OakRenderMetricsV1 {
@@ -72,6 +84,7 @@ export interface OakRenderMetricsV1 {
   readonly seedBudVoxels: number;
   readonly fallenLitterLeafCount: number;
   readonly fallenLitterVoxels: number;
+  readonly weather: OakWeatherPresentationEvidenceV1;
   /** Instanced-cube triangle floor; the worker-meshed chunk adds triangles after acceptance. */
   readonly minimumPrimaryContentPassTriangles: number;
   readonly retainedTypedArrayBytes: number;
@@ -242,19 +255,36 @@ export function buildOakRenderFrameV1(
     reusesPreviousEpoch ? previousFrame?.projectionCache : undefined,
   );
   const { tissue, soil: soilCandidate, litter } = projections.cache;
+  const soilContactRecords = oakSoilContactInstanceRecordsV1(soilCandidate.contactVoxels);
+  const occupiedCubeCentersM = [
+    ...[...tissue.records.values()].flat(),
+    ...litter.records,
+    ...soilContactRecords,
+  ].map((record) => [record.matrix[12]!, record.matrix[13]!, record.matrix[14]!] as const);
+  const weather = buildOakWeatherVoxelPresentationV1({
+    ...(options.weatherPresentation ?? {
+      hostTick: state.wind.phaseTick,
+      wind: state.wind,
+      windTravelM: 0,
+    }),
+    ...(options.rootCutaway ? { rootCutaway: options.rootCutaway } : {}),
+    occupiedCubeCentersM,
+  });
   const geometry = createOakTissueVoxelGeometryV1();
   const resources = [
     ...createOakTissueVoxelMaterialsV1(),
     createOakFallenLitterVoxelMaterialV1(),
     ...buildOakSoilVoxelResourcesV1(),
+    createOakWeatherVoxelMaterialV1(),
     geometry,
   ];
   const recordsByBatch = new Map(tissue.records);
   recordsByBatch.set(OAK_FALLEN_LITTER_VOXEL_BATCH_KEY_V1, litter.records);
   recordsByBatch.set(
     OAK_SOIL_CONTACT_VOXEL_BATCH_KEY_V1,
-    oakSoilContactInstanceRecordsV1(soilCandidate.contactVoxels),
+    soilContactRecords,
   );
+  recordsByBatch.set(OAK_WEATHER_VOXEL_BATCH_KEY_V1, weather.records);
   const previousBatches = new Map(
     reusesPreviousEpoch && previousFrame
       ? previousFrame.snapshot.batches.map((batch) => [batch.key, batch] as const)
@@ -342,8 +372,10 @@ export function buildOakRenderFrameV1(
       seedBudVoxels: tissue.seedBudVoxelCount,
       fallenLitterLeafCount: litter.leafMetrics.length,
       fallenLitterVoxels: litter.voxelCount,
+      weather: weather.evidence,
       minimumPrimaryContentPassTriangles:
-        (tissue.tissueVoxelCount + litter.voxelCount + soilCandidate.metrics.contactVoxelCount)
+        (tissue.tissueVoxelCount + litter.voxelCount + soilCandidate.metrics.contactVoxelCount
+          + weather.evidence.totalVoxelCount)
         * geometry.indices.length / 3,
       retainedTypedArrayBytes: typedArrayBytes(snapshot),
       skippedTooShortOrNonpositiveRadiusSegments:

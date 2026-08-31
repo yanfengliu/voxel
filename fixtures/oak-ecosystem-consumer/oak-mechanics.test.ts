@@ -8,9 +8,12 @@ import { planOakAxillaryShootV1 } from './oak-axillary-shoot.js';
 import {
   oakCantileverResponseForOrganV1,
   oakCantileverResponseV1,
+  oakWindDirectionV1,
+  oakWindSpeedAtHostTickV1,
+  oakWindTravelOverHostTicksV1,
 } from './oak-mechanics.js';
 import { oakLeafPetioleSectionForOrganV1 } from './oak-leaf-shape.js';
-import { OAK_PARAMETERS_V1 } from './oak-parameters.js';
+import { OAK_HOST_TIMESTEP_SECONDS_V1, OAK_PARAMETERS_V1 } from './oak-parameters.js';
 
 const BASELINE = {
   loadDistribution: 'uniform' as const,
@@ -25,6 +28,28 @@ const BASELINE = {
 };
 
 describe('oak quasi-static mechanics', () => {
+  it('publishes the one normalized horizontal direction used by mechanics and airflow cues', () => {
+    const direction = oakWindDirectionV1();
+    expect(Math.hypot(direction.x, direction.y, direction.z)).toBeCloseTo(1, 14);
+    expect(direction.y).toBe(0);
+    expect(direction.x).toBeGreaterThan(0);
+    expect(direction.z / direction.x).toBeCloseTo(
+      OAK_PARAMETERS_V1.mechanics.lateralDeflectionZCoupling,
+      14,
+    );
+  });
+
+  it('integrates every 60 Hz gust sample instead of multiplying by the ending speed', () => {
+    expect(oakWindSpeedAtHostTickV1(0, 'still')).toBe(0);
+    expect(oakWindSpeedAtHostTickV1(30, 'breeze')).toBe(6);
+    const integrated = oakWindTravelOverHostTicksV1(0, 15, 'breeze');
+    expect(integrated).toBeCloseTo(1.225, 14);
+    expect(integrated).not.toBeCloseTo(
+      15 * OAK_HOST_TIMESTEP_SECONDS_V1 * oakWindSpeedAtHostTickV1(15, 'breeze'),
+      10,
+    );
+  });
+
   it('separates the held zero-wind control from self-weight', () => {
     const response = oakCantileverResponseV1({ ...BASELINE, windSpeedMPerS: 0 });
     expect(response.windForceN).toBe(0);

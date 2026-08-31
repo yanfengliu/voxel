@@ -10,6 +10,7 @@ import {
   createOakSimulationV1,
   oakHostTicksForBiologicalDaysV1,
 } from './oak-simulation.js';
+import { oakSoilSurfaceAtFineCellV1 } from './oak-soil-surface.js';
 import { OAK_TISSUE_VOXEL_PITCH_M_V1 } from './oak-tissue-voxel-projection.js';
 import type { OakLeafOrganSnapshotV1, OakRenderProjectionStateV1 } from './oak-types.js';
 
@@ -200,6 +201,9 @@ describe('oak render projection cache', () => {
     const template = state.organs.find((organ) => organ.kind !== 'leaf');
     if (template === undefined) throw new Error('Oak surface-blocker control needs a structural organ.');
     const pitch = OAK_TISSUE_VOXEL_PITCH_M_V1;
+    const blockerCell = [60, 60] as const;
+    const surface = oakSoilSurfaceAtFineCellV1(...blockerCell);
+    if (surface === null) throw new Error('Oak surface-blocker control needs retained terrain.');
     const changed: OakRenderProjectionStateV1 = {
       ...state,
       revision: state.revision + 1,
@@ -209,7 +213,11 @@ describe('oak render projection cache', () => {
         identity: { localId: 999, generation: 1 },
         kind: 'bud',
         parentKey: null,
-        positionM: { x: 60.5 * pitch, y: 0.5 * pitch, z: 60.5 * pitch },
+        positionM: {
+          x: (blockerCell[0] + 0.5) * pitch,
+          y: surface.topM + 0.5 * pitch,
+          z: (blockerCell[1] + 0.5) * pitch,
+        },
         direction: { x: 0, y: 1, z: 0 },
         lengthM: 2 * pitch,
         radiusM: 0.45 * pitch,

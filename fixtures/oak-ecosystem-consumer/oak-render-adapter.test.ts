@@ -44,6 +44,10 @@ import type {
   OakRenderProjectionStateV1,
   OakSoilCellSnapshotV1,
 } from './oak-types.js';
+import {
+  OAK_WEATHER_VOXEL_BATCH_KEY_V1,
+  OAK_WEATHER_VOXEL_MATERIAL_KEY_V1,
+} from './oak-weather-voxel-presentation.js';
 
 const POOLS = {
   carbonKg: 0.001,
@@ -215,11 +219,11 @@ function expectAcceptedDelta(
 }
 
 describe('oak hybrid voxel render contract', () => {
-  it('publishes one worker-profiled soil chunk and six exact-cube scene batches', () => {
+  it('publishes one worker-profiled soil chunk and seven exact-cube scene batches', () => {
     const frame = buildOakRenderFrameV1(projection());
     expect(validateAndCopySnapshotV1(frame.snapshot).ok).toBe(true);
-    expect(frame.snapshot.resources).toHaveLength(8);
-    expect(frame.snapshot.batches).toHaveLength(6);
+    expect(frame.snapshot.resources).toHaveLength(9);
+    expect(frame.snapshot.batches).toHaveLength(7);
     expect(frame.snapshot.chunks).toHaveLength(1);
     expect(new Set(frame.snapshot.resources.map(({ key }) => key))).toEqual(new Set([
       OAK_TISSUE_VOXEL_GEOMETRY_KEY_V1,
@@ -230,6 +234,7 @@ describe('oak hybrid voxel render contract', () => {
       OAK_FALLEN_LITTER_VOXEL_MATERIAL_KEY_V1,
       OAK_SOIL_VOXEL_PALETTE_KEY_V1,
       OAK_SOIL_VOXEL_MATERIAL_KEY_V1,
+      OAK_WEATHER_VOXEL_MATERIAL_KEY_V1,
     ]));
     expect(new Set(frame.snapshot.batches.map(({ key }) => key))).toEqual(new Set([
       OAK_WOOD_VOXEL_BATCH_KEY_V1,
@@ -238,6 +243,7 @@ describe('oak hybrid voxel render contract', () => {
       OAK_SEED_BUD_VOXEL_BATCH_KEY_V1,
       OAK_FALLEN_LITTER_VOXEL_BATCH_KEY_V1,
       OAK_SOIL_CONTACT_VOXEL_BATCH_KEY_V1,
+      OAK_WEATHER_VOXEL_BATCH_KEY_V1,
     ]));
     expect(frame.snapshot.descriptor.capabilities).toEqual([
       'voxel-chunks',
@@ -279,8 +285,8 @@ describe('oak hybrid voxel render contract', () => {
     }
     expect(batch(frame.snapshot, OAK_ROOT_VOXEL_BATCH_KEY_V1).instanceKeys).toEqual([]);
     expect(frame.metrics).toMatchObject({
-      resourceCount: 8,
-      batchCount: 6,
+      resourceCount: 9,
+      batchCount: 7,
       chunkCount: 1,
       rootVoxels: 0,
     });

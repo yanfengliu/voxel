@@ -30,6 +30,11 @@ export interface RuntimeAtomicPipelineOptionsInternal {
   readonly pipelineGenerationInternal?: number;
 }
 
+interface RuntimeAtomicIndexLineageInternal {
+  readonly candidate: CanonicalRenderStateV1;
+  readonly index: ChunkIndexV1;
+}
+
 /**
  * Owns plan construction and admission sequencing for the runtime's atomic
  * voxel path: one monotonic target-sequence source, chunk-index and
@@ -51,7 +56,8 @@ export class RuntimeAtomicPipelineInternal {
   #activePlan: ProfiledWorkerTargetPlanInternal | null = null;
   #presentedTargets = 0;
   #failedTargets = 0;
-  #lastPresentedIndex: ChunkIndexV1 | null = null;
+  #lastPresentedLineage: RuntimeAtomicIndexLineageInternal | null = null;
+  #lastActivatedLineage: RuntimeAtomicIndexLineageInternal | null = null;
 
   constructor(options: RuntimeAtomicPipelineOptionsInternal) {
     this.#stager = options.stagerInternal;
@@ -92,11 +98,35 @@ export class RuntimeAtomicPipelineInternal {
   reserveForCandidateInternal(
     candidate: CanonicalRenderStateV1,
     preparedDelta?: PreparedRenderDeltaInternal,
+    snapshotBase?: CanonicalRenderStateV1 | null,
   ): RevisionAtomicAdmissionReservationResultInternal {
+    // Canonical acceptance may advance again before the prior target reaches
+    // the canvas. In that case a prepared delta is based on the last activated
+    // plan, not the last presented one. Displayed mesh reuse remains fenced to
+    // the stager below; this selection carries only the chunk-index lineage.
+    const activatedPredecessor = this.#lastActivatedLineage;
+    const presentedPredecessor = this.#lastPresentedLineage;
+    const hasExplicitBase = preparedDelta !== undefined || snapshotBase !== undefined;
+    const explicitBase = preparedDelta?.base ?? snapshotBase ?? null;
+    const explicitBaseSharesLineage = explicitBase !== null
+      && explicitBase.worldId === candidate.worldId
+      && explicitBase.epoch === candidate.epoch;
+    const predecessorIndex = hasExplicitBase
+      ? explicitBaseSharesLineage && activatedPredecessor?.candidate === explicitBase
+        ? activatedPredecessor.index
+        : explicitBaseSharesLineage && presentedPredecessor?.candidate === explicitBase
+          ? presentedPredecessor.index
+          : null
+      : activatedPredecessor?.candidate === candidate
+        ? activatedPredecessor.index
+        : presentedPredecessor?.candidate.worldId === candidate.worldId
+          && presentedPredecessor.candidate.epoch === candidate.epoch
+          ? presentedPredecessor.index
+          : null;
     const plan = buildProfiledWorkerTargetPlanInternal({
       candidate,
       ...(preparedDelta ? { preparedDelta } : {}),
-      ...(this.#lastPresentedIndex ? { previousIndex: this.#lastPresentedIndex } : {}),
+      ...(predecessorIndex ? { previousIndex: predecessorIndex } : {}),
       reusableMeshes: this.#stager.displayedBundleInternal?.profiledMeshesInternal ?? [],
       pipelineGeneration: this.#pipelineGeneration,
       targetSequence: this.#nextTargetSequence,
@@ -118,6 +148,15 @@ export class RuntimeAtomicPipelineInternal {
     const reserved = this.#reserved;
     const result = this.#coordinator.activateAdmissionInternal(handle);
     if (reserved?.handle === handle) this.#reserved = null;
+    // The runtime calls activation only after the canonical commit succeeds.
+    // Retain that exact candidate/index even if its worker target is later
+    // superseded before presentation; a subsequent delta is based on it.
+    if (reserved?.handle === handle) {
+      this.#lastActivatedLineage = {
+        candidate: reserved.plan.candidate,
+        index: reserved.plan.index,
+      };
+    }
     if (
       (result.status === 'pending' || result.status === 'ready')
       && reserved?.handle === handle
@@ -154,7 +193,10 @@ export class RuntimeAtomicPipelineInternal {
     if (result.status === 'presented') {
       this.#presentedTargets += 1;
       if (this.#activePlan) {
-        this.#lastPresentedIndex = this.#activePlan.index;
+        this.#lastPresentedLineage = {
+          candidate: this.#activePlan.candidate,
+          index: this.#activePlan.index,
+        };
         this.#activePlan = null;
       }
     }
@@ -168,7 +210,8 @@ export class RuntimeAtomicPipelineInternal {
   disposeInternal() {
     this.#reserved = null;
     this.#activePlan = null;
-    this.#lastPresentedIndex = null;
+    this.#lastPresentedLineage = null;
+    this.#lastActivatedLineage = null;
     return this.#coordinator.disposeInternal();
   }
 }

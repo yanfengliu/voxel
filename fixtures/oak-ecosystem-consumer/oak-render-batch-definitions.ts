@@ -15,6 +15,10 @@ import {
   OAK_WOOD_VOXEL_BATCH_KEY_V1,
   OAK_WOOD_VOXEL_MATERIAL_KEY_V1,
 } from './oak-tissue-voxel-projection.js';
+import {
+  OAK_WEATHER_VOXEL_BATCH_KEY_V1,
+  OAK_WEATHER_VOXEL_MATERIAL_KEY_V1,
+} from './oak-weather-voxel-presentation.js';
 
 export interface OakRenderBatchDefinitionV1 {
   readonly key: string;
@@ -67,5 +71,12 @@ readonly OakRenderBatchDefinitionV1[] = Object.freeze([
     materialKey: OAK_SOIL_VOXEL_MATERIAL_KEY_V1,
     castShadow: false,
     receiveShadow: true,
+  },
+  {
+    key: OAK_WEATHER_VOXEL_BATCH_KEY_V1,
+    geometryKey: OAK_TISSUE_VOXEL_GEOMETRY_KEY_V1,
+    materialKey: OAK_WEATHER_VOXEL_MATERIAL_KEY_V1,
+    castShadow: false,
+    receiveShadow: false,
   },
 ]);

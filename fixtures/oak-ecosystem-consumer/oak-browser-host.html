@@ -113,6 +113,12 @@
         line-height: 1.4;
       }
 
+      .environment-readout {
+        border-color: #788963;
+        background: #202a20;
+        box-shadow: inset 0 0 0 1px #9eaa7530;
+      }
+
       dl {
         display: grid;
         grid-template-columns: minmax(8.5rem, 1fr) auto;
@@ -152,6 +158,19 @@
       <section class="hud" aria-label="Simulation controls and diagnostics">
         <h1>QUERCUS ROBUR / CASE STUDY 01</h1>
         <p class="subtitle">A young oak exchanging carbon, water, nitrogen and phosphorus with a bounded soil plot.</p>
+        <p class="status" data-oak-status role="status" aria-live="polite">Starting deterministic oak fixture…</p>
+
+        <fieldset class="environment-readout" data-environment-readout aria-label="Visible environment readout">
+          <legend>Environment now</legend>
+          <dl>
+            <dt>Wind speed</dt><dd data-diagnostic="wind">—</dd>
+            <dt>Rain cue</dt><dd data-diagnostic="rain">—</dd>
+            <dt>Airflow voxels</dt><dd data-diagnostic="wind-voxels">—</dd>
+            <dt>Topsoil water</dt><dd data-diagnostic="topsoil-water">—</dd>
+            <dt>Topsoil mineral N</dt><dd data-diagnostic="topsoil-nitrogen">—</dd>
+            <dt>Topsoil labile P</dt><dd data-diagnostic="topsoil-phosphorus">—</dd>
+          </dl>
+        </fieldset>
 
         <fieldset>
           <legend>Time and view</legend>
@@ -202,7 +221,6 @@
             <dt>GPU resources</dt><dd data-diagnostic="resources">—</dd>
           </dl>
         </fieldset>
-        <p class="status" data-oak-status role="status" aria-live="polite">Starting deterministic oak fixture…</p>
       </section>
     </main>
     <script type="module" src="./oak-browser-host.ts"></script>

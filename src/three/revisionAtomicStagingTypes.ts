@@ -79,6 +79,7 @@ export interface RevisionAtomicCommitResultInternal {
 
 export type RevisionAtomicLeaseStateInternal =
   | 'prepared'
+  | 'swapping'
   | 'swapped'
   | 'published'
   | 'committed'

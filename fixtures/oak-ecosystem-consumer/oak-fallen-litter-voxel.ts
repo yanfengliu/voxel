@@ -13,6 +13,7 @@ import {
   oakTissueCellCenterM_V1,
   roundOakTissueCellV1,
 } from './oak-tissue-lattice.js';
+import { oakSoilSurfaceAtFineCellV1 } from './oak-soil-surface.js';
 import {
   oakQuantizedLeafRadialsV1,
   OAK_MAX_TISSUE_VOXELS_PER_BATCH_V1,
@@ -40,9 +41,17 @@ const PITCH = OAK_TISSUE_VOXEL_PITCH_M_V1;
 const HALF_PITCH = PITCH / 2;
 const FULL_PRIMARY_LEAF_LENGTH_M = OAK_PARAMETERS_V1.growth.leafBladeLengthM
   / (1 - OAK_LEAF_PETIOLE_FRACTION_V1);
-const TARGET_FRACTIONS = Object.freeze([
-  [.18, .16], [.64, .15], [.39, .34], [.83, .38], [.13, .55],
-  [.57, .55], [.84, .72], [.34, .76], [.12, .9], [.68, .9],
+/** Authored canopy-relative offsets keep ordinary masks near their source crowns. */
+const SURFACE_SOURCE_CLUSTER_OFFSETS = Object.freeze([
+  [-37.381, -39.504], [-37.883, 26.647], [38.514, 66.011], [53.954, -26.745],
+  [-40.588, -4.562], [-12.049, 57.329], [33.416, 56.079], [-48.726, 77.094],
+  [-13.548, 59.646], [21.785, 75.263],
+] as const);
+/** The inspection cutaway reflows the same complete masks onto its retained half. */
+const CUTAWAY_SOURCE_CLUSTER_OFFSETS = Object.freeze([
+  [-37.381, -39.504], [-37.883, 26.647], [4.514, 77.011], [-60.046, 7.255],
+  [-48.588, -10.562], [-60.049, 79.329], [-85.584, -12.921], [-64.726, 76.094],
+  [-79.548, -58.354], [3.785, -88.737],
 ] as const);
 const RUSSET_COLORS = Object.freeze([
   { r: 167, g: 82, b: 39, a: 255 },
@@ -58,6 +67,8 @@ export interface OakFallenLitterLeafMetricsV1 {
   readonly leafKey: string;
   readonly voxelCount: number;
   readonly rotationQuarterTurns: number;
+  readonly anchorCandidatesTested: number;
+  readonly anchorCell: readonly [x: number, z: number];
 }
 
 export interface OakFallenLitterVoxelProjectionV1 {
@@ -170,16 +181,18 @@ function clipSurfaceBounds(
 
 export function oakLivingLitterSurfaceBlockersV1(
   livingRecords: ReadonlyMap<string, readonly OakRenderInstanceRecordV1[]>,
-  soilTopM: number,
+  rootCutaway?: OakRootCutawayV1,
 ): Set<string> {
   const blocked = new Set<string>();
   for (const record of [...livingRecords.values()].flat()) {
     const centerY = record.matrix[13]!;
-    if (!(centerY - HALF_PITCH < soilTopM + PITCH
-      && centerY + HALF_PITCH > soilTopM)) continue;
     const [x, , z] = roundOakTissueCellV1([
       record.matrix[12]!, record.matrix[13]!, record.matrix[14]!,
     ]);
+    const surface = oakSoilSurfaceAtFineCellV1(x, z, rootCutaway);
+    if (surface === null
+      || !(centerY - HALF_PITCH < surface.topM + PITCH
+        && centerY + HALF_PITCH > surface.topM)) continue;
     blocked.add(surfaceKey([x, z]));
   }
   return blocked;
@@ -234,8 +247,8 @@ function* candidateAnchors(
   target: readonly [number, number],
   inserted: () => void,
 ): Generator<SurfaceCell> {
-  const targetX = bounds.minX + (bounds.maxX - bounds.minX) * target[0];
-  const targetZ = bounds.minZ + (bounds.maxZ - bounds.minZ) * target[1];
+  const targetX = Math.max(bounds.minX, Math.min(bounds.maxX, target[0]));
+  const targetZ = Math.max(bounds.minZ, Math.min(bounds.maxZ, target[1]));
   const zByDistance = Array.from(
     { length: bounds.maxZ - bounds.minZ + 1 },
     (_, index) => bounds.minZ + index,
@@ -267,6 +280,21 @@ function* candidateAnchors(
   }
 }
 
+function projectedSourceTarget(
+  leaf: OakLeafOrganSnapshotV1,
+  leafIndex: number,
+  bounds: SurfaceBoundsV1,
+  offsets: readonly (readonly [number, number])[],
+): readonly [number, number] {
+  const sourceX = leaf.positionM.x + leaf.direction.x * leaf.lengthM * 0.5;
+  const sourceZ = leaf.positionM.z + leaf.direction.z * leaf.lengthM * 0.5;
+  const offset = offsets[leafIndex % offsets.length]!;
+  return [
+    Math.max(bounds.minX, Math.min(bounds.maxX, sourceX / PITCH - 0.5 + offset[0])),
+    Math.max(bounds.minZ, Math.min(bounds.maxZ, sourceZ / PITCH - 0.5 + offset[1])),
+  ];
+}
+
 function placedCells(
   footprint: readonly FootprintCell[],
   anchor: SurfaceCell,
@@ -287,6 +315,20 @@ function fits(
     x >= bounds.minX && x <= bounds.maxX
     && z >= bounds.minZ && z <= bounds.maxZ
     && !blocked.has(surfaceKey([x, z])));
+}
+
+function levelSurfaceTopM(
+  cells: readonly SurfaceCell[],
+  rootCutaway: OakRootCutawayV1 | undefined,
+): number | null {
+  const first = cells[0];
+  if (first === undefined) return null;
+  const firstSurface = oakSoilSurfaceAtFineCellV1(first[0], first[1], rootCutaway);
+  if (firstSurface === null) return null;
+  return cells.every(([x, z]) =>
+    oakSoilSurfaceAtFineCellV1(x, z, rootCutaway)?.topM === firstSurface.topM)
+    ? firstSurface.topM
+    : null;
 }
 
 function blockPlacedCells(blocked: Set<string>, cells: readonly SurfaceCell[]): void {
@@ -332,31 +374,39 @@ export function buildOakFallenLitterVoxelProjectionV1(
   const topCells = state.soil.filter((cell) =>
     Math.abs(cell.centerM.y + cell.sizeM.y / 2 - topM) < 1e-12);
   const bounds = clipSurfaceBounds(surfaceBounds(topCells), options.rootCutaway);
-  const blocked = oakLivingLitterSurfaceBlockersV1(livingRecords, topM);
+  const blocked = oakLivingLitterSurfaceBlockersV1(livingRecords, options.rootCutaway);
   const records: OakRenderInstanceRecordV1[] = [];
   const metrics: OakFallenLitterLeafMetricsV1[] = [];
   let anchorCandidatesTested = 0;
   let anchorQueueInsertions = 0;
-  for (const [index, leaf] of leaves.entries()) {
+  const clusterOffsets = options.rootCutaway === undefined
+    ? SURFACE_SOURCE_CLUSTER_OFFSETS
+    : CUTAWAY_SOURCE_CLUSTER_OFFSETS;
+  for (const [leafIndex, leaf] of leaves.entries()) {
+    const candidateCountBeforeLeaf = anchorCandidatesTested;
     const footprint = footprintFor(leaf);
-    const target = TARGET_FRACTIONS[index % TARGET_FRACTIONS.length]!;
+    const target = projectedSourceTarget(leaf, leafIndex, bounds, clusterOffsets);
     const preferredRotation = leaf.identity.localId % 4;
     let placement: readonly SurfaceCell[] | null = null;
+    let placementTopM: number | null = null;
     let rotationQuarterTurns = preferredRotation;
-    for (let offset = 0; offset < 4 && placement === null; offset += 1) {
-      const rotation = (preferredRotation + offset) % 4;
-      for (const anchor of candidateAnchors(bounds, target, () => {
-        anchorQueueInsertions += 1;
-      })) {
+    for (const anchor of candidateAnchors(bounds, target, () => {
+      anchorQueueInsertions += 1;
+    })) {
+      for (let offset = 0; offset < 4 && placement === null; offset += 1) {
+        const rotation = (preferredRotation + offset) % 4;
         anchorCandidatesTested += 1;
         const candidate = placedCells(footprint, anchor, rotation);
         if (!fits(candidate, bounds, blocked)) continue;
+        const candidateTopM = levelSurfaceTopM(candidate, options.rootCutaway);
+        if (candidateTopM === null) continue;
         placement = candidate;
+        placementTopM = candidateTopM;
         rotationQuarterTurns = rotation;
-        break;
       }
+      if (placement !== null) break;
     }
-    if (placement === null) {
+    if (placement === null || placementTopM === null) {
       throw new Error(
         `Fallen oak leaf '${leaf.key}' cannot fit on the bounded soil top without overlap; `
         + 'enlarge the authored surface or reduce the bounded litter set.',
@@ -371,7 +421,7 @@ export function buildOakFallenLitterVoxelProjectionV1(
       const midrib = local[1] === 0;
       records.push({
         key: `oak-litter:${leaf.key}:fallen-leaf-voxel:${String(local[0])}:${String(local[1])}`,
-        matrix: cubeMatrix(x, topM + HALF_PITCH, z),
+        matrix: cubeMatrix(x, placementTopM + HALF_PITCH, z),
         color: shadeOakTissueVoxelColorV1(
           midrib ? MIDRIB_COLOR : base,
           local[0],
@@ -381,7 +431,16 @@ export function buildOakFallenLitterVoxelProjectionV1(
       });
     });
     blockPlacedCells(blocked, placement);
-    metrics.push({ leafKey: leaf.key, voxelCount: placement.length, rotationQuarterTurns });
+    metrics.push({
+      leafKey: leaf.key,
+      voxelCount: placement.length,
+      rotationQuarterTurns,
+      anchorCandidatesTested: anchorCandidatesTested - candidateCountBeforeLeaf,
+      anchorCell: [
+        placement[0]![0] - rotate(footprint[0]!, rotationQuarterTurns)[0],
+        placement[0]![1] - rotate(footprint[0]!, rotationQuarterTurns)[1],
+      ],
+    });
   }
   records.sort((left, right) => left.key.localeCompare(right.key));
   return {

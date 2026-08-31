@@ -4,6 +4,7 @@ import type {
   ThreePrepareFrameResult,
   ThreePresentedManifestV1,
 } from './hostFrameProtocol.js';
+import { ThreeRuntimeProtocolError } from './hostFrameProtocol.js';
 import type { RuntimeAtomicFrameCoordinatorInternal } from './runtimeAtomicFrame.js';
 import type {
   PreparedHostFrameInternal,
@@ -18,6 +19,8 @@ import type { HostFrameTicketRecordInternal } from './runtimeHostFrameTicket.js'
  */
 export interface RuntimeAtomicHostFrameOpsInternal {
   deviceGeneration(): number;
+  isRunningAttempt(generation: number): boolean;
+  hasRuntimeEndedAfterCallbacks(): boolean;
   presentedCanonicalState(): CanonicalRenderStateV1 | null;
   finishPreparation(): void;
   issueTicket(
@@ -56,6 +59,18 @@ export function prepareEmbeddedAtomicHostFrameInternal(
   }
   if (outcome === 'no-atomic-target') return null;
   try {
+    if (!ops.isRunningAttempt(generation)) {
+      if (outcome.status === 'prepared') {
+        frames.discardPreparedAtomicFrameInternal(outcome.prepared);
+      }
+      if (ops.hasRuntimeEndedAfterCallbacks()) {
+        throw new ThreeRuntimeProtocolError(
+          'three.frame-ticket.late',
+          'The runtime ended while the embedded host frame was activating; no ticket was issued.',
+        );
+      }
+      return ops.unavailableFrameResult();
+    }
     if (outcome.status === 'unavailable') return ops.unavailableFrameResult();
     const atomic: RuntimeAtomicHostFrameInternal = outcome.status === 'idle'
       ? { kind: 'idle' }

@@ -50,6 +50,25 @@ function axisLength(matrix: ArrayLike<number>, offset: number): number {
   return Math.hypot(matrix[offset]!, matrix[offset + 1]!, matrix[offset + 2]!);
 }
 
+function organMeanLuminance(
+  batch: OakRenderFrameV1['snapshot']['batches'][number],
+  organKey: string,
+): number {
+  if (batch.colors === undefined) throw new Error('Root voxel batch must carry per-instance colours.');
+  let total = 0;
+  let count = 0;
+  batch.instanceKeys.forEach((key, slot) => {
+    if (!key.startsWith(`oak:${organKey}:`)) return;
+    const offset = slot * 4;
+    total += batch.colors![offset]! * .2126
+      + batch.colors![offset + 1]! * .7152
+      + batch.colors![offset + 2]! * .0722;
+    count += 1;
+  });
+  if (count === 0) throw new Error(`Root voxel batch has no instances for '${organKey}'.`);
+  return total / count;
+}
+
 function overlappingSoilSlots(
   frame: OakRenderFrameV1,
   center: readonly [number, number, number],
@@ -146,6 +165,10 @@ describe('oak root-cutaway voxel presentation', () => {
           .toBe(assignment.sourceKey);
       }
     }
+    const coarseRoot = livingRoots.find((organ) => organ.kind === 'coarse-root')!;
+    const fineRoot = livingRoots.find((organ) => organ.kind === 'fine-root-cohort')!;
+    expect(organMeanLuminance(cutawayRoots, fineRoot.key)
+      - organMeanLuminance(cutawayRoots, coarseRoot.key)).toBeGreaterThan(55);
 
     for (let slot = 0; slot < cutawayRoots.instanceKeys.length; slot += 1) {
       const matrix = cutawayRoots.matrices.subarray(slot * 16, slot * 16 + 16);

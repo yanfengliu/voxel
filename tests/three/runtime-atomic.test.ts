@@ -339,6 +339,122 @@ describe('ThreeRenderRuntime atomic voxel pipeline', () => {
     runtime.dispose();
   });
 
+  it.each(['removed', 'added'] as const)(
+    'blocks reentrant acceptance from a scene-root %s callback during activation',
+    (callback) => {
+      const { runtime, atomicRoot } = createAtomicRuntime();
+      expect(runtime.acceptSnapshot(profiledSnapshot(1)).status).toBe('accepted');
+      const next = frameUntilPresented(runtime, 1, 0);
+      const displayedAtOne = atomicRoot.children[0];
+      if (!displayedAtOne) throw new Error('Expected revision 1 to have a displayed root.');
+
+      let reentrantResult: unknown;
+      const acceptThird = () => {
+        if (reentrantResult !== undefined) return;
+        reentrantResult = runtime.acceptSnapshot(profiledSnapshot(3, [3]));
+      };
+      if (callback === 'removed') displayedAtOne.addEventListener('removed', acceptThird);
+      else atomicRoot.addEventListener('childadded', acceptThird);
+
+      expect(runtime.acceptSnapshot(profiledSnapshot(2, [2])).status).toBe('accepted');
+      frameUntilPresented(runtime, 2, next);
+      displayedAtOne.removeEventListener('removed', acceptThird);
+      atomicRoot.removeEventListener('childadded', acceptThird);
+
+      expect(reentrantResult).toMatchObject({
+        status: 'rejected',
+        code: 'three.voxel-presentation-in-flight',
+      });
+      expect(runtime.runtimeStatus()).toMatchObject({ state: 'running', failure: null });
+      expect(runtime.metrics()).toMatchObject({ acceptedRevision: 2, presentedRevision: 2 });
+      expect(atomicRoot.children).toHaveLength(1);
+      expect(atomicRoot.children[0]).not.toBe(displayedAtOne);
+
+      expect(runtime.acceptSnapshot(profiledSnapshot(3, [3])).status).toBe('accepted');
+      frameUntilPresented(runtime, 3, next + 4);
+      runtime.dispose();
+    },
+  );
+
+  it.each(['removed', 'added'] as const)(
+    'defers disposal from a scene-root %s callback until activation unwinds',
+    (callback) => {
+      const { runtime, atomicRoot } = createAtomicRuntime();
+      expect(runtime.acceptSnapshot(profiledSnapshot(1)).status).toBe('accepted');
+      const next = frameUntilPresented(runtime, 1, 0);
+      const displayedAtOne = atomicRoot.children[0];
+      if (!displayedAtOne) throw new Error('Expected revision 1 to have a displayed root.');
+
+      let invoked = false;
+      const disposeFromSceneEvent = () => {
+        if (invoked) return;
+        invoked = true;
+        runtime.dispose();
+      };
+      if (callback === 'removed') {
+        displayedAtOne.addEventListener('removed', disposeFromSceneEvent);
+      } else {
+        atomicRoot.addEventListener('childadded', disposeFromSceneEvent);
+      }
+
+      expect(runtime.acceptSnapshot(profiledSnapshot(2, [2])).status).toBe('accepted');
+      expect(() => {
+        for (let attempt = 0; attempt < 4 && !invoked; attempt += 1) {
+          runtime.frame(frameContext(next + attempt));
+        }
+      }).not.toThrow();
+      expect(invoked).toBe(true);
+      expect(runtime.runtimeStatus()).toMatchObject({ state: 'disposed', failure: null });
+      expect(atomicRoot.children).toHaveLength(0);
+      expect(() => runtime.dispose()).not.toThrow();
+    },
+  );
+
+  it.each(['removed', 'added'] as const)(
+    'rejects a reentrant frame from a scene-root %s callback before any nested draw',
+    (callback) => {
+      const { runtime, renderer, atomicRoot } = createAtomicRuntime();
+      expect(runtime.acceptSnapshot(profiledSnapshot(1)).status).toBe('accepted');
+      const next = frameUntilPresented(runtime, 1, 0);
+      const displayedAtOne = atomicRoot.children[0];
+      if (!displayedAtOne) throw new Error('Expected revision 1 to have a displayed root.');
+
+      let invoked = false;
+      let reentrantError: unknown;
+      let nestedDraws = -1;
+      const reenterFrame = () => {
+        if (invoked) return;
+        invoked = true;
+        const drawsBefore = renderer.render.mock.calls.length;
+        try {
+          runtime.frame(frameContext(10_000));
+        } catch (error) {
+          reentrantError = error;
+        }
+        nestedDraws = renderer.render.mock.calls.length - drawsBefore;
+      };
+      if (callback === 'removed') displayedAtOne.addEventListener('removed', reenterFrame);
+      else atomicRoot.addEventListener('childadded', reenterFrame);
+
+      expect(runtime.acceptSnapshot(profiledSnapshot(2, [2])).status).toBe('accepted');
+      let presentedRevision: number | null = null;
+      for (let attempt = 0; attempt < 4 && presentedRevision !== 2; attempt += 1) {
+        presentedRevision = runtime.frame(frameContext(next + attempt))?.presentedRevision ?? null;
+      }
+      displayedAtOne.removeEventListener('removed', reenterFrame);
+      atomicRoot.removeEventListener('childadded', reenterFrame);
+
+      expect(invoked).toBe(true);
+      expect(reentrantError).toBeInstanceOf(Error);
+      expect((reentrantError as Error).message).toMatch(/wait for the current frame call to return/u);
+      expect(nestedDraws).toBe(0);
+      expect(presentedRevision).toBe(2);
+      expect(runtime.metrics()).toMatchObject({ acceptedRevision: 2, presentedRevision: 2 });
+      expect(runtime.runtimeStatus()).toMatchObject({ state: 'running', failure: null });
+      runtime.dispose();
+    },
+  );
+
   it('blocks a reentrant acceptance from a waiter callback during finalization', () => {
     // The commit settles presentation waiters while the drawn lease is
     // published but not yet settled. An acceptance from that callback used to

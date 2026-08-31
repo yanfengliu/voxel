@@ -3,7 +3,7 @@ import {
   oakLeafPetioleSectionForOrganV1,
   oakLeafTangentialPortOffsetsForOrganV1,
 } from './oak-leaf-shape.js';
-import { OAK_PARAMETERS_V1 } from './oak-parameters.js';
+import { OAK_HOST_TIMESTEP_SECONDS_V1, OAK_PARAMETERS_V1 } from './oak-parameters.js';
 import type { MutableOakOrganV1, MutableOakStateV1 } from './oak-state.js';
 import type { OakVec3V1, OakWindRegimeV1 } from './oak-types.js';
 import {
@@ -64,6 +64,19 @@ function normalize(vector: OakVec3V1): OakVec3V1 {
   return { x: vector.x / length, y: vector.y / length, z: vector.z / length };
 }
 
+/**
+ * The fixture's single horizontal airflow direction. Organ mechanics and any
+ * representative airflow presentation must consume this same vector so a
+ * visible tracer can never contradict the direction of physical deflection.
+ */
+export function oakWindDirectionV1(): OakVec3V1 {
+  return normalize({
+    x: 1,
+    y: 0,
+    z: OAK_PARAMETERS_V1.mechanics.lateralDeflectionZCoupling,
+  });
+}
+
 /** A deterministic, continuous gust carrier in [-1, 1] over the registered period. */
 function gustCarrierAtTick(tick: number): number {
   const mechanics = OAK_PARAMETERS_V1.mechanics;
@@ -77,6 +90,44 @@ function gustCarrierAtTick(tick: number): number {
   }
   return -1 + (phase - mechanics.gustPositiveEndHostTick)
     / mechanics.gustRampHostTicks;
+}
+
+/** Exact shared 60 Hz wind field sampled by mechanics and presentation travel. */
+export function oakWindSpeedAtHostTickV1(
+  hostTick: number,
+  regime: 'still' | 'breeze',
+): number {
+  if (!Number.isSafeInteger(hostTick) || hostTick < 0) {
+    throw new RangeError(
+      `Oak wind host tick must be a nonnegative safe integer; received ${String(hostTick)}.`,
+    );
+  }
+  if (regime === 'still') return 0;
+  const carrier = gustCarrierAtTick(hostTick);
+  const gustMagnitude = OAK_PARAMETERS_V1.mechanics.gustBaseFraction
+    + OAK_PARAMETERS_V1.mechanics.gustCarrierFraction * carrier;
+  return OAK_PARAMETERS_V1.mechanics.ambientWindSpeedMPerS * gustMagnitude;
+}
+
+/** Integrates the shared gust field once per elapsed 60 Hz host tick. */
+export function oakWindTravelOverHostTicksV1(
+  startExclusiveHostTick: number,
+  endInclusiveHostTick: number,
+  regime: 'still' | 'breeze',
+): number {
+  if (!Number.isSafeInteger(startExclusiveHostTick) || startExclusiveHostTick < 0
+    || !Number.isSafeInteger(endInclusiveHostTick)
+    || endInclusiveHostTick < startExclusiveHostTick) {
+    throw new RangeError(
+      'Oak wind travel interval must use nonnegative safe host ticks in ascending order; '
+      + `received (${String(startExclusiveHostTick)}, ${String(endInclusiveHostTick)}).`,
+    );
+  }
+  let travelM = 0;
+  for (let tick = startExclusiveHostTick + 1; tick <= endInclusiveHostTick; tick += 1) {
+    travelM += OAK_HOST_TIMESTEP_SECONDS_V1 * oakWindSpeedAtHostTickV1(tick, regime);
+  }
+  return travelM;
 }
 
 /**
@@ -240,11 +291,11 @@ function deflectedDirection(
   if (!response) return organ.restDirection;
   const lateralSlope = response.lateralDeflectionM / response.effectiveLengthM;
   const downwardSlope = response.downwardDeflectionM / response.effectiveLengthM;
+  const windDirection = oakWindDirectionV1();
   return normalize({
     x: organ.restDirection.x + lateralSlope,
     y: organ.restDirection.y - downwardSlope,
-    z: organ.restDirection.z
-      + lateralSlope * OAK_PARAMETERS_V1.mechanics.lateralDeflectionZCoupling,
+    z: organ.restDirection.z + lateralSlope * windDirection.z / windDirection.x,
   });
 }
 
@@ -282,12 +333,10 @@ function reanchorFromParent(
 export function updateOakWindMechanicsV1(state: MutableOakStateV1): void {
   assertOakFiniteWoodLoadPathsV1(state.organs);
   state.windPhaseTick = state.hostTick;
-  const carrier = gustCarrierAtTick(state.windPhaseTick);
-  const gustMagnitude = OAK_PARAMETERS_V1.mechanics.gustBaseFraction
-    + OAK_PARAMETERS_V1.mechanics.gustCarrierFraction * carrier;
-  const windSpeedMPerS = state.windRegime === 'breeze'
-    ? OAK_PARAMETERS_V1.mechanics.ambientWindSpeedMPerS * gustMagnitude
-    : 0;
+  const windSpeedMPerS = oakWindSpeedAtHostTickV1(
+    state.windPhaseTick,
+    state.windRegime,
+  );
   state.currentWindSpeedMPerS = windSpeedMPerS;
   const updatedByKey = new Map<string, MutableOakOrganV1>();
   const restByKey = new Map(state.organs.map((organ) => [organ.key, organ]));

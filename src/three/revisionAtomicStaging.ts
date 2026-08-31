@@ -196,6 +196,11 @@ export class RevisionAtomicPresentationStagerInternal {
     this.#operate(() => {
       this.#assertOwned(lease, 'prepared');
       if (this.#swapped) throw new Error('Another revision-atomic presentation is already swapped.');
+      // Scheduler commits and Three mount operations can synchronously invoke
+      // consumer callbacks. Mark the whole activation window before the first
+      // callback so reentrant canonical acceptance cannot replace this target
+      // while its scene root is only partly swapped.
+      lease.stateInternal = 'swapping';
       try {
         this.#commitGroups(lease);
         const previous = this.#displayedBundle;

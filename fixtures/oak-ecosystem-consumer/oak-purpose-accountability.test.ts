@@ -7,6 +7,7 @@ import { createOakSimulationV1 } from './oak-simulation.js';
 import { OAK_PURPOSE_ACCOUNTABILITY_V1 } from './oak-purpose-accountability.js';
 import { OAK_SOIL_VOXEL_RULE_IDS_V1 } from './oak-soil-voxel.js';
 import { OAK_TISSUE_VOXEL_RULE_IDS_V1 } from './oak-tissue-voxel-projection.js';
+import { OAK_WEATHER_VOXEL_RULE_IDS_V1 } from './oak-weather-voxel-presentation.js';
 
 function flatCoverage(
   field:
@@ -27,6 +28,7 @@ const EXPECTED_HYBRID_RESOURCES = Object.freeze([
   'material:oak:root-voxel',
   'material:oak:seed-bud-voxel',
   'material:oak:soil-voxel',
+  'material:oak:weather-voxel',
   'material:oak:wood-voxel',
   'palette:oak:soil-voxel',
 ]);
@@ -37,6 +39,7 @@ const EXPECTED_HYBRID_BATCHES = Object.freeze([
   'batch:oak:root-voxels',
   'batch:oak:seed-bud-voxels',
   'batch:oak:soil-contact-voxels',
+  'batch:oak:weather-voxels',
   'batch:oak:wood-voxels',
 ]);
 
@@ -49,9 +52,14 @@ const EXPECTED_VOXEL_RULES = Object.freeze([
   'leaf-petiole-midrib-mask',
   'litter-soil-face-contact',
   'organ-state-palette-quantization',
+  'rain-cue-fall-impact-expiry',
+  'rain-cue-retained-surface-contact',
+  'rain-cue-shared-wind-drift',
   'root-aggregate-legibility-mask',
   'seed-bud-port-masks',
   'shared-dyadic-tissue-lattice',
+  'shared-mechanics-airflow-direction',
+  'soil-connected-relief-surface',
   'soil-cutaway-cross-section',
   'soil-litter-transfer',
   'soil-state-ordered-dither',
@@ -59,6 +67,8 @@ const EXPECTED_VOXEL_RULES = Object.freeze([
   'soil-top-boundary',
   'source-claim-preservation',
   'uniform-tissue-cubes',
+  'weather-cue-scene-occupancy-clearance',
+  'weather-cue-voxel-material',
   'wood-tapered-connected-mask',
 ]);
 
@@ -135,6 +145,7 @@ describe('oak visible-purpose accountability', () => {
       ...OAK_SOIL_VOXEL_RULE_IDS_V1,
       ...OAK_TISSUE_VOXEL_RULE_IDS_V1,
       ...OAK_FALLEN_LITTER_VOXEL_RULE_IDS_V1,
+      ...OAK_WEATHER_VOXEL_RULE_IDS_V1,
     ].sort()).toEqual(EXPECTED_VOXEL_RULES);
 
     for (const record of OAK_PURPOSE_ACCOUNTABILITY_V1) {

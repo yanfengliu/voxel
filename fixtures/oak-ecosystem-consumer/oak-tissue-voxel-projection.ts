@@ -14,6 +14,10 @@ import {
   type OakLeafVariantDescriptorV1,
 } from './oak-leaf-shape.js';
 import { oakLeafColorV1, type OakRenderInstanceRecordV1 } from './oak-render-projection.js';
+import {
+  OAK_CUTAWAY_AGGREGATE_FINE_ROOT_COLOR_V1,
+  OAK_CUTAWAY_COARSE_ROOT_COLOR_V1,
+} from './oak-root-cutaway-presentation.js';
 import type {
   OakLeafOrganSnapshotV1,
   OakOrganSnapshotV1,
@@ -245,8 +249,8 @@ function radiusRatioAt(
 export function oakTissueVoxelBaseColorV1(organ: OakOrganSnapshotV1): Srgb8ColorV1 {
   if (organ.kind === 'leaf') return oakLeafColorV1(organ);
   const stress = Math.max(0, Math.min(1, organ.stressFraction));
-  const base = organ.kind === 'fine-root-cohort' ? { r: 216, g: 195, b: 154 }
-    : organ.kind === 'coarse-root' ? { r: 73, g: 55, b: 46 }
+  const base = organ.kind === 'fine-root-cohort' ? OAK_CUTAWAY_AGGREGATE_FINE_ROOT_COLOR_V1
+    : organ.kind === 'coarse-root' ? OAK_CUTAWAY_COARSE_ROOT_COLOR_V1
       : organ.kind === 'bud' ? { r: 143, g: 95, b: 52 }
         : organ.kind === 'acorn' ? { r: 116, g: 76, b: 41 }
           : organ.stage === 'expanding' ? { r: 138, g: 90, b: 59 }

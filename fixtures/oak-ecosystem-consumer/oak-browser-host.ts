@@ -1,6 +1,9 @@
 import { Color, PerspectiveCamera, Scene, WebGLRenderer } from 'three';
 import { ThreeRenderRuntime } from '../../src/three/index.js';
-import { OAK_DEFAULT_TIME_SCALE_V1, OAK_PARAMETERS_V1 } from './oak-parameters.js';
+import {
+  OAK_DEFAULT_TIME_SCALE_V1,
+  OAK_PARAMETERS_V1,
+} from './oak-parameters.js';
 import {
   buildOakRenderDeltaV1,
   buildOakRenderFrameV1,
@@ -11,13 +14,25 @@ import { fitOakBrowserCameraV1 } from './oak-browser-camera.js';
 import { createOakBrowserFrameClockV1 } from './oak-browser-frame-clock.js';
 import { enqueueOakPendingCommandV1 } from './oak-browser-command-queue.js';
 import { projectOakBrowserVoxelsV1 } from './oak-browser-voxel-evidence.js';
-import { setOakBrowserPlantVisibilityForEvidenceV1 } from './oak-browser-plant-visibility.js';
+import {
+  setOakBrowserPlantVisibilityForEvidenceV1,
+  setOakBrowserWeatherVisibilityForEvidenceV1,
+} from './oak-browser-plant-visibility.js';
 import { updateOakBrowserDiagnosticsV1 } from './oak-browser-diagnostics.js';
 import { createOakBrowserLightingV1 } from './oak-browser-lighting.js';
 import {
   createOakBrowserNavigationV1,
   type OakBrowserNavigationHandleV1,
 } from './oak-browser-navigation.js';
+import {
+  OakBrowserWeatherControllerV1,
+} from './oak-browser-weather-controller.js';
+import {
+  isOakBrowserEnvironmentCommandV1,
+  syncOakBrowserControlsV1,
+  toggleOakBrowserEnvironmentV1,
+  type OakBrowserControlPresentationV1,
+} from './oak-browser-control-state.js';
 import {
   bindOakDataButtonsV1,
   displayOakFatal,
@@ -29,12 +44,10 @@ import type {
   OakBrowserCommandV1,
   OakBrowserEvidenceV1,
   OakBrowserHarnessV1,
-  OakBrowserInspectionModeV1,
   OakBrowserViewportV1,
 } from './oak-browser-contract.js';
 const CASE_STUDY_SEED = 0x51a7_0a4b;
 const RAIN_PULSE_LITERS = OAK_PARAMETERS_V1.forcing.ambientWeeklyRainLiters;
-interface HostPresentationState { inspectionMode: OakBrowserInspectionModeV1; rootCutaway: boolean; camera: OakBrowserCameraV1 }
 function mountOakBrowserHost(): OakBrowserHarnessV1 {
   const root = requiredOakElement<HTMLElement>('[data-oak-app]');
   const canvas = requiredOakElement<HTMLCanvasElement>('[data-oak-canvas]');
@@ -57,7 +70,8 @@ function mountOakBrowserHost(): OakBrowserHarnessV1 {
   const simulation = createOakSimulationV1({
     seed: CASE_STUDY_SEED, timeScale: OAK_DEFAULT_TIME_SCALE_V1,
   });
-  const presentation: HostPresentationState = {
+  const weather = new OakBrowserWeatherControllerV1(simulation.snapshot());
+  const presentation: OakBrowserControlPresentationV1 = {
     inspectionMode: 'growth',
     rootCutaway: false,
     camera: 'hero',
@@ -162,6 +176,8 @@ function mountOakBrowserHost(): OakBrowserHarnessV1 {
   };
 
   const presentSimulation = (frame = frameClock.manualFrame()): void => {
+    const simulationSnapshot = weather.sync(simulation);
+    const weatherPresentation = weather.presentation();
     renderRevision += 1;
     presentationPending = true;
     ready = false;
@@ -169,6 +185,14 @@ function mountOakBrowserHost(): OakBrowserHarnessV1 {
     const next = buildOakRenderFrameV1(simulation.projection(), {
       renderRevision,
       ...(previousRenderFrame ? { previousFrame: previousRenderFrame } : {}),
+      weatherPresentation: {
+        hostTick: simulationSnapshot.hostTick,
+        wind: simulationSnapshot.wind,
+        windTravelM: weatherPresentation.windTravelM,
+        ...(weatherPresentation.rainEvent
+          ? { rainEvent: weatherPresentation.rainEvent }
+          : {}),
+      },
       ...(presentation.rootCutaway
         ? { rootCutaway: { axis: 'x', planeM: 0, keep: 'less-than' } as const }
         : {}),
@@ -193,57 +217,23 @@ function mountOakBrowserHost(): OakBrowserHarnessV1 {
   };
 
   const updateDiagnostics = (): void => {
-    updateOakBrowserDiagnosticsV1(diagnosticNodes, simulation.snapshot(), runtime.metrics());
+    const weather = previousRenderFrame?.metrics.weather;
+    updateOakBrowserDiagnosticsV1(
+      diagnosticNodes,
+      simulation.snapshot(),
+      runtime.metrics(),
+      weather === undefined ? undefined : {
+        rainPhase: weather.rainPhase,
+        rainPulseLiters: weather.rainPulseLiters,
+        rainVoxelCount: weather.rainVoxelCount,
+        windVoxelCount: weather.windVoxelCount,
+      },
+    );
   };
 
-  const syncControls = (): void => {
-    const state = simulation.snapshot();
-    for (const control of controls) {
-      const command = control.dataset.command as OakBrowserCommandV1 | undefined;
-      const pressed = command === 'toggle-pause'
-        ? state.paused
-        : command === 'growth-mode'
-          ? presentation.inspectionMode === 'growth'
-          : command === 'wind-mode'
-            ? presentation.inspectionMode === 'wind'
-            : command === 'root-cutaway'
-              ? presentation.rootCutaway
-              : command === 'low-water'
-                ? state.environmentRegime.water === 'low'
-                : command === 'low-n'
-                  ? state.environmentRegime.nitrogen === 'low'
-                  : command === 'low-p'
-                    ? state.environmentRegime.phosphorus === 'low'
-                    : false;
-      if (control.hasAttribute('aria-pressed')) {
-        control.setAttribute('aria-pressed', String(pressed));
-      }
-      if (command === 'toggle-pause') control.textContent = state.paused ? 'Resume' : 'Pause';
-    }
-    for (const control of viewControls) {
-      control.setAttribute('aria-pressed', String(
-        navigation?.isFree() !== true && control.dataset.view === presentation.camera,
-      ));
-    }
-  };
-
-  const environmentToggle = (
-    resource: 'water' | 'nitrogen' | 'phosphorus',
-  ): void => {
-    const current = simulation.snapshot().environmentRegime;
-    simulation.applyCommand({
-      kind: 'set-environment-regime',
-      water: resource === 'water'
-        ? current.water === 'low' ? 'ambient' : 'low'
-        : current.water,
-      nitrogen: resource === 'nitrogen'
-        ? current.nitrogen === 'low' ? 'ambient' : 'low'
-        : current.nitrogen,
-      phosphorus: resource === 'phosphorus'
-        ? current.phosphorus === 'low' ? 'ambient' : 'low'
-        : current.phosphorus,
-    });
-  };
+  const syncControls = (): void => syncOakBrowserControlsV1(
+    controls, viewControls, simulation.snapshot(), presentation, navigation?.isFree() === true,
+  );
 
   const setStatus = (message: string): void => { status.textContent = message; };
 
@@ -264,6 +254,7 @@ function mountOakBrowserHost(): OakBrowserHarnessV1 {
       viewport: { ...viewport },
       hostLighting: lighting.evidence(),
       simulation: simulation.snapshot(),
+      weather: previousRenderFrame.metrics.weather,
       render: previousRenderFrame.metrics,
       runtime: runtime.metrics(),
     };
@@ -290,20 +281,21 @@ function mountOakBrowserHost(): OakBrowserHarnessV1 {
       presentation.rootCutaway = !presentation.rootCutaway;
       navigation?.beginPreset(presentation.camera);
       setStatus(presentation.rootCutaway
-        ? 'Root cutaway: dark coarse and pale aggregate fine-root paths share the exact cube lattice.'
+        ? 'Root cutaway: warm coarse and pale aggregate fine-root paths share the exact cube lattice.'
         : 'Root cutaway disabled.');
     } else if (command === 'rain') {
-      simulation.applyCommand({ kind: 'rainfall-pulse', liters: RAIN_PULSE_LITERS });
-      setStatus(`Queued a ${RAIN_PULSE_LITERS.toFixed(2)} L rain pulse.`);
-    } else if (command === 'low-water') {
-      environmentToggle('water');
-      setStatus('Water boundary regime changed; stored water was not deleted.');
-    } else if (command === 'low-n') {
-      environmentToggle('nitrogen');
-      setStatus('Nitrogen accessibility regime changed; stored nitrogen was not deleted.');
-    } else if (command === 'low-p') {
-      environmentToggle('phosphorus');
-      setStatus('Phosphorus accessibility regime changed; stored phosphorus was not deleted.');
+      const rain = weather.startRain(state, RAIN_PULSE_LITERS);
+      if (rain.status === 'active') {
+        setStatus('Rain is already active; wait for this bounded cue to finish before starting another.');
+      } else {
+        setStatus(
+          state.paused
+            ? `Prepared ${RAIN_PULSE_LITERS.toFixed(2)} L of voxel rain; pause holds both its fall and contact-triggered pulse.`
+            : `Voxel rain is falling; its ${RAIN_PULSE_LITERS.toFixed(2)} L pulse enters the soil process at terrain contact.`,
+        );
+      }
+    } else if (isOakBrowserEnvironmentCommandV1(command)) {
+      setStatus(toggleOakBrowserEnvironmentV1(simulation, command));
     } else {
       const paused = state.paused;
       simulation.reset({
@@ -346,7 +338,7 @@ function mountOakBrowserHost(): OakBrowserHarnessV1 {
 
   const advanceHostTicks = (count: number): OakBrowserEvidenceV1 => {
     if (disposed) throw new Error('Cannot advance oak ticks: host is disposed.');
-    simulation.advanceHostTicks(count);
+    weather.advanceHostTicks(simulation, count);
     presentSimulation();
     syncControls();
     return evidence();
@@ -356,7 +348,7 @@ function mountOakBrowserHost(): OakBrowserHarnessV1 {
     if (disposed) throw new Error('Cannot run an oak experiment: host is disposed.');
     const wasPaused = simulation.snapshot().paused;
     if (wasPaused) simulation.setPaused(false);
-    simulation.advanceHostTicks(count);
+    weather.advanceHostTicks(simulation, count);
     if (wasPaused) simulation.setPaused(true);
     presentSimulation();
     syncControls();
@@ -423,6 +415,7 @@ function mountOakBrowserHost(): OakBrowserHarnessV1 {
     advanceHostTicks,
     advanceBiologicalTicks,
     setPlantVisibilityForEvidence: (visible) => { setOakBrowserPlantVisibilityForEvidenceV1(scene, visible); renderFrame(); return evidence(); },
+    setWeatherVisibilityForEvidence: (visible) => { setOakBrowserWeatherVisibilityForEvidenceV1(scene, visible); renderFrame(); return evidence(); },
     evidence,
     capture: () => runtime.capture(),
     dispose,
@@ -461,13 +454,14 @@ function mountOakBrowserHost(): OakBrowserHarnessV1 {
         renderFrame(sample.frame);
         updateDiagnostics();
       } else if (sample.hostTicks > 0) {
-        simulation.advanceHostTicks(sample.hostTicks);
+        weather.advanceHostTicks(simulation, sample.hostTicks);
         presentSimulation(sample.frame);
       } else if (navigationMoved) {
         fitCamera(presentation.camera, false);
         renderFrame(sample.frame);
         updateDiagnostics();
       } else renderFrame(sample.frame);
+      weather.clearExpired(simulation.snapshot());
       if (navigationMoved) syncControls();
       animationFrame = requestAnimationFrame(animate);
     } catch (error) {

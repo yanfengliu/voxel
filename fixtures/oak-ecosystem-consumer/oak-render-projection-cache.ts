@@ -147,10 +147,9 @@ function litterFingerprint(
       exactNumberFingerprint(leaf.identity.localId),
       exactNumberFingerprint(leaf.lengthM),
     ]);
-  const soilTopM = Math.max(...state.soil.map(
-    (cell) => cell.centerM.y + cell.sizeM.y / 2,
-  ));
-  const surfaceBlockers = [...oakLivingLitterSurfaceBlockersV1(tissue.records, soilTopM)].sort();
+  const surfaceBlockers = [
+    ...oakLivingLitterSurfaceBlockersV1(tissue.records, cutaway),
+  ].sort();
   const soilGeometry = state.soil.map((cell) => [
     cell.key,
     exactNumberFingerprint(cell.centerM.x), exactNumberFingerprint(cell.centerM.y),
