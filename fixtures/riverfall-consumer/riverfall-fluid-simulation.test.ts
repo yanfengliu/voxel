@@ -55,9 +55,9 @@ function expectFinite(values: Float32Array): void {
  * 44.4 s and the named-cause ablation sweep 29.9 s. Both carried 60 s,
  * and the attestation duly expired at 60 s inside a full `npm run verify`
  * while passing on its own minutes later — the exact time bomb
- * `docs/learning/lessons.md` records for the lighting and mesher-benchmark
- * cases. Four times the measured work leaves the slow machine room to be
- * slow without teaching anyone to rerun until green.
+ * `tests/testing/test-timeout.ts` was written for, and which the lighting and
+ * mesher-benchmark cases hit first. Four times the measured work leaves the
+ * slow machine room to be slow without teaching anyone to rerun until green.
  *
  * Derived from the shared rule since 2026-08-07 rather than written by hand:
  * this case is the precedent the rule was generalised from, so if the two ever

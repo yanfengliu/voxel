@@ -7,6 +7,7 @@ import {
   WINDMILL_COMPACT_RECORD_HERTZ_V1,
 } from '../../fixtures/windmill-consumer/windmill-compact-recorder.js';
 import {
+  SOLVER_TICKS_PER_SECOND_V1,
   SOLVER_TIMESTEP_SECONDS_V1,
 } from '../../tools/studio/solver-rate.js';
 import {
@@ -108,7 +109,7 @@ export async function verifyWindmillSelectedPhysicalProof(
     trackIds: WINDMILL_MOVING_PLACEMENT_IDS,
     provenance: {
       solver: { name: '@dimforge/rapier3d-compat', version: '0.19.3' },
-      fixedTimestepMs: 1000 / 60,
+      fixedTimestepMs: 1_000 / SOLVER_TICKS_PER_SECOND_V1,
       gravity: [0, -9.81, 0],
       inputHash: expect.stringMatching(HASH_PATTERN),
       finalHash: expect.stringMatching(HASH_PATTERN),

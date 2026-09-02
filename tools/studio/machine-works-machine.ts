@@ -22,6 +22,7 @@ import {
 } from './machine-works-conveyor.js';
 import { MACHINE_WORKS_SCENE_LAYOUT_V1 } from './machine-works-layout.js';
 import type { PhysicalAssetV1 } from './physical-asset.js';
+import { SOLVER_TICKS_PER_SECOND_V1 } from './solver-rate.js';
 
 /**
  * What the Machine Works machine is, as numbers.
@@ -55,7 +56,17 @@ function scaledPortPosition(
 }
 
 export const MACHINE_WORKS_SOLVER_VERSION = '0.19.3';
-export const MACHINE_WORKS_FIXED_STEP_MS = 1_000 / 60;
+/**
+ * Milliseconds per fixed step, derived from the one shared solver rate.
+ *
+ * It spelled `1_000 / 60` until 2026-09-02. That was the right number and the
+ * wrong construction: two lanes agreeing by coincidence rather than by import
+ * is the exact defect `solver-rate.test.ts` exists for, and its scan could not
+ * see this one because it only ever looked for a WRONG rate. Divide by the
+ * ticks constant rather than multiplying the seconds one, so the double is
+ * bit-identical to what every recorded replay's provenance already carries.
+ */
+export const MACHINE_WORKS_FIXED_STEP_MS = 1_000 / SOLVER_TICKS_PER_SECOND_V1;
 export const MACHINE_WORKS_DURATION_MS = 30_000;
 export const MACHINE_WORKS_FRAME_COUNT = 1_800;
 export const MACHINE_WORKS_GRAVITY = Object.freeze([0, -9.81, 0] as const);

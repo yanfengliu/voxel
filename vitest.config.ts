@@ -24,11 +24,21 @@ export default defineConfig({
     // sessions. Vitest globbed its `*.test.ts` files into the gate, so a stale
     // probe referencing something since deleted failed the whole suite. Scratch
     // must not be able to fail a gate.
+    // `output/**` is the same rule, applied to the other scratch directory, and
+    // it had the same failure. It is gitignored and holds artefacts: Playwright
+    // writes `outputDir` there, the benchmarks write their recordings there, and
+    // sessions leave diagnostic probes beside them. On 2026-09-02 eight such
+    // probes were globbed into `npm run test`, where they failed and timed out
+    // for about fifty minutes of the run. Worse than slow: because the directory
+    // is gitignored, CI checks out without it, so those files could only ever
+    // fail on the machine that happened to hold them — the mirror image of the
+    // budget that only CI executes, and the same defect either way.
     exclude: [
       ...configDefaults.exclude,
       'tests/browser/**',
       '**/.claude/**',
       'tmp/**',
+      'output/**',
     ],
   },
 });

@@ -81,6 +81,33 @@ describe('Riverfall system scene', () => {
     expect(scene.summary ?? '').toContain('nothing is rendered over that lead-in');
   });
 
+  it('declares a light for the tilt channel that exists to be shaded', () => {
+    // A display channel built for a light needs a light in the scene, or it
+    // resolves to nothing however hard it is driven. `surfaceTilt` exists so a
+    // light can shade a passing wave; Riverfall shipped with no light at all,
+    // and the arithmetic ran perfectly and multiplied by zero at the end.
+    // Measured 2026-08-14 on the same wave field and the same solver: 0.6-1.8%
+    // of stage pixels changed per 200 ms unlit, 7-11% lit.
+    //
+    // The bound of this gate, stated because a bound nobody names is where the
+    // next false green lives: it watches this scene's declaration, not every
+    // scene's, and it cannot tell whether a declared light reaches the water.
+    // The pixel measurement in `model-studio-riverfall.spec.ts` is what covers
+    // that, at a cost this gate deliberately does not pay.
+    expect(
+      RIVERFALL_FLUID_SURFACE_PRESENTATION.surfaceTilt.gain,
+      'the tilt channel is switched off, so this gate is asserting nothing',
+    ).toBeGreaterThan(0);
+    expect(
+      scene.lights ?? [],
+      'this scene drives a surface-tilt channel whose whole visible output is '
+      + 'shading, and declares no light to do the shading — the channel then '
+      + 'resolves to nothing however hard it is driven, and nothing in the code '
+      + 'says a light is missing because the arithmetic runs and multiplies by '
+      + 'zero at the end',
+    ).not.toEqual([]);
+  });
+
   it('hands every surface tile and fleck to the live lane rather than to the author', () => {
     // The fluid owns the tiles: the profile says so, which is what makes the
     // scene read-only and what keeps the authored-overlap check from judging a

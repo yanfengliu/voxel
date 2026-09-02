@@ -1,10 +1,11 @@
 /**
  * How long a test is allowed to take, derived from the work it does rather than
- * from how loaded the machine happens to be. `docs/learning/lessons.md` records
- * what the other shape costs: a budget sized against the suite's current load is
- * consumed by the next heavy test anyone adds, and every expiry looks like a real
- * failure until someone reruns and sees green — which teaches rerunning until
- * green, which is how a suite stops being a gate.
+ * from how loaded the machine happens to be. What the other shape costs: a budget
+ * sized against the suite's current load is consumed by the next heavy test anyone
+ * adds, and every expiry looks like a real failure until someone reruns and sees
+ * green — which teaches rerunning until green, which is how a suite stops being a
+ * gate. `docs/learning/gate-proofs.md` records the mutation this rule was proved
+ * against.
  *
  * Measured on 2026-08-07, on a 32-core machine, idle and then against competing
  * CPU workers sized to reproduce the 2026-08-07 failure exactly:

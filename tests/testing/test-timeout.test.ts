@@ -71,10 +71,10 @@ describe('timeoutForMeasuredWorkMs', () => {
 });
 
 /**
- * The rule above is prose until something reads every line. `docs/learning/lessons.md`
- * is explicit that a rule which is only prose drifts inside the session that wrote it,
- * and this one had already drifted: ten hand-written budgets sat below the allowance
- * on 2026-08-07, two of them in the very file carrying the timeout lesson.
+ * The rule above is prose until something reads every line, and a rule that is only
+ * prose drifts inside the session that wrote it. This one had already drifted: ten
+ * hand-written budgets sat below the allowance on 2026-08-07, two of them in the very
+ * file carrying the timeout lesson.
  */
 describe('no test opts itself out of the contention allowance', () => {
   const TIMEOUT_LITERAL = [

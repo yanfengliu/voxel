@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url';
 
 import { describe, expect, it } from 'vitest';
 
+import { REPOSITORY_SOURCE_ROOTS_V1 } from './repo-source-roots.js';
 import { timeoutForMeasuredWorkMs } from './test-timeout.js';
 
 /**
@@ -25,6 +26,16 @@ import { timeoutForMeasuredWorkMs } from './test-timeout.js';
  * The membership question is asked of the compiler rather than of the include
  * list, because TypeScript also pulls in whatever an included file imports —
  * an include-list check calls those files uncovered when they are not.
+ *
+ * This gate had a horizon of its own until 2026-09-02: it globbed `fixtures/`
+ * because that is where the drift had been found, so the include list could
+ * have dropped any of `src`, `tools` or `tests` and this would still have
+ * reported full coverage — the same shape, one level up, as the rate scan that
+ * searched one directory while claiming the repository. It now walks every
+ * root in `REPOSITORY_SOURCE_ROOTS_V1`, whose own reach is re-derived from the
+ * repository's shape by `repo-wide-gate-coverage.test.ts`. `scripts/` holds
+ * only `.mjs` and is in no TypeScript program by construction; `npm run lint`
+ * is what covers it.
  */
 
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
@@ -65,26 +76,38 @@ function programFiles(): ReadonlySet<string> {
   return new Set(files);
 }
 
-describe('the typecheck program covers every fixture this repo writes', () => {
-  it('leaves no fixture TypeScript file outside the compiler program', () => {
+describe('the typecheck program covers every TypeScript file this repo writes', () => {
+  it('leaves no source-root TypeScript file outside the compiler program', () => {
     const program = programFiles();
-    const fixtures = globSync('fixtures/**/*.ts', { cwd: REPO_ROOT })
+    const written = REPOSITORY_SOURCE_ROOTS_V1
+      .flatMap((root) => globSync(`${root}/**/*.ts`, { cwd: REPO_ROOT }))
       .map((path) => path.split('\\').join('/'))
       .filter((path) => !path.startsWith(COMPATIBILITY_ONLY_PREFIX));
 
     expect(
-      fixtures.length,
-      'found no fixture files at all, so this gate is proving nothing',
+      written.length,
+      'found no TypeScript files at all, so this gate is proving nothing',
     ).toBeGreaterThan(0);
     // Non-vacuity: a file that is definitely in the program must be found, or
     // the path normalisation above has silently stopped matching anything.
     expect(program.has('src/core/contracts.ts')).toBe(true);
+    // And every root has to contribute, or the walk above is reporting full
+    // coverage while looking at part of the tree.
+    for (const root of REPOSITORY_SOURCE_ROOTS_V1) {
+      const seen = written.filter((path) => path.startsWith(`${root}/`)).length;
+      if (root === 'scripts') {
+        expect(seen, 'scripts/ has gained TypeScript, which is in no program')
+          .toBe(0);
+        continue;
+      }
+      expect(seen, `found no TypeScript under '${root}' to check`).toBeGreaterThan(0);
+    }
 
-    const uncovered = fixtures.filter((path) => !program.has(path));
+    const uncovered = written.filter((path) => !program.has(path));
 
     expect(
       uncovered,
-      'these fixture files are in no TypeScript program: add their directory '
+      'these files are in no TypeScript program: add their directory '
       + 'to tsconfig.json "include", or record them beside '
       + `${COMPATIBILITY_ONLY_PREFIX} with the reason they compile separately`,
     ).toEqual([]);
