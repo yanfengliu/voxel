@@ -2,6 +2,18 @@
 
 The standing answer to "did the gates actually do their job".
 
+
+## If a gate here is wrong
+
+A gate and the claim in its header can be wrong together, and when they are they look exactly like a gate that is right: retiring 356 lessons across this fleet found 43 that named a defect their own named test did not catch. Auditing one means reaching what was actually believed, measured, and abandoned — never the sentence the gate carries about itself, which is the same self-agreement these gates exist to catch.
+
+That evidence was deleted in the retirement commits, not lost. This repo's evidence file as it stood immediately before, all 36 entries with their anchors:
+
+    git show 8aaecfa:docs/learning/lessons-evidence.md
+
+`git log -- docs/learning/lessons-evidence.md` lists every earlier revision, and `git log -S'<phrase from the gate header>' -- docs/learning/` finds the entry a particular gate came from.
+
+
 Every entry below names a claim this repository used to carry as prose, the gate that now enforces it, and the exact product-code edit that was made to see the gate go red. A gate nobody has made fail is a claim about a gate, not a gate. Each mutation was applied, run against the narrow test file alone, reverted byte-for-byte, and run again green.
 
 Two shapes of false green are checked for deliberately, because this repository has shipped both:
