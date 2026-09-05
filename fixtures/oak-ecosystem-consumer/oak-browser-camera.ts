@@ -103,8 +103,12 @@ function renderedSubject(
   const minimum = new Vector3(Infinity, Infinity, Infinity);
   const maximum = new Vector3(-Infinity, -Infinity, -Infinity);
   for (const point of points) {
-    minimum.min(new Vector3(point.x, point.y, point.z));
-    maximum.max(new Vector3(point.x, point.y, point.z));
+    minimum.x = Math.min(minimum.x, point.x);
+    minimum.y = Math.min(minimum.y, point.y);
+    minimum.z = Math.min(minimum.z, point.z);
+    maximum.x = Math.max(maximum.x, point.x);
+    maximum.y = Math.max(maximum.y, point.y);
+    maximum.z = Math.max(maximum.z, point.z);
   }
   if (points.length === 0) {
     throw new Error(
@@ -170,7 +174,55 @@ export function fitOakBrowserCameraV1(
   rootCutaway: boolean,
   retainCurrentView: OakBrowserCameraRetentionV1 = false,
 ): OakBrowserCameraFitV1 {
-  const subject = renderedSubject(renderSnapshot, rootCutaway);
+  return fitRenderedSubject(
+    renderedSubject(renderSnapshot, rootCutaway), camera, preset, snapshot,
+    viewport, hudRightPx, rootCutaway, retainCurrentView,
+  );
+}
+
+/**
+ * One host-owned subject for immutable adapter frames. Identity, not revision,
+ * invalidates it; a new epoch can reuse a revision. No frame history is retained.
+ * Call clear on host disposal. Mutable caller inputs use the stateless fitter.
+ */
+export function createOakBrowserCameraFitterV1(): {
+  readonly fit: typeof fitOakBrowserCameraV1;
+  clear(): void;
+} {
+  let retained: {
+    readonly snapshot: RenderSnapshotV1;
+    readonly rootCutaway: boolean;
+    readonly subject: RenderedSubjectV1;
+  } | null = null;
+  return {
+    fit(camera, preset, snapshot, renderSnapshot, viewport, hudRightPx, rootCutaway,
+      retainCurrentView = false) {
+      if (retained?.snapshot !== renderSnapshot || retained.rootCutaway !== rootCutaway) {
+        retained = {
+          snapshot: renderSnapshot,
+          rootCutaway,
+          subject: renderedSubject(renderSnapshot, rootCutaway),
+        };
+      }
+      return fitRenderedSubject(
+        retained.subject, camera, preset, snapshot, viewport, hudRightPx,
+        rootCutaway, retainCurrentView,
+      );
+    },
+    clear() { retained = null; },
+  };
+}
+
+function fitRenderedSubject(
+  subject: RenderedSubjectV1,
+  camera: PerspectiveCamera,
+  preset: OakBrowserCameraV1,
+  snapshot: OakSimulationSnapshotV1,
+  viewport: OakBrowserViewportV1,
+  hudRightPx: number | null,
+  rootCutaway: boolean,
+  retainCurrentView: OakBrowserCameraRetentionV1,
+): OakBrowserCameraFitV1 {
   const subjectHeightM = Math.max(
     MIN_SUBJECT_HEIGHT_M,
     subject.size.y,
@@ -183,15 +235,6 @@ export function fitOakBrowserCameraV1(
   const directionTuple = rootCutaway && preset === 'hero'
     ? ROOT_CUTAWAY_HERO_DIRECTION
     : CAMERA_DIRECTIONS[preset];
-  const cameraDirection = new Vector3(...directionTuple).normalize();
-  const halfDepth = subject.points.reduce((depth, point) => Math.max(
-    depth,
-    Math.abs(
-      (point.x - center.x) * cameraDirection.x
-      + (point.y - center.y) * cameraDirection.y
-      + (point.z - center.z) * cameraDirection.z,
-    ),
-  ), 0);
   const hudReserved = hudRightPx !== null;
   const safeLeftNdc = hudRightPx === null
     ? -FRAME_RIGHT_NDC
@@ -221,6 +264,15 @@ export function fitOakBrowserCameraV1(
       && bounds.minY > -RETAIN_VERTICAL_LIMIT_NDC
       && bounds.maxY < RETAIN_VERTICAL_LIMIT_NDC);
   if (!retained) {
+    const cameraDirection = new Vector3(...directionTuple).normalize();
+    const halfDepth = subject.points.reduce((depth, point) => Math.max(
+      depth,
+      Math.abs(
+        (point.x - center.x) * cameraDirection.x
+        + (point.y - center.y) * cameraDirection.y
+        + (point.z - center.z) * cameraDirection.z,
+      ),
+    ), 0);
     camera.aspect = viewport.width / viewport.height;
     camera.filmOffset = -desiredCenterNdc
       * camera.getFilmWidth()

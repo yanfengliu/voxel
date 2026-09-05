@@ -6,6 +6,14 @@ Unlike a lesson, an entry stays after it becomes a gate. This is the standing li
 
 Newest first.
 
+## 2026-09-05 — Oak navigation rebuilt unchanged voxel geometry
+
+**Symptom and investigation.** Continuing the owner's responsive-control and honest-performance work, ordinary headless inspection still showed slow presentation. Independent source review found that every camera gesture rebuilt the exact subject from its unchanged accepted frame, including two temporary bound vectors per transformed vertex. The existing producer benchmark excluded this host work.
+
+**Root cause and bounded repair.** Exact camera evidence was recomputed from scratch even when only the camera moved. The private host now retains one subject by immutable snapshot identity and focus, reprojects bounds on each view change, and clears its entry on disposal. Geometry replacement, reset and focus changes reprepare it. The existing stateless function still supports mutable caller inputs. This repair does not establish sustained FPS or eliminate other host and renderer costs.
+
+**How it is checked from now on.** `oak-browser-camera-cache.test.ts` compares exact fit evidence and camera matrices for the default seed at days 0, 100 and 249, three presets, retained free views, two widths, and ordinary to real cutaway to ordinary transitions. It separately counts preparation calls, replaces geometry under the same revision, resets epochs, clears the entry, and mutates matrices through the stateless lane. Forcing the preparation condition always true was confirmed to fail with one expected call versus four actual calls; the condition was restored. The fitting measurement and visual limits are in the [devlog](../devlog/detailed/2026-09-05_2026-09-05.md#camera-navigation-reuses-the-current-subject).
+
 ## 2026-09-01 — Root cutaway fitted the crown and reduced its subject to tiny traces
 
 **Symptom, as seen in visual review.** The root cutaway still framed the entire aboveground tree, so the accepted roots occupied only a tiny part of the canvas and the belowground inspection mode did not actually inspect its named subject.

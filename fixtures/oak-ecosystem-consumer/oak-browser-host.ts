@@ -10,7 +10,7 @@ import {
   type OakRenderFrameV1,
 } from './oak-render-adapter.js';
 import { createOakSimulationV1 } from './oak-simulation.js';
-import { fitOakBrowserCameraV1 } from './oak-browser-camera.js';
+import { createOakBrowserCameraFitterV1 } from './oak-browser-camera.js';
 import { createOakBrowserFrameClockV1 } from './oak-browser-frame-clock.js';
 import { mountOakBrowserPresentedFpsReadoutV1, recordOakBrowserRafPresentationV1 } from './oak-browser-presented-fps.js';
 import { enqueueOakPendingCommandV1 } from './oak-browser-command-queue.js';
@@ -69,6 +69,7 @@ function mountOakBrowserHost(): OakBrowserHarnessV1 {
   const renderer = new WebGLRenderer({ canvas, alpha: false, antialias: true });
   const lighting = createOakBrowserLightingV1(scene, renderer);
   const camera = new PerspectiveCamera(34, 1, 0.005, 25);
+  const cameraFitter = createOakBrowserCameraFitterV1();
   const simulation = createOakSimulationV1({
     seed: CASE_STUDY_SEED, timeScale: OAK_DEFAULT_TIME_SCALE_V1,
   });
@@ -138,7 +139,7 @@ function mountOakBrowserHost(): OakBrowserHarnessV1 {
       : hud.getBoundingClientRect().right;
     const view = `${snapshot.epoch}:${presentation.rootCutaway}:${preset}:${hudRightPx === null}`;
     const freeCamera = navigation?.isFree() === true;
-    cameraFit = fitOakBrowserCameraV1(
+    cameraFit = cameraFitter.fit(
       camera,
       preset,
       snapshot,
@@ -406,6 +407,7 @@ function mountOakBrowserHost(): OakBrowserHarnessV1 {
     cancelAnimationFrame(animationFrame);
     resizeObserver.disconnect();
     navigation?.dispose();
+    cameraFitter.clear();
     for (const remove of listeners.splice(0)) remove();
     window.removeEventListener('beforeunload', dispose);
     fpsReadout.dispose();
