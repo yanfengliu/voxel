@@ -4,7 +4,7 @@ Voxel's own additions to, and strengthenings of, the fleet constitution in [AGEN
 
 They live here because the constitution section of AGENTS.md is a verbatim copy of `fleet/FLEET.md` that `/sync-instructions` rewrites wholesale. A local rule written into that section is deleted the next time anyone syncs the fleet — which is exactly what happened on 2026-08-01, when a routine canon propagation silently dropped every rule on this page. A repo-tracked file cannot be clobbered by a fleet sync, so this is where they belong.
 
-These rules bind alongside the constitution and may only make it stricter. Where one restates a canon rule, the version here wins for this repository.
+These rules add concrete repository constraints consistent with the Fleet Orchestration Policy in [AGENTS.md](../../AGENTS.md).
 
 ## Product direction
 
@@ -17,21 +17,21 @@ Voxel-only. Owner vision, stated 2026-08-26.
 Voxel refuses the shared checkout outright: a browser gate boots whatever is on disk, so two sessions in one checkout cannot honestly attribute a whole-app result.
 
 - Concurrent sessions each take their own `git worktree`, and only one session works in the primary checkout (owner rule, 2026-07-31). Sharing one checkout means one index, one `node_modules`, and a browser gate that boots whatever is on disk, so no session can run a whole-app gate and honestly attribute the result. Two sessions sharing voxel cost one session three separate control runs — roughly thirty minutes of browser suites — purely to work out which failures were whose, and it still misread a passing tail as a clean control once. A worktree costs one `npm ci` and removes the whole class.
-- Commit and push in small units, and prefer the smallest coherent one that passes its gates. Most cross-session collisions come from two large uncommitted diffs overlapping for hours; short-lived diffs barely overlap at all.
+- When commits and pushes are authorized, use the smallest coherent units that pass their gates. Most cross-session collisions come from two large uncommitted diffs overlapping for hours; short-lived diffs barely overlap at all.
 - When sessions must share a checkout anyway, split file ownership explicitly and say so up front. Collisions land on the files neither session owns — the 2026-07-31 pair collided only on `tools/studio/live-physics.ts`, which both a physics change and a windmill change had reason to touch.
 - A whole-app gate that fails in a shared checkout has told you nothing about your diff. `npm run test:browser` serves whatever is on disk, so a concurrent session's half-written studio code fails specs your change never touched — the 2026-07-30 full review saw four, including a `.scene-canvas` that never became visible. Never read those as your own result, and never blame the other session without proof: add a throwaway `git worktree` at HEAD, apply only your own staged diff, `npm ci` there, and run the gate in that tree, which is what took that review green through the specs that had failed. The same reasoning covers any gate that exercises the whole app rather than your files.
 
 ## Review
 
-Strengthens the canon line `High-risk work — persistence/migrations, security/auth, concurrency, money, supply chain, edits that reach sibling repos — escalates to the multi-cli-review skill`, narrowing what counts as high-risk persistence so browser-local notes do not escalate by accident.
+For the Fleet Orchestration Policy's risk-based review, persistence means durable or shared data, cross-version migrations, or credible data-loss or compatibility risk; browser-local notes do not escalate merely because they store a disposable preference.
 
-- Review: self-review trivial changes; adversarially review non-trivial ones — independent agents that try to refute the change against the live code. High-risk work (persistence involving durable or shared data, cross-version migrations, or credible data-loss or compatibility risk; security/auth; concurrency; money; supply chain; edits that reach sibling repos) escalates to the multi-cli-review skill. Browser-local notes and disposable preferences use ordinary risk-based review unless they introduce one of those risks. Reviewers must read the live code; verify reviewer claims against the codebase before acting on them; substantive findings outweigh approval votes.
+- Browser-local notes and disposable preferences use ordinary risk-based review unless they introduce durable/shared-data, migration, data-loss, compatibility, security, concurrency, money, supply-chain, or sibling-repo risk. Verify reviewer claims against the live codebase before acting on them; substantive findings outweigh approval votes.
 
 ## Docs
 
 Voxel-only as of the 2026-08-05 canon cut, which kept `Write prose one line per paragraph` as house style and dropped the rest of `Docs are part of the change` as derivable. Voxel keeps the whole rule, because `README.md` is capability-oriented here and an automatic README edit works against that.
 
-- Docs are part of the change: update every affected surface in the same commit; affected surfaces do not automatically include `README.md`; write prose one line per paragraph (no hard wrapping); never reference or mandate files that don't exist.
+- Docs are part of the change: update every affected surface in the same commit; affected surfaces do not automatically include `README.md`; never reference or mandate files that don't exist.
 
 - Quantified, exhaustive, and causal claims require durable executable proof at the same scope as the prose (owner rule, 2026-08-02). A reviewer assertion, a plausible mechanism, a partial sweep, or a count of candidates exceeding one threshold is not proof for “every,” “only,” “failed on this gate alone,” or an exact causal attribution. Preserve a deterministic counterexample, reviewed fixed fixture, reviewed deterministic proof input or proof generator, or the generator or command plus concise reproducible provenance that can refute the claim when it regresses, and narrow the prose to what that input or procedure actually establishes. Every retained input follows the fleet promotion and Git-blob-size rules; raw task-run measurements remain ignored local evidence and are deleted when no active task, process, reviewer, or documented local workflow needs them.
 
