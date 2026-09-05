@@ -1,10 +1,14 @@
-import type { OakOrganKindV1, OakVec3V1 } from './oak-types.js';
 import {
-  OAK_TAPER_RATIOS_V1,
-  oakWoodTerminalTaperIndexV1,
-  oakWoodTaperIndexV1,
-  oakWoodUnitCrossSectionAreaM2V1,
-} from './oak-wood-shape.js';
+  isOakAttachedLivingOrganV1,
+  isOakPlacedOrganV1,
+} from './oak-organ-lifecycle.js';
+import type {
+  OakOrganDevelopmentPhaseV1,
+  OakOrganKindV1,
+  OakOrganStageV1,
+  OakVec3V1,
+} from './oak-types.js';
+import { OAK_PHYSICAL_WOOD_TIP_RADIUS_RATIO_V1 } from './oak-physical-wood.js';
 
 export interface OakTopologyOrganV1 {
   readonly key: string;
@@ -14,8 +18,10 @@ export interface OakTopologyOrganV1 {
   readonly direction: OakVec3V1;
   readonly lengthM: number;
   readonly radiusM: number;
-  readonly stage: string;
+  readonly stage: OakOrganStageV1;
   readonly healthFraction: number;
+  readonly developmentPhase?: OakOrganDevelopmentPhaseV1;
+  readonly development?: { readonly phase: OakOrganDevelopmentPhaseV1 };
 }
 
 export interface OakGerminationPortsV1 {
@@ -58,8 +64,8 @@ function ordinal(left: string, right: string): number {
 }
 
 function isActiveSegment(organ: OakTopologyOrganV1): boolean {
-  return organ.stage !== 'abscised'
-    && organ.healthFraction > 0
+  return isOakPlacedOrganV1(organ)
+    && isOakAttachedLivingOrganV1(organ)
     && organ.lengthM > 0
     && organ.radiusM > 0
     && (organ.kind === 'stem'
@@ -150,11 +156,10 @@ function dotVector(left: OakVec3V1, right: OakVec3V1): number {
 }
 
 /**
- * Mechanics uses finite-area line-element clamps at a node. The rendered
- * parent has one integrated flared shaft surface, while this explicit area
- * budget remains the load path and is never inferred from triangles. Half-open
- * sectors partition a parent's exact octagonal terminal section once, so
- * sibling clamps cannot double-own area.
+ * Mechanics uses finite-area line-element clamps at a node. This renderer-free
+ * area budget is derived from the circular physical shaft and never from a
+ * disposable mesh or voxel cover. Half-open sectors partition the parent's
+ * terminal section once, so sibling clamps cannot double-own area.
  */
 export function oakFiniteWoodAttachmentSectionsV1(
   organs: readonly OakTopologyOrganV1[],
@@ -168,22 +173,16 @@ export function oakFiniteWoodAttachmentSectionsV1(
     children.push(organ);
     childrenByParent.set(organ.parentKey, children);
   }
-  const unitArea = oakWoodUnitCrossSectionAreaM2V1();
   const sections: OakFiniteWoodAttachmentSectionV1[] = [];
   for (const [parentKey, unorderedChildren] of [...childrenByParent.entries()]
     .sort(([left], [right]) => ordinal(left, right))) {
     const parent = byKey.get(parentKey)!;
     const children = [...unorderedChildren].sort((left, right) =>
       ordinal(left.key, right.key));
-    const taperIndex = oakWoodTaperIndexV1(
-      parent.radiusM,
-      children.map((child) => child.radiusM),
-      oakWoodTerminalTaperIndexV1(parent.kind),
-    );
-    const terminalRadiusM = parent.radiusM * OAK_TAPER_RATIOS_V1[taperIndex]!;
-    const parentAreaM2 = unitArea * terminalRadiusM * terminalRadiusM;
+    const terminalRadiusM = parent.radiusM * OAK_PHYSICAL_WOOD_TIP_RADIUS_RATIO_V1;
+    const parentAreaM2 = Math.PI * terminalRadiusM * terminalRadiusM;
     const childAreas = children.map((child) =>
-      unitArea * child.radiusM * child.radiusM);
+      Math.PI * child.radiusM * child.radiusM);
     const totalChildAreaM2 = childAreas.reduce((sum, area) => sum + area, 0);
     let sectorStartFraction = 0;
     children.forEach((child, index) => {

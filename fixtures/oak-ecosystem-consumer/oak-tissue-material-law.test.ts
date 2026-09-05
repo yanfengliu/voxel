@@ -25,7 +25,6 @@ import {
 import type { OakOrganSnapshotV1, OakRenderProjectionStateV1 } from './oak-types.js';
 
 const TISSUE_BATCH_KEYS = new Set([
-  OAK_LEAF_VOXEL_BATCH_KEY_V1,
   OAK_ROOT_VOXEL_BATCH_KEY_V1,
   OAK_SEED_BUD_VOXEL_BATCH_KEY_V1,
   OAK_WOOD_VOXEL_BATCH_KEY_V1,
@@ -55,8 +54,9 @@ function parsePublicCube(instanceKey: string, matrix: Float32Array): PublicCube 
 function publicCubes(frame: OakRenderFrameV1): readonly PublicCube[] {
   return frame.snapshot.batches.flatMap((batch) => {
     if (!TISSUE_BATCH_KEYS.has(batch.key)) return [];
-    return batch.instanceKeys.map((key, slot) =>
-      parsePublicCube(key, batch.matrices.slice(slot * 16, slot * 16 + 16)));
+    return batch.instanceKeys.flatMap((key, slot) => key.includes(':union-voxel:')
+      ? [parsePublicCube(key, batch.matrices.slice(slot * 16, slot * 16 + 16))]
+      : []);
   });
 }
 
@@ -98,15 +98,18 @@ function canonicalIssues(cubes: readonly PublicCube[]): readonly string[] {
   return issues;
 }
 
-function componentCount(
+function componentsByCell(
   cells: ReadonlyMap<number, { readonly cell: OakTissueLatticeCellV1 }>,
-): number {
+): ReadonlyMap<number, number> {
   const remaining = new Set(cells.keys());
+  const result = new Map<number, number>();
   let components = 0;
   while (remaining.size > 0) {
+    const component = components;
     components += 1;
     const first = remaining.values().next().value as number;
     remaining.delete(first);
+    result.set(first, component);
     const queue = [first];
     for (const queuedCellId of queue) {
       const coordinate = cells.get(queuedCellId)!.cell;
@@ -118,11 +121,82 @@ function componentCount(
         ];
         const id = oakTissueCellIdV1(next);
         if (!remaining.delete(id)) continue;
+        result.set(id, component);
         queue.push(id);
       }
     }
   }
-  return components;
+  return result;
+}
+
+function connectivityIssues(
+  cells: ReadonlyMap<number, {
+    readonly cell: OakTissueLatticeCellV1;
+    readonly ownerOrganKey: string;
+  }>,
+  detachedOwners: ReadonlySet<string>,
+): readonly string[] {
+  const count = (subset: ReadonlyMap<number, typeof cells extends ReadonlyMap<number, infer T>
+    ? T : never>): number => new Set(componentsByCell(subset).values()).size;
+  const attached = new Map([...cells].filter(([, cell]) =>
+    !detachedOwners.has(cell.ownerOrganKey)));
+  const attachedComponents = count(attached);
+  const issues = attachedComponents === 1
+    ? [] : [`attached plant has ${String(attachedComponents)} induced components`];
+  return issues;
+}
+
+function leafBodyConnectivityIssues(
+  projection: OakTissueVoxelProjectionV1,
+): readonly string[] {
+  const issues: string[] = [];
+  for (const body of [...projection.attachedLeafBodies, ...projection.detachedLeafBodies]) {
+    const cells = new Map<number, { readonly cell: OakTissueLatticeCellV1 }>();
+    for (const key of body.sourceKeys) {
+      const match = /^oak:organ:\d+:\d+:[^:]+:(-?\d+):(-?\d+):(-?\d+)$/u.exec(key);
+      if (!match) {
+        issues.push(`unparseable leaf body source ${key}`);
+        continue;
+      }
+      const cell: OakTissueLatticeCellV1 = [Number(match[1]), Number(match[2]), Number(match[3])];
+      cells.set(oakTissueCellIdV1(cell), { cell });
+    }
+    const componentCount = new Set(componentsByCell(cells).values()).size;
+    if (componentCount !== 1) {
+      issues.push(`leaf body ${body.leafKey} has ${String(componentCount)} local components`);
+    }
+  }
+  return issues;
+}
+
+function detachedLifecycleIssues(
+  projection: OakTissueVoxelProjectionV1,
+  organs: readonly OakOrganSnapshotV1[],
+): readonly string[] {
+  const detached = new Set(organs
+    .filter((organ) => organ.stage === 'detached')
+    .map((organ) => organ.key));
+  const issues: string[] = [];
+  for (const port of projection.ports) {
+    if (detached.has(port.parentOrganKey) || detached.has(port.childOrganKey)) {
+      issues.push(`detached port ${port.parentOrganKey} -> ${port.childOrganKey}`);
+    }
+  }
+  for (const material of projection.materialCells.values()) {
+    for (const claim of material.claimOrganKeys ?? []) {
+      if (detached.has(claim) && material.ownerOrganKey !== claim) {
+        issues.push(`foreign detached claim ${material.ownerOrganKey} -> ${claim}`);
+      }
+    }
+  }
+  for (const assignment of projection.sourceAssignments.values()) {
+    if (!detached.has(assignment.ownerOrganKey)) continue;
+    const owner = projection.materialCells.get(oakTissueCellIdV1(assignment.cell))?.ownerOrganKey;
+    if (owner !== assignment.ownerOrganKey) {
+      issues.push(`detached source ${assignment.sourceKey} retained by ${owner ?? 'nothing'}`);
+    }
+  }
+  return issues;
 }
 
 function sourceOwner(key: string | undefined): string | null {
@@ -130,8 +204,14 @@ function sourceOwner(key: string | undefined): string | null {
   return /^oak:(organ:\d+:\d+):/u.exec(key)?.[1] ?? null;
 }
 
-function portIssues(projection: OakTissueVoxelProjectionV1): readonly string[] {
+function portIssues(
+  projection: OakTissueVoxelProjectionV1,
+  organs: readonly OakOrganSnapshotV1[],
+): readonly string[] {
   const issues: string[] = [];
+  const detachedOwners = new Set(organs
+    .filter((organ) => organ.stage === 'detached')
+    .map((organ) => organ.key));
   const pathIsContiguous = (path: readonly OakTissueLatticeCellV1[]): boolean =>
     path.every((cell, index) => index === 0 || NEIGHBORS.some((delta) =>
       cell[0] === path[index - 1]![0] + delta[0]
@@ -182,7 +262,7 @@ function portIssues(projection: OakTissueVoxelProjectionV1): readonly string[] {
         port.childCell[2] + delta[2],
       ];
       const owner = projection.materialCells.get(oakTissueCellIdV1(neighbor))?.ownerOrganKey;
-      if (owner !== undefined && !junctionOwners.has(owner)) {
+      if (owner !== undefined && !junctionOwners.has(owner) && !detachedOwners.has(owner)) {
         issues.push(`unrelated port contact ${port.childOrganKey} <> ${owner}`);
       }
     }
@@ -232,28 +312,34 @@ function expectMaterialLaw(
     : {});
   const cubes = publicCubes(frame);
   const publicCells = new Map(cubes.map((cube) => [oakTissueCellIdV1(cube.cell), cube]));
-  expect(cubes, label).toHaveLength(projection.materialCells.size);
+  const expectedStructuralKeys = [...projection.records]
+    .filter(([batchKey]) => batchKey !== OAK_LEAF_VOXEL_BATCH_KEY_V1)
+    .flatMap(([, records]) => records.map((record) => record.key))
+    .sort();
+  expect(cubes.map((cube) => cube.instanceKey).sort(), label).toEqual(expectedStructuralKeys);
   expect(canonicalIssues(cubes), label).toEqual([]);
-  expect([...publicCells.keys()].sort((left, right) => left - right), label)
-    .toEqual([...projection.materialCells.keys()].sort((left, right) => left - right));
   for (const [id, cube] of publicCells) {
     expect(cube.ownerOrganKey, `${label} ${cube.instanceKey}`)
       .toBe(projection.materialCells.get(id)?.ownerOrganKey);
   }
-  expect(componentCount(publicCells), `${label} public`).toBe(1);
-  expect(componentCount(projection.materialCells), label).toBe(1);
+  const detachedOwners = new Set(state.organs
+    .filter((organ) => organ.stage === 'detached')
+    .map((organ) => organ.key));
+  expect(connectivityIssues(projection.materialCells, detachedOwners), label).toEqual([]);
+  expect(leafBodyConnectivityIssues(projection), `${label} leaf bodies`).toEqual([]);
   expect(projection.sourceAssignments.size, label).toBe(projection.sourceVoxelCount);
   expect([...projection.materialCells.values()].flatMap((material) =>
     material.sourceKey === undefined ? [] : [material.sourceKey]).sort(), label)
     .toEqual([...projection.sourceAssignments.keys()].sort());
   expect(sourceClaimIssues(projection, state.organs), label).toEqual([]);
-  expect(portIssues(projection), label).toEqual([]);
+  expect(detachedLifecycleIssues(projection, state.organs), label).toEqual([]);
+  expect(portIssues(projection, state.organs), label).toEqual([]);
   expect(frame.metrics.skippedTooShortOrNonpositiveRadiusSegments, label).toBe(0);
   expect(frame.metrics.skippedJunctionConsumedSegments, label).toBe(0);
 }
 
 describe('oak visible voxel material law', () => {
-  it('proves exact public cubes, one material union, retained sources and declared fused ports', () => {
+  it('proves exact public cubes, one structural material union, retained sources and declared fused ports', () => {
     const simulation = createOakSimulationV1();
     let currentDay = 0;
     for (const day of [0, 3, 6, 13, 42, 82, 100, 210, 220, 239, 240]) {
@@ -301,7 +387,16 @@ describe('oak visible voxel material law', () => {
     const fused = [...projection.sourceAssignments.values()].filter((candidate) =>
       projection.materialCells.get(oakTissueCellIdV1(candidate.cell))?.ownerOrganKey
         !== candidate.ownerOrganKey);
-    expect(fused).toHaveLength(8);
+    const organsByKey = new Map(simulation.snapshot().organs.map((organ) => [organ.key, organ]));
+    expect(fused.length).toBeGreaterThan(0);
+    expect(fused.every((candidate) => {
+      const material = projection.materialCells.get(oakTissueCellIdV1(candidate.cell));
+      return material !== undefined
+        && organsByKey.get(candidate.ownerOrganKey)?.parentKey === material.ownerOrganKey
+        && (candidate.sourceLocalCell[1] === 0 || candidate.sourceLocalCell[1] === 1)
+        && material.role === 'owner-path'
+        && material.claimOrganKeys?.includes(candidate.ownerOrganKey) === true;
+    })).toBe(true);
     expect(sourceClaimIssues(projection, simulation.snapshot().organs)).toEqual([]);
     const assignment = [...projection.sourceAssignments.values()][0]!;
     const id = oakTissueCellIdV1(assignment.cell);
@@ -343,7 +438,42 @@ describe('oak visible voxel material law', () => {
         ] as const],
       }, ...projection.ports.slice(1)],
     };
-    expect(portIssues(brokenPath)).toContain(`misanchored parent path ${port.childOrganKey}`);
+    expect(portIssues(brokenPath, simulation.snapshot().organs))
+      .toContain(`misanchored parent path ${port.childOrganKey}`);
+  });
+
+  it('keeps falling leaves disconnected without losing their owned source tissue', () => {
+    const simulation = createOakSimulationV1();
+    simulation.advanceHostTicks(oakHostTicksForBiologicalDaysV1(240.5));
+    const state = simulation.projection();
+    const projection = buildOakTissueVoxelProjectionV1(state, false);
+    const falling = state.organs.find((organ) => organ.stage === 'detached')!;
+    const detachedOwners = new Set(state.organs
+      .filter((organ) => organ.stage === 'detached')
+      .map((organ) => organ.key));
+    expect(falling.developmentPhase).toBe('falling');
+    expect([...projection.materialCells.values()].every((material) =>
+      !detachedOwners.has(material.ownerOrganKey))).toBe(true);
+    expect([...projection.sourceAssignments.values()].every((assignment) =>
+      !detachedOwners.has(assignment.ownerOrganKey))).toBe(true);
+    expect(projection.tissueVoxelCount).toBe(projection.materialCells.size);
+    expect(projection.sourceVoxelCount).toBe(projection.sourceAssignments.size);
+    expect(projection.detachedLeafBodies).toHaveLength(detachedOwners.size);
+    for (const body of projection.detachedLeafBodies) {
+      const cells = new Map(body.records.map((record) => {
+        const match = /:(-?\d+):(-?\d+):(-?\d+)$/u.exec(record.key);
+        if (match === null) throw new Error(`Cannot read detached source cell '${record.key}'.`);
+        const cell = [Number(match[1]), Number(match[2]), Number(match[3])] as const;
+        return [oakTissueCellIdV1(cell), { cell }] as const;
+      }));
+      expect(cells.size, body.leafKey).toBe(body.voxelCount);
+      expect(componentsByCell(cells).size, body.leafKey).toBe(body.voxelCount);
+      expect(new Set(componentsByCell(cells).values()).size, body.leafKey).toBe(1);
+      expect(body.sourceKeys).toHaveLength(body.sourceVoxelCount);
+      expect(body.voxelCount - body.sourceVoxelCount, body.leafKey)
+        .toBe(body.repairVoxelCount);
+    }
+    expect(detachedLifecycleIssues(projection, state.organs)).toEqual([]);
   });
 
   it('keeps the public cube geometry exactly voxel-shaped', () => {

@@ -47,10 +47,16 @@ const EXPECTED_HYBRID_CHUNKS = Object.freeze(['chunk:oak:soil-field']);
 
 const EXPECTED_VOXEL_RULES = Object.freeze([
   'declared-port-fused-paths',
+  'development-front-prefixes',
   'fallen-leaf-lobed-litter-mask',
+  'leaf-anatomical-senescence-order',
   'leaf-lobed-area-mask',
   'leaf-petiole-midrib-mask',
+  'leaf-secondary-vein-material-rhythm',
+  'leaf-transverse-camber-mask',
+  'litter-living-tissue-disjoint',
   'litter-soil-face-contact',
+  'organ-local-float32-clearance',
   'organ-state-palette-quantization',
   'rain-cue-fall-impact-expiry',
   'rain-cue-retained-surface-contact',
@@ -66,10 +72,10 @@ const EXPECTED_VOXEL_RULES = Object.freeze([
   'soil-tissue-clearance',
   'soil-top-boundary',
   'source-claim-preservation',
-  'uniform-tissue-cubes',
+  'tissue-voxel-primitives',
   'weather-cue-scene-occupancy-clearance',
   'weather-cue-voxel-material',
-  'wood-tapered-connected-mask',
+  'wood-cylindrical-connected-mask',
 ]);
 
 function duplicates(values: readonly string[]): readonly string[] {

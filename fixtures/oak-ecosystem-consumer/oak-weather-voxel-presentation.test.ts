@@ -13,6 +13,7 @@ import { OAK_TISSUE_VOXEL_PITCH_M_V1 } from './oak-tissue-voxel-projection.js';
 import {
   buildOakWeatherVoxelPresentationV1,
   createOakWeatherVoxelMaterialV1,
+  oakWeatherNeedsOccupancyV1,
   OAK_RAIN_FALL_TICKS_V1,
   OAK_RAIN_IMPACT_TICKS_V1,
   OAK_RAIN_PRESENTATION_TICKS_V1,
@@ -40,7 +41,34 @@ function center(record: ReturnType<typeof build>['records'][number]): readonly [
   return [record.matrix[12]!, record.matrix[13]!, record.matrix[14]!];
 }
 
+function cubeBounds(
+  cubeCenter: readonly [number, number, number],
+): Readonly<{ min: readonly [number, number, number]; max: readonly [number, number, number] }> {
+  const half = OAK_TISSUE_VOXEL_PITCH_M_V1 / 2;
+  return {
+    min: cubeCenter.map((value) => value - half) as [number, number, number],
+    max: cubeCenter.map((value) => value + half) as [number, number, number],
+  };
+}
+
 describe('oak representative voxel weather presentation', () => {
+  it('requests placed-cube occupancy only while a rain or breeze cue is active', () => {
+    expect(oakWeatherNeedsOccupancyV1({
+      hostTick: 100, wind: STILL, rainEvent: undefined,
+    })).toBe(false);
+    expect(oakWeatherNeedsOccupancyV1({
+      hostTick: 100, wind: STILL, rainEvent: EVENT,
+    })).toBe(true);
+    expect(oakWeatherNeedsOccupancyV1({
+      hostTick: EVENT.startedHostTick + OAK_RAIN_PRESENTATION_TICKS_V1,
+      wind: STILL,
+      rainEvent: EVENT,
+    })).toBe(false);
+    expect(oakWeatherNeedsOccupancyV1({
+      hostTick: 100, wind: BREEZE, rainEvent: undefined,
+    })).toBe(true);
+  });
+
   it('is deterministic, bounded, voxel-only, and explicit about its authority', () => {
     const first = build();
     const second = build();
@@ -141,12 +169,32 @@ describe('oak representative voxel weather presentation', () => {
     const blockedCenter = center(whole.records[0]!);
     const blocked = build({
       hostTick: impactTick,
-      occupiedCubeCentersM: [blockedCenter],
+      occupiedCubeBoundsM: [cubeBounds(blockedCenter)],
     });
     expect(blocked.records.some((record) => center(record).every(
       (value, index) => value === blockedCenter[index],
     ))).toBe(false);
     expect(blocked.records.length).toBe(whole.records.length - 1);
+
+    const fractionalOverlapCenter = [...blockedCenter] as [number, number, number];
+    fractionalOverlapCenter[0] += OAK_TISSUE_VOXEL_PITCH_M_V1 * .75;
+    const fractionalOverlap = build({
+      hostTick: impactTick,
+      occupiedCubeBoundsM: [cubeBounds(fractionalOverlapCenter)],
+    });
+    expect(fractionalOverlap.records.some((record) => center(record).every(
+      (value, index) => value === blockedCenter[index],
+    ))).toBe(false);
+
+    const faceContactCenter = [...blockedCenter] as [number, number, number];
+    faceContactCenter[0] += OAK_TISSUE_VOXEL_PITCH_M_V1;
+    const faceContact = build({
+      hostTick: impactTick,
+      occupiedCubeBoundsM: [cubeBounds(faceContactCenter)],
+    });
+    expect(faceContact.records.some((record) => center(record).every(
+      (value, index) => value === blockedCenter[index],
+    ))).toBe(true);
   });
 
   it('uses the mechanics direction and advances periodic packets forward with wind travel', () => {
@@ -264,9 +312,9 @@ describe('oak representative voxel weather presentation', () => {
     });
   });
 
-  it('keeps every day-240 rain impact frame out of all placed fine cubes', () => {
+  it('keeps every day-249 rain impact frame out of all placed fine cubes', () => {
     const simulation = createOakSimulationV1();
-    simulation.advanceHostTicks(oakHostTicksForBiologicalDaysV1(240));
+    simulation.advanceHostTicks(oakHostTicksForBiologicalDaysV1(249));
     const snapshot = simulation.snapshot();
     const coordinate = (matrices: ArrayLike<number>, slot: number): string =>
       `${String(matrices[slot * 16 + 12])}:${String(matrices[slot * 16 + 13])}:`

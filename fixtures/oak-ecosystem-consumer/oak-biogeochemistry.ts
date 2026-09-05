@@ -6,8 +6,22 @@ import {
   OAK_SECONDS_PER_HOUR_V1,
   OAK_SECONDS_PER_DAY_V1,
 } from './oak-parameters.js';
-import type { MutableOakSoilCellV1, MutableOakStateV1 } from './oak-state.js';
-import type { OakResourcePoolsV1 } from './oak-types.js';
+import {
+  isOakAttachedLivingOrganV1,
+  isOakExposedAttachedFineRootV1,
+  isOakExposedAttachedLeafV1,
+  isOakPlacedOrganV1,
+} from './oak-organ-lifecycle.js';
+import type {
+  MutableOakOrganV1,
+  MutableOakSoilCellV1,
+  MutableOakStateV1,
+} from './oak-state.js';
+import {
+  addOakBoundarySinkV1,
+  addOakBoundarySourceV1,
+  oakConservativeScalarTransferV1,
+} from './oak-boundary-accounting.js';
 
 function clamp01(value: number): number {
   return Math.max(0, Math.min(1, value));
@@ -15,76 +29,6 @@ function clamp01(value: number): number {
 
 function cellVolumeLiters(cell: MutableOakSoilCellV1): number {
   return cell.sizeM.x * cell.sizeM.y * cell.sizeM.z * 1_000;
-}
-
-function compensatedPoolAddition(
-  total: OakResourcePoolsV1,
-  correction: OakResourcePoolsV1,
-  delta: OakResourcePoolsV1,
-): readonly [OakResourcePoolsV1, OakResourcePoolsV1] {
-  const add = (key: keyof OakResourcePoolsV1) => {
-    const adjusted = delta[key] - correction[key];
-    const next = total[key] + adjusted;
-    return { next, correction: (next - total[key]) - adjusted };
-  };
-  const carbon = add('carbonKg');
-  const nitrogen = add('nitrogenKg');
-  const phosphorus = add('phosphorusKg');
-  const water = add('waterLiters');
-  return [{
-    carbonKg: carbon.next,
-    nitrogenKg: nitrogen.next,
-    phosphorusKg: phosphorus.next,
-    waterLiters: water.next,
-  }, {
-    carbonKg: carbon.correction,
-    nitrogenKg: nitrogen.correction,
-    phosphorusKg: phosphorus.correction,
-    waterLiters: water.correction,
-  }];
-}
-
-function conservativeScalarTransfer(
-  source: number,
-  destination: number,
-  requested: number,
-): Readonly<{ source: number; destination: number; transferred: number }> {
-  const combined = source + destination;
-  const nextSource = source - Math.min(source, Math.max(0, requested));
-  const nextDestination = combined - nextSource;
-  return {
-    source: nextSource,
-    destination: nextDestination,
-    transferred: nextDestination - destination,
-  };
-}
-
-function addBoundarySource(
-  state: MutableOakStateV1,
-  carbonKg: number,
-  nitrogenKg: number,
-  phosphorusKg: number,
-  waterLiters: number,
-): void {
-  [state.sources, state.sourceCompensation] = compensatedPoolAddition(
-    state.sources,
-    state.sourceCompensation,
-    { carbonKg, nitrogenKg, phosphorusKg, waterLiters },
-  );
-}
-
-function addBoundarySink(
-  state: MutableOakStateV1,
-  carbonKg: number,
-  nitrogenKg: number,
-  phosphorusKg: number,
-  waterLiters: number,
-): void {
-  [state.sinks, state.sinkCompensation] = compensatedPoolAddition(
-    state.sinks,
-    state.sinkCompensation,
-    { carbonKg, nitrogenKg, phosphorusKg, waterLiters },
-  );
 }
 
 function topCells(state: MutableOakStateV1): MutableOakSoilCellV1[] {
@@ -99,7 +43,7 @@ function rejectSoilWaterAbovePorosity(
   const runoff = Math.max(0, cell.waterLiters - capacity);
   if (runoff <= 0) return;
   cell.waterLiters -= runoff;
-  addBoundarySink(state, 0, 0, 0, runoff);
+  addOakBoundarySinkV1(state, 0, 0, 0, runoff);
 }
 
 function applyInputs(state: MutableOakStateV1): void {
@@ -133,7 +77,7 @@ function applyInputs(state: MutableOakStateV1): void {
     cell.labilePhosphorusKg += phosphorus / surface.length;
     rejectSoilWaterAbovePorosity(state, cell);
   }
-  addBoundarySource(state, 0, nitrogen, phosphorus, rain);
+  addOakBoundarySourceV1(state, 0, nitrogen, phosphorus, rain);
   state.pendingRainLiters = 0;
   state.pendingAmmoniumKg = 0;
   state.pendingNitrateKg = 0;
@@ -153,7 +97,7 @@ function drainAndEvaporate(state: MutableOakStateV1): void {
       && candidate.centerM.z === cell.centerM.z
       && candidate.centerM.y < cell.centerM.y);
     if (below) {
-      const transfer = conservativeScalarTransfer(
+      const transfer = oakConservativeScalarTransferV1(
         cell.waterLiters,
         below.waterLiters,
         drainage,
@@ -163,7 +107,7 @@ function drainAndEvaporate(state: MutableOakStateV1): void {
     } else {
       const before = cell.waterLiters;
       cell.waterLiters -= drainage;
-      addBoundarySink(state, 0, 0, 0, before - cell.waterLiters);
+      addOakBoundarySinkV1(state, 0, 0, 0, before - cell.waterLiters);
     }
   }
   const evaporation = soil.evaporationLitersPerTopCellDay / OAK_HOURS_PER_DAY_V1;
@@ -175,7 +119,7 @@ function drainAndEvaporate(state: MutableOakStateV1): void {
     const removed = Math.min(available, evaporation);
     const before = cell.waterLiters;
     cell.waterLiters -= removed;
-    addBoundarySink(state, 0, 0, 0, before - cell.waterLiters);
+    addOakBoundarySinkV1(state, 0, 0, 0, before - cell.waterLiters);
   }
 }
 
@@ -204,14 +148,33 @@ function transformSoilPools(state: MutableOakStateV1): void {
       cell.ammoniumKg += nitrogenMineralized;
       cell.labilePhosphorusKg += phosphorusMineralized;
       state.counters.litterCarbonRespiredKg += carbonRespired;
-      addBoundarySink(state, carbonRespired, 0, 0, 0);
+      addOakBoundarySinkV1(state, carbonRespired, 0, 0, 0);
     }
   }
 }
 
+function exposedFineRoots(state: MutableOakStateV1): readonly MutableOakOrganV1[] {
+  const byKey = new Map(state.organs.map((organ) => [organ.key, organ]));
+  return state.organs.filter((organ) => {
+    if (!isOakExposedAttachedFineRootV1(organ)) return false;
+    const immediateParent = organ.parentKey === null ? undefined : byKey.get(organ.parentKey);
+    if (immediateParent?.kind !== 'coarse-root') return false;
+    const seen = new Set<string>([organ.key]);
+    let current: MutableOakOrganV1 = organ;
+    while (current.parentKey !== null) {
+      if (seen.has(current.parentKey)) return false;
+      seen.add(current.parentKey);
+      const parent = byKey.get(current.parentKey);
+      if (parent === undefined || !isOakPlacedOrganV1(parent)
+        || !isOakAttachedLivingOrganV1(parent)) return false;
+      current = parent;
+    }
+    return current.kind === 'acorn';
+  });
+}
+
 function totalFineRootLength(state: MutableOakStateV1): number {
-  return state.organs
-    .filter((organ) => organ.kind === 'fine-root-cohort')
+  return exposedFineRoots(state)
     .reduce((sum, organ) => sum + organ.lengthM, 0);
 }
 
@@ -239,7 +202,7 @@ export function oakFineRootUptakeWeightsV1(
 ): readonly number[] {
   const influenceRadiusM = OAK_PARAMETERS_V1.roots.influenceRadiusM;
   const radiusSquared = influenceRadiusM * influenceRadiusM;
-  const roots = state.organs.filter((organ) => organ.kind === 'fine-root-cohort');
+  const roots = exposedFineRoots(state);
   const raw = state.soil.map((cell) => {
     let support = 0;
     for (const root of roots) {
@@ -292,7 +255,7 @@ function withdrawWaterProportionally(
   let mobileWater = state.mobile.waterLiters;
   const mobileBefore = mobileWater;
   for (const [index, cell] of state.soil.entries()) {
-    const transfer = conservativeScalarTransfer(
+    const transfer = oakConservativeScalarTransferV1(
       cell.waterLiters,
       mobileWater,
       actual * weightedAvailable[index]! / total,
@@ -351,7 +314,7 @@ function rootUptake(state: MutableOakStateV1): void {
   const roots = parameters.roots;
   const waterCapacity = roots.mobileWaterBaseCapacityLiters
     + rootLength * roots.mobileWaterCapacityPerRootMeter
-    + state.organs.filter((organ) => organ.kind === 'leaf')
+    + state.organs.filter(isOakExposedAttachedLeafV1)
       .reduce((sum, organ) =>
         sum + (organ.areaM2 ?? 0) * roots.mobileWaterCapacityPerLeafAreaM2, 0);
   const waterRequested = Math.min(
@@ -447,7 +410,7 @@ export function stepOakSoilV1(state: MutableOakStateV1): void {
 export function oakWaterStressFractionV1(state: MutableOakStateV1): number {
   const rootLength = totalFineRootLength(state);
   const leafArea = state.organs
-    .filter((organ) => organ.kind === 'leaf' && organ.stage !== 'abscised')
+    .filter(isOakExposedAttachedLeafV1)
     .reduce((sum, organ) => sum + (organ.areaM2 ?? 0), 0);
   const roots = OAK_PARAMETERS_V1.roots;
   const target = roots.mobileWaterBaseCapacityLiters
@@ -469,13 +432,13 @@ export function oakPhosphorusStressFractionV1(state: MutableOakStateV1): number 
 }
 
 export function addOakCarbonSinkV1(state: MutableOakStateV1, amount: number): void {
-  addBoundarySink(state, amount, 0, 0, 0);
+  addOakBoundarySinkV1(state, amount, 0, 0, 0);
 }
 
 export function addOakWaterSinkV1(state: MutableOakStateV1, amount: number): void {
-  addBoundarySink(state, 0, 0, 0, amount);
+  addOakBoundarySinkV1(state, 0, 0, 0, amount);
 }
 
 export function addOakCarbonSourceV1(state: MutableOakStateV1, amount: number): void {
-  addBoundarySource(state, amount, 0, 0, 0);
+  addOakBoundarySourceV1(state, amount, 0, 0, 0);
 }

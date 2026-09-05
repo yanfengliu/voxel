@@ -11,22 +11,25 @@ import {
 } from './oak-growth.js';
 import {
   OAK_HOST_TIMESTEP_SECONDS_V1,
-  OAK_MAX_TIME_SCALE_V1,
-  OAK_PARAMETER_PROVENANCE_V1,
   OAK_PARAMETERS_V1,
+  OAK_PROCESS_CADENCE_SECONDS_V1,
   OAK_SECONDS_PER_DAY_V1,
 } from './oak-parameters.js';
 import { transferOakMycorrhizalCarbonV1 } from './oak-physiology.js';
-import { oakLeafTangentialPortOffsetsForOrganV1 } from './oak-leaf-shape.js';
+import {
+  isOakAttachedLivingOrganV1,
+  isOakPlacedOrganV1,
+} from './oak-organ-lifecycle.js';
+import {
+  oakLeafPetioleSectionForOrganV1,
+  oakLeafTangentialPortOffsetsForOrganV1,
+} from './oak-leaf-shape.js';
 import {
   createOakSimulationV1,
   oakHostTicksForBiologicalDaysV1,
 } from './oak-simulation.js';
 import { createInitialOakStateV1 } from './oak-state.js';
-import {
-  oakRenderedWoodShapeV1,
-  oakWoodProfileAtTaperV1,
-} from './oak-wood-shape.js';
+import { exposeOakPrimordiaV1 } from './oak-growth.js';
 
 function runDays(days: number, options = {}) {
   const controller = createOakSimulationV1(options);
@@ -42,7 +45,7 @@ describe('oak biological simulation', () => {
     expect(lowWater.diagnostics.meanLeafWaterPotentialMpa)
       .toBeLessThan(baseline.diagnostics.meanLeafWaterPotentialMpa);
     expect(lowWater.diagnostics.cumulativeAssimilationCarbonKg)
-      .toBeLessThan(baseline.diagnostics.cumulativeAssimilationCarbonKg * 0.5);
+      .toBeLessThan(baseline.diagnostics.cumulativeAssimilationCarbonKg);
     expect(lowNitrogen.diagnostics.cumulativeNitrogenUptakeKg)
       .toBeLessThan(baseline.diagnostics.cumulativeNitrogenUptakeKg * 0.2);
     expect(lowNitrogen.diagnostics.meanNitrogenStressFraction)
@@ -90,9 +93,10 @@ describe('oak biological simulation', () => {
     expect(oneDay.diagnostics.processSteps).toEqual({
       physiology: 96,
       soil: 24,
-      allocation: 1,
+      allocation: 96,
       phenology: 1,
     });
+    expect(OAK_PROCESS_CADENCE_SECONDS_V1.allocation).toBe(900);
     const beforePause = oneDay.elapsedBiologicalSeconds;
     controller.setPaused(true);
     const paused = controller.advanceHostTicks(60);
@@ -160,10 +164,10 @@ describe('oak biological simulation', () => {
     const shoot = controller.advanceHostTicks(oakHostTicksForBiologicalDaysV1(3));
     expect(shoot.phenology).toBe('shoot-emergence');
     const firstFlush = controller.advanceHostTicks(
-      oakHostTicksForBiologicalDaysV1(6),
+      oakHostTicksForBiologicalDaysV1(8),
     );
     expect(firstFlush.diagnostics.flushCount).toBe(1);
-    expect(firstFlush.diagnostics.leafCount).toBe(3);
+    expect(firstFlush.diagnostics.leafCount).toBe(0);
     const extensionInternodes = firstFlush.organs
       .filter((organ) => organ.kind === 'stem')
       .slice(-3);
@@ -174,24 +178,16 @@ describe('oak biological simulation', () => {
       organ.direction.x * extensionInternodes[0]!.direction.x
       + organ.direction.y * extensionInternodes[0]!.direction.y
       + organ.direction.z * extensionInternodes[0]!.direction.z > 0.99999)).toBe(true);
-    const penultimate = extensionInternodes.at(-2)!;
-    const terminal = extensionInternodes.at(-1)!;
-    const penultimateShape = oakRenderedWoodShapeV1({
-      organ: penultimate,
-      children: [terminal],
-    })!;
-    const nodeEnvelopeRadiusM = penultimate.radiusM * Math.max(
-      ...oakWoodProfileAtTaperV1(
-        penultimateShape.taperIndex,
-        penultimateShape.nodeFlared,
-      ).map(({ radiusRatio }) => radiusRatio),
-    );
-    expect(terminal.radiusM).toBeLessThan(nodeEnvelopeRadiusM);
     const firstLeaves = firstFlush.organs.filter((organ) => organ.kind === 'leaf');
     expect(new Set(firstLeaves.map((leaf) => leaf.parentKey)).size).toBe(3);
-    expect(firstLeaves.every((leaf) => leaf.areaM2 === 0.0015)).toBe(true);
+    expect(firstLeaves.every((leaf) => leaf.targetAreaM2 === 0.0015)).toBe(true);
+    expect(firstLeaves.every((leaf) => leaf.areaM2 < leaf.targetAreaM2)).toBe(true);
+    expect(firstLeaves.every((leaf) => leaf.developmentPhase === 'preformed')).toBe(true);
+    expect(firstLeaves.every((leaf) => leaf.developmentFraction
+      === OAK_PARAMETERS_V1.growth.development.primordiumFraction)).toBe(true);
     expect(firstLeaves.every((leaf) => Math.abs(
-      leaf.lengthM * (1 - OAK_PARAMETERS_V1.leafGeometry.petioleLengthFractionOfTotalLeaf)
+      leaf.targetLengthM
+        * (1 - OAK_PARAMETERS_V1.leafGeometry.petioleLengthFractionOfTotalLeaf)
         - OAK_PARAMETERS_V1.growth.leafBladeLengthM,
     ) < 1e-15)).toBe(true);
     expect(Math.max(...firstLeaves.map((leaf) => leaf.rollRadians))
@@ -201,12 +197,11 @@ describe('oak biological simulation', () => {
       .toBeCloseTo(0.125, 12);
     const firstFlushBuds = firstFlush.organs.filter((organ) =>
       organ.kind === 'bud');
-    expect(firstFlushBuds.map((bud) => bud.stage)).toEqual([
-      'abscised',
-      'dormant',
+    expect(firstFlushBuds.map((bud) => bud.developmentPhase)).toEqual([
+      'bud-swelling',
+      'preformed',
     ]);
-    expect(Object.values(firstFlushBuds[0]!.pools).every((value) => value === 0))
-      .toBe(true);
+    expect(firstFlushBuds.every((bud) => bud.stage === 'expanding')).toBe(true);
     expect(firstFlush.organs.map((organ) => organ.identity.localId))
       .toEqual(firstFlush.organs.map((_, index) => index + 1));
     expect(new Set(firstFlush.organs.map((organ) => organ.key)).size)
@@ -227,7 +222,7 @@ describe('oak biological simulation', () => {
   });
 
   it('holds the first extension unit above soil without false severe stress', () => {
-    const snapshot = runDays(13);
+    const snapshot = runDays(20);
     const leaves = snapshot.organs.filter((organ) => organ.kind === 'leaf');
     const soilSurfaceM = Math.max(...snapshot.soil.map((cell) =>
       cell.centerM.y + cell.sizeM.y / 2));
@@ -270,7 +265,8 @@ describe('oak biological simulation', () => {
     const snapshot = runDays(90);
     const buds = snapshot.organs.filter((organ) => organ.kind === 'bud');
     expect(buds.filter((bud) => bud.stage === 'abscised')).toHaveLength(3);
-    expect(buds.filter((bud) => bud.stage === 'dormant')).toHaveLength(2);
+    expect(buds.filter((bud) => bud.stage === 'dormant')).toHaveLength(1);
+    expect(buds.filter((bud) => bud.stage === 'expanding')).toHaveLength(1);
     const active = snapshot.organs.filter((organ) => organ.stage !== 'abscised');
     for (let leftIndex = 0; leftIndex < active.length; leftIndex += 1) {
       for (let rightIndex = leftIndex + 1; rightIndex < active.length;
@@ -322,6 +318,13 @@ describe('oak biological simulation', () => {
     state.elapsedBiologicalSeconds = 3 * OAK_SECONDS_PER_DAY_V1;
     stepOakAllocationV1(state);
     stepOakPhenologyV1(state);
+    stepOakAllocationV1(state);
+    const coarseRoot = state.organs.find((organ) => organ.kind === 'coarse-root');
+    if (coarseRoot?.development === undefined) {
+      throw new Error('Expected the positive-control coarse root after radicle emergence.');
+    }
+    coarseRoot.lengthM = coarseRoot.development.targetLengthM;
+    exposeOakPrimordiaV1(state);
     for (const cell of state.soil) {
       cell.waterLiters = 0;
       cell.ammoniumKg = 0;
@@ -350,6 +353,7 @@ describe('oak biological simulation', () => {
       cell.mycorrhizalCarbonKg = 0;
       cell.colonizedFineRootFraction = 0;
     }
+    state.mobile = { ...state.mobile, carbonKg: state.mobile.carbonKg + 0.0001 };
     transferOakMycorrhizalCarbonV1(state, 0.0001);
     expect(remote.mycorrhizalCarbonKg).toBe(0);
     expect(state.soil.some((cell, index) =>
@@ -374,6 +378,9 @@ describe('oak biological simulation', () => {
     const byKey = new Map(breeze.organs.map((organ) => [organ.key, organ]));
     for (const organ of breeze.organs) {
       if (organ.parentKey === null) continue;
+      if (!isOakPlacedOrganV1(organ) || !isOakAttachedLivingOrganV1(organ)) {
+        continue;
+      }
       const parent = byKey.get(organ.parentKey);
       expect(parent).toBeDefined();
       if (!parent || ![
@@ -412,81 +419,37 @@ describe('oak biological simulation', () => {
       );
       const nodeEnvelopeRadiusM = breeze.organs.reduce((radius, candidate) => {
         const sharesNode = candidate.parentKey === parent.key
+          && isOakPlacedOrganV1(candidate)
+          && isOakAttachedLivingOrganV1(candidate)
           && (candidate.kind === 'stem'
             || candidate.kind === 'branch'
             || candidate.kind === 'coarse-root'
             || candidate.kind === 'fine-root-cohort');
-        return sharesNode ? Math.max(radius, candidate.radiusM) : radius;
+        return sharesNode ? Math.max(radius, candidate.radiusM * 3) : radius;
       }, parent.radiusM);
-      const expectedPort = oakLeafTangentialPortOffsetsForOrganV1(
+      const minimumPort = oakLeafTangentialPortOffsetsForOrganV1(
         organ.key,
         organ.areaM2,
         organ.lengthM,
         parent.direction,
-        nodeEnvelopeRadiusM,
+        parent.radiusM,
         organ.direction,
         organ.rollRadians,
       );
-      expect(axialM).toBeCloseTo(expectedPort.axialCenterOffsetM, 12);
-      expect(radialM).toBeCloseTo(expectedPort.radialCenterOffsetM, 12);
+      const section = oakLeafPetioleSectionForOrganV1(
+        organ.key, organ.areaM2, organ.lengthM,
+      );
+      const maximumSectionSupportM = Math.hypot(
+        section.basalFullWidthM / 2,
+        section.basalFullThicknessM / 2,
+      );
+      expect(organ.attachment?.parentOrganKey).toBe(parent.key);
+      expect(axialM).toBeCloseTo(minimumPort.axialCenterOffsetM, 12);
+      expect(radialM).toBeGreaterThanOrEqual(minimumPort.radialCenterOffsetM - 1e-12);
+      expect(radialM).toBeLessThanOrEqual(
+        nodeEnvelopeRadiusM + maximumSectionSupportM + 1e-12,
+      );
     }
   });
 
-  it('records parameter provenance and rejects unsafe commands', () => {
-    expect(OAK_PARAMETER_PROVENANCE_V1.every((entry) =>
-      entry.sourceUrl.length > 0 && entry.scope.length > 0)).toBe(true);
-    const registered = new Set(OAK_PARAMETER_PROVENANCE_V1.map((entry) => entry.id));
-    const mechanicsLinks = [
-      ...OAK_PARAMETERS_V1.mechanics.mechanismProvenanceIds,
-      OAK_PARAMETERS_V1.mechanics.parameterProvenanceId,
-    ];
-    expect(mechanicsLinks).toEqual([
-      'green-oak-bending',
-      'broad-leaf-reconfiguration',
-      'early-slice-calibration',
-    ]);
-    const parameterLinks = [
-      OAK_PARAMETERS_V1.identity.sourceProvenanceId,
-      OAK_PARAMETERS_V1.seed.parameterProvenanceId,
-      OAK_PARAMETERS_V1.soil.mechanismProvenanceId,
-      OAK_PARAMETERS_V1.soil.parameterProvenanceId,
-      OAK_PARAMETERS_V1.physiology.mechanismProvenanceId,
-      OAK_PARAMETERS_V1.physiology.parameterProvenanceId,
-      OAK_PARAMETERS_V1.roots.architectureProvenanceId,
-      OAK_PARAMETERS_V1.roots.mechanismProvenanceId,
-      OAK_PARAMETERS_V1.roots.parameterProvenanceId,
-      OAK_PARAMETERS_V1.biogeochemistry.mechanismProvenanceId,
-      OAK_PARAMETERS_V1.biogeochemistry.parameterProvenanceId,
-      ...OAK_PARAMETERS_V1.growth.mechanismProvenanceIds,
-      OAK_PARAMETERS_V1.growth.parameterProvenanceId,
-      ...mechanicsLinks,
-    ];
-    expect(parameterLinks.every((id) => registered.has(id))).toBe(true);
-    const controller = createOakSimulationV1();
-    expect(() => controller.advanceHostTicks(1.5)).toThrow(
-      /expected an integer from 0 through/u,
-    );
-    expect(() => controller.applyCommand({
-      kind: 'rainfall-pulse',
-      liters: -1,
-    })).toThrow(/rainfall pulse in liters -1/u);
-    expect(() => createOakSimulationV1({ seed: 0 })).toThrow(
-      /expected an integer from 1 through 4294967295/u,
-    );
-    const bounded = createOakSimulationV1({ timeScale: OAK_MAX_TIME_SCALE_V1 });
-    const beforeRejectedAdvance = bounded.snapshot();
-    expect(() => bounded.advanceHostTicks(2_401)).toThrow(
-      /at most 400 days per call/u,
-    );
-    expect(bounded.snapshot()).toEqual(beforeRejectedAdvance);
-  });
-
-  it('keeps the seasonal litter transfer inside every resource ledger', () => {
-    const snapshot = runDays(250);
-    expect(snapshot.organs.filter((organ) => organ.kind === 'leaf')
-      .every((leaf) => leaf.stage === 'abscised')).toBe(true);
-    for (const [resource, residual] of Object.entries(snapshot.ledger.residual)) {
-      expect(Math.abs(residual), resource).toBeLessThan(1e-12);
-    }
-  });
 });

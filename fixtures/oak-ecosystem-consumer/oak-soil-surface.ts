@@ -53,80 +53,72 @@ function distanceToCollar(worldVoxelX: number, worldVoxelZ: number): number {
   return Math.hypot(dx, dz);
 }
 
-function warpedDistance(
-  worldVoxelX: number,
-  worldVoxelZ: number,
-  centerX: number,
-  centerZ: number,
-  scaleX: number,
-  scaleZ: number,
-  phase: number,
-): number {
-  const warpX = 1.25 * Math.sin((worldVoxelZ + phase) * 0.22)
-    + 0.45 * Math.sin((worldVoxelX - worldVoxelZ + phase) * 0.17);
-  const warpZ = 1.05 * Math.sin((worldVoxelX - phase) * 0.19)
-    + 0.35 * Math.cos((worldVoxelX + worldVoxelZ - phase) * 0.14);
-  return Math.hypot(
-    (worldVoxelX - centerX + warpX) / scaleX,
-    (worldVoxelZ - centerZ + warpZ) / scaleZ,
-  );
-}
-
-function mound(
-  worldVoxelX: number,
-  worldVoxelZ: number,
-  centerX: number,
-  centerZ: number,
-  scaleX: number,
-  scaleZ: number,
-  phase: number,
-): number {
-  return Math.max(
-    -4,
-    -Math.floor(warpedDistance(
-      worldVoxelX, worldVoxelZ, centerX, centerZ, scaleX, scaleZ, phase,
-    )),
-  );
-}
-
-function hollow(
-  worldVoxelX: number,
-  worldVoxelZ: number,
-  centerX: number,
-  centerZ: number,
-  scaleX: number,
-  scaleZ: number,
-  phase: number,
-): number {
-  return Math.min(
-    0,
-    -4 + Math.floor(warpedDistance(
-      worldVoxelX, worldVoxelZ, centerX, centerZ, scaleX, scaleZ, phase,
-    )),
-  );
+interface OakSoilSurfaceWaveV1 {
+  readonly amplitude: number;
+  readonly xFrequency: number;
+  readonly zFrequency: number;
+  readonly phase: number;
 }
 
 /**
- * Three sine-warped hummocks and three swales break the plot into localized
- * low-frequency landforms instead of full-width contour bands. The collar
- * ramp keeps every adjacent step to one coarse cube and preserves the exact
- * y=0 root support datum. This is static display geometry; the eight
- * consumer-owned process cells remain soil-state authority.
+ * Mixed directions and wavelengths keep the quantized contour bodies local.
+ * These are presentation-only terrain coefficients, not process-soil state.
+ */
+const OAK_SOIL_SURFACE_WAVES_V1 = Object.freeze([
+  { amplitude: 0.8153804133064113, xFrequency: 0.1353620979189873,
+    zFrequency: 0.11905169166624546, phase: 1.8355111601331027 },
+  { amplitude: 0.48494989225873725, xFrequency: 0.21791209690272806,
+    zFrequency: -0.15089789748191834, phase: 3.6019095673397765 },
+  { amplitude: 0.9656908833305351, xFrequency: 0.1428537042438984,
+    zFrequency: -0.10502344988286495, phase: 4.457947044531041 },
+  { amplitude: 1.1209797431831248, xFrequency: 0.12993554569780827,
+    zFrequency: -0.09107989057898522, phase: 5.845649983654279 },
+  { amplitude: 0.8428351848735474, xFrequency: -0.16813922584056856,
+    zFrequency: 0.17420936949551108, phase: 0.28168092628407754 },
+  { amplitude: 0.7571399308391846, xFrequency: 0.1376919623464346,
+    zFrequency: 0.2367423376441002, phase: 1.6333615791973615 },
+  { amplitude: 0.5316875306772999, xFrequency: 0.21099767729640007,
+    zFrequency: -0.22461447827517989, phase: 0.19483503442694763 },
+] satisfies readonly OakSoilSurfaceWaveV1[]);
+
+const OAK_SOIL_SURFACE_THRESHOLDS_V1 = Object.freeze([
+  -1.5901791393405234,
+  -0.7521427118747706,
+  0.2803301500348672,
+  1.4642933487746073,
+] as const);
+
+function landformPotential(worldVoxelX: number, worldVoxelZ: number): number {
+  return OAK_SOIL_SURFACE_WAVES_V1.reduce((potential, wave) => potential
+    + wave.amplitude * Math.sin(
+      wave.xFrequency * worldVoxelX + wave.zFrequency * worldVoxelZ + wave.phase,
+    ), 0);
+}
+
+function quantizedLandformLevel(worldVoxelX: number, worldVoxelZ: number): -4 | -3 | -2 | -1 | 0 {
+  const potential = landformPotential(worldVoxelX, worldVoxelZ);
+  if (potential < OAK_SOIL_SURFACE_THRESHOLDS_V1[0]) return -4;
+  if (potential < OAK_SOIL_SURFACE_THRESHOLDS_V1[1]) return -3;
+  if (potential < OAK_SOIL_SURFACE_THRESHOLDS_V1[2]) return -2;
+  if (potential < OAK_SOIL_SURFACE_THRESHOLDS_V1[3]) return -1;
+  return 0;
+}
+
+/**
+ * A mixed low-frequency interference field breaks the plot into localized
+ * hummocks, saddles and swales instead of a dominant shelf or full-width
+ * contour band. The collar ramp keeps every adjacent step to one coarse cube
+ * and preserves the exact y=0 root support datum. This is static display
+ * geometry; the eight consumer-owned process cells remain soil-state authority.
  */
 function topBoundaryWorldVoxelY(
   worldVoxelX: number,
   worldVoxelZ: number,
 ): -4 | -3 | -2 | -1 | 0 {
-  let level = -2;
-  level = Math.max(level, mound(worldVoxelX, worldVoxelZ, -0.5, -0.5, 5, 4.4, 1));
-  level = Math.max(level, mound(worldVoxelX, worldVoxelZ, -14, -13, 4.5, 4, 7));
-  level = Math.max(level, mound(worldVoxelX, worldVoxelZ, 14, 14, 4.5, 5, 13));
-  level = Math.min(level, hollow(worldVoxelX, worldVoxelZ, -12, 11, 4.5, 4.1, 23));
-  level = Math.min(level, hollow(worldVoxelX, worldVoxelZ, 11, -13, 4.1, 4.6, 29));
-  level = Math.min(level, hollow(worldVoxelX, worldVoxelZ, 18, 4, 3.2, 3.6, 35));
+  let level = quantizedLandformLevel(worldVoxelX, worldVoxelZ);
   level = Math.max(level, -Math.min(4, Math.ceil(distanceToCollar(
     worldVoxelX, worldVoxelZ,
-  ))));
+  )))) as -4 | -3 | -2 | -1 | 0;
   if (isCollarPlateau(worldVoxelX, worldVoxelZ)) return 0;
   if (level === 0) return 0;
   return level as -4 | -3 | -2 | -1 | 0;

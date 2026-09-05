@@ -1,19 +1,28 @@
-import type { OakRootCutawayV1 } from './oak-render-projection.js';
+import type {
+  OakRenderInstanceRecordV1,
+  OakRootCutawayV1,
+} from './oak-render-projection.js';
 import {
   buildOakFallenLitterVoxelProjectionV1,
-  oakLivingLitterSurfaceBlockersV1,
+  oakLivingLitterCollisionFingerprintV1,
   type OakFallenLitterVoxelProjectionV1,
 } from './oak-fallen-litter-voxel.js';
 import {
   buildOakSoilVoxelChunkV1,
+  OAK_SOIL_VOXEL_CHUNK_ORIGIN_V1,
+  OAK_SOIL_VOXEL_CHUNK_SIZE_V1,
+  OAK_SOIL_VOXEL_SIZE_M_V1,
   type OakSoilVoxelChunkBuildV1,
 } from './oak-soil-voxel.js';
 import {
   buildOakTissueVoxelProjectionV1,
+  oakPresentedTissueRecordsV1,
   refreshOakTissueVoxelAppearanceV1,
   type OakTissueVoxelProjectionV1,
 } from './oak-tissue-union-lattice.js';
-import { oakTissueVoxelBaseColorV1 } from './oak-tissue-voxel-projection.js';
+import { oakTissueCellCenterM_V1 } from './oak-tissue-union-routing.js';
+import { OAK_TISSUE_VOXEL_PITCH_M_V1 } from './oak-tissue-voxel-projection.js';
+import { oakTissueVoxelBaseColorV1 } from './oak-tissue-color.js';
 import type { OakOrganSnapshotV1, OakRenderProjectionStateV1 } from './oak-types.js';
 
 function exactNumberFingerprint(value: number): string {
@@ -56,19 +65,39 @@ function cutawayFingerprint(cutaway: OakRootCutawayV1 | undefined): unknown {
 
 function organTissueTopologyFingerprint(organ: OakOrganSnapshotV1): readonly unknown[] {
   const common = [
-    organ.key, organ.parentKey, organ.kind,
+    organ.key, organ.parentKey, organ.kind, organ.stage === 'detached',
     exactNumberFingerprint(organ.positionM.x),
     exactNumberFingerprint(organ.positionM.y),
     exactNumberFingerprint(organ.positionM.z),
     exactNumberFingerprint(organ.direction.x),
     exactNumberFingerprint(organ.direction.y),
     exactNumberFingerprint(organ.direction.z),
-    exactNumberFingerprint(organ.lengthM),
-    exactNumberFingerprint(organ.radiusM),
+    exactNumberFingerprint(organ.targetLengthM),
+    exactNumberFingerprint(organ.targetRadiusM),
+    exactNumberFingerprint(organ.developmentFraction),
   ];
   return organ.kind === 'leaf'
-    ? [...common, exactNumberFingerprint(organ.areaM2), exactNumberFingerprint(organ.rollRadians)]
-    : common;
+    ? [
+      ...common,
+      exactNumberFingerprint(organ.lengthM),
+      exactNumberFingerprint(organ.areaM2),
+      exactNumberFingerprint(organ.targetAreaM2),
+      exactNumberFingerprint(organ.rollRadians),
+      organ.fallProgressFraction === undefined
+        ? null
+        : exactNumberFingerprint(organ.fallProgressFraction),
+    ]
+    : [
+      ...common,
+      exactNumberFingerprint(organ.lengthM),
+      exactNumberFingerprint(organ.radiusM),
+    ];
+}
+
+function isPresentedTissueOrgan(organ: OakOrganSnapshotV1): boolean {
+  return organ.stage !== 'abscised'
+    && organ.developmentPhase !== 'preformed'
+    && organ.healthFraction > 0;
 }
 
 function tissueTopologyFingerprint(
@@ -76,9 +105,35 @@ function tissueTopologyFingerprint(
   includeRoots: boolean,
 ): string {
   const active = state.organs
-    .filter((organ) => organ.stage !== 'abscised' && organ.healthFraction > 0)
+    .filter(isPresentedTissueOrgan)
+    .filter((organ) => includeRoots
+      || (organ.kind !== 'coarse-root' && organ.kind !== 'fine-root-cohort'))
     .map(organTissueTopologyFingerprint);
-  return JSON.stringify([includeRoots, active]);
+  const scars = state.organs
+    .filter((organ): organ is Extract<OakOrganSnapshotV1, { kind: 'leaf' }> =>
+      organ.kind === 'leaf' && organ.abscissionScar !== undefined)
+    .map((leaf) => {
+      const scar = leaf.abscissionScar!;
+      return [
+        leaf.key, exactNumberFingerprint(leaf.identity.localId), scar.parentKey,
+        exactNumberFingerprint(leaf.healthFraction),
+        exactNumberFingerprint(scar.positionM.x),
+        exactNumberFingerprint(scar.positionM.y),
+        exactNumberFingerprint(scar.positionM.z),
+        exactNumberFingerprint(scar.direction.x),
+        exactNumberFingerprint(scar.direction.y),
+        exactNumberFingerprint(scar.direction.z),
+        exactNumberFingerprint(scar.rollRadians),
+        exactNumberFingerprint(scar.searchRadiusM),
+        exactNumberFingerprint(leaf.lengthM),
+        exactNumberFingerprint(leaf.targetLengthM),
+        exactNumberFingerprint(leaf.areaM2),
+        exactNumberFingerprint(leaf.targetAreaM2),
+        exactNumberFingerprint(leaf.developmentFraction),
+      ];
+    })
+    .sort((left, right) => String(left[0]).localeCompare(String(right[0])));
+  return JSON.stringify([includeRoots, active, scars]);
 }
 
 function tissueAppearanceFingerprint(
@@ -86,12 +141,20 @@ function tissueAppearanceFingerprint(
   includeRoots: boolean,
 ): string {
   const visible = state.organs
-    .filter((organ) => organ.stage !== 'abscised' && organ.healthFraction > 0)
+    .filter(isPresentedTissueOrgan)
     .filter((organ) => includeRoots
       || (organ.kind !== 'coarse-root' && organ.kind !== 'fine-root-cohort'))
     .map((organ) => {
       const color = oakTissueVoxelBaseColorV1(organ);
-      return [organ.key, color.r, color.g, color.b, color.a];
+      return [
+        organ.key,
+        color.r, color.g, color.b, color.a,
+        exactNumberFingerprint(organ.stressFraction),
+        ...(organ.kind === 'leaf' ? [
+          exactNumberFingerprint(organ.chlorophyllFraction),
+          exactNumberFingerprint(organ.relativeWaterContentFraction),
+        ] : []),
+      ];
     })
     .sort((left, right) => String(left[0]).localeCompare(String(right[0])));
   return JSON.stringify(visible);
@@ -126,9 +189,33 @@ function soilFingerprint(
   tissue: OakTissueVoxelProjectionV1,
   cutaway: OakRootCutawayV1 | undefined,
 ): string {
-  const tissueCells = [...tissue.materialCells.values()]
-    .map(({ cell }) => cell.join(':'))
-    .sort();
+  const fineCellsPerSoilVoxel = OAK_SOIL_VOXEL_SIZE_M_V1
+    / OAK_TISSUE_VOXEL_PITCH_M_V1;
+  if (!Number.isInteger(fineCellsPerSoilVoxel)) {
+    throw new Error('Oak soil-cache fingerprint requires an exact nested tissue lattice.');
+  }
+  const minimum = [
+    OAK_SOIL_VOXEL_CHUNK_ORIGIN_V1.x * fineCellsPerSoilVoxel,
+    OAK_SOIL_VOXEL_CHUNK_ORIGIN_V1.y * fineCellsPerSoilVoxel,
+    OAK_SOIL_VOXEL_CHUNK_ORIGIN_V1.z * fineCellsPerSoilVoxel,
+  ];
+  const maximum = [
+    (OAK_SOIL_VOXEL_CHUNK_ORIGIN_V1.x + OAK_SOIL_VOXEL_CHUNK_SIZE_V1.x)
+      * fineCellsPerSoilVoxel,
+    (OAK_SOIL_VOXEL_CHUNK_ORIGIN_V1.y + OAK_SOIL_VOXEL_CHUNK_SIZE_V1.y)
+      * fineCellsPerSoilVoxel,
+    (OAK_SOIL_VOXEL_CHUNK_ORIGIN_V1.z + OAK_SOIL_VOXEL_CHUNK_SIZE_V1.z)
+      * fineCellsPerSoilVoxel,
+  ];
+  const tissueCells = [...tissue.materialCells]
+    // Exact nested half-cell alignment makes a tissue cell's AABB
+    // [cell * pitch, (cell + 1) * pitch]. Only these integer coordinates
+    // have positive-volume overlap with the bounded soil chunk; face-only
+    // contact at the exclusive maximum cannot affect carving or refill.
+    .filter(([, { cell }]) => cell.every((coordinate, axis) =>
+      coordinate >= minimum[axis]! && coordinate < maximum[axis]!))
+    .map(([id]) => id)
+    .sort((left, right) => left - right);
   return JSON.stringify([
     cutawayFingerprint(cutaway), soilStateFingerprint(state),
     acornFingerprint(state), tissueCells,
@@ -137,26 +224,67 @@ function soilFingerprint(
 
 function litterFingerprint(
   state: OakRenderProjectionStateV1,
-  tissue: OakTissueVoxelProjectionV1,
   cutaway: OakRootCutawayV1 | undefined,
+  livingRecords: ReadonlyMap<string, readonly OakRenderInstanceRecordV1[]>,
 ): string {
   const leaves = state.organs
-    .filter((organ) => organ.kind === 'leaf' && organ.stage === 'abscised')
+    .filter((organ): organ is Extract<OakOrganSnapshotV1, { kind: 'leaf' }> =>
+      organ.kind === 'leaf' && organ.stage === 'abscised')
     .map((leaf) => [
       leaf.key,
       exactNumberFingerprint(leaf.identity.localId),
+      exactNumberFingerprint(leaf.identity.generation),
       exactNumberFingerprint(leaf.lengthM),
+      exactNumberFingerprint(leaf.radiusM),
+      exactNumberFingerprint(leaf.targetLengthM),
+      exactNumberFingerprint(leaf.targetRadiusM),
+      exactNumberFingerprint(leaf.areaM2),
+      exactNumberFingerprint(leaf.targetAreaM2),
+      exactNumberFingerprint(leaf.developmentFraction),
+      exactNumberFingerprint(leaf.healthFraction),
+      exactNumberFingerprint(leaf.positionM.x),
+      exactNumberFingerprint(leaf.positionM.y),
+      exactNumberFingerprint(leaf.positionM.z),
+      exactNumberFingerprint(leaf.direction.x),
+      exactNumberFingerprint(leaf.direction.y),
+      exactNumberFingerprint(leaf.direction.z),
+      exactNumberFingerprint(leaf.rollRadians),
+      exactNumberFingerprint(leaf.chlorophyllFraction),
+      exactNumberFingerprint(leaf.relativeWaterContentFraction),
+      exactNumberFingerprint(leaf.stressFraction),
+      ...(leaf.abscissionScar === undefined ? [] : [
+        leaf.abscissionScar.parentKey,
+        exactNumberFingerprint(leaf.abscissionScar.positionM.x),
+        exactNumberFingerprint(leaf.abscissionScar.positionM.y),
+        exactNumberFingerprint(leaf.abscissionScar.positionM.z),
+        exactNumberFingerprint(leaf.abscissionScar.direction.x),
+        exactNumberFingerprint(leaf.abscissionScar.direction.y),
+        exactNumberFingerprint(leaf.abscissionScar.direction.z),
+        exactNumberFingerprint(leaf.abscissionScar.rollRadians),
+        exactNumberFingerprint(leaf.abscissionScar.searchRadiusM),
+        exactNumberFingerprint(leaf.abscissionScar.fallMaterial.chlorophyllFraction),
+        exactNumberFingerprint(
+          leaf.abscissionScar.fallMaterial.relativeWaterContentFraction,
+        ),
+        exactNumberFingerprint(leaf.abscissionScar.fallMaterial.stressFraction),
+      ]),
+      leaf.litterRecipientSoilCellKey ?? null,
     ]);
-  const surfaceBlockers = [
-    ...oakLivingLitterSurfaceBlockersV1(tissue.records, cutaway),
-  ].sort();
+  // The builder returns the same canonical empty projection before abscission;
+  // neither soil geometry nor thousands of moving living cubes can affect it.
+  if (leaves.length === 0) return '["no-abscised-litter"]';
   const soilGeometry = state.soil.map((cell) => [
     cell.key,
     exactNumberFingerprint(cell.centerM.x), exactNumberFingerprint(cell.centerM.y),
     exactNumberFingerprint(cell.centerM.z), exactNumberFingerprint(cell.sizeM.x),
     exactNumberFingerprint(cell.sizeM.y), exactNumberFingerprint(cell.sizeM.z),
   ]);
-  return JSON.stringify([cutawayFingerprint(cutaway), leaves, soilGeometry, surfaceBlockers]);
+  const livingCollisionFingerprint = [...oakLivingLitterCollisionFingerprintV1(
+    livingRecords,
+  )].sort();
+  return JSON.stringify([
+    cutawayFingerprint(cutaway), leaves, soilGeometry, livingCollisionFingerprint,
+  ]);
 }
 
 export function buildOakCachedRenderProjectionsV1(
@@ -168,7 +296,13 @@ export function buildOakCachedRenderProjectionsV1(
   const includeRoots = rootCutaway !== undefined;
   const nextTissueTopologyFingerprint = tissueTopologyFingerprint(state, includeRoots);
   const nextTissueAppearanceFingerprint = tissueAppearanceFingerprint(state, includeRoots);
-  const tissueTopologyHit = previous?.tissueTopologyFingerprint === nextTissueTopologyFingerprint;
+  // Detached leaves are independently fused and then smoothly translated onto
+  // terrain. Their short falling interval deliberately takes the cold path so
+  // a reported topology hit always means the shared union routing was reused.
+  const hasDetachedTissue = state.organs.some((organ) =>
+    organ.stage === 'detached' && organ.healthFraction > 0);
+  const tissueTopologyHit = !hasDetachedTissue
+    && previous?.tissueTopologyFingerprint === nextTissueTopologyFingerprint;
   const tissueHit = tissueTopologyHit
     && previous?.tissueAppearanceFingerprint === nextTissueAppearanceFingerprint;
   const tissue = tissueHit
@@ -178,17 +312,22 @@ export function buildOakCachedRenderProjectionsV1(
       : buildOakTissueVoxelProjectionV1(state, includeRoots);
   const nextSoilFingerprint = soilFingerprint(state, tissue, rootCutaway);
   const soilHit = previous?.soilFingerprint === nextSoilFingerprint;
-  const tissueCubeCentersM = soilHit ? [] : [...tissue.records.values()].flatMap((records) =>
-    records.map(({ matrix }) => [matrix[12]!, matrix[13]!, matrix[14]!] as const));
+  const tissueCubeCentersM = soilHit ? [] : [...tissue.materialCells.values()]
+    .map(({ cell }) => oakTissueCellCenterM_V1(cell));
   const soil = soilHit ? previous.soil : buildOakSoilVoxelChunkV1(state, {
     revision: renderRevision,
     ...(rootCutaway ? { rootCutaway } : {}),
     tissueCubeCentersM,
   });
-  const nextLitterFingerprint = litterFingerprint(state, tissue, rootCutaway);
+  const presentedTissueRecords = oakPresentedTissueRecordsV1(tissue);
+  const nextLitterFingerprint = litterFingerprint(
+    state,
+    rootCutaway,
+    presentedTissueRecords,
+  );
   const litterHit = previous?.litterFingerprint === nextLitterFingerprint;
   const litter = litterHit ? previous.litter : buildOakFallenLitterVoxelProjectionV1(
-    state, tissue.records, { ...(rootCutaway ? { rootCutaway } : {}) },
+    state, presentedTissueRecords, { ...(rootCutaway ? { rootCutaway } : {}) },
   );
   return {
     cache: {

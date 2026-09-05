@@ -24,29 +24,30 @@ describe('oak axillary shoot', () => {
       / primaryExtensionLengthM;
     const fullLeafLengthM = OAK_PARAMETERS_V1.growth.leafBladeLengthM
       / (1 - OAK_PARAMETERS_V1.leafGeometry.petioleLengthFractionOfTotalLeaf);
-    const linearScale = leaf.lengthM / fullLeafLengthM;
-    expect(linearScale).toBeGreaterThanOrEqual(axisSimilarityScale);
-    expect(linearScale).toBeLessThan(1);
-    expect(leaf.areaM2).toBeCloseTo(
-      OAK_PARAMETERS_V1.growth.leafAreaM2 * linearScale ** 2,
+    const targetLinearScale = leaf.targetLengthM / fullLeafLengthM;
+    expect(targetLinearScale).toBeGreaterThanOrEqual(axisSimilarityScale);
+    expect(targetLinearScale).toBeLessThan(1);
+    expect(leaf.targetAreaM2).toBeCloseTo(
+      OAK_PARAMETERS_V1.growth.leafAreaM2 * targetLinearScale ** 2,
       14,
     );
-    expect(leaf.pools.carbonKg).toBeCloseTo(
-      OAK_PARAMETERS_V1.growth.leafCarbonKg * linearScale ** 2,
+    expect(leaf.areaM2 / leaf.targetAreaM2).toBeCloseTo(
+      leaf.developmentFraction,
       14,
     );
-    expect(leaf.pools.waterLiters).toBeCloseTo(
-      OAK_PARAMETERS_V1.growth.leafWaterLiters * linearScale ** 2,
+    expect(leaf.lengthM / leaf.targetLengthM).toBeCloseTo(
+      Math.sqrt(leaf.developmentFraction),
       14,
     );
     expect(oakLeafPetioleSectionForOrganV1(
       leaf.key,
-      leaf.areaM2,
-      leaf.lengthM,
+      leaf.targetAreaM2,
+      leaf.targetLengthM,
     ).weakAxisEquivalentCircularRadiusM).toBeGreaterThanOrEqual(
       OAK_PARAMETERS_V1.mechanics.minimumRadiusM,
     );
     expect(bud.stage).toBe('dormant');
+    expect(bud.developmentPhase).toBe('preformed');
     expect(bud.positionM).not.toEqual(branch.positionM);
     for (const residual of Object.values(snapshot.ledger.residual)) {
       expect(Math.abs(residual)).toBeLessThan(1e-12);

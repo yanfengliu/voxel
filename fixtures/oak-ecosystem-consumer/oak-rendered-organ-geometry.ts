@@ -8,6 +8,7 @@ import type {
   OakVec3V1,
 } from './oak-types.js';
 import { OAK_FALLEN_LITTER_VOXEL_BATCH_KEY_V1 } from './oak-fallen-litter-voxel.js';
+import { isOakPlacedOrganV1 } from './oak-organ-lifecycle.js';
 
 export interface OakRenderedTriangleV1 {
   readonly a: OakVec3V1;
@@ -27,6 +28,12 @@ export interface OakRenderedOrganV1 {
   readonly vertices: OakVec3V1[];
   readonly triangles: OakRenderedTriangleV1[];
   readonly sweeps: OakRenderedSweptRadiusV1[];
+}
+
+export interface OakRenderedInstanceGeometryV1 {
+  readonly instanceKey: string;
+  readonly batchKey: string;
+  readonly vertices: readonly OakVec3V1[];
 }
 
 function distanceSquared(left: OakVec3V1, right: OakVec3V1): number {
@@ -81,6 +88,27 @@ export interface OakRenderedSubjectGeometryV1 {
   readonly organKeys: readonly string[];
   readonly litterVoxelCount: number;
   readonly vertices: readonly OakVec3V1[];
+}
+
+/** Exact accepted instance geometry for a bounded set of public batch keys. */
+export function oakRenderedInstancesInBatchesV1(
+  snapshot: RenderSnapshotV1,
+  batchKeys: ReadonlySet<string>,
+): readonly OakRenderedInstanceGeometryV1[] {
+  const result: OakRenderedInstanceGeometryV1[] = [];
+  forEachRenderedInstance(snapshot, (instanceKey, batchKey, geometry, matrix) => {
+    if (!batchKeys.has(batchKey)) return;
+    const vertices: OakVec3V1[] = [];
+    for (let offset = 0; offset < geometry.positions.length; offset += 3) {
+      vertices.push(transformPoint(matrix, {
+        x: geometry.positions[offset]!,
+        y: geometry.positions[offset + 1]!,
+        z: geometry.positions[offset + 2]!,
+      }));
+    }
+    result.push({ instanceKey, batchKey, vertices });
+  });
+  return result;
 }
 
 /** Exact public-geometry vertices and visible biological content used to fit an oak frame. */
@@ -174,8 +202,7 @@ export function oakRenderedOrgansV1(
   state: OakRenderProjectionStateV1,
   snapshot: RenderSnapshotV1,
 ): readonly OakRenderedOrganV1[] {
-  const activeOrgans = state.organs.filter((organ) =>
-    organ.stage !== 'abscised' && organ.healthFraction > 0);
+  const activeOrgans = state.organs.filter(isOakPlacedOrganV1);
   const byKey = new Map(activeOrgans.map((organ) => [organ.key, {
     organ,
     vertices: [],

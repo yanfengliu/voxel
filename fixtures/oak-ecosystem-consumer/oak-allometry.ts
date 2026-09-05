@@ -1,13 +1,15 @@
 import { OAK_PARAMETERS_V1 } from './oak-parameters.js';
+import {
+  isOakAttachedLivingOrganV1,
+  isOakPlacedOrganV1,
+} from './oak-organ-lifecycle.js';
 import type { MutableOakOrganV1, MutableOakStateV1 } from './oak-state.js';
 import type { OakOrganKindV1 } from './oak-types.js';
 import {
-  OAK_TAPER_RATIOS_V1,
-  oakRenderedWoodShapeV1,
-  oakRenderedWoodVolumeAtTaperV1,
-  oakWoodTerminalTaperIndexV1,
-  oakWoodTaperIndexV1,
-} from './oak-wood-shape.js';
+  OAK_PHYSICAL_WOOD_TIP_RADIUS_RATIO_V1,
+  oakPhysicalWoodRadiusMForFreshMassV1,
+  oakPhysicalWoodVolumeM3V1,
+} from './oak-physical-wood.js';
 
 type OakMassPoolFieldsV1 = Pick<MutableOakOrganV1,
   | 'structuralCarbonKg'
@@ -59,8 +61,8 @@ export function isOakDimensionedWoodKindV1(
 }
 
 function isActiveSegment(organ: MutableOakOrganV1): organ is OakActiveSegmentV1 {
-  return organ.stage !== 'abscised'
-    && organ.healthFraction > 0
+  return isOakPlacedOrganV1(organ)
+    && isOakAttachedLivingOrganV1(organ)
     && (organ.kind === 'stem'
       || organ.kind === 'branch'
       || organ.kind === 'coarse-root'
@@ -76,7 +78,6 @@ export function oakOrganFreshMassKgV1(organ: OakMassPoolFieldsV1): number {
 
 function diagnosticFromShape(
   organ: OakMassPoolFieldsV1,
-  taperIndex: number,
   shaftVolumeM3: number,
 ): OakWoodMassVolumeDiagnosticV1 {
   const ownedFreshMassKg = oakOrganFreshMassKgV1(organ);
@@ -88,28 +89,19 @@ function diagnosticFromShape(
     ownedToGeometryMassRatio: geometryImpliedGreenMassKg > 0
       ? ownedFreshMassKg / geometryImpliedGreenMassKg
       : 0,
-    taperRatio: OAK_TAPER_RATIOS_V1[taperIndex]!,
+    taperRatio: OAK_PHYSICAL_WOOD_TIP_RADIUS_RATIO_V1,
     shaftVolumeM3,
   };
 }
 
-/** Isolated-organ diagnostic uses the same terminal taper as projection. */
+/** Renderer-free diagnostic over the physical circular tapered shaft. */
 export function oakWoodMassVolumeDiagnosticV1(
   organ: OakWoodAllometryFieldsV1,
 ): OakWoodMassVolumeDiagnosticV1 | null {
   if (!isOakDimensionedWoodKindV1(organ.kind)) return null;
-  const taperIndex = oakWoodTaperIndexV1(
-    organ.radiusM,
-    [],
-    oakWoodTerminalTaperIndexV1(organ.kind),
-  );
-  const volume = oakRenderedWoodVolumeAtTaperV1({
-    lengthM: organ.lengthM,
-    baseRadiusM: organ.radiusM,
-    taperIndex,
-  });
+  const volume = oakPhysicalWoodVolumeM3V1(organ.lengthM, organ.radiusM);
   if (volume === null) return null;
-  return diagnosticFromShape(organ, taperIndex, volume.shaftVolumeM3);
+  return diagnosticFromShape(organ, volume);
 }
 
 /** Exact terminal-shaft solve used by the isolated counter/control. */
@@ -130,68 +122,7 @@ export function oakAllometricWoodRadiusMForOrganV1(
       + `${String(freshMassKg)} kg; expected a finite positive mass.`,
     );
   }
-  const taperIndex = oakWoodTaperIndexV1(
-    1,
-    [],
-    oakWoodTerminalTaperIndexV1(organ.kind),
-  );
-  const unitRadiusVolume = oakRenderedWoodVolumeAtTaperV1({
-    lengthM: organ.lengthM,
-    baseRadiusM: 1,
-    taperIndex,
-  });
-  if (unitRadiusVolume === null) return null;
-  return Math.sqrt(
-    freshMassKg
-      / (OAK_PARAMETERS_V1.mechanics.greenWoodDensityKgPerM3
-        * unitRadiusVolume.shaftVolumeM3),
-  );
-}
-
-function solveRadiusForContext(
-  organ: MutableOakOrganV1,
-  children: readonly OakActiveSegmentV1[],
-): number {
-  const freshMassKg = oakOrganFreshMassKgV1(organ);
-  if (!(organ.lengthM > 0) || !Number.isFinite(organ.lengthM)
-    || !(freshMassKg > 0) || !Number.isFinite(freshMassKg)) {
-    throw new Error(
-      `Cannot solve oak wood allometry for '${organ.key}'; expected a finite `
-      + `positive length and fresh mass, received ${String(organ.lengthM)} m `
-      + `and ${String(freshMassKg)} kg.`,
-    );
-  }
-  const targetVolumeM3 = freshMassKg
-    / OAK_PARAMETERS_V1.mechanics.greenWoodDensityKgPerM3;
-  const childRadiiM = children.map((child) => child.radiusM);
-  const candidates: number[] = [];
-  for (const taperIndex of OAK_TAPER_RATIOS_V1.keys()) {
-    const unitRadiusVolume = oakRenderedWoodVolumeAtTaperV1({
-      lengthM: organ.lengthM,
-      baseRadiusM: 1,
-      taperIndex,
-      nodeFlared: children.length > 0,
-    });
-    if (unitRadiusVolume === null) continue;
-    const radiusM = Math.sqrt(
-      targetVolumeM3 / unitRadiusVolume.shaftVolumeM3,
-    );
-    if (oakWoodTaperIndexV1(
-      radiusM,
-      childRadiiM,
-      oakWoodTerminalTaperIndexV1(organ.kind),
-    ) === taperIndex) {
-      candidates.push(radiusM);
-    }
-  }
-  const radiusM = candidates.sort((left, right) => left - right)[0];
-  if (radiusM === undefined) {
-    throw new Error(
-      `Cannot solve oak wood allometry for '${organ.key}'; no shared render `
-      + 'taper is self-consistent with its children and conserved fresh mass.',
-    );
-  }
-  return radiusM;
+  return oakPhysicalWoodRadiusMForFreshMassV1(organ.lengthM, freshMassKg);
 }
 
 function activeSegmentGraph(state: MutableOakStateV1): Readonly<{
@@ -214,21 +145,10 @@ function activeSegmentGraph(state: MutableOakStateV1): Readonly<{
 /** Reconciles derived geometry only; resource pools and ledgers are untouched. */
 export function reconcileOakWoodAllometryV1(state: MutableOakStateV1): void {
   const graph = activeSegmentGraph(state);
-  const resolved = new Set<string>();
-  const visiting = new Set<string>();
-  const resolve = (organ: OakActiveSegmentV1): void => {
-    if (!isOakDimensionedWoodKindV1(organ.kind) || resolved.has(organ.key)) return;
-    if (visiting.has(organ.key)) {
-      throw new Error(`Cannot solve cyclic oak wood graph at '${organ.key}'.`);
-    }
-    visiting.add(organ.key);
-    const children = graph.childrenByKey.get(organ.key) ?? [];
-    for (const child of children) resolve(child);
-    organ.radiusM = solveRadiusForContext(organ, children);
-    visiting.delete(organ.key);
-    resolved.add(organ.key);
-  };
-  for (const organ of graph.segments) resolve(organ);
+  for (const organ of graph.segments) {
+    const radiusM = oakAllometricWoodRadiusMForOrganV1(organ);
+    if (radiusM !== null) organ.radiusM = radiusM;
+  }
 }
 
 export function oakWoodMassVolumeDiagnosticsForStateV1(
@@ -237,18 +157,10 @@ export function oakWoodMassVolumeDiagnosticsForStateV1(
   const graph = activeSegmentGraph(state);
   const diagnostics: OakWoodOrganMassVolumeDiagnosticV1[] = [];
   for (const organ of graph.segments) {
-    if (!isOakDimensionedWoodKindV1(organ.kind)) continue;
-    const shape = oakRenderedWoodShapeV1({
-      organ,
-      children: graph.childrenByKey.get(organ.key) ?? [],
-    });
-    if (shape !== null) diagnostics.push({
+    const diagnostic = oakWoodMassVolumeDiagnosticV1(organ);
+    if (diagnostic !== null) diagnostics.push({
       organKey: organ.key,
-      ...diagnosticFromShape(
-        organ,
-        shape.taperIndex,
-        shape.shaftVolumeM3,
-      ),
+      ...diagnostic,
     });
   }
   return diagnostics;

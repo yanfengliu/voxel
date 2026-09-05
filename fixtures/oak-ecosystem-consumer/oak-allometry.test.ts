@@ -5,104 +5,14 @@ import {
   oakAllometricWoodRadiusMForOrganV1,
   oakWoodMassVolumeDiagnosticV1,
 } from './oak-allometry.js';
-import { buildOakContinuousAnalysisSnapshotV1 } from './oak-continuous-render-analysis.js';
 import {
   createOakSimulationV1,
   oakHostTicksForBiologicalDaysV1,
 } from './oak-simulation.js';
-import { OAK_PARAMETERS_V1 } from './oak-parameters.js';
-import { oakWoodUnitCrossSectionAreaM2V1 } from './oak-wood-shape.js';
-
-interface Point3 {
-  readonly x: number;
-  readonly y: number;
-  readonly z: number;
-}
-
-function transformPoint(matrix: ArrayLike<number>, point: Point3): Point3 {
-  return {
-    x: matrix[0]! * point.x + matrix[4]! * point.y
-      + matrix[8]! * point.z + matrix[12]!,
-    y: matrix[1]! * point.x + matrix[5]! * point.y
-      + matrix[9]! * point.z + matrix[13]!,
-    z: matrix[2]! * point.x + matrix[6]! * point.y
-      + matrix[10]! * point.z + matrix[14]!,
-  };
-}
-
-function polygonArea(vertices: readonly Point3[]): number {
-  let x = 0;
-  let y = 0;
-  let z = 0;
-  vertices.forEach((point, index) => {
-    const next = vertices[(index + 1) % vertices.length]!;
-    x += point.y * next.z - point.z * next.y;
-    y += point.z * next.x - point.x * next.z;
-    z += point.x * next.y - point.y * next.x;
-  });
-  return Math.sqrt(x * x + y * y + z * z) / 2;
-}
-
-function projectedShaftVolumeM3(
-  snapshot: ReturnType<typeof buildOakContinuousAnalysisSnapshotV1>,
-  organKey: string,
-): number {
-  const instanceKey = `oak:${organKey}:shaft`;
-  const batch = snapshot.batches.find((candidate) =>
-    candidate.instanceKeys.includes(instanceKey));
-  if (!batch) throw new Error(`Missing projected shaft '${instanceKey}'.`);
-  const geometry = snapshot.resources.find((candidate) =>
-    candidate.kind === 'geometry' && candidate.key === batch.geometryKey);
-  if (!geometry || geometry.kind !== 'geometry') {
-    throw new Error(`Missing projected shaft geometry '${batch.geometryKey}'.`);
-  }
-  const slot = batch.instanceKeys.indexOf(instanceKey);
-  const matrix = batch.matrices.subarray(slot * 16, slot * 16 + 16);
-  const ringYs = [...new Set(Array.from(
-    { length: geometry.positions.length / 3 },
-    (_, index) => geometry.positions[index * 3 + 1]!,
-  ))].sort((left, right) => left - right);
-  const rings = ringYs.map((ringY) => {
-    const localVertices = new Map<string, Point3>();
-    for (let offset = 0; offset < geometry.positions.length; offset += 3) {
-      const local = {
-        x: geometry.positions[offset]!,
-        y: geometry.positions[offset + 1]!,
-        z: geometry.positions[offset + 2]!,
-      };
-      if (Math.abs(local.y - ringY) > 1e-6
-        || local.x * local.x + local.z * local.z < 1e-12) continue;
-      localVertices.set(`${String(local.x)}/${String(local.z)}`, local);
-    }
-    const vertices = [...localVertices.values()].map((point) =>
-      transformPoint(matrix, point));
-    const center = {
-      x: vertices.reduce((sum, point) => sum + point.x, 0) / vertices.length,
-      y: vertices.reduce((sum, point) => sum + point.y, 0) / vertices.length,
-      z: vertices.reduce((sum, point) => sum + point.z, 0) / vertices.length,
-    };
-    return { center, areaM2: polygonArea(vertices) };
-  });
-  let volumeM3 = 0;
-  for (let index = 0; index < rings.length - 1; index += 1) {
-    const start = rings[index]!;
-    const end = rings[index + 1]!;
-    const lengthM = Math.hypot(
-      end.center.x - start.center.x,
-      end.center.y - start.center.y,
-      end.center.z - start.center.z,
-    );
-    volumeM3 += lengthM * (
-      start.areaM2 + Math.sqrt(start.areaM2 * end.areaM2) + end.areaM2
-    ) / 3;
-  }
-  return volumeM3;
-}
+import { OAK_PHYSICAL_WOOD_TIP_RADIUS_RATIO_V1 } from './oak-physical-wood.js';
 
 describe('oak dimensioned-wood allometry', () => {
   it('exposes the old undersized branch as a real counter-control', () => {
-    expect(oakWoodUnitCrossSectionAreaM2V1()).toBeCloseTo(2 * Math.sqrt(2), 14);
-    expect(oakWoodUnitCrossSectionAreaM2V1()).not.toBeCloseTo(Math.PI, 2);
     const oldAuthoredBranch = {
       kind: 'branch' as const,
       lengthM: 0.045,
@@ -154,22 +64,48 @@ describe('oak dimensioned-wood allometry', () => {
     expect(activeWood.length).toBeGreaterThan(3);
   });
 
-  it('matches owned fresh mass to every actual projected day-100 shaft', () => {
+  it('keeps every physical shaft mass-derived and completed shafts at target radius', () => {
     const simulation = createOakSimulationV1();
     const snapshot = simulation.advanceHostTicks(oakHostTicksForBiologicalDaysV1(100));
-    const analysisSnapshot = buildOakContinuousAnalysisSnapshotV1(simulation.projection());
     const activeWood = snapshot.organs.filter((organ) =>
       organ.stage !== 'abscised' && isOakDimensionedWoodKindV1(organ.kind));
     expect(activeWood.length).toBeGreaterThan(3);
     for (const organ of activeWood) {
-      const freshMassKg = organ.pools.carbonKg
-          / OAK_PARAMETERS_V1.growth.structuralCarbonFractionOfDryMass
-        + organ.pools.waterLiters * OAK_PARAMETERS_V1.mechanics.waterDensityKgPerLiter;
-      const projectedMassKg = projectedShaftVolumeM3(analysisSnapshot, organ.key)
-        * OAK_PARAMETERS_V1.mechanics.greenWoodDensityKgPerM3;
-      const ratio = freshMassKg / projectedMassKg;
-      expect(ratio, organ.key).toBeCloseTo(1, 5);
+      if (organ.developmentFraction === 1) {
+        expect(organ.radiusM, organ.key).toBeCloseTo(organ.targetRadiusM, 14);
+      }
+      expect(oakWoodMassVolumeDiagnosticV1({
+        kind: organ.kind,
+        lengthM: organ.lengthM,
+        radiusM: organ.radiusM,
+        structuralCarbonKg: organ.pools.carbonKg,
+        waterLiters: organ.pools.waterLiters,
+      })!.ownedToGeometryMassRatio, organ.key).toBeCloseTo(1, 12);
     }
+  });
+
+  it('keeps every emerged wood child inside its parent terminal section', () => {
+    const simulation = createOakSimulationV1();
+    let currentDay = 0;
+    let oldTaperWouldLeaveAnOutwardStep = false;
+    for (const day of [3, 6, 14, 20, 42, 54, 82, 100, 110]) {
+      simulation.advanceHostTicks(oakHostTicksForBiologicalDaysV1(day - currentDay));
+      currentDay = day;
+      const snapshot = simulation.snapshot();
+      const byKey = new Map(snapshot.organs.map((organ) => [organ.key, organ]));
+      for (const child of snapshot.organs.filter((organ) =>
+        organ.stage !== 'abscised' && isOakDimensionedWoodKindV1(organ.kind))) {
+        const parent = child.parentKey === null ? undefined : byKey.get(child.parentKey);
+        if (parent === undefined || !isOakDimensionedWoodKindV1(parent.kind)) continue;
+        const parentTerminalRadiusM = parent.radiusM
+          * OAK_PHYSICAL_WOOD_TIP_RADIUS_RATIO_V1;
+        expect(child.radiusM, `${String(day)}d ${parent.key} -> ${child.key}`)
+          .toBeLessThanOrEqual(parentTerminalRadiusM + Number.EPSILON);
+        oldTaperWouldLeaveAnOutwardStep ||= child.radiusM > parent.radiusM * 0.72;
+      }
+    }
+    expect(OAK_PHYSICAL_WOOD_TIP_RADIUS_RATIO_V1).toBe(1);
+    expect(oldTaperWouldLeaveAnOutwardStep).toBe(true);
   });
 
   it('excludes aggregate fine roots and non-wood buds from wood allometry', () => {

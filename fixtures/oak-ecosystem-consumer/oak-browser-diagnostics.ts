@@ -47,6 +47,11 @@ export function updateOakBrowserDiagnosticsV1(
   set('age', formatOakDiagnostic(biological.elapsedBiologicalSeconds / 86_400, 2, 'days'));
   set('height', formatOakDiagnostic(diagnostics.heightM * 100, 1, 'cm'));
   set('leaf-area', formatOakDiagnostic(diagnostics.leafAreaM2 * 10_000, 1, 'cm²'));
+  set('growth-fronts', String(diagnostics.activeGrowthFrontCount));
+  set(
+    'growth-carbon',
+    formatOakDiagnostic(diagnostics.cumulativeGrowthCarbonKg * 1_000, 3, 'g'),
+  );
   set(
     'water-potential',
     diagnostics.leafCount === 0

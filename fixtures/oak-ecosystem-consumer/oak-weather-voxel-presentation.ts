@@ -11,6 +11,7 @@ import {
 } from './oak-tissue-lattice.js';
 import { OAK_TISSUE_VOXEL_PITCH_M_V1 } from './oak-tissue-voxel-projection.js';
 import type { OakSimulationSnapshotV1 } from './oak-types.js';
+import { oakVoxelAabbGridKeysV1, type OakVoxelAabbV1 } from './oak-voxel-aabb.js';
 
 export const OAK_WEATHER_VOXEL_MATERIAL_KEY_V1 = 'material:oak:weather-voxel';
 export const OAK_WEATHER_VOXEL_BATCH_KEY_V1 = 'batch:oak:weather-voxels';
@@ -54,8 +55,8 @@ export interface OakWeatherPresentationInputV1 {
   readonly windTravelM: number;
   readonly rainEvent?: OakRainPresentationEventV1 | undefined;
   readonly rootCutaway?: OakRootCutawayV1;
-  /** Fine-lattice cubes already placed by material batches. */
-  readonly occupiedCubeCentersM?: readonly (readonly [number, number, number])[];
+  /** Full world extents of cubes already placed by material batches. */
+  readonly occupiedCubeBoundsM?: readonly OakVoxelAabbV1[];
 }
 
 export interface OakWeatherPresentationEvidenceV1 {
@@ -73,6 +74,27 @@ export interface OakWeatherPresentationEvidenceV1 {
 export interface OakWeatherVoxelProjectionV1 {
   readonly records: readonly OakRenderInstanceRecordV1[];
   readonly evidence: OakWeatherPresentationEvidenceV1;
+}
+
+function oakRainPresentationPhaseV1(
+  input: Pick<OakWeatherPresentationInputV1, 'hostTick' | 'rainEvent'>,
+): OakWeatherPresentationEvidenceV1['rainPhase'] {
+  const rainAge = input.rainEvent === undefined
+    ? OAK_RAIN_PRESENTATION_TICKS_V1
+    : input.hostTick - input.rainEvent.startedHostTick;
+  return rainAge < OAK_RAIN_FALL_TICKS_V1
+    ? 'falling'
+    : rainAge < OAK_RAIN_PRESENTATION_TICKS_V1
+      ? 'impact'
+      : 'inactive';
+}
+
+/** Whether visible weather can query placed-cube occupancy this host tick. */
+export function oakWeatherNeedsOccupancyV1(
+  input: Pick<OakWeatherPresentationInputV1, 'hostTick' | 'rainEvent' | 'wind'>,
+): boolean {
+  return oakRainPresentationPhaseV1(input) !== 'inactive'
+    || (input.wind.regime === 'breeze' && input.wind.speedMPerS > 0);
 }
 
 function validate(input: OakWeatherPresentationInputV1): void {
@@ -139,10 +161,10 @@ function colorFor(kind: 'rain' | 'wind', index: number): Srgb8ColorV1 {
 }
 
 function blockedCells(
-  centers: readonly (readonly [number, number, number])[] | undefined,
+  bounds: readonly OakVoxelAabbV1[] | undefined,
 ): ReadonlySet<string> {
-  return new Set((centers ?? []).map((center) =>
-    oakTissueCellKeyV1(roundOakTissueCellV1(center))));
+  return new Set((bounds ?? []).flatMap((box) =>
+    oakVoxelAabbGridKeysV1(box, PITCH)));
 }
 
 function addCell(
@@ -356,15 +378,11 @@ export function buildOakWeatherVoxelPresentationV1(
   validate(input);
   const records: OakRenderInstanceRecordV1[] = [];
   const occupied = new Set<string>();
-  const blocked = blockedCells(input.occupiedCubeCentersM);
+  const blocked = blockedCells(input.occupiedCubeBoundsM);
   const rainAge = input.rainEvent === undefined
     ? OAK_RAIN_PRESENTATION_TICKS_V1
     : input.hostTick - input.rainEvent.startedHostTick;
-  const rainPhase = rainAge < OAK_RAIN_FALL_TICKS_V1
-    ? 'falling' as const
-    : rainAge < OAK_RAIN_PRESENTATION_TICKS_V1
-      ? 'impact' as const
-      : 'inactive' as const;
+  const rainPhase = oakRainPresentationPhaseV1(input);
   const rainStart = records.length;
   if (rainPhase === 'falling') addFallingRain(records, occupied, blocked, input, rainAge);
   else if (rainPhase === 'impact') {

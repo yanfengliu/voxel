@@ -8,19 +8,30 @@ import type {
   OakVec3V1,
 } from './oak-types.js';
 import { oakAxisFrameV1 } from './oak-axis-frame.js';
+import { mixOakSrgbV1, oakMaturationMaterialFractionV1 } from './oak-development-color.js';
+import { isOakPlacedOrganV1 } from './oak-organ-lifecycle.js';
 import {
   oakLeafVariantForOrganKeyV1,
   oakLeafWidthScaleMForDescriptorV1,
 } from './oak-leaf-shape.js';
 import {
   OAK_MIN_RENDER_SHAFT_LENGTH_M_V1,
-  oakRenderedWoodShapeV1,
+  OAK_TAPER_RATIOS_V1,
 } from './oak-wood-shape.js';
+import { OAK_PHYSICAL_WOOD_TIP_RADIUS_RATIO_V1 } from './oak-physical-wood.js';
 import {
   exactMagnitudeV1,
 } from '../deterministic-math.js';
 
 const MIN_RENDER_LENGTH_M = OAK_MIN_RENDER_SHAFT_LENGTH_M_V1;
+const PHYSICAL_ANALYSIS_TAPER_INDEX = OAK_TAPER_RATIOS_V1.reduce(
+  (nearest, ratio, index) => Math.abs(ratio - OAK_PHYSICAL_WOOD_TIP_RADIUS_RATIO_V1)
+      < Math.abs(OAK_TAPER_RATIOS_V1[nearest]!
+        - OAK_PHYSICAL_WOOD_TIP_RADIUS_RATIO_V1)
+    ? index
+    : nearest,
+  0,
+);
 
 type OakSegmentOrganV1 = OakStructuralOrganSnapshotV1 & {
   readonly kind: 'stem' | 'branch' | 'coarse-root' | 'fine-root-cohort';
@@ -102,7 +113,6 @@ function renderableSegment(organ: OakOrganSnapshotV1): organ is OakSegmentOrganV
 function segmentProjection(
   organ: OakSegmentOrganV1,
   parent: OakOrganSnapshotV1 | undefined,
-  children: readonly OakSegmentOrganV1[],
 ): SegmentProjection | null {
   if (parent && renderableSegment(parent)) {
     const parentDirection = normalize(parent.direction);
@@ -123,16 +133,14 @@ function segmentProjection(
       );
     }
   }
-  const shape = oakRenderedWoodShapeV1({
-    organ,
-    children,
-  });
-  if (shape === null) return null;
+  if (organ.lengthM < OAK_MIN_RENDER_SHAFT_LENGTH_M_V1) return null;
   return {
     start: organ.positionM,
-    lengthM: shape.shaftLengthM,
-    taperIndex: shape.taperIndex,
-    nodeFlared: shape.nodeFlared,
+    lengthM: organ.lengthM,
+    // This private smooth oracle is only a conservative collision aid. Its
+    // nearest regular-octagon profile must never feed physical allometry.
+    taperIndex: PHYSICAL_ANALYSIS_TAPER_INDEX,
+    nodeFlared: false,
   };
 }
 
@@ -149,14 +157,18 @@ export function oakLeafColorV1(leaf: OakLeafOrganSnapshotV1): Srgb8ColorV1 {
     g: start.g + (end.g - start.g) * amount,
     b: start.b + (end.b - start.b) * amount,
   });
-  const healthy = leaf.stage === 'expanding'
-    ? { r: 72, g: 154, b: 82 }
-    : { r: 63, g: 141, b: 83 };
+  const healthy = mixOakSrgbV1(
+    { r: 72, g: 154, b: 82 },
+    { r: 63, g: 141, b: 83 },
+    oakMaturationMaterialFractionV1(leaf),
+  );
   const chlorotic = { r: 178, g: 163, b: 72 };
   const chlorophyllLoss = clamp01((0.82 - chlorophyll) / 0.47);
   let color = mix(healthy, chlorotic, chlorophyllLoss);
-  if (leaf.stage === 'senescing') {
-    const progress = clamp01((0.55 - chlorophyll) / 0.4);
+  if (leaf.stage === 'senescing' || leaf.stage === 'detached') {
+    // Begin the amber cohort while mid-senescence is still inspectable; the
+    // per-voxel chlorophyll dither makes cells cross this boundary gradually.
+    const progress = clamp01((0.95 - chlorophyll) / 0.5);
     color = progress < 0.72
       ? mix(color, { r: 200, g: 119, b: 50 }, progress / 0.72)
       : mix(
@@ -235,23 +247,17 @@ export function buildOakInstanceRecordsV1(
   options: OakRenderProjectionOptionsV1,
 ): OakRenderRecordSetV1 {
   const records = new Map(batchKeys.map((key) => [key, [] as OakRenderInstanceRecordV1[]]));
-  const activeOrgans = state.organs.filter((organ) =>
-    organ.stage !== 'abscised' && organ.healthFraction > 0);
+  const activeOrgans = state.organs.filter(isOakPlacedOrganV1);
   const organByKey = new Map(activeOrgans.map((organ) => [organ.key, organ]));
-  const childrenByKey = new Map<string, OakSegmentOrganV1[]>();
   const seenOrganKeys = new Set<string>();
   for (const organ of activeOrgans) {
     if (seenOrganKeys.has(organ.key)) throw new Error(`Oak projection received duplicate organ key '${organ.key}'.`);
     seenOrganKeys.add(organ.key);
-    if (!renderableSegment(organ) || organ.parentKey === null) continue;
-    const children = childrenByKey.get(organ.parentKey) ?? [];
-    children.push(organ);
-    childrenByKey.set(organ.parentKey, children);
   }
   let skippedInvalidDimension = 0;
   let skippedJunctionConsumed = 0;
   for (const organ of state.organs) {
-    if (organ.stage === 'abscised' || organ.healthFraction <= 0) continue;
+    if (!isOakPlacedOrganV1(organ)) continue;
     if (renderableSegment(organ)) {
       if (organ.lengthM < MIN_RENDER_LENGTH_M || organ.radiusM <= 0) {
         skippedInvalidDimension += 1;
@@ -260,7 +266,6 @@ export function buildOakInstanceRecordsV1(
       const projection = segmentProjection(
         organ,
         organ.parentKey === null ? undefined : organByKey.get(organ.parentKey),
-        childrenByKey.get(organ.key) ?? [],
       );
       if (!projection) {
         skippedJunctionConsumed += 1;

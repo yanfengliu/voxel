@@ -8,6 +8,7 @@ import type {
 } from './oak-types.js';
 import { buildOakContinuousAnalysisSnapshotV1 } from './oak-continuous-render-analysis.js';
 import { inspectOakOrganGeometryConflictsV1 } from './oak-organ-conflicts.js';
+import { isOakPlacedOrganV1 } from './oak-organ-lifecycle.js';
 import {
   createOakSimulationV1,
   oakHostTicksForBiologicalDaysV1,
@@ -37,20 +38,6 @@ function replaceOrgans(
   replacement: readonly OakOrganSnapshotV1[],
 ): OakRenderProjectionStateV1 {
   return { ...state, organs: replacement };
-}
-
-function transformedPoint(
-  matrix: ArrayLike<number>,
-  point: Readonly<{ x: number; y: number; z: number }>,
-) {
-  return {
-    x: matrix[0]! * point.x + matrix[4]! * point.y
-      + matrix[8]! * point.z + matrix[12]!,
-    y: matrix[1]! * point.x + matrix[5]! * point.y
-      + matrix[9]! * point.z + matrix[13]!,
-    z: matrix[2]! * point.x + matrix[6]! * point.y
-      + matrix[10]! * point.z + matrix[14]!,
-  };
 }
 
 describe('oak organ topology and rendered conflict gate', () => {
@@ -85,8 +72,7 @@ describe('oak organ topology and rendered conflict gate', () => {
     (days) => {
       const state = runProjection(days);
       const report = reportFor(state);
-      const activeCount = state.organs.filter((organ) =>
-        organ.stage !== 'abscised' && organ.healthFraction > 0).length;
+      const activeCount = state.organs.filter(isOakPlacedOrganV1).length;
       expect(report.activeOrganCount).toBe(activeCount);
       expect(report.testedOrganPairs + report.skippedDirectOrganPairs)
         .toBe(activeCount * (activeCount - 1) / 2);
@@ -111,7 +97,7 @@ describe('oak organ topology and rendered conflict gate', () => {
   });
 
   it('detects unrelated swept-volume, leaf crossings and under-cleared ports', () => {
-    const state = runProjection(13);
+    const state = runProjection(20);
     const stem = state.organs.find((organ) => organ.kind === 'stem')!;
     const crossingWood: OakOrganSnapshotV1 = {
       ...stem,
@@ -129,6 +115,8 @@ describe('oak organ topology and rendered conflict gate', () => {
     const leaf = state.organs.find((organ) => organ.kind === 'leaf')!;
     const crossingLeaf = {
       ...leaf,
+      stage: 'expanding',
+      developmentPhase: 'cell-expansion',
       parentKey: null,
       positionM: {
         x: stem.positionM.x + stem.direction.x * stem.lengthM * 0.5,
@@ -146,9 +134,10 @@ describe('oak organ topology and rendered conflict gate', () => {
 
     const thresholdState = runProjection(90);
     const axillaryBranch = thresholdState.organs.find((organ) =>
-      organ.kind === 'branch')!;
+      organ.kind === 'branch' && isOakPlacedOrganV1(organ))!;
     const subtendingLeaf = thresholdState.organs.find((organ) =>
-      organ.kind === 'leaf' && organ.parentKey === axillaryBranch.parentKey)!;
+      organ.kind === 'leaf' && organ.parentKey === axillaryBranch.parentKey
+      && isOakPlacedOrganV1(organ))!;
     const sharedParent = thresholdState.organs.find((organ) =>
       organ.key === subtendingLeaf.parentKey)!;
     const parentTip = {
@@ -172,7 +161,11 @@ describe('oak organ topology and rendered conflict gate', () => {
       y: attachmentOffset.y - sharedParent.direction.y * axialM,
       z: attachmentOffset.z - sharedParent.direction.z * axialM,
     };
-    const radialScale = 0.95;
+    // Remove the entire tangential radial port offset. A fractional scale is
+    // coupled to the current leaf-section width and clearance parameter and
+    // can remain outside the parent after either grows; the zero-offset
+    // mutant always puts the petiole base inside the woody node envelope.
+    const radialScale = 0;
     const underClearedLeaf = {
       ...subtendingLeaf,
       positionM: {
@@ -189,7 +182,8 @@ describe('oak organ topology and rendered conflict gate', () => {
       && conflict.organKeys.includes(sharedParent.key))).toBe(true);
 
     const continuation = thresholdState.organs.find((organ) =>
-      organ.kind === 'stem' && organ.parentKey === sharedParent.key)!;
+      organ.kind === 'stem' && organ.parentKey === sharedParent.key
+      && isOakPlacedOrganV1(organ))!;
     const coaxialSibling = replaceOrgans(
       thresholdState,
       thresholdState.organs.map((organ) => organ.key === axillaryBranch.key
@@ -202,96 +196,18 @@ describe('oak organ topology and rendered conflict gate', () => {
       && conflict.organKeys.includes(continuation.key))).toBe(true);
   }, timeoutForMeasuredWorkMs(28_081));
 
-  it('retains an integrated node-flare peak in the private continuous-geometry oracle', () => {
-    const state = runProjection(100);
-    const snapshot = buildOakContinuousAnalysisSnapshotV1(state, ROOT_PROJECTION);
-    const batch = snapshot.batches.find((candidate) =>
-      candidate.key.includes(':node-flared:') && candidate.instanceKeys.length > 0)!;
-    const instanceKey = batch.instanceKeys[0]!;
-    const slot = batch.instanceKeys.indexOf(instanceKey);
-    const matrix = batch.matrices.subarray(slot * 16, slot * 16 + 16);
-    const geometry = snapshot.resources.find((candidate) =>
-      candidate.kind === 'geometry' && candidate.key === batch.geometryKey)!;
-    if (geometry.kind !== 'geometry') throw new Error('Expected node-flared geometry.');
-    const ringYs = [...new Set(Array.from(
-      { length: geometry.positions.length / 3 },
-      (_, index) => geometry.positions[index * 3 + 1]!,
-    ))].sort((left, right) => left - right);
-    expect(ringYs).toHaveLength(4);
-    const ring = (localY: number) => {
-      const center = transformedPoint(matrix, { x: 0, y: localY, z: 0 });
-      const points = Array.from(
-        { length: geometry.positions.length / 3 },
-        (_, index) => ({
-          x: geometry.positions[index * 3]!,
-          y: geometry.positions[index * 3 + 1]!,
-          z: geometry.positions[index * 3 + 2]!,
-        }),
-      ).filter((point) => point.y === localY)
-        .map((point) => transformedPoint(matrix, point));
-      const radiusM = Math.max(...points.map((point) => Math.hypot(
-        point.x - center.x,
-        point.y - center.y,
-        point.z - center.z,
-      )));
-      return { center, points, radiusM };
-    };
-    const proximal = ring(ringYs[0]!);
-    const peak = ring(ringYs[2]!);
-    const distal = ring(ringYs[3]!);
-    const peakFraction = (ringYs[2]! - ringYs[0]!)
-      / (ringYs[3]! - ringYs[0]!);
-    const endpointInterpolatedRadiusM = proximal.radiusM
-      + (distal.radiusM - proximal.radiusM) * peakFraction;
-    expect(peak.radiusM).toBeGreaterThan(endpointInterpolatedRadiusM);
-    const radialPoint = peak.points.find((point) => Math.abs(
-      Math.hypot(
-        point.x - peak.center.x,
-        point.y - peak.center.y,
-        point.z - peak.center.z,
-      ) - peak.radiusM,
-    ) < 1e-12)!;
-    const radial = {
-      x: (radialPoint.x - peak.center.x) / peak.radiusM,
-      y: (radialPoint.y - peak.center.y) / peak.radiusM,
-      z: (radialPoint.z - peak.center.z) / peak.radiusM,
-    };
-    const intruderRadiusM = 0.00025;
-    const separationM = (endpointInterpolatedRadiusM + peak.radiusM) / 2
-      + intruderRadiusM;
-    const source = state.organs.find((organ) => organ.kind === 'branch')!;
-    const parentKey = /^oak:(organ:[0-9]+:[0-9]+):shaft$/u.exec(instanceKey)![1]!;
-    const intruder = {
-      ...source,
-      key: 'organ:900:1',
-      identity: { localId: 900, generation: 1 },
-      parentKey: null,
-      positionM: {
-        x: peak.center.x + radial.x * separationM,
-        y: peak.center.y + radial.y * separationM,
-        z: peak.center.z + radial.z * separationM,
-      },
-      direction: {
-        x: matrix[4]! / Math.hypot(matrix[4]!, matrix[5]!, matrix[6]!),
-        y: matrix[5]! / Math.hypot(matrix[4]!, matrix[5]!, matrix[6]!),
-        z: matrix[6]! / Math.hypot(matrix[4]!, matrix[5]!, matrix[6]!),
-      },
-      lengthM: 0.001,
-      radiusM: intruderRadiusM,
-    } satisfies OakOrganSnapshotV1;
-    const report = reportFor(replaceOrgans(state, [...state.organs, intruder]));
-    expect(report.conflicts.some((conflict) =>
-      conflict.kind === 'organ-volume-overlap'
-      && conflict.organKeys.includes(parentKey)
-      && conflict.organKeys.includes(intruder.key))).toBe(true);
-  });
-
   it('rejects aboveground geometry below soil while retaining the root exemption', () => {
-    const state = runProjection(13);
+    const state = runProjection(20);
     const leaf = state.organs.find((organ) => organ.kind === 'leaf')!;
     const buried = replaceOrgans(state, state.organs.map((organ) =>
       organ.key === leaf.key
-        ? { ...organ, parentKey: null, positionM: { x: 0, y: -0.05, z: 0 } }
+        ? {
+          ...organ,
+          stage: 'expanding',
+          developmentPhase: 'cell-expansion',
+          parentKey: null,
+          positionM: { x: 0, y: -0.05, z: 0 },
+        }
         : organ));
     const report = reportFor(buried);
     expect(report.conflicts.some((conflict) =>
@@ -301,7 +217,7 @@ describe('oak organ topology and rendered conflict gate', () => {
       exemption.reason === 'porous-soil-root-co-occupancy')).toBe(true);
   });
 
-  it('partitions each exact octagonal terminal section into finite load paths', () => {
+  it('partitions each exact circular terminal section into finite load paths', () => {
     const state = runProjection(100);
     const sections = oakFiniteWoodAttachmentSectionsV1(state.organs);
     expect(sections.length).toBeGreaterThan(3);

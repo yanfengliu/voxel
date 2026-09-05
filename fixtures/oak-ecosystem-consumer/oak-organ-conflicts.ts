@@ -4,7 +4,7 @@ import type {
   OakRenderProjectionStateV1,
   OakVec3V1,
 } from './oak-types.js';
-import { oakLeafTangentialPortOffsetsForOrganV1 } from './oak-leaf-shape.js';
+import { isOakPlacedOrganV1 } from './oak-organ-lifecycle.js';
 import {
   oakRenderedOrgansV1,
   type OakRenderedOrganV1,
@@ -358,15 +358,9 @@ export function inspectOakOrganGeometryConflictsV1(
     const tip = parentTip(parent);
     const parentDirection = normalize(parent.direction);
     const attachmentOffset = subtract(shape.organ.positionM, tip);
-    const attachmentAxialM = dot(attachmentOffset, parentDirection);
-    const attachmentRadial = subtract(
-      attachmentOffset,
-      scale(parentDirection, attachmentAxialM),
-    );
     const nodeEnvelopeRadiusM = state.organs.reduce((radius, candidate) => {
       const sharesNode = candidate.parentKey === parent.key
-        && candidate.stage !== 'abscised'
-        && candidate.healthFraction > 0
+        && isOakPlacedOrganV1(candidate)
         && (candidate.kind === 'stem'
           || candidate.kind === 'branch'
           || candidate.kind === 'coarse-root'
@@ -383,22 +377,9 @@ export function inspectOakOrganGeometryConflictsV1(
         scale(parentDirection, axial),
       )));
     }));
-    const expectedLeafPort = shape.organ.kind === 'leaf'
-      ? oakLeafTangentialPortOffsetsForOrganV1(
-        shape.organ.key,
-        shape.organ.areaM2,
-        shape.organ.lengthM,
-        parent.direction,
-        nodeEnvelopeRadiusM,
-        shape.organ.direction,
-        shape.organ.rollRadians,
-      )
-      : null;
-    const leafSurfacePort = expectedLeafPort !== null
-      && Math.abs(attachmentAxialM - expectedLeafPort.axialCenterOffsetM)
-        <= POSITION_TOLERANCE_M
-      && Math.abs(Math.sqrt(lengthSquared(attachmentRadial))
-        - expectedLeafPort.radialCenterOffsetM) <= POSITION_TOLERANCE_M;
+    const leafSurfacePort = shape.organ.kind === 'leaf'
+      && shape.organ.attachment?.parentOrganKey === parent.key
+      && minimumRadialM >= parent.radiusM - POSITION_TOLERANCE_M;
     if (!leafSurfacePort && lengthSquared(attachmentOffset)
       > POSITION_TOLERANCE_M * POSITION_TOLERANCE_M) addConflict({
       kind: 'parent-port-gap',

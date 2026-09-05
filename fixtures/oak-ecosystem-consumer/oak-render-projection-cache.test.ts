@@ -1,4 +1,3 @@
-import { performance } from 'node:perf_hooks';
 import { isDeepStrictEqual } from 'node:util';
 import { describe, expect, it } from 'vitest';
 
@@ -7,84 +6,30 @@ import {
   type OakRenderFrameV1,
 } from './oak-render-adapter.js';
 import {
+  oakArraysEqualForRenderCacheTestV1,
+  oakExactProjectionContentEqualForTestV1,
+} from './oak-render-projection-cache-test-support.js';
+import {
   createOakSimulationV1,
   oakHostTicksForBiologicalDaysV1,
 } from './oak-simulation.js';
 import { oakSoilSurfaceAtFineCellV1 } from './oak-soil-surface.js';
-import { OAK_TISSUE_VOXEL_PITCH_M_V1 } from './oak-tissue-voxel-projection.js';
+import {
+  oakTissueVoxelBaseColorV1,
+  oakTissueVoxelCohortColorV1,
+} from './oak-tissue-color.js';
+import {
+  buildOakTissueVoxelSourceProjectionV1,
+  OAK_TISSUE_VOXEL_PITCH_M_V1,
+} from './oak-tissue-voxel-projection.js';
 import type { OakLeafOrganSnapshotV1, OakRenderProjectionStateV1 } from './oak-types.js';
 
-function arrayEqual(left: ArrayLike<number>, right: ArrayLike<number>): boolean {
-  if (left.length !== right.length) return false;
-  for (let index = 0; index < left.length; index += 1) {
-    if (!Object.is(left[index], right[index])) return false;
-  }
-  return true;
-}
-
-function recordMapsEqual(
-  left: OakRenderFrameV1['projectionCache']['tissue']['records'],
-  right: OakRenderFrameV1['projectionCache']['tissue']['records'],
-): boolean {
-  if (left.size !== right.size) return false;
-  for (const [batchKey, leftRecords] of left) {
-    const rightRecords = right.get(batchKey);
-    if (rightRecords === undefined || leftRecords.length !== rightRecords.length) return false;
-    for (let index = 0; index < leftRecords.length; index += 1) {
-      const before = leftRecords[index]!;
-      const after = rightRecords[index]!;
-      if (before.key !== after.key || !arrayEqual(before.matrix, after.matrix)
-        || before.color.r !== after.color.r || before.color.g !== after.color.g
-        || before.color.b !== after.color.b || before.color.a !== after.color.a) return false;
-    }
-  }
-  return true;
-}
-
-function batchesEqualByInstanceKey(left: OakRenderFrameV1, right: OakRenderFrameV1): boolean {
-  if (left.snapshot.batches.length !== right.snapshot.batches.length) return false;
-  for (const leftBatch of left.snapshot.batches) {
-    const rightBatch = right.snapshot.batches.find(({ key }) => key === leftBatch.key);
-    if (rightBatch === undefined || leftBatch.instanceKeys.length !== rightBatch.instanceKeys.length
-      || leftBatch.geometryKey !== rightBatch.geometryKey
-      || leftBatch.materialKey !== rightBatch.materialKey) return false;
-    const rightSlots = new Map(rightBatch.instanceKeys.map((key, index) => [key, index]));
-    for (let leftIndex = 0; leftIndex < leftBatch.instanceKeys.length; leftIndex += 1) {
-      const rightIndex = rightSlots.get(leftBatch.instanceKeys[leftIndex]!);
-      if (rightIndex === undefined) return false;
-      if (!arrayEqual(
-        leftBatch.matrices.subarray(leftIndex * 16, leftIndex * 16 + 16),
-        rightBatch.matrices.subarray(rightIndex * 16, rightIndex * 16 + 16),
-      )) return false;
-      if (leftBatch.colors !== undefined && rightBatch.colors !== undefined && !arrayEqual(
-        leftBatch.colors.subarray(leftIndex * 4, leftIndex * 4 + 4),
-        rightBatch.colors.subarray(rightIndex * 4, rightIndex * 4 + 4),
-      )) return false;
-    }
-  }
-  return true;
-}
-
-function exactProjectionContentEqual(left: OakRenderFrameV1, right: OakRenderFrameV1): boolean {
-  const leftTissue = left.projectionCache.tissue;
-  const rightTissue = right.projectionCache.tissue;
-  return recordMapsEqual(leftTissue.records, rightTissue.records)
-    && isDeepStrictEqual(leftTissue.organMetrics, rightTissue.organMetrics)
-    && isDeepStrictEqual([...leftTissue.materialCells], [...rightTissue.materialCells])
-    && isDeepStrictEqual([...leftTissue.sourceAssignments], [...rightTissue.sourceAssignments])
-    && isDeepStrictEqual(leftTissue.ports, rightTissue.ports)
-    && isDeepStrictEqual(
-      { ...leftTissue, records: null, materialCells: null, sourceAssignments: null, ports: null },
-      { ...rightTissue, records: null, materialCells: null, sourceAssignments: null, ports: null },
-    )
-    && isDeepStrictEqual(left.projectionCache.soil.contactVoxels,
-      right.projectionCache.soil.contactVoxels)
-    && isDeepStrictEqual(left.projectionCache.soil.metrics, right.projectionCache.soil.metrics)
-    && isDeepStrictEqual(left.projectionCache.litter, right.projectionCache.litter)
-    && isDeepStrictEqual(left.snapshot.resources, right.snapshot.resources)
-    && isDeepStrictEqual(left.metrics, right.metrics)
-    && arrayEqual(left.snapshot.chunks[0]!.voxels, right.snapshot.chunks[0]!.voxels)
-    && batchesEqualByInstanceKey(left, right);
+function sourceUnionInputs(state: OakRenderProjectionStateV1): readonly (readonly unknown[])[] {
+  const source = buildOakTissueVoxelSourceProjectionV1(state, false);
+  return [...source.records.values()].flatMap((records) => records.map((record) => [
+    record.key,
+    record.matrix[12], record.matrix[13], record.matrix[14],
+  ]));
 }
 
 function replaceLeaf(
@@ -107,13 +52,18 @@ describe('oak render projection cache', () => {
   it('is bit-exact with a cold rebuild across 60 consecutive live day-100 ticks', () => {
     const simulation = createOakSimulationV1();
     simulation.advanceHostTicks(oakHostTicksForBiologicalDaysV1(100));
-    let cached = buildOakRenderFrameV1(simulation.projection(), { renderRevision: 1_000 });
+    let state = simulation.projection();
+    let cached = buildOakRenderFrameV1(state, { renderRevision: 1_000 });
+    let previousSourceUnionInputs = sourceUnionInputs(state);
+    let previousSourceKeys = previousSourceUnionInputs.map(([key]) => key);
+    let stableSourceKeyTicks = 0;
+    let stableSourceInputTicks = 0;
     let topologyHits = 0;
     let completeTissueHits = 0;
 
     for (let tick = 0; tick < 60; tick += 1) {
       simulation.advanceHostTicks(1);
-      const state = simulation.projection();
+      state = simulation.projection();
       const renderRevision = 1_001 + tick;
       cached = buildOakRenderFrameV1(state, {
         renderRevision,
@@ -122,11 +72,26 @@ describe('oak render projection cache', () => {
       const cold = buildOakRenderFrameV1(state, { renderRevision });
       topologyHits += Number(cached.projectionCacheHits.tissueTopology);
       completeTissueHits += Number(cached.projectionCacheHits.tissue);
-      expect(exactProjectionContentEqual(cached, cold)).toBe(true);
+      const nextSourceUnionInputs = sourceUnionInputs(state);
+      const nextSourceKeys = nextSourceUnionInputs.map(([key]) => key);
+      stableSourceKeyTicks += Number(isDeepStrictEqual(previousSourceKeys, nextSourceKeys));
+      stableSourceInputTicks += Number(isDeepStrictEqual(
+        previousSourceUnionInputs,
+        nextSourceUnionInputs,
+      ));
+      previousSourceKeys = nextSourceKeys;
+      previousSourceUnionInputs = nextSourceUnionInputs;
+      expect(oakExactProjectionContentEqualForTestV1(cached, cold)).toBe(true);
     }
 
-    expect(topologyHits).toBe(60);
-    expect(completeTissueHits).toBeGreaterThanOrEqual(45);
+    // Source routing consumes exact world centres. Moving attachments change
+    // Those inputs move on active-growth ticks. Stable membership does occur,
+    // but exact source centres still prevent an unsound topology reuse.
+    expect(stableSourceKeyTicks).toBeGreaterThan(0);
+    expect(stableSourceKeyTicks).toBeLessThan(60);
+    expect(stableSourceInputTicks).toBe(0);
+    expect(topologyHits).toBe(0);
+    expect(completeTissueHits).toBe(0);
   }, 120_000);
 
   it('refreshes appearance on stable topology and rebuilds after a topology mutation', () => {
@@ -150,7 +115,7 @@ describe('oak render projection cache', () => {
       tissue: false,
       tissueTopology: true,
     });
-    expect(exactProjectionContentEqual(recolored, recoloredCold)).toBe(true);
+    expect(oakExactProjectionContentEqualForTestV1(recolored, recoloredCold)).toBe(true);
 
     const reshapedState = replaceLeaf(recoloredState, (leaf) => ({
       ...leaf,
@@ -162,7 +127,19 @@ describe('oak render projection cache', () => {
     });
     const reshapedCold = buildOakRenderFrameV1(reshapedState, { renderRevision: 2_002 });
     expect(reshaped.projectionCacheHits.tissueTopology).toBe(false);
-    expect(exactProjectionContentEqual(reshaped, reshapedCold)).toBe(true);
+    expect(reshaped.projectionCacheHits).toMatchObject({ soil: true, litter: true });
+    // Attached leaves are rigid organ-local voxel bodies rather than inputs to
+    // the structural allocator. Rolling a leaf must therefore rebuild its
+    // presented body while leaving the authoritative wood union unchanged.
+    expect(isDeepStrictEqual(
+      [...recolored.projectionCache.tissue.materialCells],
+      [...reshaped.projectionCache.tissue.materialCells],
+    )).toBe(true);
+    expect(isDeepStrictEqual(
+      recolored.projectionCache.tissue.attachedLeafBodies,
+      reshaped.projectionCache.tissue.attachedLeafBodies,
+    )).toBe(false);
+    expect(oakExactProjectionContentEqualForTestV1(reshaped, reshapedCold)).toBe(true);
 
     const hiddenRootState: OakRenderProjectionStateV1 = {
       ...recoloredState,
@@ -177,7 +154,7 @@ describe('oak render projection cache', () => {
       previousFrame: recolored,
     });
     expect(hiddenRootChanged.metrics.rootVoxels).toBe(0);
-    expect(hiddenRootChanged.projectionCacheHits.tissueTopology).toBe(false);
+    expect(hiddenRootChanged.projectionCacheHits.tissueTopology).toBe(true);
 
     const reorderedState: OakRenderProjectionStateV1 = {
       ...state,
@@ -190,10 +167,93 @@ describe('oak render projection cache', () => {
     });
     const reorderedCold = buildOakRenderFrameV1(reorderedState, { renderRevision: 2_004 });
     expect(reordered.projectionCacheHits.tissueTopology).toBe(false);
-    expect(exactProjectionContentEqual(reordered, reorderedCold)).toBe(true);
+    expect(oakExactProjectionContentEqualForTestV1(reordered, reorderedCold)).toBe(true);
   }, 120_000);
 
-  it('invalidates soil and litter for a new living blocker on the soil surface', () => {
+  it('invalidates a cohort-color input even when the rounded organ base color is unchanged', () => {
+    const simulation = createOakSimulationV1();
+    simulation.advanceHostTicks(oakHostTicksForBiologicalDaysV1(100));
+    const state = simulation.projection();
+    const stemIndex = state.organs.findIndex((organ) => organ.kind === 'stem');
+    if (stemIndex < 0) throw new Error('Cohort-color cache control requires one stem.');
+    const withStress = (stressFraction: number): OakRenderProjectionStateV1 => ({
+      ...state,
+      revision: state.revision + Math.round(stressFraction * 10_000),
+      organs: state.organs.map((organ, index) => index === stemIndex
+        ? { ...organ, stressFraction }
+        : organ),
+    });
+    const low = withStress(0.0015);
+    const high = withStress(0.002);
+    const lowStem = low.organs[stemIndex]!;
+    const highStem = high.organs[stemIndex]!;
+    expect(oakTissueVoxelBaseColorV1(lowStem)).toEqual(oakTissueVoxelBaseColorV1(highStem));
+    expect(oakTissueVoxelCohortColorV1(lowStem, 3, 0, 2))
+      .not.toEqual(oakTissueVoxelCohortColorV1(highStem, 3, 0, 2));
+    const before = buildOakRenderFrameV1(low, { renderRevision: 2_010 });
+    const cached = buildOakRenderFrameV1(high, {
+      renderRevision: 2_011,
+      previousFrame: before,
+    });
+    const cold = buildOakRenderFrameV1(high, { renderRevision: 2_011 });
+    expect(cached.projectionCacheHits).toMatchObject({
+      tissueTopology: true,
+      tissue: false,
+    });
+    expect(oakExactProjectionContentEqualForTestV1(cached, cold)).toBe(true);
+  });
+
+  it('invalidates every mature-template and development-front input independently', () => {
+    const simulation = createOakSimulationV1();
+    simulation.advanceHostTicks(oakHostTicksForBiologicalDaysV1(40));
+    const state = simulation.projection();
+    const before = buildOakRenderFrameV1(state, { renderRevision: 2_020 });
+    const leafIndex = state.organs.findIndex((organ) => organ.kind === 'leaf');
+    const structuralIndex = state.organs.findIndex((organ) => organ.kind !== 'leaf');
+    expect(leafIndex).toBeGreaterThanOrEqual(0);
+    expect(structuralIndex).toBeGreaterThanOrEqual(0);
+
+    const controls: readonly OakRenderProjectionStateV1[] = [
+      {
+        ...state,
+        revision: state.revision + 1,
+        organs: state.organs.map((organ, index) => index === leafIndex
+          ? { ...organ, targetLengthM: organ.targetLengthM * 1.02 }
+          : organ),
+      },
+      {
+        ...state,
+        revision: state.revision + 2,
+        organs: state.organs.map((organ, index) => index === structuralIndex
+          ? { ...organ, targetRadiusM: organ.targetRadiusM * 1.02 }
+          : organ),
+      },
+      {
+        ...state,
+        revision: state.revision + 3,
+        organs: state.organs.map((organ, index) => index === leafIndex
+          ? { ...organ, developmentFraction: Math.max(0, organ.developmentFraction - 0.01) }
+          : organ),
+      },
+      replaceLeaf(state, (leaf) => ({
+        ...leaf,
+        targetAreaM2: leaf.targetAreaM2 * 1.02,
+      })),
+    ];
+
+    controls.forEach((changed, index) => {
+      const renderRevision = 2_021 + index;
+      const cached = buildOakRenderFrameV1(changed, {
+        renderRevision,
+        previousFrame: before,
+      });
+      const cold = buildOakRenderFrameV1(changed, { renderRevision });
+      expect(cached.projectionCacheHits.tissueTopology, String(index)).toBe(false);
+      expect(oakExactProjectionContentEqualForTestV1(cached, cold), String(index)).toBe(true);
+    });
+  }, 120_000);
+
+  it('keeps conservative misses for surface and embedded soil tissue', () => {
     const simulation = createOakSimulationV1();
     simulation.advanceHostTicks(oakHostTicksForBiologicalDaysV1(240));
     const state = simulation.projection();
@@ -221,7 +281,11 @@ describe('oak render projection cache', () => {
         direction: { x: 0, y: 1, z: 0 },
         lengthM: 2 * pitch,
         radiusM: 0.45 * pitch,
+        targetLengthM: 2 * pitch,
+        targetRadiusM: 0.45 * pitch,
         stage: 'mature',
+        developmentPhase: 'mature',
+        developmentFraction: 1,
         healthFraction: 1,
         stressFraction: 0,
       }],
@@ -234,9 +298,51 @@ describe('oak render projection cache', () => {
     expect(cached.projectionCacheHits).toMatchObject({
       tissueTopology: false,
       soil: false,
-      litter: false,
+      litter: true,
     });
-    expect(exactProjectionContentEqual(cached, cold)).toBe(true);
+    expect(oakExactProjectionContentEqualForTestV1(cached, cold)).toBe(true);
+
+    const embedded: OakRenderProjectionStateV1 = {
+      ...state,
+      revision: state.revision + 2,
+      organs: [...state.organs, {
+        ...template,
+        key: 'organ:998:1',
+        identity: { localId: 998, generation: 1 },
+        kind: 'bud',
+        parentKey: null,
+        positionM: {
+          x: (blockerCell[0] + 0.5) * pitch,
+          y: surface.topM - 0.5 * pitch,
+          z: (blockerCell[1] + 0.5) * pitch,
+        },
+        direction: { x: 0, y: -1, z: 0 },
+        lengthM: 2 * pitch,
+        radiusM: 0.45 * pitch,
+        targetLengthM: 2 * pitch,
+        targetRadiusM: 0.45 * pitch,
+        stage: 'mature',
+        developmentPhase: 'mature',
+        developmentFraction: 1,
+        healthFraction: 1,
+        stressFraction: 0,
+      }],
+    };
+    const embeddedCached = buildOakRenderFrameV1(embedded, {
+      renderRevision: 2_052,
+      previousFrame: before,
+    });
+    const embeddedCold = buildOakRenderFrameV1(embedded, { renderRevision: 2_052 });
+    expect(embeddedCached.projectionCacheHits).toMatchObject({
+      tissueTopology: false,
+      soil: false,
+      litter: true,
+    });
+    expect(oakArraysEqualForRenderCacheTestV1(
+      before.snapshot.chunks[0]!.voxels,
+      embeddedCold.snapshot.chunks[0]!.voxels,
+    )).toBe(false);
+    expect(oakExactProjectionContentEqualForTestV1(embeddedCached, embeddedCold)).toBe(true);
   }, 120_000);
 
   it('does not collapse signed zero in a topology cache key', () => {
@@ -259,42 +365,90 @@ describe('oak render projection cache', () => {
     expect(after.projectionCacheHits.tissueTopology).toBe(false);
   });
 
-  it('reports live frame construction while deterministic cache-work gates carry the verdict', () => {
+  it('rejects caller mutation of cached attached-leaf records before a tissue hit can trust it', () => {
     const simulation = createOakSimulationV1();
     simulation.advanceHostTicks(oakHostTicksForBiologicalDaysV1(100));
-    let previous = buildOakRenderFrameV1(simulation.projection(), { renderRevision: 3_000 });
-    for (let warmup = 0; warmup < 12; warmup += 1) {
-      simulation.advanceHostTicks(1);
-      previous = buildOakRenderFrameV1(simulation.projection(), {
-        renderRevision: 3_001 + warmup,
-        previousFrame: previous,
-      });
-    }
+    const state = simulation.projection();
+    const before = buildOakRenderFrameV1(state, { renderRevision: 2_150 });
+    const body = before.projectionCache.tissue.attachedLeafBodies[0]!;
+    const matrix = body.records[0]!.matrix as number[];
+    expect(() => {
+      matrix[12] = matrix[12]! + 0.125;
+    }).toThrow(/read only|read-only|frozen/u);
+    expect(() => {
+      (before.projectionCache.tissue as unknown as { tissueVoxelCount: number })
+        .tissueVoxelCount = 0;
+    }).toThrow(/read only|read-only|frozen/u);
+    expect(() => {
+      (before.projectionCache.tissue.materialCells as Map<number, unknown>).clear();
+    }).toThrow(/read-only producer artifacts/u);
 
-    const samples: number[] = [];
-    let topologyHits = 0;
-    for (let tick = 0; tick < 60; tick += 1) {
-      const started = performance.now();
-      simulation.advanceHostTicks(1);
-      previous = buildOakRenderFrameV1(simulation.projection(), {
-        renderRevision: 3_013 + tick,
-        previousFrame: previous,
-      });
-      samples.push(performance.now() - started);
-      topologyHits += Number(previous.projectionCacheHits.tissueTopology);
-    }
-    samples.sort((left, right) => left - right);
-    const p50 = samples[29]!;
-    const p95 = samples[56]!;
-    const p99 = samples[59]!;
-    console.log(
-      `oak day-100 live host tick + voxel frame: p50 ${p50.toFixed(2)} ms, `
-      + `p95 ${p95.toFixed(2)} ms, p99 ${p99.toFixed(2)} ms `
-      + '(observational only; 100 ms pathology ceiling, rendering excluded)',
-    );
+    const cached = buildOakRenderFrameV1(state, {
+      renderRevision: 2_151,
+      previousFrame: before,
+    });
+    const cold = buildOakRenderFrameV1(state, { renderRevision: 2_151 });
+    expect(cached.projectionCacheHits.tissue).toBe(true);
+    expect(oakExactProjectionContentEqualForTestV1(cached, cold)).toBe(true);
+  });
 
-    expect(topologyHits).toBe(60);
-    expect(p50).toBeLessThan(100);
-    expect(p95).toBeLessThan(100);
+  it('invalidates every abscised-leaf input consumed by rigid litter projection', () => {
+    const simulation = createOakSimulationV1();
+    simulation.advanceHostTicks(oakHostTicksForBiologicalDaysV1(249));
+    const state = simulation.projection();
+    const before = buildOakRenderFrameV1(state, { renderRevision: 2_200 });
+    const controls = [
+      (leaf: OakLeafOrganSnapshotV1) => ({ ...leaf, areaM2: leaf.areaM2 * 0.5 }),
+      (leaf: OakLeafOrganSnapshotV1) => ({
+        ...leaf, targetLengthM: leaf.targetLengthM * 0.98,
+      }),
+      (leaf: OakLeafOrganSnapshotV1) => ({
+        ...leaf, targetAreaM2: leaf.targetAreaM2 * 0.98,
+      }),
+      (leaf: OakLeafOrganSnapshotV1) => ({
+        ...leaf, developmentFraction: leaf.developmentFraction * 0.98,
+      }),
+      (leaf: OakLeafOrganSnapshotV1) => ({ ...leaf, healthFraction: 0.5 }),
+      (leaf: OakLeafOrganSnapshotV1) => ({ ...leaf, rollRadians: leaf.rollRadians + 0.1 }),
+      (leaf: OakLeafOrganSnapshotV1) => ({ ...leaf, chlorophyllFraction: 0.2 }),
+      (leaf: OakLeafOrganSnapshotV1) => ({
+        ...leaf, litterRecipientSoilCellKey: 'soil:cache-control',
+      }),
+    ] as const;
+    controls.forEach((change, index) => {
+      const changed = replaceLeaf(state, change);
+      const renderRevision = 2_201 + index;
+      const cached = buildOakRenderFrameV1(changed, {
+        renderRevision,
+        previousFrame: before,
+      });
+      const cold = buildOakRenderFrameV1(changed, { renderRevision });
+      expect(cached.projectionCacheHits.litter, String(index)).toBe(false);
+      expect(oakExactProjectionContentEqualForTestV1(cached, cold), String(index)).toBe(true);
+    });
+
+    const absentBody = replaceLeaf(state, (leaf) => ({ ...leaf, healthFraction: 0 }));
+    const buildCachedAbsentBody = (): OakRenderFrameV1 => buildOakRenderFrameV1(absentBody, {
+      renderRevision: 2_250,
+      previousFrame: before,
+    });
+    const buildColdAbsentBody = (): OakRenderFrameV1 => buildOakRenderFrameV1(absentBody, {
+      renderRevision: 2_250,
+    });
+    let cachedError = '';
+    let coldError = '';
+    try {
+      buildCachedAbsentBody();
+    } catch (error) {
+      cachedError = error instanceof Error ? error.message : String(error);
+    }
+    try {
+      buildColdAbsentBody();
+    } catch (error) {
+      coldError = error instanceof Error ? error.message : String(error);
+    }
+    expect(cachedError).toMatch(/no basal petiole source/u);
+    expect(cachedError).toBe(coldError);
   }, 120_000);
+
 });

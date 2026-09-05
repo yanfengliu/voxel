@@ -20,10 +20,18 @@ interface SurfaceAudit {
   readonly maxAdjacentStep: number;
   readonly isolatedColumns: number;
   readonly componentSizesByLevel: ReadonlyMap<number, readonly number[]>;
+  readonly componentMetricsByLevel: ReadonlyMap<number, readonly SurfaceComponentAudit[]>;
   readonly longestStraightRunsByLevel: ReadonlyMap<
     number,
     Readonly<{ horizontal: number; vertical: number }>
   >;
+}
+
+interface SurfaceComponentAudit {
+  readonly area: number;
+  readonly spanX: number;
+  readonly spanZ: number;
+  readonly diameterCells: number;
 }
 
 function auditSurface(query: HeightQuery): SurfaceAudit {
@@ -48,21 +56,22 @@ function auditSurface(query: HeightQuery): SurfaceAudit {
     }
   }
   const componentSizesByLevel = new Map<number, readonly number[]>();
+  const componentMetricsByLevel = new Map<number, readonly SurfaceComponentAudit[]>();
   for (const level of counts.keys()) {
     const seen = new Set<string>();
-    const componentSizes: number[] = [];
+    const componentMetrics: SurfaceComponentAudit[] = [];
     for (let z = -20; z < 20; z += 1) {
       for (let x = -20; x < 20; x += 1) {
         const key = `${String(x)}:${String(z)}`;
         if (query(x, z) !== level || seen.has(key)) continue;
         const stack: [number, number][] = [[x, z]];
-        let componentSize = 0;
+        const componentCells: [number, number][] = [];
         while (stack.length > 0) {
           const [visitX, visitZ] = stack.pop()!;
           const visitKey = `${String(visitX)}:${String(visitZ)}`;
           if (seen.has(visitKey)) continue;
           seen.add(visitKey);
-          componentSize += 1;
+          componentCells.push([visitX, visitZ]);
           for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]] as const) {
             const nextX = visitX + dx;
             const nextZ = visitZ + dz;
@@ -71,10 +80,28 @@ function auditSurface(query: HeightQuery): SurfaceAudit {
             stack.push([nextX, nextZ]);
           }
         }
-        componentSizes.push(componentSize);
+        const componentXs = componentCells.map(([componentX]) => componentX);
+        const componentZs = componentCells.map(([, componentZ]) => componentZ);
+        let diameterCells = 0;
+        for (let left = 0; left < componentCells.length; left += 1) {
+          for (let right = left + 1; right < componentCells.length; right += 1) {
+            diameterCells = Math.max(diameterCells, Math.hypot(
+              componentCells[left]![0] - componentCells[right]![0],
+              componentCells[left]![1] - componentCells[right]![1],
+            ));
+          }
+        }
+        componentMetrics.push({
+          area: componentCells.length,
+          spanX: Math.max(...componentXs) - Math.min(...componentXs) + 1,
+          spanZ: Math.max(...componentZs) - Math.min(...componentZs) + 1,
+          diameterCells,
+        });
       }
     }
-    componentSizesByLevel.set(level, componentSizes.sort((left, right) => right - left));
+    componentMetrics.sort((left, right) => right.area - left.area);
+    componentMetricsByLevel.set(level, componentMetrics);
+    componentSizesByLevel.set(level, componentMetrics.map(({ area }) => area));
   }
   const longestStraightRunsByLevel = new Map<
     number,
@@ -105,6 +132,7 @@ function auditSurface(query: HeightQuery): SurfaceAudit {
     maxAdjacentStep,
     isolatedColumns,
     componentSizesByLevel,
+    componentMetricsByLevel,
     longestStraightRunsByLevel,
   };
 }
@@ -126,6 +154,19 @@ function requireOrganicSurface(query: HeightQuery): SurfaceAudit {
   }
   if (Math.max(...audit.counts.values()) > 1_600 * 0.4) {
     throw new Error('No oak soil elevation may dominate two fifths of the surface.');
+  }
+  const components = [...audit.componentMetricsByLevel.values()].flat();
+  const largestArea = Math.max(...components.map(({ area }) => area));
+  if (largestArea > 220) {
+    throw new Error(`Oak soil contains a ${String(largestArea)}-cell mesa component.`);
+  }
+  const longestSpan = Math.max(...components.flatMap(({ spanX, spanZ }) => [spanX, spanZ]));
+  if (longestSpan > 24) {
+    throw new Error(`Oak soil contains a component spanning ${String(longestSpan)} cells.`);
+  }
+  const widestDiameter = Math.max(...components.map(({ diameterCells }) => diameterCells));
+  if (widestDiameter > 27) {
+    throw new Error(`Oak soil contains a component ${String(widestDiameter)} cells in diameter.`);
   }
   return audit;
 }
@@ -162,6 +203,50 @@ function supersededDrainageBandHeight(x: number, z: number): number {
   return -4;
 }
 
+function supersededWarpedDistance(
+  x: number,
+  z: number,
+  centerX: number,
+  centerZ: number,
+  scaleX: number,
+  scaleZ: number,
+  phase: number,
+): number {
+  const warpX = 1.25 * Math.sin((z + phase) * 0.22)
+    + 0.45 * Math.sin((x - z + phase) * 0.17);
+  const warpZ = 1.05 * Math.sin((x - phase) * 0.19)
+    + 0.35 * Math.cos((x + z - phase) * 0.14);
+  return Math.hypot((x - centerX + warpX) / scaleX, (z - centerZ + warpZ) / scaleZ);
+}
+
+function supersededConnectedShelfHeight(x: number, z: number): number {
+  const mound = (centerX: number, centerZ: number, scaleX: number, scaleZ: number,
+    phase: number): number => Math.max(
+    -4,
+    -Math.floor(supersededWarpedDistance(x, z, centerX, centerZ, scaleX, scaleZ, phase)),
+  );
+  const hollow = (centerX: number, centerZ: number, scaleX: number, scaleZ: number,
+    phase: number): number => Math.min(
+    0,
+    -4 + Math.floor(supersededWarpedDistance(x, z, centerX, centerZ, scaleX, scaleZ, phase)),
+  );
+  let level = -2;
+  level = Math.max(level, mound(-0.5, -0.5, 5, 4.4, 1));
+  level = Math.max(level, mound(-14, -13, 4.5, 4, 7));
+  level = Math.max(level, mound(14, 14, 4.5, 5, 13));
+  level = Math.min(level, hollow(-12, 11, 4.5, 4.1, 23));
+  level = Math.min(level, hollow(11, -13, 4.1, 4.6, 29));
+  level = Math.min(level, hollow(18, 4, 3.2, 3.6, 35));
+  const plateau = OAK_SOIL_SURFACE_COLLAR_PLATEAU_V1;
+  const dx = x < plateau.minWorldVoxelX ? plateau.minWorldVoxelX - x
+    : x > plateau.maxWorldVoxelX ? x - plateau.maxWorldVoxelX : 0;
+  const dz = z < plateau.minWorldVoxelZ ? plateau.minWorldVoxelZ - z
+    : z > plateau.maxWorldVoxelZ ? z - plateau.maxWorldVoxelZ : 0;
+  level = Math.max(level, -Math.min(4, Math.ceil(Math.hypot(dx, dz))));
+  if (dx === 0 && dz === 0) return 0;
+  return level;
+}
+
 function canonicalHeight(x: number, z: number): number {
   const sample = oakSoilSurfaceAtWorldVoxelColumnV1(x, z);
   if (sample === null) throw new Error('Canonical oak surface unexpectedly omitted an in-domain column.');
@@ -172,25 +257,30 @@ describe('oak soil surface authority', () => {
   it('owns localized multi-hummock and swale relief, a level collar, and rejects banded controls', () => {
     const audit = requireOrganicSurface(canonicalHeight);
     expect([...audit.counts].sort(([left], [right]) => left - right))
-      .toEqual([[-4, 158], [-3, 398], [-2, 568], [-1, 356], [0, 120]]);
+      .toEqual([[-4, 287], [-3, 320], [-2, 342], [-1, 326], [0, 325]]);
     expect(audit.maxAdjacentStep).toBe(1);
     expect(audit.isolatedColumns).toBe(0);
     expect([...audit.componentSizesByLevel].sort(([left], [right]) => left - right))
       .toEqual([
-        [-4, [65, 57, 36]],
-        [-3, [238, 160]],
-        [-2, [540, 13, 9, 6]],
-        [-1, [152, 110, 94]],
-        [0, [58, 36, 26]],
+        [-4, [160, 127]],
+        [-3, [160, 160]],
+        [-2, [103, 93, 58, 46, 39, 3]],
+        [-1, [194, 116, 9, 7]],
+        [0, [212, 77, 36]],
       ]);
     expect([...audit.longestStraightRunsByLevel].sort(([left], [right]) => left - right))
       .toEqual([
-        [-4, { horizontal: 9, vertical: 9 }],
-        [-3, { horizontal: 15, vertical: 15 }],
-        [-2, { horizontal: 17, vertical: 17 }],
-        [-1, { horizontal: 15, vertical: 14 }],
-        [0, { horizontal: 9, vertical: 9 }],
+        [-4, { horizontal: 14, vertical: 15 }],
+        [-3, { horizontal: 17, vertical: 19 }],
+        [-2, { horizontal: 17, vertical: 20 }],
+        [-1, { horizontal: 20, vertical: 17 }],
+        [0, { horizontal: 14, vertical: 17 }],
       ]);
+    const components = [...audit.componentMetricsByLevel.values()].flat();
+    expect(Math.max(...components.map(({ area }) => area))).toBe(212);
+    expect(Math.max(...components.flatMap(({ spanX, spanZ }) => [spanX, spanZ]))).toBe(23);
+    expect(Math.max(...components.map(({ diameterCells }) => diameterCells)))
+      .toBeCloseTo(26.870057685088806, 12);
     expect(
       (Math.max(...audit.levels) - Math.min(...audit.levels))
       * OAK_SOIL_SURFACE_COARSE_PITCH_M_V1,
@@ -206,6 +296,8 @@ describe('oak soil surface authority', () => {
     expect(() => requireOrganicSurface(oldThreeBandHeight)).toThrow(/five authored hummock/u);
     expect(() => requireOrganicSurface(supersededDrainageBandHeight))
       .toThrow(/straight terrace 40 cells/u);
+    expect(() => requireOrganicSurface(supersededConnectedShelfHeight))
+      .toThrow(/540-cell mesa component/u);
   });
 
   it('maps world, coarse, and fine coordinates to the same retained visible top', () => {
@@ -222,9 +314,9 @@ describe('oak soil surface authority', () => {
       worldVoxelZ: -16,
       localX: 28,
       localZ: 4,
-      topBoundaryWorldVoxelY: -4,
-      topLocalVoxelY: 35,
-      topM: -4 * OAK_SOIL_SURFACE_COARSE_PITCH_M_V1,
+      topBoundaryWorldVoxelY: 0,
+      topLocalVoxelY: 39,
+      topM: 0,
     } satisfies Partial<OakSoilSurfaceSampleV1>);
     expect(oakSoilSurfaceAtWorldXZV1(0.01, 0, {
       axis: 'x', planeM: 0, keep: 'less-than',

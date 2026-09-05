@@ -1,15 +1,21 @@
 import { oakOrganFreshMassKgV1 } from './oak-allometry.js';
 import {
   oakLeafPetioleSectionForOrganV1,
-  oakLeafTangentialPortOffsetsForOrganV1,
 } from './oak-leaf-shape.js';
+import {
+  isOakAttachedLivingOrganV1,
+  isOakPlacedOrganV1,
+} from './oak-organ-lifecycle.js';
 import { OAK_HOST_TIMESTEP_SECONDS_V1, OAK_PARAMETERS_V1 } from './oak-parameters.js';
 import type { MutableOakOrganV1, MutableOakStateV1 } from './oak-state.js';
 import type { OakVec3V1, OakWindRegimeV1 } from './oak-types.js';
 import {
   assertOakFiniteWoodLoadPathsV1,
-  oakLateralAttachmentPortV1,
 } from './oak-topology.js';
+import {
+  oakParallelTransportVectorV1,
+  oakResolveLeafAttachmentPoseV1,
+} from './oak-cellular-leaf-hinge.js';
 
 export interface OakCantileverInputV1 {
   readonly loadDistribution: 'tip' | 'uniform';
@@ -318,10 +324,15 @@ function reanchorFromParent(
     y: restParent.restPositionM.y + restParent.restDirection.y * restParent.lengthM,
     z: restParent.restPositionM.z + restParent.restDirection.z * restParent.lengthM,
   };
+  const transportedOffset = oakParallelTransportVectorV1({
+    x: organ.restPositionM.x - restParentTip.x,
+    y: organ.restPositionM.y - restParentTip.y,
+    z: organ.restPositionM.z - restParentTip.z,
+  }, restParent.restDirection, parent.direction);
   organ.positionM = {
-    x: currentParentTip.x + organ.restPositionM.x - restParentTip.x,
-    y: currentParentTip.y + organ.restPositionM.y - restParentTip.y,
-    z: currentParentTip.z + organ.restPositionM.z - restParentTip.z,
+    x: currentParentTip.x + transportedOffset.x,
+    y: currentParentTip.y + transportedOffset.y,
+    z: currentParentTip.z + transportedOffset.z,
   };
 }
 
@@ -341,37 +352,33 @@ export function updateOakWindMechanicsV1(state: MutableOakStateV1): void {
   const updatedByKey = new Map<string, MutableOakOrganV1>();
   const restByKey = new Map(state.organs.map((organ) => [organ.key, organ]));
   for (const organ of state.organs) {
+    if (!isOakAttachedLivingOrganV1(organ)) {
+      organ.mechanicsClamped = false;
+      updatedByKey.set(organ.key, organ);
+      continue;
+    }
+    if (!isOakPlacedOrganV1(organ)) {
+      organ.positionM = { ...organ.restPositionM };
+      organ.direction = { ...organ.restDirection };
+      organ.mechanicsClamped = false;
+      updatedByKey.set(organ.key, organ);
+      continue;
+    }
     const parent = organ.parentKey === null ? undefined : updatedByKey.get(organ.parentKey);
     const restParent = organ.parentKey === null ? undefined : restByKey.get(organ.parentKey);
-    reanchorFromParent(organ, parent, restParent);
     const response = oakCantileverResponseForOrganV1(organ, windSpeedMPerS);
     organ.mechanicsClamped = response?.clamped ?? false;
     organ.direction = deflectedDirection(organ, response);
-    if (organ.kind === 'leaf' && parent && response) {
-      const rollRadians = organ.rollRadians ?? 0;
-      const nodeEnvelopeRadiusM = state.organs.reduce((radius, candidate) => {
-        const sharesNode = candidate.parentKey === parent.key
-          && (candidate.kind === 'stem'
-            || candidate.kind === 'branch'
-            || candidate.kind === 'coarse-root'
-            || candidate.kind === 'fine-root-cohort');
-        return sharesNode ? Math.max(radius, candidate.radiusM) : radius;
-      }, parent.radiusM);
-      const leafPortOffsets = oakLeafTangentialPortOffsetsForOrganV1(
-        organ.key,
-        organ.areaM2 ?? 0,
-        organ.lengthM,
-        parent.direction,
-        nodeEnvelopeRadiusM,
-        organ.direction,
-        rollRadians,
-      );
-      organ.positionM = oakLateralAttachmentPortV1(
+    if (organ.kind === 'leaf' && parent !== undefined) {
+      organ.positionM = oakResolveLeafAttachmentPoseV1({
+        organs: state.organs,
+        leaf: organ,
         parent,
-        organ.direction,
-        leafPortOffsets.radialCenterOffsetM,
-        leafPortOffsets.axialCenterOffsetM,
-      );
+        leafDirection: organ.direction,
+        current: true,
+      });
+    } else {
+      reanchorFromParent(organ, parent, restParent);
     }
     updatedByKey.set(organ.key, organ);
   }

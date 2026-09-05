@@ -11,12 +11,13 @@ import type {
   OakBrowserProjectedShaftV1,
   OakBrowserViewportV1,
 } from './oak-browser-contract.js';
-import { oakRenderedSubjectGeometryV1 } from './oak-rendered-organ-geometry.js';
+import { oakBrowserCameraFocusGeometryV1 } from './oak-browser-camera-focus-geometry.js';
+import { isOakPlacedOrganV1 } from './oak-organ-lifecycle.js';
 import type { OakSimulationSnapshotV1, OakVec3V1 } from './oak-types.js';
 
 const MIN_SUBJECT_HEIGHT_M = 0.105;
 const MIN_CROWN_RADIUS_M = 0.07;
-const MIN_CUTAWAY_RADIUS_M = 0.11;
+const MIN_CUTAWAY_RADIUS_M = 0.035;
 const MIN_CUTAWAY_DEPTH_M = 0.14;
 const MAX_HALF_WIDTH_NDC_WITH_HUD = 0.5;
 const MAX_HALF_WIDTH_NDC_FULL_CANVAS = 0.68;
@@ -82,6 +83,8 @@ interface RenderedSubjectV1 {
   readonly points: readonly OakVec3V1[];
   readonly organCount: number;
   readonly litterVoxelCount: number;
+  readonly rootVoxelCount: number;
+  readonly basalContextVoxelCount: number;
   readonly center: Vector3;
   readonly size: Vector3;
 }
@@ -92,7 +95,10 @@ function renderedSubject(
   renderSnapshot: RenderSnapshotV1,
   rootCutaway: boolean,
 ): RenderedSubjectV1 {
-  const geometry = oakRenderedSubjectGeometryV1(renderSnapshot, rootCutaway);
+  const geometry = oakBrowserCameraFocusGeometryV1(
+    renderSnapshot,
+    rootCutaway ? 'root-cutaway' : 'tree',
+  );
   const points = geometry.vertices;
   const minimum = new Vector3(Infinity, Infinity, Infinity);
   const maximum = new Vector3(-Infinity, -Infinity, -Infinity);
@@ -110,6 +116,8 @@ function renderedSubject(
     points,
     organCount: geometry.organKeys.length,
     litterVoxelCount: geometry.litterVoxelCount,
+    rootVoxelCount: geometry.rootVoxelCount,
+    basalContextVoxelCount: geometry.basalContextVoxelCount,
     center: minimum.clone().add(maximum).multiplyScalar(0.5),
     size: maximum.clone().sub(minimum),
   };
@@ -136,7 +144,7 @@ function projectedRootShaft(
   kind: 'coarse-root' | 'fine-root-cohort',
 ): OakBrowserProjectedShaftV1 | null {
   const root = snapshot.organs.find((organ) =>
-    organ.kind === kind && organ.stage !== 'abscised');
+    organ.kind === kind && isOakPlacedOrganV1(organ));
   if (root === undefined) return null;
   const base = new Vector3(root.positionM.x, root.positionM.y, root.positionM.z)
     .project(camera);
@@ -162,12 +170,11 @@ export function fitOakBrowserCameraV1(
   rootCutaway: boolean,
   retainCurrentView: OakBrowserCameraRetentionV1 = false,
 ): OakBrowserCameraFitV1 {
-  const diagnostics = snapshot.diagnostics;
   const subject = renderedSubject(renderSnapshot, rootCutaway);
   const subjectHeightM = Math.max(
     MIN_SUBJECT_HEIGHT_M,
     subject.size.y,
-    rootCutaway ? diagnostics.heightM + MIN_CUTAWAY_DEPTH_M : 0,
+    rootCutaway ? MIN_CUTAWAY_DEPTH_M : 0,
   );
   const subjectRadiusM = rootCutaway
     ? Math.max(MIN_CUTAWAY_RADIUS_M, subject.size.x / 2, subject.size.z / 2)
@@ -261,6 +268,8 @@ export function fitOakBrowserCameraV1(
     subjectClearOfHud: bounds.minX > safeLeftNdc + FRAME_MARGIN_NDC,
     fittedOrganCount: subject.organCount,
     fittedLitterVoxelCount: subject.litterVoxelCount,
+    fittedRootVoxelCount: subject.rootVoxelCount,
+    fittedBasalContextVoxelCount: subject.basalContextVoxelCount,
     fittedVertexCount: subject.points.length,
     rootShaftsNdc: rootCutaway
       ? {

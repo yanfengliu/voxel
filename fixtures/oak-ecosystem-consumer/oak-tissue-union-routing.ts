@@ -1,7 +1,17 @@
 import type { OakOrganSnapshotV1 } from './oak-types.js';
 import {
+  assertOakTissueFaceNeighborRangeV1,
+  findOakTissuePathV1,
+  OAK_TISSUE_FACE_NEIGHBOR_ID_OFFSETS_V1,
+  OAK_TISSUE_FACE_NEIGHBORS_V1,
+} from './oak-tissue-path-search.js';
+import {
+  groupOakTissueSourcesByOwnerV1,
+  isOakTissueProximalChildSourceV1,
+  retainedOakTissueAnchorSourceKeysV1,
+} from './oak-tissue-union-ownership.js';
+import {
   oakTissueCellCenterM_V1,
-  oakTissueCellFromIdV1,
   oakTissueCellIdV1,
   oakTissueCellKeyV1,
   roundOakTissueCellV1,
@@ -27,9 +37,6 @@ export type {
   OakTissueSourceCellV1,
   OakTissueUnionRoutingV1,
 } from './oak-tissue-lattice.js';
-const FACE_NEIGHBORS: readonly OakTissueLatticeCellV1[] = [
-  [1,0,0],[-1,0,0],[0,1,0],[0,-1,0],[0,0,1],[0,0,-1],
-];
 const AXIS_ORDERS = [[0,1,2],[0,2,1],[1,0,2],[1,2,0],[2,0,1],[2,1,0]] as const;
 const ALLOCATION_SHELLS = Array.from({ length: 17 }, (_, radius) => {
   const offsets: OakTissueLatticeCellV1[] = [];
@@ -50,9 +57,16 @@ export function buildOakTissueUnionRoutingV1(
   const materialCells = new Map<number, OakTissueMaterialCellV1>();
   const ports = reservePorts(organs, materialCells);
   const sourceAssignments = allocateSources(sources, materialCells);
-  const sourcesByOwner = groupAssignedSources(sourceAssignments);
+  const sourcesByOwner = groupOakTissueSourcesByOwnerV1(sourceAssignments);
+  const detachedOwners = new Set([...organs.values()]
+    .filter((organ) => organ.stage === 'detached').map((organ) => organ.key));
+  const retainedSourceKeys = retainedOakTissueAnchorSourceKeysV1(sourceAssignments, ports);
   for (const port of ports) {
-    const parentAnchor = nearestAnchor(port.parentCell, sourcesByOwner.get(port.parentOrganKey) ?? []);
+    const parentAnchor = nearestAnchor(
+      port.parentCell,
+      (sourcesByOwner.get(port.parentOrganKey) ?? []).filter((cell) =>
+        materialCells.get(oakTissueCellIdV1(cell))?.ownerOrganKey === port.parentOrganKey),
+    );
     const childAnchor = nearestAnchor(port.childCell, sourcesByOwner.get(port.childOrganKey) ?? []);
     port.parentPath = addOwnedPath(
       materialCells,
@@ -61,6 +75,7 @@ export function buildOakTissueUnionRoutingV1(
       port.parentOrganKey,
       organs,
       sourceAssignments,
+      retainedSourceKeys,
     );
     port.childPath = addUnionPath(
       materialCells,
@@ -69,9 +84,11 @@ export function buildOakTissueUnionRoutingV1(
       port.childOrganKey,
       stableHash(port.childOrganKey),
       port.childOrganKey,
+      false,
+      detachedOwners,
     );
   }
-  addSourceScaffold(sources, sourceAssignments, materialCells);
+  addSourceScaffold(detachedOwners, sources, sourceAssignments, materialCells);
   return { materialCells, sourceAssignments, ports };
 }
 
@@ -91,7 +108,10 @@ function reservePorts(
     const id = oakTissueCellIdV1(cell);
     const existing = parentByCell.get(id);
     if (existing !== undefined && existing !== child.parentKey) {
-      throw new Error(`Oak port cell '${oakTissueCellKeyV1(cell)}' has conflicting parents.`);
+      throw new Error(
+        `Oak port cell '${oakTissueCellKeyV1(cell)}' for child '${child.key}' has conflicting `
+        + `parents '${existing}' and '${child.parentKey!}'.`,
+      );
     }
     parentByCell.set(id, child.parentKey!);
     putReserved(cells, cell, child.parentKey!, 'parent-port');
@@ -107,7 +127,7 @@ function reservePorts(
     const groupId = oakTissueCellIdV1(parentCell);
     const used = usedConnectors.get(groupId) ?? [];
     const direction = [child.direction.x, child.direction.y, child.direction.z] as const;
-    const candidates = [...FACE_NEIGHBORS].sort((left, right) => {
+    const candidates = [...OAK_TISSUE_FACE_NEIGHBORS_V1].sort((left, right) => {
       const separation = (candidate: OakTissueLatticeCellV1): number => used.length === 0
         ? 0
         : Math.min(...used.map((prior) => chebyshev(add(parentCell, candidate), prior)));
@@ -183,23 +203,27 @@ function allocateSources(
   return assignments;
 }
 
-function groupAssignedSources(
-  assignments: ReadonlyMap<string, OakTissueSourceAssignmentV1>,
-): Map<string, OakTissueLatticeCellV1[]> {
-  const result = new Map<string, OakTissueLatticeCellV1[]>();
-  for (const assignment of assignments.values()) {
-    const values = result.get(assignment.ownerOrganKey) ?? [];
-    values.push(assignment.cell);
-    result.set(assignment.ownerOrganKey, values);
-  }
-  return result;
-}
+
 function addSourceScaffold(
+  detachedOwners: ReadonlySet<string>,
   sources: readonly OakTissueSourceCellV1[],
   assignments: ReadonlyMap<string, OakTissueSourceAssignmentV1>,
   cells: Map<number, OakTissueMaterialCellV1>,
 ): void {
-  const connectivity = new MaterialComponents(cells);
+  let attachedCells: ReadonlyMap<number, OakTissueMaterialCellV1> = cells;
+  const detachedCells = new Map<string, Map<number, OakTissueMaterialCellV1>>();
+  if (detachedOwners.size > 0) {
+    const attached = new Map<number, OakTissueMaterialCellV1>();
+    for (const owner of detachedOwners) detachedCells.set(owner, new Map());
+    for (const [id, material] of cells) {
+      const detached = detachedCells.get(material.ownerOrganKey);
+      (detached ?? attached).set(id, material);
+    }
+    attachedCells = attached;
+  }
+  const attachedConnectivity = new MaterialComponents(attachedCells);
+  const detachedConnectivity = new Map([...detachedCells]
+    .map(([owner, ownerCells]) => [owner, new MaterialComponents(ownerCells)]));
   const localByOwner = new Map<string, Map<number, OakTissueSourceCellV1>>();
   for (const source of sources) {
     const local = localByOwner.get(source.ownerOrganKey) ?? new Map();
@@ -213,15 +237,19 @@ function addSourceScaffold(
       if (!neighbor) continue;
       const start = assignments.get(source.key)!.cell;
       const goal = assignments.get(neighbor.key)!.cell;
-      if (connectivity.connected(start, goal)) continue;
+      const ownerConnectivity = detachedConnectivity.get(source.ownerOrganKey);
+      if ((ownerConnectivity ?? attachedConnectivity).connected(start, goal)) continue;
       const path = addUnionPath(
         cells,
         start,
         goal,
         source.ownerOrganKey,
         stableHash(source.key + neighbor.key),
+        ownerConnectivity === undefined ? undefined : source.ownerOrganKey,
+        ownerConnectivity !== undefined,
+        detachedOwners,
       );
-      connectivity.connectPath(path, cells);
+      (ownerConnectivity ?? attachedConnectivity).connectPath(path, cells);
     }
   }
 }
@@ -238,12 +266,13 @@ class MaterialComponents {
       this.#componentByCell.set(firstId, component);
       const queue = [material.cell];
       for (const current of queue) {
-        for (const delta of FACE_NEIGHBORS) {
-          const neighbor = add(current, delta);
-          const id = oakTissueCellIdV1(neighbor);
+        const currentId = oakTissueCellIdV1(current);
+        assertOakTissueFaceNeighborRangeV1(current);
+        for (let index = 0; index < OAK_TISSUE_FACE_NEIGHBORS_V1.length; index += 1) {
+          const id = currentId + OAK_TISSUE_FACE_NEIGHBOR_ID_OFFSETS_V1[index]!;
           if (!cells.has(id) || this.#componentByCell.has(id)) continue;
           this.#componentByCell.set(id, component);
-          queue.push(neighbor);
+          queue.push(add(current, OAK_TISSUE_FACE_NEIGHBORS_V1[index]!));
         }
       }
     }
@@ -260,11 +289,12 @@ class MaterialComponents {
     const pathComponent = this.#component(path[0]!);
     for (const cell of path) {
       const id = oakTissueCellIdV1(cell);
+      assertOakTissueFaceNeighborRangeV1(cell);
       const existing = this.#componentByCell.get(id);
       if (existing === undefined) this.#componentByCell.set(id, pathComponent);
       else this.#union(pathComponent, existing);
-      for (const delta of FACE_NEIGHBORS) {
-        const neighborId = oakTissueCellIdV1(add(cell, delta));
+      for (const offset of OAK_TISSUE_FACE_NEIGHBOR_ID_OFFSETS_V1) {
+        const neighborId = id + offset;
         if (!cells.has(neighborId)) continue;
         const neighbor = this.#componentByCell.get(neighborId);
         if (neighbor !== undefined) this.#union(pathComponent, neighbor);
@@ -299,11 +329,18 @@ function addOwnedPath(
   owner: string,
   organs: ReadonlyMap<string, OakOrganSnapshotV1>,
   assignments: ReadonlyMap<string, OakTissueSourceAssignmentV1>,
+  retainedSourceKeys: ReadonlySet<string>,
 ): readonly OakTissueLatticeCellV1[] {
-  const path = findPath(start, goal, (cell) => {
+  const path = findOakTissuePathV1(start, goal, (cell) => {
     const existing = cells.get(oakTissueCellIdV1(cell));
     return existing === undefined || existing.ownerOrganKey === owner
-      || isProximalChildSource(existing, owner, organs, assignments);
+      || isOakTissueProximalChildSourceV1(
+        existing,
+        owner,
+        organs,
+        assignments,
+        retainedSourceKeys,
+      );
   });
   for (const cell of path) {
     const id = oakTissueCellIdV1(cell);
@@ -323,19 +360,6 @@ function addOwnedPath(
   return path;
 }
 
-function isProximalChildSource(
-  material: OakTissueMaterialCellV1 | undefined,
-  parentOwner: string,
-  organs: ReadonlyMap<string, OakOrganSnapshotV1>,
-  assignments: ReadonlyMap<string, OakTissueSourceAssignmentV1>,
-): boolean {
-  if (material?.role !== 'source' || material.sourceKey === undefined) return false;
-  const assignment = assignments.get(material.sourceKey);
-  const sourceOrgan = assignment === undefined ? undefined : organs.get(assignment.ownerOrganKey);
-  return sourceOrgan?.parentKey === parentOwner
-    && (assignment!.sourceLocalCell[1] === 0 || assignment!.sourceLocalCell[1] === 1);
-}
-
 function addUnionPath(
   cells: Map<number, OakTissueMaterialCellV1>,
   start: OakTissueLatticeCellV1,
@@ -343,13 +367,24 @@ function addUnionPath(
   owner: string,
   orderSeed: number,
   claimOwner?: string,
+  exclusiveOwner = false,
+  blockedOwners: ReadonlySet<string> = new Set(),
 ): readonly OakTissueLatticeCellV1[] {
-  const current = [...start] as [number, number, number];
-  const path: OakTissueLatticeCellV1[] = [start];
-  for (const axis of AXIS_ORDERS[orderSeed % AXIS_ORDERS.length]!) {
-    while (current[axis] !== goal[axis]) {
-      current[axis] = current[axis]! + Math.sign(goal[axis]! - current[axis]!);
-      path.push([...current] as OakTissueLatticeCellV1);
+  const path = exclusiveOwner || blockedOwners.size > 0
+    ? [...findOakTissuePathV1(start, goal, (cell) => {
+      const existing = cells.get(oakTissueCellIdV1(cell));
+      return existing === undefined || (exclusiveOwner
+        ? existing.ownerOrganKey === owner || claimOwner === owner
+        : !blockedOwners.has(existing.ownerOrganKey));
+    })]
+    : [start];
+  if (!exclusiveOwner && blockedOwners.size === 0) {
+    const current = [...start] as [number, number, number];
+    for (const axis of AXIS_ORDERS[orderSeed % AXIS_ORDERS.length]!) {
+      while (current[axis] !== goal[axis]) {
+        current[axis] = current[axis]! + Math.sign(goal[axis]! - current[axis]!);
+        path.push([...current] as OakTissueLatticeCellV1);
+      }
     }
   }
   for (const cell of path) {
@@ -370,50 +405,6 @@ function addUnionPath(
     }
   }
   return path;
-}
-
-function findPath(
-  start: OakTissueLatticeCellV1,
-  goal: OakTissueLatticeCellV1,
-  open: (cell: OakTissueLatticeCellV1) => boolean,
-): readonly OakTissueLatticeCellV1[] {
-  for (const margin of [2, 4, 8, 16, 32]) {
-    const minimum = start.map((value, axis) => Math.min(value, goal[axis]!) - margin);
-    const maximum = start.map((value, axis) => Math.max(value, goal[axis]!) + margin);
-    const queue: OakTissueLatticeCellV1[] = [start];
-    const previous = new Map<number, number | null>([[oakTissueCellIdV1(start), null]]);
-    for (const current of queue) {
-      const currentId = oakTissueCellIdV1(current);
-      if (currentId === oakTissueCellIdV1(goal)) return rebuildPath(previous, current);
-      const ordered = [...FACE_NEIGHBORS].sort((left, right) =>
-        manhattan(add(current, left), goal) - manhattan(add(current, right), goal));
-      for (const delta of ordered) {
-        const next = add(current, delta);
-        if (next.some((value, axis) => value < minimum[axis]! || value > maximum[axis]!)) continue;
-        const id = oakTissueCellIdV1(next);
-        if (previous.has(id) || !open(next)) continue;
-        previous.set(id, currentId);
-        queue.push(next);
-      }
-    }
-  }
-  throw new Error(`No owner-only oak tissue path connects '${oakTissueCellKeyV1(start)}' to '${oakTissueCellKeyV1(goal)}'.`);
-}
-
-function rebuildPath(
-  previous: ReadonlyMap<number, number | null>,
-  goal: OakTissueLatticeCellV1,
-): readonly OakTissueLatticeCellV1[] {
-  const reverse: OakTissueLatticeCellV1[] = [];
-  let cell = goal;
-  let id: number | null = oakTissueCellIdV1(goal);
-  while (id !== null) {
-    reverse.push(cell);
-    const prior: number | null = previous.get(id) ?? null;
-    if (prior !== null) cell = oakTissueCellFromIdV1(prior);
-    id = prior;
-  }
-  return reverse.reverse();
 }
 
 function putReserved(

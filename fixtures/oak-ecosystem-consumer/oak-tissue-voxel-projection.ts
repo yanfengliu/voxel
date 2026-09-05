@@ -4,20 +4,31 @@ import type {
   Srgb8ColorV1,
   Vec3V1,
 } from '../../src/core/index.js';
-import { deterministicSinV1 } from '../deterministic-math.js';
 import { oakAxisFrameV1, type OakAxisFrameV1 } from './oak-axis-frame.js';
 import {
-  OAK_LEAF_PETIOLE_FRACTION_V1,
-  OAK_LEAF_PETIOLE_NORMALIZED_HALF_WIDTH_V1,
-  oakLeafVariantForOrganKeyV1,
-  oakLeafWidthScaleMForDescriptorV1,
+  oakTissueAxialRadialCandidatesV1 as axialRadialCandidates,
+  oakTissueCommittedPrefixV1 as committedPrefix,
+  oakTissueQuantizedLengthV1 as quantizedLength,
+  oakTissueSegmentCandidatesV1 as segmentCandidates,
+  oakTissueStructuralVolumeFractionV1 as volumeFraction,
+  oakTissueVisibleStructuralCandidatesV1 as visibleStructuralCandidates,
+  type OakTissueFrontCandidateV1 as Candidate,
+  type OakTissueFrontLocalCellV1 as LocalCell,
+} from './oak-tissue-development-front.js';
+import {
+  oakLeafPetioleSectionForOrganV1,
   type OakLeafVariantDescriptorV1,
 } from './oak-leaf-shape.js';
-import { oakLeafColorV1, type OakRenderInstanceRecordV1 } from './oak-render-projection.js';
 import {
-  OAK_CUTAWAY_AGGREGATE_FINE_ROOT_COLOR_V1,
-  OAK_CUTAWAY_COARSE_ROOT_COLOR_V1,
-} from './oak-root-cutaway-presentation.js';
+  oakEasedLeafHalfWidthV1,
+  oakQuantizedLeafRadialsAtPitchV1,
+  oakVisibleLeafTissueCandidatesV1,
+} from './oak-leaf-tissue-mask.js';
+import type { OakRenderInstanceRecordV1 } from './oak-render-projection.js';
+import {
+  oakTissueVoxelBaseColorV1,
+  oakTissueVoxelCohortColorV1,
+} from './oak-tissue-color.js';
 import type {
   OakLeafOrganSnapshotV1,
   OakOrganSnapshotV1,
@@ -27,9 +38,9 @@ import type {
 } from './oak-types.js';
 import {
   OAK_MIN_RENDER_SHAFT_LENGTH_M_V1,
-  oakRenderedWoodShapeV1,
-  oakWoodProfileAtTaperV1,
 } from './oak-wood-shape.js';
+import { OAK_PHYSICAL_WOOD_TIP_RADIUS_RATIO_V1 } from './oak-physical-wood.js';
+import { OAK_PARAMETERS_V1 } from './oak-parameters.js';
 
 /**
  * A 1.99890 mm dyadic pitch (131 / 65536 m). Integer lattice translations and the
@@ -40,6 +51,12 @@ export const OAK_TISSUE_VOXEL_PITCH_NUMERATOR_V1 = 131;
 export const OAK_TISSUE_VOXEL_PITCH_DENOMINATOR_V1 = 65_536;
 export const OAK_TISSUE_VOXEL_PITCH_M_V1 =
   OAK_TISSUE_VOXEL_PITCH_NUMERATOR_V1 / OAK_TISSUE_VOXEL_PITCH_DENOMINATOR_V1;
+/**
+ * Organ-local cubes keep a one-micron intercellular cleft. Their centers still
+ * use the exact tissue pitch, while the bounded clearance is larger than the
+ * accepted Float32 pose error and far below a visible pixel at fixture scale.
+ */
+export const OAK_ORGAN_LOCAL_VOXEL_CLEARANCE_M_V1 = 0.000_001;
 export const OAK_MAX_EXACT_TISSUE_CELL_COORDINATE_V1 = 16_383;
 export const OAK_MAX_TISSUE_VOXELS_PER_BATCH_V1 = 65_536;
 export const OAK_TISSUE_VOXEL_GEOMETRY_KEY_V1 = 'geometry:oak:tissue-voxel';
@@ -51,18 +68,27 @@ export const OAK_WOOD_VOXEL_BATCH_KEY_V1 = 'batch:oak:wood-voxels';
 export const OAK_ROOT_VOXEL_BATCH_KEY_V1 = 'batch:oak:root-voxels';
 export const OAK_LEAF_VOXEL_BATCH_KEY_V1 = 'batch:oak:leaf-voxels';
 export const OAK_SEED_BUD_VOXEL_BATCH_KEY_V1 = 'batch:oak:seed-bud-voxels';
+/** Disposable radial display calibration; never consumed by biology or mechanics. */
+export const OAK_LEAF_NODE_PRESENTATION_CLEARANCE_M_V1 = 0.002;
+
+export { oakEasedLeafHalfWidthV1 };
 
 export const OAK_TISSUE_VOXEL_RULE_IDS_V1 = Object.freeze([
   'declared-port-fused-paths',
+  'development-front-prefixes',
+  'leaf-anatomical-senescence-order',
   'leaf-lobed-area-mask',
   'leaf-petiole-midrib-mask',
+  'leaf-secondary-vein-material-rhythm',
+  'leaf-transverse-camber-mask',
   'organ-state-palette-quantization',
+  'organ-local-float32-clearance',
   'root-aggregate-legibility-mask',
   'seed-bud-port-masks',
   'source-claim-preservation',
   'shared-dyadic-tissue-lattice',
-  'uniform-tissue-cubes',
-  'wood-tapered-connected-mask',
+  'tissue-voxel-primitives',
+  'wood-cylindrical-connected-mask',
 ] as const);
 
 const PITCH = OAK_TISSUE_VOXEL_PITCH_M_V1;
@@ -92,9 +118,7 @@ export interface OakTissueVoxelSourceProjectionV1 {
   readonly skippedJunctionConsumedSegments: number;
 }
 
-function clampByte(value: number): number {
-  return Math.max(0, Math.min(255, Math.round(value)));
-}
+function clampByte(value: number): number { return Math.max(0, Math.min(255, Math.round(value))); }
 
 export function shadeOakTissueVoxelColorV1(
   base: Srgb8ColorV1,
@@ -136,7 +160,7 @@ export function createOakTissueVoxelMaterialsV1(): readonly MaterialResourceV1[]
   return [
     material(OAK_WOOD_VOXEL_MATERIAL_KEY_V1, 0.94),
     material(OAK_ROOT_VOXEL_MATERIAL_KEY_V1, 0.97),
-    material(OAK_LEAF_VOXEL_MATERIAL_KEY_V1, 0.86),
+    material(OAK_LEAF_VOXEL_MATERIAL_KEY_V1, 0.62),
     material(OAK_SEED_BUD_VOXEL_MATERIAL_KEY_V1, 0.91),
   ];
 }
@@ -144,20 +168,12 @@ export function createOakTissueVoxelMaterialsV1(): readonly MaterialResourceV1[]
 /** One exact cube. Organ masks, not bespoke meshes, own every visible plant shape. */
 export function createOakTissueVoxelGeometryV1(): GeometryResourceV1 {
   const positions = new Float32Array([
-    .5,-.5,-.5, .5,.5,-.5, .5,.5,.5, .5,-.5,.5,
-    -.5,-.5,.5, -.5,.5,.5, -.5,.5,-.5, -.5,-.5,-.5,
-    -.5,.5,-.5, -.5,.5,.5, .5,.5,.5, .5,.5,-.5,
-    -.5,-.5,.5, -.5,-.5,-.5, .5,-.5,-.5, .5,-.5,.5,
-    -.5,-.5,.5, .5,-.5,.5, .5,.5,.5, -.5,.5,.5,
-    .5,-.5,-.5, -.5,-.5,-.5, -.5,.5,-.5, .5,.5,-.5,
+    .5,-.5,-.5, .5,.5,-.5, .5,.5,.5, .5,-.5,.5, -.5,-.5,.5, -.5,.5,.5, -.5,.5,-.5, -.5,-.5,-.5, -.5,.5,-.5, -.5,.5,.5, .5,.5,.5, .5,.5,-.5,
+    -.5,-.5,.5, -.5,-.5,-.5, .5,-.5,-.5, .5,-.5,.5, -.5,-.5,.5, .5,-.5,.5, .5,.5,.5, -.5,.5,.5, .5,-.5,-.5, -.5,-.5,-.5, -.5,.5,-.5, .5,.5,-.5,
   ]);
   const normals = new Float32Array([
-    1,0,0, 1,0,0, 1,0,0, 1,0,0,
-    -1,0,0, -1,0,0, -1,0,0, -1,0,0,
-    0,1,0, 0,1,0, 0,1,0, 0,1,0,
-    0,-1,0, 0,-1,0, 0,-1,0, 0,-1,0,
-    0,0,1, 0,0,1, 0,0,1, 0,0,1,
-    0,0,-1, 0,0,-1, 0,0,-1, 0,0,-1,
+    1,0,0, 1,0,0, 1,0,0, 1,0,0, -1,0,0, -1,0,0, -1,0,0, -1,0,0, 0,1,0, 0,1,0, 0,1,0, 0,1,0,
+    0,-1,0, 0,-1,0, 0,-1,0, 0,-1,0, 0,0,1, 0,0,1, 0,0,1, 0,0,1, 0,0,-1, 0,0,-1, 0,0,-1, 0,0,-1,
   ]);
   const indices: number[] = [];
   for (let face = 0; face < 6; face += 1) {
@@ -194,23 +210,64 @@ function worldCenter(
   };
 }
 
-function cubeMatrix(center: Vec3V1, frame: OakAxisFrameV1): readonly number[] {
+function cubeMatrix(
+  center: Vec3V1,
+  frame: OakAxisFrameV1,
+  edgeLengthM: number,
+): readonly number[] {
   return [
-    frame.x.x * PITCH, frame.x.y * PITCH, frame.x.z * PITCH, 0,
-    frame.y.x * PITCH, frame.y.y * PITCH, frame.y.z * PITCH, 0,
-    frame.z.x * PITCH, frame.z.y * PITCH, frame.z.z * PITCH, 0,
+    frame.x.x * edgeLengthM, frame.x.y * edgeLengthM, frame.x.z * edgeLengthM, 0,
+    frame.y.x * edgeLengthM, frame.y.y * edgeLengthM, frame.y.z * edgeLengthM, 0,
+    frame.z.x * edgeLengthM, frame.z.y * edgeLengthM, frame.z.z * edgeLengthM, 0,
     center.x, center.y, center.z, 1,
   ];
+}
+
+function cuboidMatrix(
+  center: Vec3V1,
+  frame: OakAxisFrameV1,
+  size: Readonly<{ x: number; y: number; z: number }>,
+): readonly number[] {
+  return [
+    frame.x.x * size.x, frame.x.y * size.x, frame.x.z * size.x, 0,
+    frame.y.x * size.y, frame.y.y * size.y, frame.y.z * size.y, 0,
+    frame.z.x * size.z, frame.z.y * size.z, frame.z.z * size.z, 0,
+    center.x, center.y, center.z, 1,
+  ];
+}
+
+function leafCellSize(
+  leaf: OakLeafOrganSnapshotV1,
+  role: string,
+  local: LocalCell,
+): Readonly<{ x: number; y: number; z: number }> {
+  const edge = PITCH - OAK_ORGAN_LOCAL_VOXEL_CLEARANCE_M_V1;
+  if (role !== 'petiole-voxel' && role !== 'midrib-voxel') {
+    return { x: edge, y: edge, z: edge };
+  }
+  const section = oakLeafPetioleSectionForOrganV1(
+    leaf.key,
+    Math.max(leaf.areaM2, Number.MIN_VALUE),
+    Math.max(leaf.lengthM, Number.MIN_VALUE),
+  );
+  const petioleT = Math.max(0, Math.min(1,
+    (local.y + .5) * PITCH / Math.max(section.petioleLengthM, PITCH),
+  ));
+  const taper = 1 + (OAK_PARAMETERS_V1.mechanics.petioleTipRadiusRatio - 1) * petioleT;
+  return {
+    x: Math.min(edge, section.basalFullWidthM * taper),
+    y: edge,
+    z: Math.min(edge, section.basalFullThicknessM * taper),
+  };
 }
 
 function addVoxel(
   target: OakRenderInstanceRecordV1[],
   organ: OakOrganSnapshotV1,
-  role: string,
   frame: OakAxisFrameV1,
-  local: Readonly<{ x: number; y: number; z: number }>,
-  color: Srgb8ColorV1,
+  candidate: Candidate,
 ): void {
+  const { role, local } = candidate;
   if (target.length >= OAK_MAX_TISSUE_VOXELS_PER_BATCH_V1) {
     throw new RangeError(
       `Oak tissue voxel batch exceeded ${String(OAK_MAX_TISSUE_VOXELS_PER_BATCH_V1)} `
@@ -222,98 +279,66 @@ function addVoxel(
     organ.positionM,
     frame,
     local.x * PITCH,
-    local.y * PITCH,
+    (local.y + (organ.kind === 'leaf' ? 0.5 : 0)) * PITCH,
     local.z * PITCH,
+  );
+  const color = organ.kind === 'leaf' ? candidate.color : shadeOakTissueVoxelColorV1(
+    oakTissueVoxelCohortColorV1(organ, local.x, local.y, local.z),
+    local.x,
+    local.y,
+    local.z,
   );
   target.push({
     key: `oak:${organ.key}:${role}:${String(local.x)}:${String(local.y)}:${String(local.z)}`,
-    matrix: cubeMatrix(center, frame),
-    color: shadeOakTissueVoxelColorV1(color, local.x, local.y, local.z),
+    matrix: organ.kind === 'leaf'
+      ? cuboidMatrix(center, frame, leafCellSize(organ, role, local))
+      : cubeMatrix(center, frame, PITCH),
+    color,
   });
 }
 
-function radiusRatioAt(
-  profile: readonly Readonly<{ axialFraction: number; radiusRatio: number }>[],
-  t: number,
-): number {
-  for (let index = 0; index < profile.length - 1; index += 1) {
-    const start = profile[index]!;
-    const end = profile[index + 1]!;
-    if (t > end.axialFraction) continue;
-    const u = (t - start.axialFraction) / (end.axialFraction - start.axialFraction);
-    return start.radiusRatio + (end.radiusRatio - start.radiusRatio) * u;
+function appendCandidates(
+  target: OakRenderInstanceRecordV1[],
+  organ: OakOrganSnapshotV1,
+  frame: OakAxisFrameV1,
+  candidates: readonly Candidate[],
+): void {
+  for (const candidate of candidates) {
+    addVoxel(target, organ, frame, candidate);
   }
-  return profile.at(-1)!.radiusRatio;
-}
-
-export function oakTissueVoxelBaseColorV1(organ: OakOrganSnapshotV1): Srgb8ColorV1 {
-  if (organ.kind === 'leaf') return oakLeafColorV1(organ);
-  const stress = Math.max(0, Math.min(1, organ.stressFraction));
-  const base = organ.kind === 'fine-root-cohort' ? OAK_CUTAWAY_AGGREGATE_FINE_ROOT_COLOR_V1
-    : organ.kind === 'coarse-root' ? OAK_CUTAWAY_COARSE_ROOT_COLOR_V1
-      : organ.kind === 'bud' ? { r: 143, g: 95, b: 52 }
-        : organ.kind === 'acorn' ? { r: 116, g: 76, b: 41 }
-          : organ.stage === 'expanding' ? { r: 138, g: 90, b: 59 }
-            : { r: 98, g: 66, b: 53 };
-  return {
-    r: clampByte(base.r * (1 - stress * .16)),
-    g: clampByte(base.g * (1 - stress * .22)),
-    b: clampByte(base.b * (1 - stress * .12)),
-    a: 255,
-  };
 }
 
 function appendSegment(
   target: OakRenderInstanceRecordV1[],
   organ: SegmentOrgan,
-  children: readonly SegmentOrgan[],
 ): OakTissueVoxelOrganMetricsV1 | null {
-  const shape = oakRenderedWoodShapeV1({ organ, children });
-  if (!shape) return null;
-  const profile = oakWoodProfileAtTaperV1(shape.taperIndex, shape.nodeFlared);
+  if (organ.targetLengthM < OAK_MIN_RENDER_SHAFT_LENGTH_M_V1
+    || !(organ.targetRadiusM > 0)) return null;
   const frame = oakAxisFrameV1(organ.direction, 0);
-  const layers = Math.max(1, Math.round(shape.shaftLengthM / PITCH));
+  const layers = Math.max(1, Math.round(organ.targetLengthM / PITCH));
   const base = oakTissueVoxelBaseColorV1(organ);
   const initialCount = target.length;
-  for (let layer = 0; layer < layers; layer += 1) {
-    const t = (layer + .5) / layers;
-    const radiusM = organ.radiusM * radiusRatioAt(profile, t);
-    const radial = Math.max(0, Math.ceil(radiusM / PITCH));
-    const threshold = radiusM * radiusM + PITCH * PITCH * .18;
-    for (let x = -radial; x <= radial; x += 1) {
-      for (let z = -radial; z <= radial; z += 1) {
-        if ((x * PITCH) ** 2 + (z * PITCH) ** 2 > threshold && (x !== 0 || z !== 0)) continue;
-        addVoxel(target, organ, 'wood-voxel', frame, { x, y: layer, z }, base);
-      }
-    }
-  }
+  const terminalProfile = [
+    { axialFraction: 0, radiusRatio: 1 },
+    { axialFraction: 1, radiusRatio: OAK_PHYSICAL_WOOD_TIP_RADIUS_RATIO_V1 },
+  ];
+  const candidateInput = { layers, radiusM: organ.targetRadiusM, pitchM: PITCH, color: base };
+  const baseCandidates = segmentCandidates({ ...candidateInput, profile: terminalProfile });
+  const committedBase = visibleStructuralCandidates({
+    organ,
+    candidates: baseCandidates,
+    layers,
+    pitchM: PITCH,
+    profile: terminalProfile,
+  });
+  appendCandidates(target, organ, frame, committedBase);
   return {
     organKey: organ.key,
     kind: organ.kind,
     voxelCount: target.length - initialCount,
-    quantizedLengthM: layers * PITCH,
+    quantizedLengthM: quantizedLength(committedBase, PITCH),
     quantizedAreaM2: 0,
   };
-}
-
-export function oakEasedLeafHalfWidthV1(
-  variant: OakLeafVariantDescriptorV1,
-  t: number,
-): number {
-  if (t <= OAK_LEAF_PETIOLE_FRACTION_V1) {
-    return OAK_LEAF_PETIOLE_NORMALIZED_HALF_WIDTH_V1;
-  }
-  const controls = [
-    OAK_LEAF_PETIOLE_NORMALIZED_HALF_WIDTH_V1,
-    ...variant.stationWidths,
-    0,
-  ];
-  const scaled = (t - OAK_LEAF_PETIOLE_FRACTION_V1)
-    / (1 - OAK_LEAF_PETIOLE_FRACTION_V1) * (controls.length - 1);
-  const index = Math.min(controls.length - 2, Math.floor(scaled));
-  const u = Math.max(0, Math.min(1, scaled - index));
-  const eased = u ** 3 * (u * (u * 6 - 15) + 10);
-  return controls[index]! + (controls[index + 1]! - controls[index]!) * eased;
 }
 
 export function oakQuantizedLeafRadialsV1(
@@ -321,20 +346,7 @@ export function oakQuantizedLeafRadialsV1(
   layers: number,
   widthScaleM: number,
 ): number[] {
-  const radial = Array.from({ length: layers }, (_, layer) => {
-    const t = (layer + .5) / layers;
-    if (t < OAK_LEAF_PETIOLE_FRACTION_V1) return 0;
-    return Math.max(0, Math.floor(oakEasedLeafHalfWidthV1(variant, t) * widthScaleM / PITCH + .45));
-  });
-  const controls = [OAK_LEAF_PETIOLE_NORMALIZED_HALF_WIDTH_V1, ...variant.stationWidths, 0];
-  for (let index = 1; index < controls.length - 1; index += 1) {
-    if (!(controls[index]! > controls[index - 1]! && controls[index]! > controls[index + 1]!)) continue;
-    const bladeT = index / (controls.length - 1);
-    const t = OAK_LEAF_PETIOLE_FRACTION_V1 + bladeT * (1 - OAK_LEAF_PETIOLE_FRACTION_V1);
-    const layer = Math.max(1, Math.min(layers - 2, Math.round(t * layers - .5)));
-    radial[layer] = Math.max(radial[layer]!, radial[layer - 1]! + 1, radial[layer + 1]! + 1);
-  }
-  return radial;
+  return oakQuantizedLeafRadialsAtPitchV1(variant, layers, widthScaleM, PITCH);
 }
 
 function appendLeaf(
@@ -342,43 +354,28 @@ function appendLeaf(
   leaf: OakLeafOrganSnapshotV1,
 ): OakTissueVoxelOrganMetricsV1 {
   const frame = oakAxisFrameV1(leaf.direction, leaf.rollRadians);
-  const variant = oakLeafVariantForOrganKeyV1(leaf.key);
-  const lengthM = Math.max(leaf.lengthM, OAK_MIN_RENDER_SHAFT_LENGTH_M_V1);
-  const widthScaleM = oakLeafWidthScaleMForDescriptorV1(leaf.areaM2, lengthM, variant);
-  const layers = Math.max(1, Math.round(lengthM / PITCH));
-  const radialProfile = oakQuantizedLeafRadialsV1(variant, layers, widthScaleM);
-  const base = oakLeafColorV1(leaf);
   const initialCount = target.length;
-  let previousZ = 0;
-  for (let layer = 0; layer < layers; layer += 1) {
-    const t = (layer + .5) / layers;
-    const petiole = t < OAK_LEAF_PETIOLE_FRACTION_V1;
-    const radial = radialProfile[layer]!;
-    const bladeT = Math.max(0, (t - OAK_LEAF_PETIOLE_FRACTION_V1)
-      / (1 - OAK_LEAF_PETIOLE_FRACTION_V1));
-    const camberM = petiole ? 0
-      : variant.camber * deterministicSinV1(Math.PI * bladeT) * widthScaleM;
-    const desiredZ = Math.round(camberM / PITCH);
-    const priorZ = previousZ;
-    const z = Math.max(priorZ - 1, Math.min(priorZ + 1, desiredZ));
-    for (let x = -radial; x <= radial; x += 1) {
-      const midrib = x === 0;
-      const color = midrib
-        ? { r: clampByte(base.r + 13), g: clampByte(base.g + 20), b: clampByte(base.b + 5), a: 255 }
-        : base;
-      addVoxel(target, leaf, petiole ? 'petiole-voxel' : midrib ? 'midrib-voxel' : 'lamina-voxel', frame, { x, y: layer, z }, color);
-    }
-    if (z !== priorZ) {
-      addVoxel(target, leaf, 'camber-connector-voxel', frame, { x: 0, y: layer, z: priorZ }, base);
-    }
-    previousZ = z;
-  }
+  const committed = oakVisibleLeafTissueCandidatesV1(leaf, PITCH);
+  const radial = leaf.attachment?.restRadialUnitWorld;
+  const radialLength = radial === undefined ? 0 : Math.hypot(radial.x, radial.y, radial.z);
+  const presentedLeaf = radial === undefined || !(radialLength > 0) ? leaf : {
+    ...leaf,
+    positionM: {
+      x: leaf.positionM.x + radial.x / radialLength
+        * OAK_LEAF_NODE_PRESENTATION_CLEARANCE_M_V1,
+      y: leaf.positionM.y + radial.y / radialLength
+        * OAK_LEAF_NODE_PRESENTATION_CLEARANCE_M_V1,
+      z: leaf.positionM.z + radial.z / radialLength
+        * OAK_LEAF_NODE_PRESENTATION_CLEARANCE_M_V1,
+    },
+  };
+  appendCandidates(target, presentedLeaf, frame, committed);
   const voxelCount = target.length - initialCount;
   return {
     organKey: leaf.key,
     kind: leaf.kind,
     voxelCount,
-    quantizedLengthM: layers * PITCH,
+    quantizedLengthM: quantizedLength(committed, PITCH),
     quantizedAreaM2: voxelCount * PITCH * PITCH,
   };
 }
@@ -388,29 +385,26 @@ function appendSeedOrBud(
   organ: OakStructuralOrganSnapshotV1 & { readonly kind: 'acorn' | 'bud' },
 ): OakTissueVoxelOrganMetricsV1 {
   const frame = oakAxisFrameV1(organ.direction, 0);
-  const layers = Math.max(1, Math.round(Math.max(organ.lengthM, PITCH) / PITCH));
+  const layers = Math.max(1, Math.round(Math.max(organ.targetLengthM, PITCH) / PITCH));
   const initialCount = target.length;
   const base = oakTissueVoxelBaseColorV1(organ);
-  for (let layer = 0; layer < layers; layer += 1) {
-    const t = (layer + .5) / layers;
-    const normalizedY = t * 2 - 1;
-    const radiusM = organ.kind === 'acorn'
-      ? organ.radiusM * Math.sqrt(Math.max(0, 1 - normalizedY * normalizedY))
-      : organ.radiusM * (.95 - t * .55);
-    const radial = Math.max(0, Math.floor(radiusM / PITCH + .45));
-    for (let x = -radial; x <= radial; x += 1) {
-      for (let z = -radial; z <= radial; z += 1) {
-        if ((x * PITCH) ** 2 + (z * PITCH) ** 2 > radiusM * radiusM + PITCH * PITCH * .15
-          && (x !== 0 || z !== 0)) continue;
-        addVoxel(target, organ, `${organ.kind}-voxel`, frame, { x, y: layer, z }, base);
-      }
-    }
-  }
+  const candidates = axialRadialCandidates({
+    layers,
+    pitchM: PITCH,
+    paddingFraction: .15,
+    role: `${organ.kind}-voxel`,
+    color: base,
+    radiusAt: (t) => organ.kind === 'acorn'
+      ? organ.targetRadiusM * Math.sqrt(Math.max(0, 1 - (t * 2 - 1) ** 2))
+      : organ.targetRadiusM * (.95 - t * .55),
+  });
+  const committed = committedPrefix(candidates, volumeFraction(organ));
+  appendCandidates(target, organ, frame, committed);
   return {
     organKey: organ.key,
     kind: organ.kind,
     voxelCount: target.length - initialCount,
-    quantizedLengthM: layers * PITCH,
+    quantizedLengthM: quantizedLength(committed, PITCH),
     quantizedAreaM2: 0,
   };
 }
@@ -419,6 +413,7 @@ function appendSeedOrBud(
 export function buildOakTissueVoxelSourceProjectionV1(
   state: Pick<OakRenderProjectionStateV1, 'organs'>,
   includeRoots: boolean,
+  options: Readonly<{ includeDetachedLeaves?: boolean }> = {},
 ): OakTissueVoxelSourceProjectionV1 {
   const records = new Map<string, OakRenderInstanceRecordV1[]>([
     [OAK_WOOD_VOXEL_BATCH_KEY_V1, []],
@@ -426,22 +421,19 @@ export function buildOakTissueVoxelSourceProjectionV1(
     [OAK_LEAF_VOXEL_BATCH_KEY_V1, []],
     [OAK_SEED_BUD_VOXEL_BATCH_KEY_V1, []],
   ]);
-  const active = state.organs.filter((organ) => organ.stage !== 'abscised' && organ.healthFraction > 0);
-  const byKey = new Map(active.map((organ) => [organ.key, organ]));
-  if (byKey.size !== active.length) throw new Error('Oak tissue projection received duplicate organ keys.');
-  const children = new Map<string, SegmentOrgan[]>();
-  for (const organ of active) {
-    if (!isSegment(organ) || organ.parentKey === null) continue;
-    const target = children.get(organ.parentKey) ?? [];
-    target.push(organ);
-    children.set(organ.parentKey, target);
+  const active = state.organs.filter((organ) => organ.stage !== 'abscised'
+    && (organ.stage !== 'detached' || options.includeDetachedLeaves === true)
+    && organ.developmentPhase !== 'preformed' && organ.healthFraction > 0);
+  const byKey = new Map(state.organs.map((organ) => [organ.key, organ]));
+  if (byKey.size !== state.organs.length) {
+    throw new Error('Oak tissue projection received duplicate organ keys.');
   }
   const organMetrics: OakTissueVoxelOrganMetricsV1[] = [];
   let skippedInvalid = 0;
   let skippedConsumed = 0;
   for (const organ of active) {
     if (isSegment(organ)) {
-      if (organ.lengthM < OAK_MIN_RENDER_SHAFT_LENGTH_M_V1 || organ.radiusM <= 0) {
+      if (organ.targetLengthM < OAK_MIN_RENDER_SHAFT_LENGTH_M_V1 || organ.targetRadiusM <= 0) {
         skippedInvalid += 1;
         continue;
       }
@@ -450,12 +442,11 @@ export function buildOakTissueVoxelSourceProjectionV1(
       const metric = appendSegment(
         records.get(root ? OAK_ROOT_VOXEL_BATCH_KEY_V1 : OAK_WOOD_VOXEL_BATCH_KEY_V1)!,
         organ,
-        children.get(organ.key) ?? [],
       );
       if (metric) organMetrics.push(metric);
       else skippedConsumed += 1;
     } else if (organ.kind === 'leaf') {
-      if (organ.areaM2 > 0) organMetrics.push(appendLeaf(records.get(OAK_LEAF_VOXEL_BATCH_KEY_V1)!, organ));
+      if (organ.targetAreaM2 > 0) organMetrics.push(appendLeaf(records.get(OAK_LEAF_VOXEL_BATCH_KEY_V1)!, organ));
     } else if (isSeedOrBud(organ)) {
       organMetrics.push(appendSeedOrBud(records.get(OAK_SEED_BUD_VOXEL_BATCH_KEY_V1)!, organ));
     }

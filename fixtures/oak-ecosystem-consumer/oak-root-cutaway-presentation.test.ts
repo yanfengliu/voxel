@@ -16,6 +16,7 @@ import { buildOakTissueVoxelProjectionV1 } from './oak-tissue-union-lattice.js';
 import {
   oakTissueCellCenterM_V1,
   oakTissueCellIdV1,
+  roundOakTissueCellV1,
 } from './oak-tissue-union-routing.js';
 import {
   OAK_SOIL_VOXEL_SIZE_M_V1,
@@ -109,8 +110,7 @@ function tissueSoilOverlapIssues(frame: OakRenderFrameV1): readonly string[] {
         batch.matrices[slot * 16 + 13]!,
         batch.matrices[slot * 16 + 14]!,
       ] as const;
-      const coordinate = rootCoordinates(key);
-      tissueIds.add(oakTissueCellIdV1([coordinate.x, coordinate.y, coordinate.z]));
+      tissueIds.add(oakTissueCellIdV1(roundOakTissueCellV1(center)));
       for (const soilSlot of overlappingSoilSlots(frame, center)) {
         if (chunk.voxels[soilSlot] !== 0) issues.push(`${key} overlaps soil slot ${String(soilSlot)}`);
       }

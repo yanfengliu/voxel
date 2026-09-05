@@ -20,7 +20,7 @@ describe('oak browser projected voxel evidence', () => {
       timeScale: OAK_DEFAULT_TIME_SCALE_V1,
     });
     simulation.setPaused(false);
-    simulation.advanceHostTicks(oakHostTicksForBiologicalDaysV1(13));
+    simulation.advanceHostTicks(oakHostTicksForBiologicalDaysV1(40));
     simulation.setPaused(true);
     const frame = buildOakRenderFrameV1(simulation.projection());
     const camera = new PerspectiveCamera(34, VIEWPORT.width / VIEWPORT.height, 0.005, 25);

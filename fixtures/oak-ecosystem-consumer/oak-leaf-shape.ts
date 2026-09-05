@@ -3,7 +3,7 @@ import { oakAxisFrameV1 } from './oak-axis-frame.js';
 import type { OakVec3V1 } from './oak-types.js';
 
 export interface OakLeafVariantDescriptorV1 {
-  readonly id: 'seven-lobe' | 'compact-eleven-lobe' | 'narrow-nine-lobe';
+  readonly id: 'broad-nine-lobe' | 'compact-eleven-lobe' | 'narrow-nine-lobe';
   readonly geometryKey: string;
   readonly stationWidths: readonly number[];
   readonly camber: number;
@@ -168,10 +168,25 @@ function basalSectionSupportAlongAxisM(
     + Math.abs(dot(frame.z)) * section.basalFullThicknessM / 2;
 }
 
+export function oakLeafPetioleSupportAlongAxisM_V1(
+  key: string,
+  areaM2: number,
+  totalLengthM: number,
+  leafDirection: OakVec3V1,
+  rollRadians: number,
+  axis: OakVec3V1,
+): number {
+  return basalSectionSupportAlongAxisM(
+    oakLeafPetioleSectionForOrganV1(key, areaM2, totalLengthM),
+    oakAxisFrameV1(leafDirection, rollRadians),
+    normalizedAxis(axis, key, 'support'),
+  );
+}
+
 /**
- * Place the finite petiole rectangle tangent to the node envelope in both the
- * terminal-plane and radial directions, rather than burying it in a coaxial
- * continuation stem.
+ * Offset the finite petiole rectangle by separate terminal-plane and radial
+ * supports. These conservative clearance offsets do not prove material contact
+ * at the intersection of the supporting planes.
  */
 export function oakLeafTangentialPortOffsetsForOrganV1(
   key: string,
@@ -185,8 +200,6 @@ export function oakLeafTangentialPortOffsetsForOrganV1(
   if (!(parentRadiusM > 0) || !Number.isFinite(parentRadiusM)) {
     throw new Error(`Oak leaf '${key}' needs a finite positive parent radius.`);
   }
-  const section = oakLeafPetioleSectionForOrganV1(key, areaM2, totalLengthM);
-  const frame = oakAxisFrameV1(leafDirection, rollRadians);
   const parentAxis = normalizedAxis(parentDirection, key, 'parent');
   const leafAxis = normalizedAxis(leafDirection, key, 'leaf');
   const leafAxialDot = leafAxis.x * parentAxis.x
@@ -198,8 +211,12 @@ export function oakLeafTangentialPortOffsetsForOrganV1(
     z: leafAxis.z - parentAxis.z * leafAxialDot,
   }, key, 'radial');
   return {
-    axialCenterOffsetM: basalSectionSupportAlongAxisM(section, frame, parentAxis),
+    axialCenterOffsetM: oakLeafPetioleSupportAlongAxisM_V1(
+      key, areaM2, totalLengthM, leafDirection, rollRadians, parentAxis,
+    ),
     radialCenterOffsetM: parentRadiusM
-      + basalSectionSupportAlongAxisM(section, frame, radialDirection),
+      + oakLeafPetioleSupportAlongAxisM_V1(
+        key, areaM2, totalLengthM, leafDirection, rollRadians, radialDirection,
+      ),
   };
 }

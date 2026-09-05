@@ -25,7 +25,7 @@ import {
 guardPageErrors();
 const REPOSITORY_ROOT = resolve('.');
 const VIEWPORT = { width: 960, height: 720 };
-const MATURE_TICKS = oakHostTicksForBiologicalDaysV1(100);
+const MATURE_TICKS = oakHostTicksForBiologicalDaysV1(180);
 
 let server: ViteDevServer | undefined;
 let origin = '';

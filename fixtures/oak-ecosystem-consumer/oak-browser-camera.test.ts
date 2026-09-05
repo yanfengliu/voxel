@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { Matrix4, PerspectiveCamera, Vector3 } from 'three';
 
 import { fitOakBrowserCameraV1 } from './oak-browser-camera.js';
+import { oakBrowserCameraFocusGeometryV1 } from './oak-browser-camera-focus-geometry.js';
 import { OAK_FALLEN_LITTER_VOXEL_BATCH_KEY_V1 } from './oak-fallen-litter-voxel.js';
 import { OAK_DEFAULT_TIME_SCALE_V1, OAK_PARAMETERS_V1 } from './oak-parameters.js';
 import { buildOakRenderFrameV1 } from './oak-render-adapter.js';
@@ -9,6 +10,11 @@ import {
   oakRenderedOrgansV1,
   type OakRenderedOrganV1,
 } from './oak-rendered-organ-geometry.js';
+import {
+  OAK_ROOT_VOXEL_BATCH_KEY_V1,
+  OAK_SEED_BUD_VOXEL_BATCH_KEY_V1,
+  OAK_WOOD_VOXEL_BATCH_KEY_V1,
+} from './oak-tissue-voxel-projection.js';
 import {
   createOakSimulationV1,
   oakHostTicksForBiologicalDaysV1,
@@ -109,7 +115,7 @@ describe('oak browser camera material fit', () => {
       timeScale: OAK_DEFAULT_TIME_SCALE_V1,
     });
     simulation.setPaused(false);
-    simulation.advanceHostTicks(oakHostTicksForBiologicalDaysV1(100));
+    simulation.advanceHostTicks(oakHostTicksForBiologicalDaysV1(180));
     simulation.setPaused(true);
     const projection = simulation.projection();
     const frame = buildOakRenderFrameV1(projection);
@@ -143,7 +149,7 @@ describe('oak browser camera material fit', () => {
       timeScale: OAK_DEFAULT_TIME_SCALE_V1,
     });
     simulation.setPaused(false);
-    simulation.advanceHostTicks(oakHostTicksForBiologicalDaysV1(100));
+    simulation.advanceHostTicks(oakHostTicksForBiologicalDaysV1(180));
     simulation.setPaused(true);
     const camera = new PerspectiveCamera(34, 1, 0.005, 25);
     const stillFrame = buildOakRenderFrameV1(simulation.projection());
@@ -188,7 +194,7 @@ describe('oak browser camera material fit', () => {
     expect(simulation.snapshot().diagnostics.mechanicsClampedOrganCount).toBe(0);
   });
 
-  it('counts root geometry only in the cutaway fit', () => {
+  it('derives root focus from every accepted root voxel and bounded basal context', () => {
     const simulation = createOakSimulationV1({
       seed: 0x51a7_0a4b,
       timeScale: OAK_DEFAULT_TIME_SCALE_V1,
@@ -209,6 +215,36 @@ describe('oak browser camera material fit', () => {
     const cutawayFrame = buildOakRenderFrameV1(simulation.projection(), {
       rootCutaway: { axis: 'x', planeM: 0, keep: 'less-than' },
     });
+    const focus = oakBrowserCameraFocusGeometryV1(
+      cutawayFrame.snapshot,
+      'root-cutaway',
+    );
+    const rootBatch = cutawayFrame.snapshot.batches.find(({ key }) =>
+      key === OAK_ROOT_VOXEL_BATCH_KEY_V1)!;
+    const woodBatch = cutawayFrame.snapshot.batches.find(({ key }) =>
+      key === OAK_WOOD_VOXEL_BATCH_KEY_V1)!;
+    const seedBudBatch = cutawayFrame.snapshot.batches.find(({ key }) =>
+      key === OAK_SEED_BUD_VOXEL_BATCH_KEY_V1)!;
+    const rootGeometry = cutawayFrame.snapshot.resources.find((resource) =>
+      resource.kind === 'geometry' && resource.key === rootBatch.geometryKey);
+    if (rootGeometry?.kind !== 'geometry') {
+      throw new Error('Root focus test requires the accepted root voxel geometry.');
+    }
+    const expectedRootVertices = rootBatch.instanceKeys.flatMap((_, slot) => {
+      const matrix = new Matrix4().fromArray(
+        Array.from(rootBatch.matrices.subarray(slot * 16, slot * 16 + 16)),
+      );
+      const vertices: Readonly<{ x: number; y: number; z: number }>[] = [];
+      for (let offset = 0; offset < rootGeometry.positions.length; offset += 3) {
+        const vertex = new Vector3(
+          rootGeometry.positions[offset]!,
+          rootGeometry.positions[offset + 1]!,
+          rootGeometry.positions[offset + 2]!,
+        ).applyMatrix4(matrix);
+        vertices.push({ x: vertex.x, y: vertex.y, z: vertex.z });
+      }
+      return vertices;
+    });
     const cutaway = fitOakBrowserCameraV1(
       camera,
       'hero',
@@ -221,31 +257,116 @@ describe('oak browser camera material fit', () => {
 
     expect(whole.fittedOrganCount).toBeLessThan(simulation.snapshot().diagnostics.organCount);
     expect(whole.rootShaftsNdc).toEqual({ coarse: null, aggregateFine: null });
-    expect(cutaway.fittedOrganCount).toBe(simulation.snapshot().diagnostics.organCount);
-    expect(cutaway.fittedVertexCount).toBeGreaterThan(whole.fittedVertexCount);
+    expect(focus.rootVoxelCount).toBe(rootBatch.instanceKeys.length);
+    expect(focus.vertices.slice(0, expectedRootVertices.length)).toEqual(expectedRootVertices);
+    expect(focus.basalContextVoxelCount).toBeGreaterThan(0);
+    expect(focus.basalContextVoxelCount).toBeLessThan(
+      woodBatch.instanceKeys.length + seedBudBatch.instanceKeys.length,
+    );
+    expect(focus.vertices).toHaveLength(
+      (focus.rootVoxelCount + focus.basalContextVoxelCount)
+      * rootGeometry.positions.length / 3,
+    );
+    expect(Math.max(...focus.vertices.map(({ y }) => y))).toBeLessThan(0.02);
+    expect(cutaway.fittedOrganCount).toBe(focus.organKeys.length);
+    expect(cutaway.fittedRootVoxelCount).toBe(rootBatch.instanceKeys.length);
+    expect(cutaway.fittedBasalContextVoxelCount).toBe(focus.basalContextVoxelCount);
+    expect(cutaway.fittedLitterVoxelCount).toBe(0);
+    expect(cutaway.fittedVertexCount).toBe(focus.vertices.length);
     expect(cutaway.rootShaftsNdc.coarse).not.toBeNull();
     expect(cutaway.rootShaftsNdc.aggregateFine).not.toBeNull();
-    const fineRoot = cutaway.rootShaftsNdc.aggregateFine;
-    if (fineRoot === null) throw new Error('Cutaway fit did not project its fine-root shaft.');
-    expect(Math.abs(fineRoot.tip.x - fineRoot.base.x) * 960 / 2).toBeGreaterThan(3);
   });
 
-  it('fits every fallen-litter cube inside the day-240 hero and overhead margins', () => {
+  it('makes both accepted root shafts materially legible while staying clear of the HUD', () => {
     const simulation = createOakSimulationV1({
       seed: 0x51a7_0a4b,
       timeScale: OAK_DEFAULT_TIME_SCALE_V1,
     });
     simulation.setPaused(false);
-    simulation.advanceHostTicks(oakHostTicksForBiologicalDaysV1(240));
+    simulation.advanceHostTicks(oakHostTicksForBiologicalDaysV1(180));
+    simulation.setPaused(true);
+    const frame = buildOakRenderFrameV1(simulation.projection(), {
+      rootCutaway: { axis: 'x', planeM: 0, keep: 'less-than' },
+    });
+    const camera = new PerspectiveCamera(34, 1, 0.005, 25);
+    const measured = fitOakBrowserCameraV1(
+      camera,
+      'hero',
+      simulation.snapshot(),
+      frame.snapshot,
+      VIEWPORT,
+      HUD_RIGHT_PX,
+      true,
+    );
+    const projectedLengthPx = (
+      shaft: NonNullable<typeof measured.rootShaftsNdc.coarse>,
+    ): number => Math.hypot(
+      (shaft.tip.x - shaft.base.x) * VIEWPORT.width / 2,
+      (shaft.tip.y - shaft.base.y) * VIEWPORT.height / 2,
+    );
+    const coarse = measured.rootShaftsNdc.coarse;
+    const fine = measured.rootShaftsNdc.aggregateFine;
+    if (coarse === null || fine === null) {
+      throw new Error('Root-focused camera did not project both accepted root shafts.');
+    }
+
+    expect(measured.focus).toBe('root-cutaway');
+    expect(measured.fittedRootVoxelCount).toBe(frame.metrics.rootVoxels);
+    expect(measured.fittedBasalContextVoxelCount).toBeGreaterThan(0);
+    expect(projectedLengthPx(coarse)).toBeGreaterThan(120);
+    expect(projectedLengthPx(fine)).toBeGreaterThan(120);
+    expect(measured.subjectClearOfHud).toBe(true);
+    expect(measured.subjectBoundsNdc.minX).toBeGreaterThan(measured.hudRightNdc + 0.035);
+    expect(measured.subjectBoundsNdc.maxX).toBeLessThan(0.94);
+    expect(measured.subjectBoundsNdc.minY).toBeGreaterThan(-0.86);
+    expect(measured.subjectBoundsNdc.maxY).toBeLessThan(0.86);
+  });
+
+  it('keeps the radicle cutaway fitted before any basal wood exists', () => {
+    const simulation = createOakSimulationV1({
+      seed: 0x51a7_0a4b,
+      timeScale: OAK_DEFAULT_TIME_SCALE_V1,
+    });
+    simulation.setPaused(false);
+    simulation.advanceHostTicks(oakHostTicksForBiologicalDaysV1(3));
+    const frame = buildOakRenderFrameV1(simulation.projection(), {
+      rootCutaway: { axis: 'x', planeM: 0, keep: 'less-than' },
+    });
+    const wood = frame.snapshot.batches.find(({ key }) =>
+      key === OAK_WOOD_VOXEL_BATCH_KEY_V1)!;
+    const measured = fitOakBrowserCameraV1(
+      new PerspectiveCamera(34, 1, 0.005, 25),
+      'hero',
+      simulation.snapshot(),
+      frame.snapshot,
+      VIEWPORT,
+      HUD_RIGHT_PX,
+      true,
+    );
+
+    expect(wood.instanceKeys).toHaveLength(0);
+    expect(measured.fittedRootVoxelCount).toBe(frame.metrics.rootVoxels);
+    expect(measured.fittedBasalContextVoxelCount).toBeGreaterThan(0);
+    expect(measured.rootShaftsNdc.coarse).not.toBeNull();
+    expect(measured.subjectClearOfHud).toBe(true);
+  });
+
+  it('fits every fallen-litter cube inside the post-contact day-249 margins', () => {
+    const simulation = createOakSimulationV1({
+      seed: 0x51a7_0a4b,
+      timeScale: OAK_DEFAULT_TIME_SCALE_V1,
+    });
+    simulation.setPaused(false);
+    simulation.advanceHostTicks(oakHostTicksForBiologicalDaysV1(249));
     simulation.setPaused(true);
     const frame = buildOakRenderFrameV1(simulation.projection());
     const litterBatch = frame.snapshot.batches.find((batch) =>
       batch.key === OAK_FALLEN_LITTER_VOXEL_BATCH_KEY_V1);
-    if (litterBatch === undefined) throw new Error('Day-240 frame omitted its litter batch.');
+    if (litterBatch === undefined) throw new Error('Day-249 frame omitted its litter batch.');
     const litterGeometry = frame.snapshot.resources.find((resource) =>
       resource.kind === 'geometry' && resource.key === litterBatch.geometryKey);
     if (litterGeometry?.kind !== 'geometry') {
-      throw new Error('Day-240 litter batch references no accepted geometry.');
+      throw new Error('Day-249 litter batch references no accepted geometry.');
     }
     const noLitterSnapshot = {
       ...frame.snapshot,

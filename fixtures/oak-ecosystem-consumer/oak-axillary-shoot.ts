@@ -7,6 +7,7 @@ import { OAK_PARAMETERS_V1 } from './oak-parameters.js';
 import {
   nextOakRandomUnitV1,
   oakOrganKeyV1,
+  type OakDevelopmentRoleV1,
   type MutableOakOrganV1,
   type MutableOakStateV1,
 } from './oak-state.js';
@@ -30,8 +31,21 @@ export interface OakOrganAuthoringInputV1 {
   readonly radiusM: number;
   readonly stage: MutableOakOrganV1['stage'];
   readonly cost: OakOrganCostV1;
+  readonly development: OakOrganDevelopmentPlanV1;
   readonly areaM2?: number;
   readonly rollRadians?: number;
+}
+
+export interface OakOrganDevelopmentPlanV1 {
+  readonly role: OakDevelopmentRoleV1;
+  readonly initialFraction: number;
+  readonly activationSecond: number | null;
+  readonly gateOrganKey: string | null;
+  readonly divisionStartOffsetSeconds: number;
+  readonly expansionStartOffsetSeconds: number;
+  readonly maturationStartOffsetSeconds: number;
+  readonly completionOffsetSeconds: number;
+  readonly matureStage: MutableOakOrganV1['stage'];
 }
 
 type OakOrganAuthorV1 = (
@@ -120,6 +134,11 @@ export function createOakAxillaryShootV1(input: Readonly<{
   branchCost: OakOrganCostV1;
   plan: OakAxillaryShootPlanV1;
   budCost: OakOrganCostV1;
+  developmentPlans: Readonly<{
+    axis: OakOrganDevelopmentPlanV1;
+    leaf: OakOrganDevelopmentPlanV1;
+    bud: OakOrganDevelopmentPlanV1;
+  }>;
   authorOrgan: OakOrganAuthorV1;
 }>): void {
   const architecture = OAK_PARAMETERS_V1.growth.flushArchitecture;
@@ -141,6 +160,7 @@ export function createOakAxillaryShootV1(input: Readonly<{
     radiusM: architecture.axillaryBranchInitialRadiusM,
     stage: 'expanding',
     cost: input.branchCost,
+    development: input.developmentPlans.axis,
   });
   const leafDirectionIndex = (
     input.flushIndex * architecture.leafCount + architecture.leafCount
@@ -185,6 +205,7 @@ export function createOakAxillaryShootV1(input: Readonly<{
     rollRadians: leafRollRadians,
     stage: 'expanding',
     cost: input.plan.leafCost,
+    development: input.developmentPlans.leaf,
   });
   input.authorOrgan(input.state, {
     kind: 'bud',
@@ -196,5 +217,6 @@ export function createOakAxillaryShootV1(input: Readonly<{
     radiusM: architecture.terminalBudInitialRadiusM,
     stage: 'dormant',
     cost: input.budCost,
+    development: input.developmentPlans.bud,
   });
 }

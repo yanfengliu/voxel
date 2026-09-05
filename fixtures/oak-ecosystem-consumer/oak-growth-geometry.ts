@@ -11,9 +11,9 @@ export function normalizeOakGrowthDirectionV1(vector: OakVec3V1): OakVec3V1 {
 
 export function oakRestTipV1(organ: MutableOakOrganV1): OakVec3V1 {
   return {
-    x: organ.positionM.x + organ.restDirection.x * organ.lengthM,
-    y: organ.positionM.y + organ.restDirection.y * organ.lengthM,
-    z: organ.positionM.z + organ.restDirection.z * organ.lengthM,
+    x: organ.restPositionM.x + organ.restDirection.x * organ.lengthM,
+    y: organ.restPositionM.y + organ.restDirection.y * organ.lengthM,
+    z: organ.restPositionM.z + organ.restDirection.z * organ.lengthM,
   };
 }
 

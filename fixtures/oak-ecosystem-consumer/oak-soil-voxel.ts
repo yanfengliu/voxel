@@ -346,6 +346,18 @@ export function buildOakSoilVoxelChunkV1(
   let carvedAcornVoxelCount = 0;
   let carvedTissueVoxelCount = 0;
   const carvedMacroVoxels: OakSoilCarvedMacroVoxelV1[] = [];
+  const surfaces = new Array<ReturnType<typeof oakSoilSurfaceAtWorldVoxelColumnV1>>(
+    OAK_SOIL_VOXEL_CHUNK_SIZE_V1.x * OAK_SOIL_VOXEL_CHUNK_SIZE_V1.z,
+  );
+  for (let localZ = 0; localZ < OAK_SOIL_VOXEL_CHUNK_SIZE_V1.z; localZ += 1) {
+    for (let localX = 0; localX < OAK_SOIL_VOXEL_CHUNK_SIZE_V1.x; localX += 1) {
+      surfaces[localX + OAK_SOIL_VOXEL_CHUNK_SIZE_V1.x * localZ] =
+        oakSoilSurfaceAtWorldVoxelColumnV1(
+          OAK_SOIL_VOXEL_CHUNK_ORIGIN_V1.x + localX,
+          OAK_SOIL_VOXEL_CHUNK_ORIGIN_V1.z + localZ,
+        );
+    }
+  }
 
   for (let localY = 0; localY < OAK_SOIL_VOXEL_CHUNK_SIZE_V1.y; localY += 1) {
     const worldVoxelY = OAK_SOIL_VOXEL_CHUNK_ORIGIN_V1.y + localY;
@@ -356,7 +368,9 @@ export function buildOakSoilVoxelChunkV1(
       for (let localX = 0; localX < OAK_SOIL_VOXEL_CHUNK_SIZE_V1.x; localX += 1) {
         const worldVoxelX = OAK_SOIL_VOXEL_CHUNK_ORIGIN_V1.x + localX;
         const worldX = (worldVoxelX + 0.5) * OAK_SOIL_VOXEL_SIZE_M_V1;
-        const surface = oakSoilSurfaceAtWorldVoxelColumnV1(worldVoxelX, worldVoxelZ);
+        const surface = surfaces[
+          localX + OAK_SOIL_VOXEL_CHUNK_SIZE_V1.x * localZ
+        ]!;
         if (surface === null) continue;
         const stratumMinLocalY = surface.topLocalVoxelY
           - OAK_SOIL_VOXEL_TOP_STRATUM_DEPTH_V1 + 1;

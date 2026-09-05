@@ -59,6 +59,7 @@ describe('oak numeric-assumption registry', () => {
       './oak-biogeochemistry.ts',
       './oak-physiology.ts',
       './oak-growth.ts',
+      './oak-development.ts',
       './oak-leaf-shape.ts',
       './oak-mechanics.ts',
       './oak-state.ts',
@@ -77,6 +78,12 @@ describe('oak numeric-assumption registry', () => {
       provenanceClass === 'published-model' || provenanceClass === 'species-observation');
     expect(mechanisms.length).toBeGreaterThanOrEqual(8);
     expect(mechanisms.every(({ sourceUrl }) => sourceUrl.startsWith('https://'))).toBe(true);
+    expect(OAK_PARAMETER_PROVENANCE_V1.find(({ id }) => id === 'oak-leaf-form'))
+      .toEqual(expect.objectContaining({
+        class: 'species-observation',
+        sourceUrl: 'https://powo.science.kew.org/taxon/urn:lsid:ipni.org:names:304293-2/general-information',
+      }));
+    expect(OAK_PARAMETERS_V1.leafGeometry.formProvenanceId).toBe('oak-leaf-form');
     expect(OAK_PARAMETER_PROVENANCE_V1.find(({ id }) => id === 'early-slice-calibration'))
       .toEqual(expect.objectContaining({ class: 'fixture-assumption' }));
   });

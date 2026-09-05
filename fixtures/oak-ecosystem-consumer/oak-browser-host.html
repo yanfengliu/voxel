@@ -43,11 +43,12 @@
 
       .hud {
         position: absolute;
-        inset: 1rem auto auto 1rem;
-        width: min(22rem, calc(100% - 2rem));
-        max-height: calc(100% - 2rem);
-        overflow: auto;
-        padding: 1rem;
+        inset: 0.75rem auto auto 0.75rem;
+        display: grid;
+        grid-template-rows: auto minmax(0, 1fr);
+        width: min(19.5rem, calc(100% - 1.5rem));
+        max-height: calc(100% - 1.5rem);
+        overflow: hidden;
         border: 1px solid var(--line);
         border-radius: 0.35rem;
         background: var(--panel);
@@ -55,23 +56,41 @@
         backdrop-filter: blur(5px);
       }
 
+      .hud-persistent {
+        position: sticky;
+        top: 0;
+        z-index: 1;
+        padding: 0.7rem 0.75rem 0.55rem;
+        border-bottom: 1px solid #485443;
+        background: #182019f5;
+      }
+
+      .hud-scroll {
+        min-height: 0;
+        overflow-y: auto;
+        padding: 0.6rem 0.75rem 0.75rem;
+        scrollbar-gutter: stable;
+      }
+
       h1 {
         margin: 0;
-        font: 700 1rem/1.3 ui-monospace, "Cascadia Mono", monospace;
-        letter-spacing: 0.04em;
+        font: 700 0.93rem/1.3 ui-monospace, "Cascadia Mono", monospace;
+        letter-spacing: 0.025em;
       }
 
       .subtitle,
       .status {
-        margin: 0.35rem 0 0.85rem;
+        margin: 0.3rem 0 0.65rem;
         color: var(--muted);
         font-size: 0.76rem;
         line-height: 1.45;
       }
 
+      .hud-scroll > .subtitle { margin-top: 0; }
+
       fieldset {
-        margin: 0 0 0.75rem;
-        padding: 0.65rem;
+        margin: 0 0 0.6rem;
+        padding: 0.55rem;
         border: 1px solid #485443;
       }
 
@@ -120,8 +139,8 @@
       }
 
       .performance-readout {
-        margin: 0 0 0.75rem;
-        padding: 0.4rem 0.55rem;
+        margin: 0;
+        padding: 0.35rem 0.5rem;
         border-left: 2px solid var(--accent);
         background: #202a20;
       }
@@ -139,6 +158,26 @@
 
       dt { color: var(--muted); }
       dd { margin: 0; font-variant-numeric: tabular-nums; text-align: right; }
+
+      .diagnostics {
+        margin: 0;
+        border: 1px solid #485443;
+      }
+
+      .diagnostics summary {
+        min-height: 2.75rem;
+        padding: 0.8rem 0.55rem;
+        color: var(--accent);
+        cursor: pointer;
+        font-size: 0.72rem;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+      }
+
+      .diagnostics summary:hover { background: #263126; }
+      .diagnostics summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+      .diagnostics[open] summary { border-bottom: 1px solid #485443; }
+      .diagnostics dl { padding: 0.55rem; }
 
       .fatal {
         position: absolute;
@@ -165,75 +204,81 @@
         aria-keyshortcuts="W A S D"
       ></canvas>
       <section class="hud" aria-label="Simulation controls and diagnostics">
-        <h1>QUERCUS ROBUR / CASE STUDY 01</h1>
-        <p class="subtitle">A young oak exchanging carbon, water, nitrogen and phosphorus with a bounded soil plot.</p>
-        <p class="status" data-oak-status role="status" aria-live="polite">Starting deterministic oak fixture…</p>
-        <dl class="performance-readout" aria-label="Render performance">
-          <dt title="Recent successful canvas presentations; not simulation speed or GPU completion.">Render frame rate</dt>
-          <dd data-diagnostic="fps">measuring…</dd>
-        </dl>
-
-        <fieldset class="environment-readout" data-environment-readout aria-label="Visible environment readout">
-          <legend>Environment now</legend>
-          <dl>
-            <dt>Wind speed</dt><dd data-diagnostic="wind">—</dd>
-            <dt>Rain cue</dt><dd data-diagnostic="rain">—</dd>
-            <dt>Airflow voxels</dt><dd data-diagnostic="wind-voxels">—</dd>
-            <dt>Topsoil water</dt><dd data-diagnostic="topsoil-water">—</dd>
-            <dt>Topsoil mineral N</dt><dd data-diagnostic="topsoil-nitrogen">—</dd>
-            <dt>Topsoil labile P</dt><dd data-diagnostic="topsoil-phosphorus">—</dd>
+        <header class="hud-persistent" data-oak-hud-persistent>
+          <h1>QUERCUS ROBUR / CASE STUDY 01</h1>
+          <p class="status" data-oak-status role="status" aria-live="polite">Starting deterministic oak fixture…</p>
+          <dl class="performance-readout" aria-label="Render performance">
+            <dt title="Recent successful canvas presentations; not simulation speed or GPU completion.">Render frame rate</dt>
+            <dd data-diagnostic="fps">measuring…</dd>
           </dl>
-        </fieldset>
+        </header>
+        <div class="hud-scroll" data-oak-hud-scroll>
+          <p class="subtitle">A young oak exchanging carbon, water, nitrogen and phosphorus with a bounded soil plot.</p>
 
-        <fieldset>
-          <legend>Time and view</legend>
-          <div class="controls">
-            <button type="button" data-command="toggle-pause" aria-pressed="false">Pause</button>
-            <button type="button" data-command="growth-mode" aria-pressed="true">Season / growth</button>
-            <button type="button" data-command="wind-mode" aria-pressed="false">Wind inspection</button>
-            <button type="button" data-command="root-cutaway" aria-pressed="false">Root cutaway</button>
-          </div>
-        </fieldset>
+          <fieldset class="environment-readout" data-environment-readout aria-label="Visible environment readout">
+            <legend>Environment now</legend>
+            <dl>
+              <dt>Wind speed</dt><dd data-diagnostic="wind">—</dd>
+              <dt>Rain cue</dt><dd data-diagnostic="rain">—</dd>
+              <dt>Airflow voxels</dt><dd data-diagnostic="wind-voxels">—</dd>
+              <dt>Topsoil water</dt><dd data-diagnostic="topsoil-water">—</dd>
+              <dt>Topsoil mineral N</dt><dd data-diagnostic="topsoil-nitrogen">—</dd>
+              <dt>Topsoil labile P</dt><dd data-diagnostic="topsoil-phosphorus">—</dd>
+            </dl>
+          </fieldset>
 
-        <fieldset>
-          <legend>Environment interventions</legend>
-          <div class="controls">
-            <button type="button" data-command="rain">Rain pulse</button>
-            <button type="button" data-command="low-water" data-stress aria-pressed="false">Low water</button>
-            <button type="button" data-command="low-n" data-stress aria-pressed="false">Low nitrogen</button>
-            <button type="button" data-command="low-p" data-stress aria-pressed="false">Low phosphorus</button>
-          </div>
-        </fieldset>
+          <fieldset>
+            <legend>Time and view</legend>
+            <div class="controls">
+              <button type="button" data-command="toggle-pause" aria-pressed="false">Pause</button>
+              <button type="button" data-command="growth-mode" aria-pressed="true">Season / growth</button>
+              <button type="button" data-command="wind-mode" aria-pressed="false">Wind inspection</button>
+              <button type="button" data-command="root-cutaway" aria-pressed="false">Root cutaway</button>
+            </div>
+          </fieldset>
 
-        <fieldset>
-          <legend>Camera</legend>
-          <div class="controls">
-            <button type="button" data-view="hero" aria-pressed="true">Hero</button>
-            <button type="button" data-view="side" aria-pressed="false">Side</button>
-            <button type="button" data-view="overhead" aria-pressed="false">Overhead</button>
-            <button type="button" data-command="reset">Reset experiment</button>
-          </div>
-          <p id="oak-camera-hint" class="camera-hint" data-camera-hint>Left-click to focus · middle-drag to turn · right-drag or WASD to move · scroll to zoom · double-click to re-centre</p>
-        </fieldset>
+          <fieldset>
+            <legend>Environment interventions</legend>
+            <div class="controls">
+              <button type="button" data-command="rain">Rain pulse</button>
+              <button type="button" data-command="low-water" data-stress aria-pressed="false">Low water</button>
+              <button type="button" data-command="low-n" data-stress aria-pressed="false">Low nitrogen</button>
+              <button type="button" data-command="low-p" data-stress aria-pressed="false">Low phosphorus</button>
+            </div>
+          </fieldset>
 
-        <fieldset aria-label="Live diagnostics">
-          <legend>Live diagnostics</legend>
-          <dl data-oak-diagnostics>
-            <dt>Age</dt><dd data-diagnostic="age">—</dd>
-            <dt>Height</dt><dd data-diagnostic="height">—</dd>
-            <dt>Leaf area</dt><dd data-diagnostic="leaf-area">—</dd>
-            <dt>Leaf water potential</dt><dd data-diagnostic="water-potential">—</dd>
-            <dt>Carbon store</dt><dd data-diagnostic="carbon">—</dd>
-            <dt>Nitrogen store</dt><dd data-diagnostic="nitrogen">—</dd>
-            <dt>Phosphorus store</dt><dd data-diagnostic="phosphorus">—</dd>
-            <dt>Water residual</dt><dd data-diagnostic="water-residual">—</dd>
-            <dt>Carbon residual</dt><dd data-diagnostic="carbon-residual">—</dd>
-            <dt>N residual</dt><dd data-diagnostic="nitrogen-residual">—</dd>
-            <dt>P residual</dt><dd data-diagnostic="phosphorus-residual">—</dd>
-            <dt>Presented revision</dt><dd data-diagnostic="revision">—</dd>
-            <dt>GPU resources</dt><dd data-diagnostic="resources">—</dd>
-          </dl>
-        </fieldset>
+          <fieldset>
+            <legend>Camera</legend>
+            <div class="controls">
+              <button type="button" data-view="hero" aria-pressed="true">Hero</button>
+              <button type="button" data-view="side" aria-pressed="false">Side</button>
+              <button type="button" data-view="overhead" aria-pressed="false">Overhead</button>
+              <button type="button" data-command="reset">Reset experiment</button>
+            </div>
+            <p id="oak-camera-hint" class="camera-hint" data-camera-hint>Left-click to focus · middle-drag to turn · right-drag or WASD to move · scroll to zoom · double-click to re-centre</p>
+          </fieldset>
+
+          <details class="diagnostics">
+            <summary>Live diagnostics</summary>
+            <dl data-oak-diagnostics>
+              <dt>Age</dt><dd data-diagnostic="age">—</dd>
+              <dt>Height</dt><dd data-diagnostic="height">—</dd>
+              <dt>Leaf area</dt><dd data-diagnostic="leaf-area">—</dd>
+              <dt>Active growth fronts</dt><dd data-diagnostic="growth-fronts">—</dd>
+              <dt>Growth carbon</dt><dd data-diagnostic="growth-carbon">—</dd>
+              <dt>Leaf water potential</dt><dd data-diagnostic="water-potential">—</dd>
+              <dt>Carbon store</dt><dd data-diagnostic="carbon">—</dd>
+              <dt>Nitrogen store</dt><dd data-diagnostic="nitrogen">—</dd>
+              <dt>Phosphorus store</dt><dd data-diagnostic="phosphorus">—</dd>
+              <dt>Water residual</dt><dd data-diagnostic="water-residual">—</dd>
+              <dt>Carbon residual</dt><dd data-diagnostic="carbon-residual">—</dd>
+              <dt>N residual</dt><dd data-diagnostic="nitrogen-residual">—</dd>
+              <dt>P residual</dt><dd data-diagnostic="phosphorus-residual">—</dd>
+              <dt>Presented revision</dt><dd data-diagnostic="revision">—</dd>
+              <dt>GPU resources</dt><dd data-diagnostic="resources">—</dd>
+            </dl>
+          </details>
+        </div>
       </section>
     </main>
     <script type="module" src="./oak-browser-host.ts"></script>

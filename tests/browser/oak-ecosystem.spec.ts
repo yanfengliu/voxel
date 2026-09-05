@@ -15,7 +15,6 @@ import { OAK_RAIN_FALL_TICKS_V1 } from '../../fixtures/oak-ecosystem-consumer/oa
 import { guardPageErrors } from './page-errors.js';
 import {
   analyzeOakImageDifference,
-  analyzeOakRootPathPixels,
   analyzeOakTreePixels,
   advanceOakBiologicalTicks,
   advanceOakHostTicks,
@@ -30,6 +29,7 @@ import {
   setOakCamera,
   totalSoilWaterLiters,
 } from './oak-ecosystem-browser-support.js';
+import { expectOakRootPixelContrastV1 } from './oak-ecosystem-root-support.js';
 import { expectOakPresentationQueueContractV1 } from './oak-ecosystem-lifecycle-support.js';
 import { expectOakStudioNavigationContractV1 } from './oak-ecosystem-navigation-support.js';
 import {
@@ -40,9 +40,9 @@ import {
 guardPageErrors();
 const REPOSITORY_ROOT = resolve('.');
 const VIEWPORT = { width: 960, height: 720 };
-const FIRST_FLUSH_TICKS = oakHostTicksForBiologicalDaysV1(13);
+const FIRST_FLUSH_TICKS = oakHostTicksForBiologicalDaysV1(40);
 const DROUGHT_COMPARISON_TICKS = oakHostTicksForBiologicalDaysV1(100);
-const MATURE_VISUAL_TICKS = oakHostTicksForBiologicalDaysV1(100);
+const MATURE_VISUAL_TICKS = oakHostTicksForBiologicalDaysV1(180);
 const RAIN_RESPONSE_TICKS = OAK_RAIN_FALL_TICKS_V1 + oakHostTicksForBiologicalDaysV1(7);
 
 let server: ViteDevServer | undefined;
@@ -441,25 +441,7 @@ test('fixed cameras, root cutaway, resize, capture, and teardown stay coherent',
   expect(
     Math.abs(fineRootShaft.tip.x - fineRootShaft.base.x) * VIEWPORT.width / 2,
   ).toBeGreaterThan(3);
-  const afterCutaway = await canvas.screenshot();
-  const coarseRootPixels = await analyzeOakRootPathPixels(page, afterCutaway, coarseRootShaft);
-  const fineRootPixels = await analyzeOakRootPathPixels(page, afterCutaway, fineRootShaft);
-  expect(coarseRootPixels.projectedLengthPixels).toBeGreaterThan(12);
-  expect(coarseRootPixels.contrastedSamples, JSON.stringify(coarseRootPixels))
-    .toBeGreaterThanOrEqual(4);
-  expect(coarseRootPixels.maximumLuminanceContrast, JSON.stringify(coarseRootPixels))
-    .toBeGreaterThan(12);
-  expect(coarseRootPixels.medianContrastedWidthPixels, JSON.stringify(coarseRootPixels))
-    .toBeGreaterThanOrEqual(2);
-  expect(fineRootPixels.projectedLengthPixels).toBeGreaterThan(12);
-  expect(fineRootPixels.contrastedSamples, JSON.stringify(fineRootPixels))
-    .toBeGreaterThanOrEqual(4);
-  expect(fineRootPixels.maximumLuminanceContrast, JSON.stringify(fineRootPixels))
-    .toBeGreaterThan(12);
-  expect(fineRootPixels.medianContrastedWidthPixels, JSON.stringify(fineRootPixels))
-    .toBeGreaterThanOrEqual(2);
-  expect(fineRootPixels.meanPathLuminance - coarseRootPixels.meanPathLuminance)
-    .toBeGreaterThan(35);
+  const afterCutaway = await expectOakRootPixelContrastV1(page, coarseRootShaft, fineRootShaft);
   expect(createHash('sha256').update(afterCutaway).digest('hex')).not.toBe(
     createHash('sha256').update(beforeCutaway).digest('hex'),
   );

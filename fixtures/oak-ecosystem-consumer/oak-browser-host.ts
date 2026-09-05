@@ -104,6 +104,8 @@ function mountOakBrowserHost(): OakBrowserHarnessV1 {
     subjectClearOfHud: false,
     fittedOrganCount: 0,
     fittedLitterVoxelCount: 0,
+    fittedRootVoxelCount: 0,
+    fittedBasalContextVoxelCount: 0,
     fittedVertexCount: 0,
     rootShaftsNdc: { coarse: null, aggregateFine: null },
   };

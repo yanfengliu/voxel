@@ -31,6 +31,18 @@ export type OakOrganStageV1 =
   | 'expanding'
   | 'mature'
   | 'senescing'
+  | 'detached'
+  | 'abscised';
+
+export type OakOrganDevelopmentPhaseV1 =
+  | 'preformed'
+  | 'bud-swelling'
+  | 'cell-division'
+  | 'cell-expansion'
+  | 'maturing'
+  | 'mature'
+  | 'senescing'
+  | 'falling'
   | 'abscised';
 
 interface OakOrganBaseSnapshotV1 {
@@ -46,12 +58,20 @@ interface OakOrganBaseSnapshotV1 {
   readonly direction: OakVec3V1;
   readonly lengthM: number;
   readonly radiusM: number;
+  /** Stable primary-growth plan; current dimensions remain the paid tissue. */
+  readonly targetLengthM: number;
+  readonly targetRadiusM: number;
   readonly dryMassKg: number;
   readonly waterPotentialMpa: number;
   readonly pools: OakResourcePoolsV1;
   readonly stage: OakOrganStageV1;
+  readonly developmentPhase: OakOrganDevelopmentPhaseV1;
+  /** Resource-constrained primary development, bounded from zero through one. */
+  readonly developmentFraction: number;
   readonly healthFraction: number;
   readonly stressFraction: number;
+  /** Process-soil recipient selected from the physical contact midpoint. */
+  readonly litterRecipientSoilCellKey?: string;
 }
 
 export interface OakStructuralOrganSnapshotV1
@@ -59,15 +79,39 @@ export interface OakStructuralOrganSnapshotV1
   readonly kind: Exclude<OakOrganKindV1, 'leaf'>;
 }
 
+/** Physical node identity; it deliberately contains no renderer/lattice key. */
+export interface OakLeafAttachmentV1 {
+  readonly parentOrganKey: string;
+  readonly nodeSite: 'distal';
+  readonly restRadialUnitWorld: OakVec3V1;
+}
+
 export interface OakLeafOrganSnapshotV1 extends OakOrganBaseSnapshotV1 {
   readonly kind: 'leaf';
+  readonly attachment?: OakLeafAttachmentV1;
   readonly areaM2: number;
+  readonly targetAreaM2: number;
   /** Diagnostic elevation of `direction`; the renderer must not apply it again. */
   readonly inclinationRadians: number;
   /** Rotation around the already-oriented midrib `direction`. */
   readonly rollRadians: number;
   readonly chlorophyllFraction: number;
   readonly relativeWaterContentFraction: number;
+  /** Present only while detached; one means the physical fall pose has settled. */
+  readonly fallProgressFraction?: number;
+  /** Zero-mass recolor of existing parent tissue at the base-abscission wound. */
+  readonly abscissionScar?: Readonly<{
+    parentKey: string;
+    positionM: OakVec3V1;
+    direction: OakVec3V1;
+    rollRadians: number;
+    searchRadiusM: number;
+    fallMaterial: Readonly<{
+      chlorophyllFraction: number;
+      relativeWaterContentFraction: number;
+      stressFraction: number;
+    }>;
+  }>;
 }
 
 export type OakOrganSnapshotV1 =
@@ -140,8 +184,12 @@ export interface OakSimulationDiagnosticsV1 {
   readonly organCount: number;
   readonly leafCount: number;
   readonly flushCount: number;
+  readonly activeGrowthFrontCount: number;
+  readonly cumulativeGrowthCarbonKg: number;
   readonly cumulativeAssimilationCarbonKg: number;
   readonly cumulativeRespirationCarbonKg: number;
+  /** Explicit first-year boundary export after every primary sink is complete. */
+  readonly cumulativePostPrimaryCarbonOverflowKg: number;
   readonly cumulativeTranspirationLiters: number;
   readonly cumulativeRootWaterUptakeLiters: number;
   readonly cumulativeNitrogenUptakeKg: number;
@@ -202,6 +250,8 @@ export interface OakRenderProjectionStateV1 {
     | 'basalStemDiameterM'
     | 'crownRadiusM'
     | 'leafAreaM2'
+    | 'activeGrowthFrontCount'
+    | 'cumulativeGrowthCarbonKg'
     | 'meanWaterStressFraction'
     | 'meanNitrogenStressFraction'
     | 'meanPhosphorusStressFraction'

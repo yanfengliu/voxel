@@ -4,7 +4,9 @@ import {
 } from './oak-parameters.js';
 import type {
   OakEnvironmentRegimeV1,
+  OakLeafAttachmentV1,
   OakOrganIdentityV1,
+  OakOrganDevelopmentPhaseV1,
   OakOrganKindV1,
   OakOrganStageV1,
   OakPhenologyStageV1,
@@ -12,7 +14,6 @@ import type {
   OakVec3V1,
   OakWindRegimeV1,
 } from './oak-types.js';
-
 export type OakAblationV1 =
   | 'baseline'
   | 'no-rain'
@@ -20,7 +21,8 @@ export type OakAblationV1 =
   | 'no-nitrogen'
   | 'no-phosphorus'
   | 'no-mycorrhiza'
-  | 'no-litter';
+  | 'no-litter'
+  | 'no-post-primary-carbon-overflow';
 
 export interface OakSimulationOptionsV1 {
   readonly seed?: number;
@@ -57,6 +59,79 @@ export interface MutableOakOrganV1 {
   chlorophyllFraction?: number;
   relativeWaterContentFraction?: number;
   mechanicsClamped: boolean;
+  senescenceStartChlorophyllFraction?: number;
+  senescenceStartNitrogenKg?: number;
+  senescenceStartPhosphorusKg?: number;
+  development?: MutableOakOrganDevelopmentV1;
+  fall?: MutableOakLeafFallV1;
+  attachment?: OakLeafAttachmentV1;
+  abscissionScar?: MutableOakAbscissionScarV1;
+  litterRecipientSoilCellKey?: string;
+}
+export interface MutableOakAbscissionScarV1 {
+  /** Zero-mass wound metadata on existing parent tissue; the whole petiole falls. */
+  parentKey: string;
+  positionM: OakVec3V1;
+  direction: OakVec3V1;
+  rollRadians: number;
+  searchRadiusM: number;
+  fallMaterial: MutableOakLeafMaterialV1;
+}
+
+export interface MutableOakLeafMaterialV1 {
+  chlorophyllFraction: number;
+  relativeWaterContentFraction: number;
+  stressFraction: number;
+}
+
+export type OakDevelopmentRoleV1 =
+  | 'seed'
+  | 'radicle'
+  | 'shoot'
+  | 'flush-axis'
+  | 'flush-leaf'
+  | 'terminal-bud'
+  | 'bud-break';
+
+export interface MutableOakDevelopmentCohortsV1 {
+  preformedCarbonKg: number;
+  dividingCarbonKg: number;
+  expandingCarbonKg: number;
+  maturingCarbonKg: number;
+  matureCarbonKg: number;
+}
+
+export interface MutableOakOrganDevelopmentV1 {
+  role: OakDevelopmentRoleV1;
+  phase: OakOrganDevelopmentPhaseV1;
+  fraction: number;
+  initialFraction: number;
+  activationSecond: number | null;
+  scheduleStartSecond: number | null;
+  gateOrganKey: string | null;
+  divisionStartOffsetSeconds: number;
+  expansionStartOffsetSeconds: number;
+  maturationStartOffsetSeconds: number;
+  completionOffsetSeconds: number;
+  targetLengthM: number;
+  targetRadiusM: number;
+  targetAreaM2?: number;
+  targetPools: OakResourcePoolsV1;
+  matureStage: OakOrganStageV1;
+  cohorts: MutableOakDevelopmentCohortsV1;
+}
+
+export interface MutableOakLeafFallV1 {
+  startSecond: number;
+  durationSeconds: number;
+  startPositionM: OakVec3V1;
+  startDirection: OakVec3V1;
+  startRollRadians: number;
+  targetMidpointM: OakVec3V1;
+  targetDirection: OakVec3V1;
+  lastProgressFraction: number;
+  windDisplacementM: OakVec3V1;
+  settledHostTick?: number;
 }
 
 export interface MutableOakSoilCellV1 {
@@ -82,6 +157,7 @@ export interface MutableOakSoilCellV1 {
 export interface MutableOakCountersV1 {
   assimilationCarbonKg: number;
   respirationCarbonKg: number;
+  postPrimaryCarbonOverflowKg: number;
   transpirationLiters: number;
   rootWaterUptakeLiters: number;
   nitrogenUptakeKg: number;
@@ -97,6 +173,7 @@ export interface MutableOakCountersV1 {
   allocationSteps: number;
   phenologySteps: number;
   flushCount: number;
+  cumulativeGrowthCarbonKg: number;
 }
 
 export interface MutableOakStateV1 {
@@ -147,6 +224,59 @@ export function addOakPoolsV1(
     nitrogenKg: left.nitrogenKg + right.nitrogenKg,
     phosphorusKg: left.phosphorusKg + right.phosphorusKg,
     waterLiters: left.waterLiters + right.waterLiters,
+  };
+}
+
+export function oakCostForCarbonV1(
+  carbonKg: number,
+  waterLiters: number,
+): OakResourcePoolsV1 {
+  const growth = OAK_PARAMETERS_V1.growth;
+  return {
+    carbonKg,
+    nitrogenKg: carbonKg * growth.nitrogenPerStructuralCarbon,
+    phosphorusKg: carbonKg * growth.phosphorusPerStructuralCarbon,
+    waterLiters,
+  };
+}
+
+export function oakScaleOrganCostV1(
+  cost: OakResourcePoolsV1,
+  scale: number,
+): OakResourcePoolsV1 {
+  return {
+    carbonKg: cost.carbonKg * scale,
+    nitrogenKg: cost.nitrogenKg * scale,
+    phosphorusKg: cost.phosphorusKg * scale,
+    waterLiters: cost.waterLiters * scale,
+  };
+}
+
+export function oakSumOrganCostsV1(
+  costs: readonly OakResourcePoolsV1[],
+): OakResourcePoolsV1 {
+  return costs.reduce(addOakPoolsV1, zeroOakPoolsV1());
+}
+
+export function oakCanPayOrganCostV1(
+  state: MutableOakStateV1,
+  cost: OakResourcePoolsV1,
+): boolean {
+  return state.mobile.carbonKg >= cost.carbonKg
+    && state.mobile.nitrogenKg >= cost.nitrogenKg
+    && state.mobile.phosphorusKg >= cost.phosphorusKg
+    && state.mobile.waterLiters >= cost.waterLiters;
+}
+
+export function payOakOrganCostV1(
+  state: MutableOakStateV1,
+  cost: OakResourcePoolsV1,
+): void {
+  state.mobile = {
+    carbonKg: state.mobile.carbonKg - cost.carbonKg,
+    nitrogenKg: state.mobile.nitrogenKg - cost.nitrogenKg,
+    phosphorusKg: state.mobile.phosphorusKg - cost.phosphorusKg,
+    waterLiters: state.mobile.waterLiters - cost.waterLiters,
   };
 }
 
@@ -288,6 +418,35 @@ export function createInitialOakStateV1(
       healthFraction: 1,
       stressFraction: 0,
       mechanicsClamped: false,
+      development: {
+        role: 'seed',
+        phase: 'mature',
+        fraction: 1,
+        initialFraction: 1,
+        activationSecond: 0,
+        scheduleStartSecond: 0,
+        gateOrganKey: null,
+        divisionStartOffsetSeconds: 0,
+        expansionStartOffsetSeconds: 0,
+        maturationStartOffsetSeconds: 0,
+        completionOffsetSeconds: 0,
+        targetLengthM: seed.bodyLengthM,
+        targetRadiusM: seed.bodyRadiusM,
+        targetPools: {
+          carbonKg: seed.structuralCarbonKg,
+          nitrogenKg: seed.structuralNitrogenKg,
+          phosphorusKg: seed.structuralPhosphorusKg,
+          waterLiters: seed.waterLiters,
+        },
+        matureStage: 'germinating',
+        cohorts: {
+          preformedCarbonKg: 0,
+          dividingCarbonKg: 0,
+          expandingCarbonKg: 0,
+          maturingCarbonKg: 0,
+          matureCarbonKg: seed.structuralCarbonKg,
+        },
+      },
     }],
     soil: Array.from({
       length: OAK_PARAMETERS_V1.soil.gridColumns
@@ -316,6 +475,7 @@ export function createInitialOakStateV1(
     counters: {
       assimilationCarbonKg: 0,
       respirationCarbonKg: 0,
+      postPrimaryCarbonOverflowKg: 0,
       transpirationLiters: 0,
       rootWaterUptakeLiters: 0,
       nitrogenUptakeKg: 0,
@@ -331,6 +491,7 @@ export function createInitialOakStateV1(
       allocationSteps: 0,
       phenologySteps: 0,
       flushCount: 0,
+      cumulativeGrowthCarbonKg: 0,
     },
   };
   state.initialStorage = totalOakStorageV1(state);

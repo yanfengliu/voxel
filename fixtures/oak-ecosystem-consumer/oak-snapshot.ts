@@ -1,5 +1,9 @@
 import { oakOrganDryMassKgV1 } from './oak-growth.js';
 import { oakWoodMassVolumeDiagnosticsForStateV1 } from './oak-allometry.js';
+import {
+  isOakAttachedLivingOrganV1,
+  isOakPlacedOrganV1,
+} from './oak-organ-lifecycle.js';
 import { OAK_SECONDS_PER_DAY_V1 } from './oak-parameters.js';
 import {
   totalOakStorageV1,
@@ -8,6 +12,7 @@ import {
 } from './oak-state.js';
 import type {
   OakLeafOrganSnapshotV1,
+  OakOrganDevelopmentPhaseV1,
   OakOrganSnapshotV1,
   OakRenderProjectionStateV1,
   OakResourceLedgerV1,
@@ -16,6 +21,17 @@ import type {
   OakSimulationSnapshotV1,
   OakSoilCellSnapshotV1,
 } from './oak-types.js';
+import { assertOakLeafAttachmentTopologyV1 } from './oak-cellular-leaf-hinge.js';
+
+function developmentPhase(organ: MutableOakOrganV1): OakOrganDevelopmentPhaseV1 {
+  if (organ.development) return organ.development.phase;
+  if (organ.stage === 'abscised') return 'abscised';
+  if (organ.stage === 'detached') return 'falling';
+  if (organ.stage === 'senescing') return 'senescing';
+  if (organ.stage === 'mature') return 'mature';
+  if (organ.stage === 'dormant') return 'preformed';
+  return 'cell-expansion';
+}
 
 function poolsDifference(
   left: OakResourcePoolsV1,
@@ -71,6 +87,8 @@ function organSnapshot(
     direction: { ...organ.direction },
     lengthM: organ.lengthM,
     radiusM: organ.radiusM,
+    targetLengthM: organ.development?.targetLengthM ?? organ.lengthM,
+    targetRadiusM: organ.development?.targetRadiusM ?? organ.radiusM,
     dryMassKg: oakOrganDryMassKgV1(organ),
     waterPotentialMpa: organ.waterPotentialMpa,
     pools: {
@@ -80,18 +98,47 @@ function organSnapshot(
       waterLiters: organ.waterLiters,
     },
     stage: organ.stage,
+    developmentPhase: developmentPhase(organ),
+    developmentFraction: Math.max(
+      0,
+      Math.min(1, organ.development?.fraction ?? 1),
+    ),
     healthFraction: organ.healthFraction,
     stressFraction: organ.stressFraction,
+    ...(organ.litterRecipientSoilCellKey === undefined ? {} : {
+      litterRecipientSoilCellKey: organ.litterRecipientSoilCellKey,
+    }),
   };
   if (organ.kind === 'leaf') {
     const leaf: OakLeafOrganSnapshotV1 = {
       ...common,
       kind: 'leaf',
       areaM2: organ.areaM2 ?? 0,
+      targetAreaM2: organ.development?.targetAreaM2 ?? organ.areaM2 ?? 0,
       inclinationRadians: Math.asin(organ.direction.y),
       rollRadians: organ.rollRadians ?? 0,
       chlorophyllFraction: organ.chlorophyllFraction ?? 0,
       relativeWaterContentFraction: organ.relativeWaterContentFraction ?? 0,
+      ...(organ.attachment === undefined ? {} : {
+        attachment: {
+          parentOrganKey: organ.attachment.parentOrganKey,
+          nodeSite: organ.attachment.nodeSite,
+          restRadialUnitWorld: { ...organ.attachment.restRadialUnitWorld },
+        },
+      }),
+      ...(organ.fall === undefined ? {} : {
+        fallProgressFraction: organ.fall.lastProgressFraction,
+      }),
+      ...(organ.abscissionScar === undefined ? {} : {
+        abscissionScar: {
+          parentKey: organ.abscissionScar.parentKey,
+          positionM: { ...organ.abscissionScar.positionM },
+          direction: { ...organ.abscissionScar.direction },
+          rollRadians: organ.abscissionScar.rollRadians,
+          searchRadiusM: organ.abscissionScar.searchRadiusM,
+          fallMaterial: { ...organ.abscissionScar.fallMaterial },
+        },
+      }),
     };
     return leaf;
   }
@@ -127,10 +174,11 @@ function soilSnapshot(cell: MutableOakStateV1['soil'][number]): OakSoilCellSnaps
 }
 
 function diagnostics(state: MutableOakStateV1): OakSimulationDiagnosticsV1 {
-  const living = state.organs.filter((organ) => organ.stage !== 'abscised');
-  const leaves = living.filter((organ) => organ.kind === 'leaf');
-  const stems = living.filter((organ) => organ.kind === 'stem');
-  const heightM = living.reduce((height, organ) => Math.max(
+  const living = state.organs.filter(isOakAttachedLivingOrganV1);
+  const exposedLiving = living.filter(isOakPlacedOrganV1);
+  const leaves = exposedLiving.filter((organ) => organ.kind === 'leaf');
+  const stems = exposedLiving.filter((organ) => organ.kind === 'stem');
+  const heightM = exposedLiving.reduce((height, organ) => Math.max(
     height,
     organ.positionM.y + Math.max(0, organ.direction.y * organ.lengthM),
   ), 0);
@@ -154,14 +202,24 @@ function diagnostics(state: MutableOakStateV1): OakSimulationDiagnosticsV1 {
     basalStemDiameterM: basalStem ? basalStem.radiusM * 2 : 0,
     crownRadiusM,
     leafAreaM2: leaves.reduce((sum, leaf) => sum + (leaf.areaM2 ?? 0), 0),
-    fineRootLengthM: living
+    fineRootLengthM: exposedLiving
       .filter((organ) => organ.kind === 'fine-root-cohort')
       .reduce((sum, root) => sum + root.lengthM, 0),
     organCount: living.length,
     leafCount: leaves.length,
     flushCount: state.counters.flushCount,
+    activeGrowthFrontCount: living.filter((organ) => {
+      const phase = developmentPhase(organ);
+      return phase === 'bud-swelling'
+        || phase === 'cell-division'
+        || phase === 'cell-expansion'
+        || phase === 'maturing';
+    }).length,
+    cumulativeGrowthCarbonKg: state.counters.cumulativeGrowthCarbonKg,
     cumulativeAssimilationCarbonKg: state.counters.assimilationCarbonKg,
     cumulativeRespirationCarbonKg: state.counters.respirationCarbonKg,
+    cumulativePostPrimaryCarbonOverflowKg:
+      state.counters.postPrimaryCarbonOverflowKg,
     cumulativeTranspirationLiters: state.counters.transpirationLiters,
     cumulativeRootWaterUptakeLiters: state.counters.rootWaterUptakeLiters,
     cumulativeNitrogenUptakeKg: state.counters.nitrogenUptakeKg,
@@ -199,6 +257,7 @@ function diagnostics(state: MutableOakStateV1): OakSimulationDiagnosticsV1 {
 export function createOakSimulationSnapshotV1(
   state: MutableOakStateV1,
 ): OakSimulationSnapshotV1 {
+  assertOakLeafAttachmentTopologyV1(state.organs);
   const organs = state.organs
     .map((organ) => organSnapshot(state, organ))
     .sort((left, right) => left.identity.localId - right.identity.localId);
@@ -248,6 +307,8 @@ export function toOakRenderProjectionStateV1(
       basalStemDiameterM: source.diagnostics.basalStemDiameterM,
       crownRadiusM: source.diagnostics.crownRadiusM,
       leafAreaM2: source.diagnostics.leafAreaM2,
+      activeGrowthFrontCount: source.diagnostics.activeGrowthFrontCount,
+      cumulativeGrowthCarbonKg: source.diagnostics.cumulativeGrowthCarbonKg,
       meanWaterStressFraction: source.diagnostics.meanWaterStressFraction,
       meanNitrogenStressFraction: source.diagnostics.meanNitrogenStressFraction,
       meanPhosphorusStressFraction: source.diagnostics.meanPhosphorusStressFraction,

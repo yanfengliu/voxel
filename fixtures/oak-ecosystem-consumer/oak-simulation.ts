@@ -1,6 +1,11 @@
 import { stepOakSoilV1 } from './oak-biogeochemistry.js';
 import { reconcileOakWoodAllometryV1 } from './oak-allometry.js';
-import { stepOakAllocationV1, stepOakPhenologyV1 } from './oak-growth.js';
+import {
+  exposeOakPrimordiaV1,
+  refreshOakExposedOrganPortsV1,
+  stepOakAllocationV1,
+  stepOakPhenologyV1,
+} from './oak-growth.js';
 import {
   setOakWindRegimeV1,
   updateOakWindMechanicsV1,
@@ -77,6 +82,7 @@ const ABLATIONS: readonly OakAblationV1[] = [
   'no-phosphorus',
   'no-mycorrhiza',
   'no-litter',
+  'no-post-primary-carbon-overflow',
 ];
 
 function validateSeed(seed: number): void {
@@ -165,7 +171,11 @@ function runProcessesThrough(state: MutableOakStateV1, targetSecond: number): vo
       stepOakPhenologyV1(state);
       state.nextPhenologySecond += OAK_PROCESS_CADENCE_SECONDS_V1.phenology;
     }
+    exposeOakPrimordiaV1(state);
+    // Exposure changes renderability, so reconcile newly placed wood before
+    // any snapshot can publish its first physical radius.
     reconcileOakWoodAllometryV1(state);
+    refreshOakExposedOrganPortsV1(state);
   }
   state.elapsedBiologicalSeconds = targetSecond;
 }
@@ -242,14 +252,22 @@ export function createOakSimulationV1(
           );
         }
       }
-      state.hostTick += count;
       if (biologicalSpanSeconds > 0) {
-        runProcessesThrough(
-          state,
-          state.elapsedBiologicalSeconds + biologicalSpanSeconds,
-        );
+        const biologicalSecondsPerTick = biologicalSpanSeconds / count;
+        for (let tick = 0; tick < count; tick += 1) {
+          state.hostTick += 1;
+          runProcessesThrough(
+            state,
+            state.elapsedBiologicalSeconds + biologicalSecondsPerTick,
+          );
+          // A multi-tick convenience advance must preserve the same 60 Hz
+          // lifecycle boundaries as count calls of advanceHostTicks(1).
+          updateOakWindMechanicsV1(state);
+        }
+      } else {
+        state.hostTick += count;
+        updateOakWindMechanicsV1(state);
       }
-      updateOakWindMechanicsV1(state);
       state.revision += 1;
       return currentSnapshot();
     },

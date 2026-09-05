@@ -13,11 +13,15 @@ import {
   OAK_SECONDS_PER_HOUR_V1,
   OAK_SECONDS_PER_DAY_V1,
 } from './oak-parameters.js';
+import {
+  isOakAttachedLivingOrganV1,
+  isOakExposedAttachedLeafV1,
+} from './oak-organ-lifecycle.js';
 import type { MutableOakOrganV1, MutableOakStateV1 } from './oak-state.js';
 
 function livingLeafArea(state: MutableOakStateV1): number {
   return state.organs
-    .filter((organ) => organ.kind === 'leaf' && organ.stage !== 'abscised')
+    .filter(isOakExposedAttachedLeafV1)
     .reduce((sum, organ) => sum + (organ.areaM2 ?? 0), 0);
 }
 
@@ -26,6 +30,22 @@ function isDaylight(state: MutableOakStateV1): boolean {
   const physiology = OAK_PARAMETERS_V1.physiology;
   return secondOfDay >= physiology.daylightStartHour * OAK_SECONDS_PER_HOUR_V1
     && secondOfDay < physiology.daylightEndHour * OAK_SECONDS_PER_HOUR_V1;
+}
+
+function hasActivePrimarySink(state: MutableOakStateV1): boolean {
+  return state.organs.some((organ) => {
+    const development = organ.development;
+    return development !== undefined
+      && development.activationSecond !== null
+      && development.fraction < 1
+      && development.phase !== 'senescing'
+      && development.phase !== 'falling'
+      && development.phase !== 'abscised';
+  });
+}
+
+function primaryProgramComplete(state: MutableOakStateV1): boolean {
+  return state.phenology === 'leaf-mature' || state.phenology === 'senescence';
 }
 
 export function transferOakMycorrhizalCarbonV1(
@@ -74,11 +94,15 @@ function updateLeafState(
     physiology.minimumLeafRelativeWaterContentFraction,
     1 - physiology.leafRelativeWaterContentStressLoss * waterStress,
   );
-  leaf.chlorophyllFraction = Math.max(
+  const stressLimitedChlorophyll = Math.max(
     physiology.minimumLeafChlorophyllFraction,
     1 - physiology.nitrogenChlorophyllStressLoss * nitrogenStress
       - physiology.phosphorusChlorophyllStressLoss * phosphorusStress,
   );
+  leaf.chlorophyllFraction = leaf.stage === 'senescing'
+    ? Math.min(leaf.chlorophyllFraction ?? stressLimitedChlorophyll,
+      stressLimitedChlorophyll)
+    : stressLimitedChlorophyll;
   leaf.stressFraction = resourceStress;
   leaf.healthFraction = Math.max(
     physiology.minimumLeafHealthFraction,
@@ -119,7 +143,7 @@ export function stepOakPhysiologyV1(state: MutableOakStateV1): void {
   }
 
   const livingStructuralCarbon = state.organs
-    .filter((organ) => organ.stage !== 'abscised')
+    .filter(isOakAttachedLivingOrganV1)
     .reduce((sum, organ) => sum + organ.structuralCarbonKg, 0);
   const respiration = Math.min(
     state.mobile.carbonKg,
@@ -136,6 +160,18 @@ export function stepOakPhysiologyV1(state: MutableOakStateV1): void {
   addOakCarbonSinkV1(state, realizedRespiration);
   state.counters.respirationCarbonKg += realizedRespiration;
 
+  if (primaryProgramComplete(state) && !hasActivePrimarySink(state)
+    && state.ablation !== 'no-post-primary-carbon-overflow') {
+    const physiology = OAK_PARAMETERS_V1.physiology;
+    const overflow = Math.max(
+      0,
+      state.mobile.carbonKg - physiology.postPrimaryMobileCarbonReserveKg,
+    );
+    state.mobile = { ...state.mobile, carbonKg: state.mobile.carbonKg - overflow };
+    addOakCarbonSinkV1(state, overflow);
+    state.counters.postPrimaryCarbonOverflowKg += overflow;
+  }
+
   const potentialTranspiration = leafArea
     * OAK_PARAMETERS_V1.physiology.transpirationLitersPerM2Day
     * stepDayFraction * illuminatedDayCompensation * (1 - waterStress);
@@ -150,9 +186,10 @@ export function stepOakPhysiologyV1(state: MutableOakStateV1): void {
   state.counters.transpirationLiters += realizedTranspiration;
 
   for (const organ of state.organs) {
-    if (organ.kind === 'leaf' && organ.stage !== 'abscised') {
+    if (isOakExposedAttachedLeafV1(organ)) {
       updateLeafState(organ, waterStress, nitrogenStress, phosphorusStress);
-    } else if (organ.kind !== 'acorn') {
+    } else if (organ.kind !== 'acorn' && organ.kind !== 'leaf'
+      && isOakAttachedLivingOrganV1(organ)) {
       const physiology = OAK_PARAMETERS_V1.physiology;
       organ.waterPotentialMpa = physiology.unstressedAxisWaterPotentialMpa
         - physiology.axisWaterPotentialStressSpanMpa * waterStress;

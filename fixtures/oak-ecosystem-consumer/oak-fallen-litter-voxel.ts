@@ -1,30 +1,26 @@
-import type { MaterialResourceV1, Srgb8ColorV1 } from '../../src/core/index.js';
+import type { MaterialResourceV1 } from '../../src/core/index.js';
 import {
-  OAK_LEAF_PETIOLE_FRACTION_V1,
-  oakLeafVariantForOrganKeyV1,
-  oakLeafWidthScaleMForDescriptorV1,
-} from './oak-leaf-shape.js';
-import { OAK_PARAMETERS_V1 } from './oak-parameters.js';
+  buildOakContactLitterProjectionV1,
+  type OakContactLeafMetricsV1,
+} from './oak-litter-contact-projection.js';
 import type {
   OakRenderInstanceRecordV1,
   OakRootCutawayV1,
 } from './oak-render-projection.js';
 import {
-  oakTissueCellCenterM_V1,
-  roundOakTissueCellV1,
-} from './oak-tissue-lattice.js';
-import { oakSoilSurfaceAtFineCellV1 } from './oak-soil-surface.js';
-import {
-  oakQuantizedLeafRadialsV1,
-  OAK_MAX_TISSUE_VOXELS_PER_BATCH_V1,
   OAK_TISSUE_VOXEL_GEOMETRY_KEY_V1,
   OAK_TISSUE_VOXEL_PITCH_M_V1,
-  shadeOakTissueVoxelColorV1,
 } from './oak-tissue-voxel-projection.js';
+import {
+  oakVoxelAabbFingerprintV1,
+  oakVoxelAabbGridKeysV1,
+  oakVoxelAabbsOverlapV1,
+  oakVoxelRecordAabbV1,
+  type OakVoxelAabbV1,
+} from './oak-voxel-aabb.js';
 import type {
   OakLeafOrganSnapshotV1,
   OakRenderProjectionStateV1,
-  OakSoilCellSnapshotV1,
 } from './oak-types.js';
 
 export const OAK_FALLEN_LITTER_VOXEL_MATERIAL_KEY_V1 =
@@ -34,46 +30,18 @@ export const OAK_FALLEN_LITTER_VOXEL_BATCH_KEY_V1 =
 
 export const OAK_FALLEN_LITTER_VOXEL_RULE_IDS_V1 = Object.freeze([
   'fallen-leaf-lobed-litter-mask',
+  'litter-living-tissue-disjoint',
   'litter-soil-face-contact',
 ] as const);
 
-const PITCH = OAK_TISSUE_VOXEL_PITCH_M_V1;
-const HALF_PITCH = PITCH / 2;
-const FULL_PRIMARY_LEAF_LENGTH_M = OAK_PARAMETERS_V1.growth.leafBladeLengthM
-  / (1 - OAK_LEAF_PETIOLE_FRACTION_V1);
-/** Authored canopy-relative offsets keep ordinary masks near their source crowns. */
-const SURFACE_SOURCE_CLUSTER_OFFSETS = Object.freeze([
-  [-37.381, -39.504], [-37.883, 26.647], [38.514, 66.011], [53.954, -26.745],
-  [-40.588, -4.562], [-12.049, 57.329], [33.416, 56.079], [-48.726, 77.094],
-  [-13.548, 59.646], [21.785, 75.263],
-] as const);
-/** The inspection cutaway reflows the same complete masks onto its retained half. */
-const CUTAWAY_SOURCE_CLUSTER_OFFSETS = Object.freeze([
-  [-37.381, -39.504], [-37.883, 26.647], [4.514, 77.011], [-60.046, 7.255],
-  [-48.588, -10.562], [-60.049, 79.329], [-85.584, -12.921], [-64.726, 76.094],
-  [-79.548, -58.354], [3.785, -88.737],
-] as const);
-const RUSSET_COLORS = Object.freeze([
-  { r: 167, g: 82, b: 39, a: 255 },
-  { r: 145, g: 70, b: 37, a: 255 },
-  { r: 181, g: 94, b: 43, a: 255 },
-] as const satisfies readonly Srgb8ColorV1[]);
-const MIDRIB_COLOR = Object.freeze({ r: 105, g: 57, b: 32, a: 255 });
-
-type FootprintCell = readonly [forward: number, radial: number];
-type SurfaceCell = readonly [x: number, z: number];
-
-export interface OakFallenLitterLeafMetricsV1 {
-  readonly leafKey: string;
-  readonly voxelCount: number;
-  readonly rotationQuarterTurns: number;
+export interface OakFallenLitterLeafMetricsV1 extends OakContactLeafMetricsV1 {
   readonly anchorCandidatesTested: number;
-  readonly anchorCell: readonly [x: number, z: number];
+  readonly recipientSoilCellKey: string;
 }
 
 export interface OakFallenLitterVoxelProjectionV1 {
   readonly records: readonly OakRenderInstanceRecordV1[];
-  readonly recipientSoilCellKey: string | null;
+  readonly recipientSoilCellKeys: readonly string[];
   readonly leafMetrics: readonly OakFallenLitterLeafMetricsV1[];
   readonly voxelCount: number;
   readonly anchorCandidatesTested: number;
@@ -101,257 +69,37 @@ export function createOakFallenLitterVoxelMaterialV1(): MaterialResourceV1 {
   };
 }
 
-function recoveredLeafAreaM2(leaf: OakLeafOrganSnapshotV1): number {
-  const linearScale = leaf.lengthM / FULL_PRIMARY_LEAF_LENGTH_M;
-  return OAK_PARAMETERS_V1.growth.leafAreaM2 * linearScale * linearScale;
-}
-
-function footprintFor(leaf: OakLeafOrganSnapshotV1): readonly FootprintCell[] {
-  const variant = oakLeafVariantForOrganKeyV1(leaf.key);
-  const areaM2 = recoveredLeafAreaM2(leaf);
-  const widthScaleM = oakLeafWidthScaleMForDescriptorV1(
-    areaM2,
-    leaf.lengthM,
-    variant,
-  );
-  const layers = Math.max(1, Math.round(leaf.lengthM / PITCH));
-  const radials = oakQuantizedLeafRadialsV1(variant, layers, widthScaleM);
-  const forwardOrigin = Math.floor(layers / 2);
-  return radials.flatMap((radial, layer) =>
-    Array.from(
-      { length: radial * 2 + 1 },
-      (_, index) => [layer - forwardOrigin, index - radial] as const,
-    ));
-}
-
-function rotate(
-  [forward, radial]: FootprintCell,
-  quarterTurns: number,
-): SurfaceCell {
-  switch (quarterTurns % 4) {
-    case 0: return [forward, radial];
-    case 1: return [-radial, forward];
-    case 2: return [-forward, -radial];
-    default: return [radial, -forward];
-  }
-}
-
-function surfaceKey([x, z]: SurfaceCell): string {
-  return `${String(x)}:${String(z)}`;
-}
-
-interface SurfaceBoundsV1 {
-  readonly minX: number;
-  readonly maxX: number;
-  readonly minZ: number;
-  readonly maxZ: number;
-}
-
-function surfaceBounds(cells: readonly OakSoilCellSnapshotV1[]): SurfaceBoundsV1 {
-  const minX = Math.min(...cells.map((cell) => cell.centerM.x - cell.sizeM.x / 2));
-  const maxX = Math.max(...cells.map((cell) => cell.centerM.x + cell.sizeM.x / 2));
-  const minZ = Math.min(...cells.map((cell) => cell.centerM.z - cell.sizeM.z / 2));
-  const maxZ = Math.max(...cells.map((cell) => cell.centerM.z + cell.sizeM.z / 2));
-  return {
-    minX: Math.ceil(minX / PITCH),
-    maxX: Math.floor(maxX / PITCH) - 1,
-    minZ: Math.ceil(minZ / PITCH),
-    maxZ: Math.floor(maxZ / PITCH) - 1,
-  };
-}
-
-function clipSurfaceBounds(
-  bounds: SurfaceBoundsV1,
-  cutaway: OakRootCutawayV1 | undefined,
-): SurfaceBoundsV1 {
-  if (cutaway === undefined) return bounds;
-  if (!Number.isFinite(cutaway.planeM)) {
-    throw new RangeError('Fallen oak litter root-cutaway planeM must be finite.');
-  }
-  const boundary = Math.round(cutaway.planeM / (PITCH * 5)) * 5;
-  if (cutaway.axis === 'x') {
-    return cutaway.keep === 'less-than'
-      ? { ...bounds, maxX: Math.min(bounds.maxX, boundary - 1) }
-      : { ...bounds, minX: Math.max(bounds.minX, boundary) };
-  }
-  return cutaway.keep === 'less-than'
-    ? { ...bounds, maxZ: Math.min(bounds.maxZ, boundary - 1) }
-    : { ...bounds, minZ: Math.max(bounds.minZ, boundary) };
-}
-
-export function oakLivingLitterSurfaceBlockersV1(
+/** Exact presented living-body bounds retained as the litter-cache dependency. */
+export function oakLivingLitterCollisionFingerprintV1(
   livingRecords: ReadonlyMap<string, readonly OakRenderInstanceRecordV1[]>,
-  rootCutaway?: OakRootCutawayV1,
 ): Set<string> {
-  const blocked = new Set<string>();
+  const occupied = new Set<string>();
   for (const record of [...livingRecords.values()].flat()) {
-    const centerY = record.matrix[13]!;
-    const [x, , z] = roundOakTissueCellV1([
-      record.matrix[12]!, record.matrix[13]!, record.matrix[14]!,
-    ]);
-    const surface = oakSoilSurfaceAtFineCellV1(x, z, rootCutaway);
-    if (surface === null
-      || !(centerY - HALF_PITCH < surface.topM + PITCH
-        && centerY + HALF_PITCH > surface.topM)) continue;
-    blocked.add(surfaceKey([x, z]));
+    occupied.add(`${record.key}|${oakVoxelAabbFingerprintV1(oakVoxelRecordAabbV1(record))}`);
   }
-  return blocked;
+  return occupied;
 }
 
-interface AnchorCandidateV1 {
-  readonly cell: SurfaceCell;
-  readonly distance: number;
-  readonly zIndex: number;
+interface LivingCollisionRecordV1 {
+  readonly key: string;
+  readonly bounds: OakVoxelAabbV1;
 }
 
-function compareAnchors(left: AnchorCandidateV1, right: AnchorCandidateV1): number {
-  return left.distance - right.distance
-    || left.cell[0] - right.cell[0]
-    || left.cell[1] - right.cell[1];
-}
-
-function pushAnchor(heap: AnchorCandidateV1[], candidate: AnchorCandidateV1): void {
-  heap.push(candidate);
-  let index = heap.length - 1;
-  while (index > 0) {
-    const parent = Math.floor((index - 1) / 2);
-    if (compareAnchors(heap[parent]!, candidate) <= 0) break;
-    heap[index] = heap[parent]!;
-    index = parent;
+function livingCollisionBuckets(
+  livingRecords: ReadonlyMap<string, readonly OakRenderInstanceRecordV1[]>,
+): ReadonlyMap<string, readonly LivingCollisionRecordV1[]> {
+  const buckets = new Map<string, LivingCollisionRecordV1[]>();
+  for (const record of [...livingRecords.values()].flat()) {
+    const candidate = { key: record.key, bounds: oakVoxelRecordAabbV1(record) };
+    for (const key of oakVoxelAabbGridKeysV1(candidate.bounds, OAK_TISSUE_VOXEL_PITCH_M_V1)) {
+      const values = buckets.get(key) ?? [];
+      values.push(candidate);
+      buckets.set(key, values);
+    }
   }
-  heap[index] = candidate;
+  return buckets;
 }
 
-function popAnchor(heap: AnchorCandidateV1[]): AnchorCandidateV1 {
-  const first = heap[0]!;
-  const last = heap.pop()!;
-  if (heap.length === 0) return first;
-  let index = 0;
-  while (true) {
-    const left = index * 2 + 1;
-    if (left >= heap.length) break;
-    const right = left + 1;
-    const child = right < heap.length && compareAnchors(heap[right]!, heap[left]!) < 0
-      ? right
-      : left;
-    if (compareAnchors(last, heap[child]!) <= 0) break;
-    heap[index] = heap[child]!;
-    index = child;
-  }
-  heap[index] = last;
-  return first;
-}
-
-function* candidateAnchors(
-  bounds: SurfaceBoundsV1,
-  target: readonly [number, number],
-  inserted: () => void,
-): Generator<SurfaceCell> {
-  const targetX = Math.max(bounds.minX, Math.min(bounds.maxX, target[0]));
-  const targetZ = Math.max(bounds.minZ, Math.min(bounds.maxZ, target[1]));
-  const zByDistance = Array.from(
-    { length: bounds.maxZ - bounds.minZ + 1 },
-    (_, index) => bounds.minZ + index,
-  ).sort((left, right) =>
-    (left - targetZ) ** 2 - (right - targetZ) ** 2 || left - right);
-  const heap: AnchorCandidateV1[] = [];
-  for (let x = bounds.minX; x <= bounds.maxX; x += 1) {
-    const z = zByDistance[0]!;
-    pushAnchor(heap, {
-      cell: [x, z],
-      distance: (x - targetX) ** 2 + (z - targetZ) ** 2,
-      zIndex: 0,
-    });
-    inserted();
-  }
-  while (heap.length > 0) {
-    const candidate = popAnchor(heap);
-    yield candidate.cell;
-    const nextIndex = candidate.zIndex + 1;
-    const nextZ = zByDistance[nextIndex];
-    if (nextZ === undefined) continue;
-    const x = candidate.cell[0];
-    pushAnchor(heap, {
-      cell: [x, nextZ],
-      distance: (x - targetX) ** 2 + (nextZ - targetZ) ** 2,
-      zIndex: nextIndex,
-    });
-    inserted();
-  }
-}
-
-function projectedSourceTarget(
-  leaf: OakLeafOrganSnapshotV1,
-  leafIndex: number,
-  bounds: SurfaceBoundsV1,
-  offsets: readonly (readonly [number, number])[],
-): readonly [number, number] {
-  const sourceX = leaf.positionM.x + leaf.direction.x * leaf.lengthM * 0.5;
-  const sourceZ = leaf.positionM.z + leaf.direction.z * leaf.lengthM * 0.5;
-  const offset = offsets[leafIndex % offsets.length]!;
-  return [
-    Math.max(bounds.minX, Math.min(bounds.maxX, sourceX / PITCH - 0.5 + offset[0])),
-    Math.max(bounds.minZ, Math.min(bounds.maxZ, sourceZ / PITCH - 0.5 + offset[1])),
-  ];
-}
-
-function placedCells(
-  footprint: readonly FootprintCell[],
-  anchor: SurfaceCell,
-  quarterTurns: number,
-): readonly SurfaceCell[] {
-  return footprint.map((cell) => {
-    const [x, z] = rotate(cell, quarterTurns);
-    return [anchor[0] + x, anchor[1] + z] as const;
-  });
-}
-
-function fits(
-  cells: readonly SurfaceCell[],
-  bounds: SurfaceBoundsV1,
-  blocked: ReadonlySet<string>,
-): boolean {
-  return cells.every(([x, z]) =>
-    x >= bounds.minX && x <= bounds.maxX
-    && z >= bounds.minZ && z <= bounds.maxZ
-    && !blocked.has(surfaceKey([x, z])));
-}
-
-function levelSurfaceTopM(
-  cells: readonly SurfaceCell[],
-  rootCutaway: OakRootCutawayV1 | undefined,
-): number | null {
-  const first = cells[0];
-  if (first === undefined) return null;
-  const firstSurface = oakSoilSurfaceAtFineCellV1(first[0], first[1], rootCutaway);
-  if (firstSurface === null) return null;
-  return cells.every(([x, z]) =>
-    oakSoilSurfaceAtFineCellV1(x, z, rootCutaway)?.topM === firstSurface.topM)
-    ? firstSurface.topM
-    : null;
-}
-
-function blockPlacedCells(blocked: Set<string>, cells: readonly SurfaceCell[]): void {
-  for (const cell of cells) blocked.add(surfaceKey(cell));
-}
-
-function cubeMatrix(x: number, y: number, z: number): readonly number[] {
-  const [centerX, , centerZ] = oakTissueCellCenterM_V1([x, 0, z]);
-  return [
-    PITCH, 0, 0, 0,
-    0, PITCH, 0, 0,
-    0, 0, PITCH, 0,
-    centerX, y, centerZ, 1,
-  ];
-}
-
-/**
- * Place one flattened lobed silhouette for every transferred leaf across the
- * bounded soil top around the root collar. The process model still aggregates
- * pools into its declared recipient cell; this deterministic laydown is not a
- * fall trajectory or a second spatial authority. These glyphs are deliberately
- * outside the connected living-tissue union and do not feed back into biology.
- */
 export function buildOakFallenLitterVoxelProjectionV1(
   state: Pick<OakRenderProjectionStateV1, 'organs' | 'soil'>,
   livingRecords: ReadonlyMap<string, readonly OakRenderInstanceRecordV1[]>,
@@ -362,94 +110,43 @@ export function buildOakFallenLitterVoxelProjectionV1(
     .sort((left, right) => left.key.localeCompare(right.key));
   if (leaves.length === 0) {
     return {
-      records: [], recipientSoilCellKey: null, leafMetrics: [], voxelCount: 0,
+      records: [], recipientSoilCellKeys: [], leafMetrics: [], voxelCount: 0,
       anchorCandidatesTested: 0, anchorQueueInsertions: 0,
     };
   }
-  const recipient = state.soil[0];
-  if (recipient === undefined) {
-    throw new Error('Fallen oak litter needs the authoritative recipient soil cell at index 0.');
-  }
-  const topM = Math.max(...state.soil.map((cell) => cell.centerM.y + cell.sizeM.y / 2));
-  const topCells = state.soil.filter((cell) =>
-    Math.abs(cell.centerM.y + cell.sizeM.y / 2 - topM) < 1e-12);
-  const bounds = clipSurfaceBounds(surfaceBounds(topCells), options.rootCutaway);
-  const blocked = oakLivingLitterSurfaceBlockersV1(livingRecords, options.rootCutaway);
-  const records: OakRenderInstanceRecordV1[] = [];
-  const metrics: OakFallenLitterLeafMetricsV1[] = [];
-  let anchorCandidatesTested = 0;
-  let anchorQueueInsertions = 0;
-  const clusterOffsets = options.rootCutaway === undefined
-    ? SURFACE_SOURCE_CLUSTER_OFFSETS
-    : CUTAWAY_SOURCE_CLUSTER_OFFSETS;
-  for (const [leafIndex, leaf] of leaves.entries()) {
-    const candidateCountBeforeLeaf = anchorCandidatesTested;
-    const footprint = footprintFor(leaf);
-    const target = projectedSourceTarget(leaf, leafIndex, bounds, clusterOffsets);
-    const preferredRotation = leaf.identity.localId % 4;
-    let placement: readonly SurfaceCell[] | null = null;
-    let placementTopM: number | null = null;
-    let rotationQuarterTurns = preferredRotation;
-    for (const anchor of candidateAnchors(bounds, target, () => {
-      anchorQueueInsertions += 1;
-    })) {
-      for (let offset = 0; offset < 4 && placement === null; offset += 1) {
-        const rotation = (preferredRotation + offset) % 4;
-        anchorCandidatesTested += 1;
-        const candidate = placedCells(footprint, anchor, rotation);
-        if (!fits(candidate, bounds, blocked)) continue;
-        const candidateTopM = levelSurfaceTopM(candidate, options.rootCutaway);
-        if (candidateTopM === null) continue;
-        placement = candidate;
-        placementTopM = candidateTopM;
-        rotationQuarterTurns = rotation;
-      }
-      if (placement !== null) break;
+  const contact = buildOakContactLitterProjectionV1(leaves, options);
+  const livingBuckets = livingCollisionBuckets(livingRecords);
+  for (const record of contact.records) {
+    const litterBounds = oakVoxelRecordAabbV1(record);
+    const candidates = new Map<string, LivingCollisionRecordV1>();
+    for (const key of oakVoxelAabbGridKeysV1(litterBounds, OAK_TISSUE_VOXEL_PITCH_M_V1)) {
+      for (const candidate of livingBuckets.get(key) ?? []) candidates.set(candidate.key, candidate);
     }
-    if (placement === null || placementTopM === null) {
+    const overlap = [...candidates.values()].find((candidate) =>
+      oakVoxelAabbsOverlapV1(litterBounds, candidate.bounds));
+    if (overlap !== undefined) {
       throw new Error(
-        `Fallen oak leaf '${leaf.key}' cannot fit on the bounded soil top without overlap; `
-        + 'enlarge the authored surface or reduce the bounded litter set.',
+        `Fallen oak litter '${record.key}' overlaps presented tissue '${overlap.key}'; `
+        + 'its fall target must preserve placed-things solidity.',
       );
     }
-    if (records.length + placement.length > OAK_MAX_TISSUE_VOXELS_PER_BATCH_V1) {
-      throw new RangeError('Fallen oak litter exceeded the fixed instance-batch budget.');
-    }
-    const base = RUSSET_COLORS[leaf.identity.localId % RUSSET_COLORS.length]!;
-    placement.forEach(([x, z], cellIndex) => {
-      const local = footprint[cellIndex]!;
-      const midrib = local[1] === 0;
-      records.push({
-        key: `oak-litter:${leaf.key}:fallen-leaf-voxel:${String(local[0])}:${String(local[1])}`,
-        matrix: cubeMatrix(x, placementTopM + HALF_PITCH, z),
-        color: shadeOakTissueVoxelColorV1(
-          midrib ? MIDRIB_COLOR : base,
-          local[0],
-          leaf.identity.localId,
-          local[1],
-        ),
-      });
-    });
-    blockPlacedCells(blocked, placement);
-    metrics.push({
-      leafKey: leaf.key,
-      voxelCount: placement.length,
-      rotationQuarterTurns,
-      anchorCandidatesTested: anchorCandidatesTested - candidateCountBeforeLeaf,
-      anchorCell: [
-        placement[0]![0] - rotate(footprint[0]!, rotationQuarterTurns)[0],
-        placement[0]![1] - rotate(footprint[0]!, rotationQuarterTurns)[1],
-      ],
-    });
   }
-  records.sort((left, right) => left.key.localeCompare(right.key));
+  const leafByKey = new Map(leaves.map((leaf) => [leaf.key, leaf]));
+  const leafMetrics = contact.leafMetrics.map((metric) => {
+    const recipientSoilCellKey = leafByKey.get(metric.leafKey)?.litterRecipientSoilCellKey;
+    if (recipientSoilCellKey === undefined) {
+      throw new Error(`Fallen oak leaf '${metric.leafKey}' has no process-soil recipient.`);
+    }
+    return { ...metric, anchorCandidatesTested: 0, recipientSoilCellKey };
+  });
   return {
-    records,
-    recipientSoilCellKey: recipient.key,
-    leafMetrics: metrics,
-    voxelCount: records.length,
-    anchorCandidatesTested,
-    anchorQueueInsertions,
+    records: contact.records,
+    recipientSoilCellKeys: [...new Set(leafMetrics.map((metric) =>
+      metric.recipientSoilCellKey))].sort(),
+    leafMetrics,
+    voxelCount: contact.records.length,
+    anchorCandidatesTested: 0,
+    anchorQueueInsertions: 0,
   };
 }
 

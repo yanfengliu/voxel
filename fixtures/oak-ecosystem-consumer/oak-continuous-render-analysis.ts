@@ -26,8 +26,6 @@ const WORLD_ID = 'world:oak-continuous-analysis';
 const MAX_INSTANCES_PER_BATCH = 65_536;
 const WOOD_GEOMETRY_KEYS = OAK_TAPER_RATIOS_V1.map((_, index) =>
   `geometry:oak:frustum:taper-${String(index)}`);
-const NODE_FLARED_WOOD_GEOMETRY_KEYS = OAK_TAPER_RATIOS_V1.map((_, index) =>
-  `geometry:oak:frustum:node-flared:taper-${String(index)}`);
 
 interface BatchDefinition {
   readonly key: string;
@@ -40,20 +38,6 @@ interface BatchDefinition {
 const BATCH_DEFINITIONS: readonly BatchDefinition[] = Object.freeze([
   ...WOOD_GEOMETRY_KEYS.map((geometryKey, index) => ({
     key: `batch:oak:wood:taper-${String(index)}`,
-    geometryKey,
-    materialKey: OAK_WOOD_MATERIAL_KEY_V1,
-    castShadow: true,
-    receiveShadow: true,
-  })),
-  ...NODE_FLARED_WOOD_GEOMETRY_KEYS.map((geometryKey, index) => ({
-    key: `batch:oak:wood:node-flared:taper-${String(index)}`,
-    geometryKey,
-    materialKey: OAK_WOOD_MATERIAL_KEY_V1,
-    castShadow: true,
-    receiveShadow: true,
-  })),
-  ...NODE_FLARED_WOOD_GEOMETRY_KEYS.map((geometryKey, index) => ({
-    key: `batch:oak:root:node-flared:taper-${String(index)}`,
     geometryKey,
     materialKey: OAK_WOOD_MATERIAL_KEY_V1,
     castShadow: true,
@@ -128,13 +112,6 @@ function geometries(): readonly GeometryResourceV1[] {
   return [
     ...OAK_TAPER_RATIOS_V1.map((_, index) =>
       createOakWoodShaftGeometryV1(WOOD_GEOMETRY_KEYS[index]!, index, false)),
-    ...OAK_TAPER_RATIOS_V1.map((_, index) =>
-      createOakWoodShaftGeometryV1(
-        NODE_FLARED_WOOD_GEOMETRY_KEYS[index]!,
-        index,
-        true,
-        false,
-      )),
     ...OAK_LEAF_VARIANT_DESCRIPTORS_V1.map(createOakLeafGeometryV1),
     createOakSoilCubeGeometryV1(),
   ];

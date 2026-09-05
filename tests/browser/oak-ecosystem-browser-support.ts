@@ -5,8 +5,8 @@ import type {
   OakBrowserCameraV1,
   OakBrowserCommandV1,
   OakBrowserEvidenceV1,
-  OakBrowserProjectedShaftV1,
 } from '../../fixtures/oak-ecosystem-consumer/oak-browser-contract.js';
+import { isOakPlacedOrganV1 } from '../../fixtures/oak-ecosystem-consumer/oak-organ-lifecycle.js';
 
 export const OAK_BROWSER_FIXTURE_PATH =
   '/fixtures/oak-ecosystem-consumer/oak-browser-host.html';
@@ -33,32 +33,34 @@ export function isOakLivingLeafPixelV1(
     && green > blue * OAK_LIVING_LEAF_PIXEL_CLASSIFIER_V1.greenOverBlue;
 }
 
-export interface OakRootPathPixelStatisticsV1 {
-  readonly projectedLengthPixels: number;
-  readonly contrastedSamples: number;
-  readonly maximumLuminanceContrast: number;
-  readonly meanPathLuminance: number;
-  readonly medianContrastedWidthPixels: number;
-}
-
 export function expectOakSubjectFramedV1(evidence: OakBrowserEvidenceV1): void {
   const bounds = evidence.cameraFit.subjectBoundsNdc;
+  const expectedTreeOrganCount = evidence.simulation.organs.filter((organ) =>
+    isOakPlacedOrganV1(organ)
+    && organ.kind !== 'coarse-root'
+    && organ.kind !== 'fine-root-cohort').length;
+  const expectedRootOrganCount = evidence.simulation.organs.filter((organ) =>
+    isOakPlacedOrganV1(organ)
+    && (organ.kind === 'coarse-root' || organ.kind === 'fine-root-cohort')).length;
   expect(evidence.cameraFit.fittedOrganCount).toBeGreaterThan(0);
-  expect(evidence.cameraFit.fittedOrganCount).toBeLessThanOrEqual(
-    evidence.simulation.diagnostics.organCount,
-  );
   if (evidence.cameraFit.focus === 'root-cutaway') {
-    expect(evidence.cameraFit.fittedOrganCount).toBe(evidence.simulation.diagnostics.organCount);
-  } else if (evidence.simulation.diagnostics.fineRootLengthM > 0) {
-    expect(evidence.cameraFit.fittedOrganCount).toBeLessThan(
-      evidence.simulation.diagnostics.organCount,
+    expect(evidence.cameraFit.fittedOrganCount).toBeGreaterThanOrEqual(expectedRootOrganCount);
+    expect(evidence.cameraFit.fittedOrganCount).toBeLessThanOrEqual(
+      expectedTreeOrganCount + expectedRootOrganCount,
+    );
+    expect(evidence.cameraFit.fittedRootVoxelCount).toBe(evidence.render.rootVoxels);
+    expect(evidence.cameraFit.fittedBasalContextVoxelCount).toBeGreaterThan(0);
+    expect(evidence.cameraFit.fittedLitterVoxelCount).toBe(0);
+  } else {
+    expect(evidence.cameraFit.fittedOrganCount).toBe(expectedTreeOrganCount);
+    expect(evidence.cameraFit.fittedRootVoxelCount).toBe(0);
+    expect(evidence.cameraFit.fittedBasalContextVoxelCount).toBe(0);
+    expect(evidence.cameraFit.fittedLitterVoxelCount).toBe(
+      evidence.render.fallenLitterVoxels,
     );
   }
   expect(evidence.cameraFit.fittedVertexCount).toBeGreaterThan(
     evidence.cameraFit.fittedOrganCount,
-  );
-  expect(evidence.cameraFit.fittedLitterVoxelCount).toBe(
-    evidence.render.fallenLitterVoxels,
   );
   expect(evidence.cameraFit.subjectClearOfHud).toBe(true);
   expect(bounds.minX).toBeGreaterThan(evidence.cameraFit.hudRightNdc);
@@ -98,101 +100,6 @@ export async function settleOakFrames(page: Page, count = 3): Promise<void> {
     };
     requestAnimationFrame(advance);
   }), count);
-}
-
-export async function analyzeOakRootPathPixels(
-  page: Page,
-  png: Buffer,
-  shaft: OakBrowserProjectedShaftV1,
-): Promise<OakRootPathPixelStatisticsV1> {
-  return page.evaluate(async ({ dataUrl, projectedShaft }) => {
-    const image = new Image();
-    image.src = dataUrl;
-    await image.decode();
-    const canvas = document.createElement('canvas');
-    canvas.width = image.naturalWidth;
-    canvas.height = image.naturalHeight;
-    const context = canvas.getContext('2d', { willReadFrequently: true });
-    if (context === null) {
-      throw new Error('Oak root-path pixel analysis requires a browser 2D canvas context.');
-    }
-    context.drawImage(image, 0, 0);
-    const pixels = context.getImageData(0, 0, canvas.width, canvas.height).data;
-    const point = (value: { x: number; y: number }) => ({
-      x: (value.x + 1) * canvas.width / 2,
-      y: (1 - value.y) * canvas.height / 2,
-    });
-    const base = point(projectedShaft.base);
-    const tip = point(projectedShaft.tip);
-    const dx = tip.x - base.x;
-    const dy = tip.y - base.y;
-    const length = Math.hypot(dx, dy);
-    const normalX = -dy / Math.max(1, length);
-    const normalY = dx / Math.max(1, length);
-    const luminanceAt = (x: number, y: number): number => {
-      const px = Math.max(0, Math.min(canvas.width - 1, Math.round(x)));
-      const py = Math.max(0, Math.min(canvas.height - 1, Math.round(y)));
-      const offset = (py * canvas.width + px) * 4;
-      return pixels[offset]! * 0.2126
-        + pixels[offset + 1]! * 0.7152
-        + pixels[offset + 2]! * 0.0722;
-    };
-    let contrastedSamples = 0;
-    let maximumLuminanceContrast = 0;
-    let pathLuminanceTotal = 0;
-    const contrastedWidths: number[] = [];
-    for (let index = 0; index < 9; index += 1) {
-      const fraction = 0.2 + index * 0.09;
-      const x = base.x + dx * fraction;
-      const y = base.y + dy * fraction;
-      let darkestRootLuminance = Number.POSITIVE_INFINITY;
-      let lightestRootLuminance = Number.NEGATIVE_INFINITY;
-      for (let offset = -1; offset <= 1; offset += 1) {
-        const luminance = luminanceAt(x + normalX * offset, y + normalY * offset);
-        darkestRootLuminance = Math.min(darkestRootLuminance, luminance);
-        lightestRootLuminance = Math.max(lightestRootLuminance, luminance);
-      }
-      pathLuminanceTotal += (darkestRootLuminance + lightestRootLuminance) / 2;
-      const backgroundLuminance = (
-        luminanceAt(x + normalX * 9, y + normalY * 9)
-        + luminanceAt(x - normalX * 9, y - normalY * 9)
-      ) / 2;
-      const contrast = Math.max(
-        backgroundLuminance - darkestRootLuminance,
-        lightestRootLuminance - backgroundLuminance,
-      );
-      const profile = Array.from({ length: 13 }, (_, profileIndex) => {
-        const offset = profileIndex - 6;
-        return Math.abs(
-          luminanceAt(x + normalX * offset, y + normalY * offset) - backgroundLuminance,
-        );
-      });
-      let seed = 4;
-      for (let profileIndex = 5; profileIndex <= 8; profileIndex += 1) {
-        if (profile[profileIndex]! > profile[seed]!) seed = profileIndex;
-      }
-      let left = seed;
-      let right = seed;
-      if (profile[seed]! > 9) {
-        while (left > 0 && profile[left - 1]! > 9) left -= 1;
-        while (right < profile.length - 1 && profile[right + 1]! > 9) right += 1;
-      }
-      contrastedWidths.push(profile[seed]! > 9 ? right - left + 1 : 0);
-      maximumLuminanceContrast = Math.max(maximumLuminanceContrast, contrast);
-      if (contrast > 9) contrastedSamples += 1;
-    }
-    contrastedWidths.sort((left, right) => left - right);
-    return {
-      projectedLengthPixels: length,
-      contrastedSamples,
-      maximumLuminanceContrast,
-      meanPathLuminance: pathLuminanceTotal / 9,
-      medianContrastedWidthPixels: contrastedWidths[4]!,
-    };
-  }, {
-    dataUrl: `data:image/png;base64,${png.toString('base64')}`,
-    projectedShaft: shaft,
-  });
 }
 
 export interface OakImageDifferenceStatisticsV1 {

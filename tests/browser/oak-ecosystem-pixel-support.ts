@@ -2,7 +2,18 @@ import type { Buffer } from 'node:buffer';
 
 import type { Page } from '@playwright/test';
 
-import type { OakBrowserEvidenceV1 } from '../../fixtures/oak-ecosystem-consumer/oak-browser-contract.js';
+import type {
+  OakBrowserEvidenceV1,
+  OakBrowserProjectedShaftV1,
+} from '../../fixtures/oak-ecosystem-consumer/oak-browser-contract.js';
+
+export interface OakRootPathPixelStatisticsV1 {
+  readonly projectedLengthPixels: number;
+  readonly contrastedSamples: number;
+  readonly maximumLuminanceContrast: number;
+  readonly meanPathLuminance: number;
+  readonly medianContrastedWidthPixels: number;
+}
 
 export interface OakStagePixelStatisticsV1 {
   readonly sampledPlantVoxels: number;
@@ -30,6 +41,187 @@ export interface OakLeafMaterialChangeStatisticsV1 {
 export interface OakPixelSamplePointV1 {
   readonly x: number;
   readonly y: number;
+}
+
+export interface OakLocalizedImageDifferenceV1 {
+  readonly sampledPixels: number;
+  readonly materiallyChangedPixels: number;
+  readonly materiallyChangedPixelRatio: number;
+  readonly maximumChannelDelta: number;
+}
+
+export async function analyzeOakRootPathPixels(
+  page: Page,
+  png: Buffer,
+  shaft: OakBrowserProjectedShaftV1,
+  withoutPlant: Buffer,
+): Promise<OakRootPathPixelStatisticsV1> {
+  // Bound: nine shaft stations and a 65-pixel transverse profile. Compare the
+  // same pixels with plant batches hidden; an enlarged root is not background.
+  return page.evaluate(async ({ dataUrl, projectedShaft, withoutPlantUrl }) => {
+    const image = new Image();
+    image.src = dataUrl;
+    await image.decode();
+    const canvas = document.createElement('canvas');
+    canvas.width = image.naturalWidth;
+    canvas.height = image.naturalHeight;
+    const context = canvas.getContext('2d', { willReadFrequently: true });
+    if (context === null) {
+      throw new Error('Oak root-path pixel analysis requires a browser 2D canvas context.');
+    }
+    context.drawImage(image, 0, 0);
+    const pixels = context.getImageData(0, 0, canvas.width, canvas.height).data;
+    const control = new Image();
+    control.src = withoutPlantUrl;
+    await control.decode();
+    if (control.naturalWidth !== canvas.width || control.naturalHeight !== canvas.height) {
+      throw new Error('Oak root-path analysis requires matching plant and soil-only frames.');
+    }
+    context.clearRect(0, 0, canvas.width, canvas.height);
+    context.drawImage(control, 0, 0);
+    const controlPixels = context.getImageData(0, 0, canvas.width, canvas.height).data;
+    const point = (value: { x: number; y: number }) => ({
+      x: (value.x + 1) * canvas.width / 2,
+      y: (1 - value.y) * canvas.height / 2,
+    });
+    const base = point(projectedShaft.base);
+    const tip = point(projectedShaft.tip);
+    const dx = tip.x - base.x;
+    const dy = tip.y - base.y;
+    const length = Math.hypot(dx, dy);
+    const normalX = -dy / Math.max(1, length);
+    const normalY = dx / Math.max(1, length);
+    const luminanceAt = (x: number, y: number, data = pixels): number => {
+      const px = Math.max(0, Math.min(canvas.width - 1, Math.round(x)));
+      const py = Math.max(0, Math.min(canvas.height - 1, Math.round(y)));
+      const offset = (py * canvas.width + px) * 4;
+      return data[offset]! * 0.2126
+        + data[offset + 1]! * 0.7152
+        + data[offset + 2]! * 0.0722;
+    };
+    let contrastedSamples = 0;
+    let maximumLuminanceContrast = 0;
+    let pathLuminanceTotal = 0;
+    const contrastedWidths: number[] = [];
+    for (let index = 0; index < 9; index += 1) {
+      const fraction = 0.2 + index * 0.09;
+      const x = base.x + dx * fraction;
+      const y = base.y + dy * fraction;
+      let darkestRootLuminance = Number.POSITIVE_INFINITY;
+      let lightestRootLuminance = Number.NEGATIVE_INFINITY;
+      for (let offset = -1; offset <= 1; offset += 1) {
+        const luminance = luminanceAt(x + normalX * offset, y + normalY * offset);
+        darkestRootLuminance = Math.min(darkestRootLuminance, luminance);
+        lightestRootLuminance = Math.max(lightestRootLuminance, luminance);
+      }
+      pathLuminanceTotal += (darkestRootLuminance + lightestRootLuminance) / 2;
+      const profile = Array.from({ length: 65 }, (_, profileIndex) => {
+        const offset = profileIndex - 32;
+        const px = x + normalX * offset;
+        const py = y + normalY * offset;
+        return Math.abs(
+          luminanceAt(px, py) - luminanceAt(px, py, controlPixels),
+        );
+      });
+      let seed = 30;
+      for (let profileIndex = 31; profileIndex <= 34; profileIndex += 1) {
+        if (profile[profileIndex]! > profile[seed]!) seed = profileIndex;
+      }
+      const contrast = profile[seed]!;
+      let left = seed;
+      let right = seed;
+      if (profile[seed]! > 9) {
+        while (left > 0 && profile[left - 1]! > 9) left -= 1;
+        while (right < profile.length - 1 && profile[right + 1]! > 9) right += 1;
+      }
+      contrastedWidths.push(profile[seed]! > 9 ? right - left + 1 : 0);
+      maximumLuminanceContrast = Math.max(maximumLuminanceContrast, contrast);
+      if (contrast > 9) contrastedSamples += 1;
+    }
+    contrastedWidths.sort((left, right) => left - right);
+    return {
+      projectedLengthPixels: length,
+      contrastedSamples,
+      maximumLuminanceContrast,
+      meanPathLuminance: pathLuminanceTotal / 9,
+      medianContrastedWidthPixels: contrastedWidths[4]!,
+    };
+  }, {
+    dataUrl: `data:image/png;base64,${png.toString('base64')}`,
+    projectedShaft: shaft,
+    withoutPlantUrl: `data:image/png;base64,${withoutPlant.toString('base64')}`,
+  });
+}
+
+/** Measure only the fixed canvas support surrounding declared world samples. */
+export async function analyzeOakImageDifferenceNearPoints(
+  page: Page,
+  before: Buffer,
+  after: Buffer,
+  points: readonly OakPixelSamplePointV1[],
+  radiusPixels = 4,
+  threshold = 8,
+): Promise<OakLocalizedImageDifferenceV1> {
+  return page.evaluate(async ({ beforeUrl, afterUrl, samplePoints, radius, materialThreshold }) => {
+    const load = async (url: string): Promise<HTMLImageElement> => {
+      const image = new Image();
+      image.src = url;
+      await image.decode();
+      return image;
+    };
+    const [beforeImage, afterImage] = await Promise.all([load(beforeUrl), load(afterUrl)]);
+    if (beforeImage.naturalWidth !== afterImage.naturalWidth
+      || beforeImage.naturalHeight !== afterImage.naturalHeight) {
+      throw new Error('Oak localized image comparison requires equal image dimensions.');
+    }
+    const canvas = document.createElement('canvas');
+    canvas.width = beforeImage.naturalWidth;
+    canvas.height = beforeImage.naturalHeight;
+    const context = canvas.getContext('2d', { willReadFrequently: true });
+    if (context === null) {
+      throw new Error('Oak localized image comparison requires a browser 2D canvas context.');
+    }
+    context.drawImage(beforeImage, 0, 0);
+    const beforePixels = context.getImageData(0, 0, canvas.width, canvas.height).data;
+    context.clearRect(0, 0, canvas.width, canvas.height);
+    context.drawImage(afterImage, 0, 0);
+    const afterPixels = context.getImageData(0, 0, canvas.width, canvas.height).data;
+    const offsets = new Set<number>();
+    for (const point of samplePoints) {
+      if (!Number.isFinite(point.x) || !Number.isFinite(point.y)) continue;
+      for (let dy = -radius; dy <= radius; dy += 1) {
+        for (let dx = -radius; dx <= radius; dx += 1) {
+          const x = Math.round(point.x) + dx;
+          const y = Math.round(point.y) + dy;
+          if (x < 0 || x >= canvas.width || y < 0 || y >= canvas.height) continue;
+          offsets.add((y * canvas.width + x) * 4);
+        }
+      }
+    }
+    let materiallyChangedPixels = 0;
+    let maximumChannelDelta = 0;
+    for (const offset of offsets) {
+      const delta = Math.max(
+        Math.abs(beforePixels[offset]! - afterPixels[offset]!),
+        Math.abs(beforePixels[offset + 1]! - afterPixels[offset + 1]!),
+        Math.abs(beforePixels[offset + 2]! - afterPixels[offset + 2]!),
+      );
+      maximumChannelDelta = Math.max(maximumChannelDelta, delta);
+      if (delta > materialThreshold) materiallyChangedPixels += 1;
+    }
+    return {
+      sampledPixels: offsets.size,
+      materiallyChangedPixels,
+      materiallyChangedPixelRatio: materiallyChangedPixels / Math.max(1, offsets.size),
+      maximumChannelDelta,
+    };
+  }, {
+    beforeUrl: `data:image/png;base64,${before.toString('base64')}`,
+    afterUrl: `data:image/png;base64,${after.toString('base64')}`,
+    samplePoints: points,
+    radius: radiusPixels,
+    materialThreshold: threshold,
+  });
 }
 
 export async function analyzeOakStagePixels(

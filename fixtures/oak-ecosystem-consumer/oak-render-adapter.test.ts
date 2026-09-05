@@ -1,12 +1,16 @@
 import { describe, expect, it } from 'vitest';
 
 import {
-  RenderWorld,
   validateAndCopySnapshotV1,
   type InstanceBatchV1,
   type RenderSnapshotV1,
 } from '../../src/core/index.js';
 import { buildOakRenderDeltaV1, buildOakRenderFrameV1 } from './oak-render-adapter.js';
+import {
+  oakRenderAdapterAxisLengthsV1,
+  expectOakAcceptedDeltaV1,
+  oakRetainedInstanceKeyFractionV1,
+} from './oak-render-adapter-test-support.js';
 import {
   OAK_FALLEN_LITTER_VOXEL_BATCH_KEY_V1,
   OAK_FALLEN_LITTER_VOXEL_MATERIAL_KEY_V1,
@@ -29,6 +33,7 @@ import {
 import {
   OAK_LEAF_VOXEL_BATCH_KEY_V1,
   OAK_LEAF_VOXEL_MATERIAL_KEY_V1,
+  OAK_ORGAN_LOCAL_VOXEL_CLEARANCE_M_V1,
   OAK_ROOT_VOXEL_BATCH_KEY_V1,
   OAK_ROOT_VOXEL_MATERIAL_KEY_V1,
   OAK_SEED_BUD_VOXEL_BATCH_KEY_V1,
@@ -61,6 +66,8 @@ function organ(
 ): OakOrganSnapshotV1 {
   const { key, kind, ...overrides } = input;
   const identityParts = key.split(':');
+  const lengthM = input.lengthM ?? (kind === 'leaf' ? 0.075 : 0.012);
+  const radiusM = input.radiusM ?? 0.0012;
   const base = {
     key,
     identity: {
@@ -72,12 +79,16 @@ function organ(
     ageDays: 120,
     positionM: { x: 0, y: 0, z: 0 },
     direction: { x: 0, y: 1, z: 0 },
-    lengthM: 0.012,
-    radiusM: 0.0012,
+    lengthM,
+    radiusM,
+    targetLengthM: input.targetLengthM ?? lengthM,
+    targetRadiusM: input.targetRadiusM ?? radiusM,
     dryMassKg: 0.0001,
     waterPotentialMpa: -0.4,
     pools: POOLS,
     stage: 'mature' as const,
+    developmentPhase: 'mature' as const,
+    developmentFraction: 1,
     healthFraction: 1,
     stressFraction: 0,
     ...overrides,
@@ -86,7 +97,19 @@ function organ(
   return {
     ...base,
     kind: 'leaf',
-    areaM2: 0.00008,
+    ...(base.parentKey === null ? {} : {
+      attachment: input.kind === 'leaf' && input.attachment !== undefined
+        ? input.attachment
+        : {
+          parentOrganKey: base.parentKey,
+          nodeSite: 'distal' as const,
+          restRadialUnitWorld: { x: 1, y: 0, z: 0 },
+        },
+    }),
+    areaM2: input.kind === 'leaf' && input.areaM2 !== undefined ? input.areaM2 : 0.0015,
+    targetAreaM2: input.kind === 'leaf' && input.targetAreaM2 !== undefined
+      ? input.targetAreaM2
+      : input.kind === 'leaf' && input.areaM2 !== undefined ? input.areaM2 : 0.0015,
     inclinationRadians: 0.4,
     rollRadians: 0.1,
     chlorophyllFraction: 0.85,
@@ -183,6 +206,8 @@ function projection(
       basalStemDiameterM: 0.0036,
       crownRadiusM: 0.015,
       leafAreaM2: 0.00016,
+      activeGrowthFrontCount: 0,
+      cumulativeGrowthCarbonKg: 0,
       meanWaterStressFraction: 0,
       meanNitrogenStressFraction: 0,
       meanPhosphorusStressFraction: 0,
@@ -192,30 +217,6 @@ function projection(
 
 function batch(snapshot: RenderSnapshotV1, key: string): InstanceBatchV1 {
   return snapshot.batches.find((candidate) => candidate.key === key)!;
-}
-
-function axisLengths(matrix: ArrayLike<number>): readonly number[] {
-  return [
-    Math.hypot(matrix[0]!, matrix[1]!, matrix[2]!),
-    Math.hypot(matrix[4]!, matrix[5]!, matrix[6]!),
-    Math.hypot(matrix[8]!, matrix[9]!, matrix[10]!),
-  ];
-}
-
-function retainedKeyFraction(before: InstanceBatchV1, after: InstanceBatchV1): number {
-  const next = new Set(after.instanceKeys);
-  return before.instanceKeys.filter((key) => next.has(key)).length / Math.max(1, before.instanceKeys.length);
-}
-
-function expectAcceptedDelta(
-  before: ReturnType<typeof buildOakRenderFrameV1>,
-  after: ReturnType<typeof buildOakRenderFrameV1>,
-): void {
-  const world = new RenderWorld();
-  expect(world.acceptSnapshot(before.snapshot).status).toBe('accepted');
-  expect(world.acceptDelta(buildOakRenderDeltaV1(before, after)).status).toBe('accepted');
-  expect(world.acceptedSnapshot()).toEqual(after.snapshot);
-  world.dispose();
 }
 
 describe('oak hybrid voxel render contract', () => {
@@ -274,12 +275,29 @@ describe('oak hybrid voxel render contract', () => {
     });
     for (const tissueBatch of frame.snapshot.batches) {
       expect(tissueBatch.geometryKey).toBe(OAK_TISSUE_VOXEL_GEOMETRY_KEY_V1);
+      const edgeLengthM = tissueBatch.key === OAK_LEAF_VOXEL_BATCH_KEY_V1
+        || tissueBatch.key === OAK_FALLEN_LITTER_VOXEL_BATCH_KEY_V1
+        ? OAK_TISSUE_VOXEL_PITCH_M_V1 - OAK_ORGAN_LOCAL_VOXEL_CLEARANCE_M_V1
+        : OAK_TISSUE_VOXEL_PITCH_M_V1;
       for (let slot = 0; slot < tissueBatch.instanceKeys.length; slot += 1) {
         const matrix = tissueBatch.matrices.subarray(slot * 16, slot * 16 + 16);
-        expect(axisLengths(matrix)).toEqual([
-          expect.closeTo(OAK_TISSUE_VOXEL_PITCH_M_V1, 8),
-          expect.closeTo(OAK_TISSUE_VOXEL_PITCH_M_V1, 8),
-          expect.closeTo(OAK_TISSUE_VOXEL_PITCH_M_V1, 8),
+        const lengths = oakRenderAdapterAxisLengthsV1(matrix);
+        const sourceKey = tissueBatch.instanceKeys[slot]!;
+        const dimensionedLeafAxis = tissueBatch.key === OAK_LEAF_VOXEL_BATCH_KEY_V1
+          || tissueBatch.key === OAK_FALLEN_LITTER_VOXEL_BATCH_KEY_V1;
+        if (dimensionedLeafAxis && (sourceKey.includes(':petiole-voxel:')
+          || sourceKey.includes(':midrib-voxel:'))) {
+          expect(lengths[0]).toBeGreaterThan(0);
+          expect(lengths[0]).toBeLessThanOrEqual(edgeLengthM);
+          expect(lengths[1]).toBeCloseTo(edgeLengthM, 8);
+          expect(lengths[2]).toBeGreaterThan(0);
+          expect(lengths[2]).toBeLessThanOrEqual(edgeLengthM);
+          continue;
+        }
+        expect(lengths).toEqual([
+          expect.closeTo(edgeLengthM, 8),
+          expect.closeTo(edgeLengthM, 8),
+          expect.closeTo(edgeLengthM, 8),
         ]);
       }
     }
@@ -346,7 +364,7 @@ describe('oak hybrid voxel render contract', () => {
       operation.op === 'patch-batch-instances'
       && operation.upserts.instanceKeys.length > 0)).toBe(true);
     expect(wind.snapshot.batches.every((candidate) => candidate.animation === undefined)).toBe(true);
-    expectAcceptedDelta(calm, wind);
+    expectOakAcceptedDeltaV1(calm, wind);
   });
 
   it('rejects invalid or non-advancing presentation revisions', () => {
@@ -362,7 +380,7 @@ describe('oak hybrid voxel render contract', () => {
 });
 
 describe('oak hybrid voxel deltas', () => {
-  it('sparsely patches changed lattice membership without replacing the leaf batch', () => {
+  it('sparsely patches a changed organ-local leaf pose without churning its keys', () => {
     const beforeState = projection(4);
     const before = buildOakRenderFrameV1(beforeState, { renderRevision: 8 });
     const changedOrgans = beforeState.organs.map((candidate) => candidate.key === 'organ:4:1'
@@ -374,19 +392,19 @@ describe('oak hybrid voxel deltas', () => {
     });
     const beforeLeaf = batch(before.snapshot, OAK_LEAF_VOXEL_BATCH_KEY_V1);
     const afterLeaf = batch(after.snapshot, OAK_LEAF_VOXEL_BATCH_KEY_V1);
-    expect(retainedKeyFraction(beforeLeaf, afterLeaf)).toBeGreaterThan(.5);
+    expect(oakRetainedInstanceKeyFractionV1(beforeLeaf, afterLeaf)).toBeGreaterThan(.5);
     const delta = buildOakRenderDeltaV1(before, after);
     expect(delta.operations).toHaveLength(1);
     const operation = delta.operations[0]!;
     expect(operation.op).toBe('patch-batch-instances');
     if (operation.op === 'patch-batch-instances') {
       expect(operation.key).toBe(OAK_LEAF_VOXEL_BATCH_KEY_V1);
-      expect(operation.removeInstanceKeys.length).toBeGreaterThan(0);
+      expect(operation.removeInstanceKeys).toEqual([]);
       expect(operation.upserts.instanceKeys.length).toBeGreaterThan(0);
-      expect(operation.removeInstanceKeys.length + operation.upserts.instanceKeys.length)
+      expect(operation.upserts.instanceKeys.length)
         .toBeLessThan(beforeLeaf.instanceKeys.length * 1.5);
     }
-    expectAcceptedDelta(before, after);
+    expectOakAcceptedDeltaV1(before, after);
   });
 
   it('removes and upserts changed generation membership through the exact sparse patch', () => {
@@ -409,7 +427,7 @@ describe('oak hybrid voxel deltas', () => {
       expect(delta.operations[0].upserts.instanceKeys.some((key) =>
         key.startsWith('oak:organ:4:2:'))).toBe(true);
     }
-    expectAcceptedDelta(before, after);
+    expectOakAcceptedDeltaV1(before, after);
   });
 
   it('emits exactly one put-chunk when authoritative soil state changes', () => {
@@ -434,7 +452,7 @@ describe('oak hybrid voxel deltas', () => {
     if (delta.operations[0]?.op === 'put-chunk') {
       expect(delta.operations[0].chunk.key).toBe(OAK_SOIL_VOXEL_CHUNK_KEY_V1);
     }
-    expectAcceptedDelta(before, after);
+    expectOakAcceptedDeltaV1(before, after);
   });
 
   it('adds voxel roots and exactly one changed soil chunk for a paused cutaway', () => {
@@ -456,7 +474,7 @@ describe('oak hybrid voxel deltas', () => {
       && operation.key === OAK_ROOT_VOXEL_BATCH_KEY_V1
       && operation.removeInstanceKeys.length === 0
       && operation.upserts.instanceKeys.length > 0)).toBe(true);
-    expectAcceptedDelta(surface, cutaway);
+    expectOakAcceptedDeltaV1(surface, cutaway);
   });
 
   it('rejects cross-epoch and non-advancing deltas', () => {

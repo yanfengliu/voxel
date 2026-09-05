@@ -79,6 +79,10 @@ export interface OakBrowserCameraFitV1 {
   readonly fittedOrganCount: number;
   /** Fallen-litter voxel instances whose exact cube vertices participate in the fit. */
   readonly fittedLitterVoxelCount: number;
+  /** Exact accepted root-batch voxels that define a root-cutaway fit. */
+  readonly fittedRootVoxelCount: number;
+  /** Accepted face-connected seed/bud and basal-wood voxels retained only for orientation. */
+  readonly fittedBasalContextVoxelCount: number;
   /** Vertices from the accepted render frame that define subjectBoundsNdc. */
   readonly fittedVertexCount: number;
   readonly rootShaftsNdc: Readonly<{
