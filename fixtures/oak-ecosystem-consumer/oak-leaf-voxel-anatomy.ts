@@ -63,21 +63,29 @@ export function oakLeafSecondaryVeinCandidatesV1(
 }
 
 /**
- * Fold each half-blade over a two-cell Manhattan staircase. Every logical
- * lateral step becomes exactly one physical face-neighbour step in x or z, so
- * the mask remains connected and its cell count and growth order are unchanged.
+ * Distribute the two transverse risers across each half-blade instead of
+ * stacking them beside the midrib as two continuous three-cell-high rails.
+ * Each logical step still becomes one face-neighbour x or z step; paid cell
+ * count, growth order, outer width, and total rise remain unchanged.
  */
 export function oakLeafTransverseCamberCandidatesV1(
   candidates: readonly OakTissueFrontCandidateV1[],
 ): readonly OakTissueFrontCandidateV1[] {
+  const radiusByRow = new Map<number, number>();
+  for (const { local } of candidates) {
+    radiusByRow.set(local.y, Math.max(radiusByRow.get(local.y) ?? 0, Math.abs(local.x)));
+  }
   return candidates.map((candidate) => {
     if (candidate.role !== 'lamina-voxel'
       && candidate.role !== 'secondary-vein-voxel') return candidate;
     const distance = Math.abs(candidate.local.x);
-    const rise = Math.min(
-      OAK_LEAF_TRANSVERSE_CAMBER_MAX_RISE_CELLS_V1,
-      Math.max(0, distance - 1),
-    );
+    const radius = radiusByRow.get(candidate.local.y) ?? 0;
+    const totalRise = Math.min(OAK_LEAF_TRANSVERSE_CAMBER_MAX_RISE_CELLS_V1,
+      Math.max(0, radius - 1));
+    const firstRiser = Math.max(2, Math.round(radius / 3));
+    const secondRiser = Math.max(firstRiser + 1, Math.round(2 * radius / 3));
+    const rise = Math.min(totalRise,
+      Number(distance >= firstRiser) + Number(distance >= secondRiser));
     return {
       ...candidate,
       local: {
@@ -140,12 +148,11 @@ function leafCandidateColor(
   };
   let base: Srgb8ColorV1;
   if (progress > 0 || leaf.stage === 'senescing' || leaf.stage === 'detached') {
-    const localProgress = progress >= 1 ? 1 : Number(rank < progress);
-    const start = OAK_LEAF_SENESCENCE_START_CHLOROPHYLL_FRACTION_V1;
-    const end = OAK_PARAMETERS_V1.growth.minimumSenescentChlorophyllFraction;
     base = oakLeafColorV1({
       ...materialLeaf,
-      chlorophyllFraction: start + (end - start) * localProgress,
+      // Low-rank edges cross each pigment level first. Every role follows
+      // actual chlorophyll, including the axis cells retained through fall.
+      chlorophyllFraction: anatomicalDither(leaf.chlorophyllFraction, 1 - rank),
     });
   } else {
     base = oakTissueVoxelCohortColorV1(

@@ -45,6 +45,12 @@ export function updateOakBrowserDiagnosticsV1(
     if (node !== undefined) node.textContent = value;
   };
   set('age', formatOakDiagnostic(biological.elapsedBiologicalSeconds / 86_400, 2, 'days'));
+  const lowResources = [
+    biological.environmentRegime.water === 'low' ? 'water' : null,
+    biological.environmentRegime.nitrogen === 'low' ? 'N' : null,
+    biological.environmentRegime.phosphorus === 'low' ? 'P' : null,
+  ].filter((resource) => resource !== null);
+  set('resource-regime', lowResources.length === 0 ? 'Ambient' : `Low ${lowResources.join(', ')}`);
   set('height', formatOakDiagnostic(diagnostics.heightM * 100, 1, 'cm'));
   set('leaf-area', formatOakDiagnostic(diagnostics.leafAreaM2 * 10_000, 1, 'cm²'));
   set('growth-fronts', String(diagnostics.activeGrowthFrontCount));

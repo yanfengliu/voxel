@@ -13,6 +13,7 @@ import {
 } from './oak-leaf-voxel-anatomy.js';
 import {
   oakTissueLeafCandidatesV1,
+  oakTissueVisibleLeafCandidatesV1,
   type OakTissueFrontCandidateV1,
 } from './oak-tissue-development-front.js';
 import { oakQuantizedLeafRadialsAtPitchV1 } from './oak-leaf-tissue-mask.js';
@@ -160,6 +161,60 @@ describe('oak leaf voxel anatomy', () => {
     }
   });
 
+  it('spreads resolved blade folds while preserving paid area, volume, endpoints, and growth prefixes', () => {
+    // Bound: all three oak shape families, held-out blade lengths and areas,
+    // six paid prefixes, and half-blades with room for separated risers.
+    // Restoring the old distance-2/3 risers makes the column-height check red.
+    for (const variant of OAK_LEAF_VARIANT_DESCRIPTORS_V1) {
+      for (const [lengthM, areaM2] of [[0.04, 0.0004], [0.08, 0.0015], [0.12, 0.0036]] as const) {
+        const pitch = OAK_TISSUE_VOXEL_PITCH_M_V1;
+        const layers = Math.round(lengthM / pitch);
+        const radial = oakQuantizedLeafRadialsAtPitchV1(variant, layers,
+          oakLeafWidthScaleMForDescriptorV1(areaM2, lengthM, variant), pitch);
+        const flat = oakTissueLeafCandidatesV1({ layers, radialProfile: radial,
+          petioleFraction: 0.07, camberCellAt: () => 0,
+          baseColor: COLOR, midribColor: COLOR });
+        const folded = oakLeafTransverseCamberCandidatesV1(flat);
+        const label = `${variant.id} ${String(lengthM)} m`;
+        expect(folded, label).toHaveLength(flat.length);
+        expect(new Set(folded.map(positionKey)).size, label).toBe(folded.length);
+        expect(connected(folded), label).toBe(true);
+        for (let row = 0; row < layers; row += 1) {
+          const radius = radial[row]!;
+          const section = folded.filter(({ local }) => local.y === row);
+          const rise = Math.min(2, Math.max(0, radius - 1));
+          expect(Math.max(...section.map(({ local }) => Math.abs(local.x))), label)
+            .toBe(radius - rise);
+          expect(Math.min(...section.map(({ local }) => local.z)), label).toBe(0 - rise);
+          if (radius < 6) continue;
+          const columns = new Map<number, number>();
+          for (const { local } of section) columns.set(local.x, (columns.get(local.x) ?? 0) + 1);
+          expect(Math.max(...columns.values()), `${label} row ${String(row)} rail height`)
+            .toBeLessThanOrEqual(2);
+        }
+        for (const fraction of [0.02, 0.05, 0.15, 0.4, 0.8, 1]) {
+          const budget = { layers, developmentFraction: fraction,
+            currentAreaM2: areaM2 * fraction, targetAreaM2: areaM2,
+            currentLengthM: lengthM * fraction, targetLengthM: lengthM };
+          const before = oakTissueVisibleLeafCandidatesV1({ ...budget, candidates: flat });
+          const after = oakTissueVisibleLeafCandidatesV1({ ...budget, candidates: folded });
+          expect(after.map(({ role }) => role), label).toEqual(before.map(({ role }) => role));
+          expect(after.map(({ local }) => local.y), label).toEqual(before.map(({ local }) => local.y));
+          expect(new Set(after.map(positionKey)).size, label).toBe(after.length);
+          expect(connected(after), label).toBe(true);
+          // Only equal-size lamina cells move. Every mechanical petiole/midrib
+          // section stays byte-identical, so section volume is also unchanged.
+          expect(after.filter(({ role }) => role !== 'lamina-voxel'), label)
+            .toEqual(before.filter(({ role }) => role !== 'lamina-voxel'));
+          expect(after.filter(({ role }) => role === 'lamina-voxel').length * pitch ** 2, label)
+            .toBe(before.filter(({ role }) => role === 'lamina-voxel').length * pitch ** 2);
+          expect(after.filter(({ role }) => role === 'lamina-voxel').length * pitch ** 3, label)
+            .toBe(before.filter(({ role }) => role === 'lamina-voxel').length * pitch ** 3);
+        }
+      }
+    }
+  });
+
   it('relabels a sparse secondary-vein rhythm without changing occupancy', () => {
     const flat = candidates();
     const veined = oakLeafSecondaryVeinCandidatesV1(flat, RADIAL);
@@ -205,5 +260,28 @@ describe('oak leaf voxel anatomy', () => {
       return true;
     });
     expect(isolated).toEqual([]);
+  });
+
+  it('keeps living roles green and never restores green during decreasing senescent pigment', () => {
+    const flat = candidates();
+    for (const developmentFraction of [0.4, 0.7, 1]) {
+      const living = oakLeafAnatomyColoredCandidatesV1({
+        ...leaf(1), stage: 'mature', developmentPhase: 'maturing', developmentFraction,
+      }, flat, RADIAL);
+      expect(living.map(identityKey)).toEqual(
+        oakLeafAnatomyColoredCandidatesV1(leaf(1), flat, RADIAL).map(identityKey),
+      );
+      for (const { color } of living) expect(color.g).toBeGreaterThan(color.r);
+    }
+    const lostGreen = new Set<string>();
+    for (const chlorophyll of [1, 0.95, 0.9, 0.8, 0.65, 0.5, 0.4, 0.15]) {
+      const values = oakLeafAnatomyColoredCandidatesV1(leaf(chlorophyll), flat, RADIAL);
+      for (const candidate of values) {
+        const key = identityKey(candidate);
+        if (lostGreen.has(key)) expect(candidate.color.r, key).toBeGreaterThan(candidate.color.g);
+        if (candidate.color.r > candidate.color.g) lostGreen.add(key);
+      }
+    }
+    expect(lostGreen.size).toBe(flat.length);
   });
 });

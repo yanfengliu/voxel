@@ -38,6 +38,8 @@ export interface OakBrowserNavigationOptionsV1 {
   /** Called after a pointer or wheel gesture has already applied its camera. */
   readonly onViewChanged: () => void;
   readonly onRefit: (preset: OakBrowserCameraV1) => void;
+  readonly canTogglePause: () => boolean;
+  readonly onTogglePause: () => void;
 }
 
 export interface OakBrowserNavigationHandleV1 {
@@ -111,13 +113,13 @@ export function createOakBrowserNavigationV1(
 
   const keyboard = createStudioKeyboard({
     root,
-    sceneOpen: () => false,
+    sceneOpen: () => true,
     noteEditorOpen: () => false,
     closeNoteEditor: ignoreStudioOnlyAction,
     undoScene: ignoreStudioOnlyAction,
     redoScene: ignoreStudioOnlyAction,
-    sceneHasMotion: () => false,
-    toggleScenePlayback: ignoreStudioOnlyAction,
+    sceneHasMotion: options.canTogglePause,
+    toggleScenePlayback: options.onTogglePause,
     step: ignoreStudioOnlyAction,
   });
 

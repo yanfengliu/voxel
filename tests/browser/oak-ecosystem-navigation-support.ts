@@ -124,7 +124,7 @@ export async function expectOakStudioNavigationContractV1(
   const canvas = page.locator('[data-oak-canvas]');
   const hint = page.locator('[data-camera-hint]');
   await expect(canvas).toHaveAttribute('tabindex', '0');
-  await expect(canvas).toHaveAttribute('aria-keyshortcuts', 'W A S D');
+  await expect(canvas).toHaveAttribute('aria-keyshortcuts', 'W A S D Space');
   await expect(canvas).toHaveAttribute('aria-describedby', 'oak-camera-hint');
   await expect(hint).toHaveAttribute('id', 'oak-camera-hint');
   await expect(hint).toContainText('middle-drag to turn');

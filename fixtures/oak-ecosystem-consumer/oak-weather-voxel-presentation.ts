@@ -157,7 +157,7 @@ function colorFor(kind: 'rain' | 'wind', index: number): Srgb8ColorV1 {
   const shade = hash(index, kind === 'rain' ? 17 : 29) % 20;
   return kind === 'rain'
     ? { r: 132 + shade, g: 204 + shade, b: 232 + Math.floor(shade / 2), a: 255 }
-    : { r: 207 + Math.floor(shade / 2), g: 232 + Math.floor(shade / 2), b: 174 + shade, a: 255 };
+    : { r: 126 + Math.floor(shade / 2), g: 160 + Math.floor(shade / 2), b: 170 + shade, a: 255 };
 }
 
 function blockedCells(

@@ -1,0 +1,96 @@
+:root {
+  color-scheme: light;
+  font-family: "Segoe UI", system-ui, sans-serif;
+  --ink: #243b35;
+  --muted: #53665e;
+  --panel: #f6f8f3f5;
+  --line: #c8d1c7;
+  --accent: #286652;
+  --danger: #9e4b2c;
+}
+
+* { box-sizing: border-box; }
+html, body, main { width: 100%; height: 100%; margin: 0; overflow: hidden; }
+body { color: var(--ink); background: #dde6e4; }
+canvas { display: block; width: 100%; height: 100%; }
+canvas:focus-visible { outline: 3px solid var(--accent); outline-offset: -3px; }
+
+.hud {
+  position: absolute;
+  inset: 0.75rem auto auto 0.75rem;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  width: min(19.5rem, calc(100% - 1.5rem));
+  max-height: calc(100% - 1.5rem);
+  overflow: clip;
+  border: 1px solid var(--line);
+  border-radius: 0.75rem;
+  background: var(--panel);
+  box-shadow: 0 0.35rem 1.5rem #223b3414;
+}
+
+.hud-persistent {
+  position: relative;
+  z-index: 1;
+  padding: 1rem 1rem 0.8rem;
+  border-bottom: 1px solid var(--line);
+  background: #f6f8f3;
+}
+
+.hud-scroll {
+  min-height: 0;
+  overflow-y: auto;
+  padding: 0.9rem 0.8rem;
+  scrollbar-gutter: stable;
+  scrollbar-color: #a9b8ac transparent;
+}
+
+h1 { margin: 0; font-size: 0.81rem; font-weight: 650; letter-spacing: 0.055em; line-height: 1.4; }
+.subtitle, .status { color: var(--muted); font-size: 0.79rem; line-height: 1.45; }
+.subtitle { margin: 0.35rem 0 0; }
+.status { margin: 0.55rem 0 0.7rem; }
+.study-context { margin: 0 0 0.9rem; font-size: 0.76rem; line-height: 1.45; color: var(--muted); }
+
+fieldset { margin: 0 0 1rem; padding: 0; border: 0; }
+legend { width: 100%; margin-bottom: 0.45rem; padding: 0; color: var(--muted); font-size: 0.72rem; font-weight: 650; letter-spacing: 0.025em; }
+.controls { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.45rem; }
+.controls > button:last-child:nth-child(odd) { grid-column: 1 / -1; }
+
+button {
+  min-height: 2.75rem;
+  padding: 0.55rem 0.45rem;
+  border: 1px solid #bac8bd;
+  border-radius: 0.4rem;
+  color: var(--ink);
+  background: #ffffffaa;
+  font: 550 0.77rem/1.2 "Segoe UI", system-ui, sans-serif;
+  cursor: pointer;
+}
+button:hover { border-color: #658a77; background: #e6ede5; }
+button:focus-visible, .diagnostics summary:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+button[aria-pressed="true"] { border-color: var(--accent); color: #fff; background: var(--accent); }
+button[data-stress][aria-pressed="true"] { border-color: var(--danger); background: #f5e2d5; color: #733416; }
+button:disabled { opacity: 0.65; cursor: wait; }
+
+.camera-hint { margin: 0.5rem 0 0; color: var(--muted); font-size: 0.7rem; line-height: 1.45; }
+.environment-readout { margin: 0.7rem 0 0; border-top: 1px solid var(--line); padding-top: 0.6rem; }
+.environment-readout legend { float: left; }
+.environment-readout dl { clear: both; }
+.environment-readout dl { font-size: 0.72rem; gap: 0.2rem 0.6rem; }
+.live-summary { display: grid; grid-template-columns: minmax(0, 1fr) 4.5rem; align-items: center; gap: 0.65rem; padding-top: 0.55rem; border-top: 1px solid var(--line); }
+.performance-readout { font-size: 0.7rem; }
+.performance-readout dd { font-weight: 650; }
+
+dl { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 0.3rem 0.6rem; margin: 0; font-size: 0.76rem; line-height: 1.35; }
+dt { color: var(--muted); }
+dd { margin: 0; font-variant-numeric: tabular-nums; text-align: right; }
+.diagnostics { margin: 0; border-top: 1px solid var(--line); }
+.diagnostics summary { min-height: 2.75rem; padding: 0.85rem 0; color: var(--accent); cursor: pointer; font-size: 0.77rem; font-weight: 600; }
+.diagnostics summary:hover { color: #183e30; }
+.diagnostics dl { padding: 0 0 0.5rem; }
+.fatal { position: absolute; inset: 1rem; z-index: 2; display: grid; place-items: center; padding: 2rem; color: #fff4ed; background: #351c18ee; font: 700 0.9rem/1.5 ui-monospace, monospace; white-space: pre-wrap; }
+
+@media (max-height: 560px) {
+  .hud-persistent { padding-top: 0.65rem; padding-bottom: 0.6rem; }
+  .status { margin-top: 0.3rem; margin-bottom: 0.5rem; }
+}

@@ -76,11 +76,11 @@ export const OAK_SOIL_VOXEL_STATE_SCALE_V1 = Object.freeze({
 
 const PALETTE_COLORS: readonly Srgb8ColorV1[] = Object.freeze([
   Object.freeze({ r: 0, g: 0, b: 0, a: 0 }),
-  Object.freeze({ r: 138, g: 105, b: 75, a: 255 }),
-  Object.freeze({ r: 92, g: 70, b: 52, a: 255 }),
-  Object.freeze({ r: 113, g: 94, b: 66, a: 255 }),
-  Object.freeze({ r: 124, g: 98, b: 65, a: 255 }),
-  Object.freeze({ r: 108, g: 76, b: 50, a: 255 }),
+  Object.freeze({ r: 143, g: 132, b: 112, a: 255 }),
+  Object.freeze({ r: 103, g: 93, b: 80, a: 255 }),
+  Object.freeze({ r: 135, g: 126, b: 108, a: 255 }),
+  Object.freeze({ r: 140, g: 128, b: 108, a: 255 }),
+  Object.freeze({ r: 125, g: 110, b: 89, a: 255 }),
 ]);
 
 const SOIL_MIN_M = OAK_SOIL_VOXEL_CHUNK_ORIGIN_V1.y * OAK_SOIL_VOXEL_SIZE_M_V1;

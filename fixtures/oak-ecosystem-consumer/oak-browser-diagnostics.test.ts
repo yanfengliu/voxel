@@ -11,6 +11,23 @@ function metricNodes(...keys: readonly string[]): Map<string, HTMLElement> {
 }
 
 describe('oak browser environment diagnostics', () => {
+  it('keeps every active resource intervention observable after the controls scroll away', () => {
+    const simulation = createOakSimulationV1({ paused: true });
+    const nodes = metricNodes('resource-regime');
+    updateOakBrowserDiagnosticsV1(nodes, simulation.snapshot(), { presentedRevision: 1 } as never);
+    expect(nodes.get('resource-regime')?.textContent).toBe('Ambient');
+    simulation.applyCommand({
+      kind: 'set-environment-regime', water: 'low', nitrogen: 'ambient', phosphorus: 'low',
+    });
+    updateOakBrowserDiagnosticsV1(nodes, simulation.snapshot(), { presentedRevision: 2 } as never);
+    expect(nodes.get('resource-regime')?.textContent).toBe('Low water, P');
+    simulation.applyCommand({
+      kind: 'set-environment-regime', water: 'ambient', nitrogen: 'low', phosphorus: 'ambient',
+    });
+    updateOakBrowserDiagnosticsV1(nodes, simulation.snapshot(), { presentedRevision: 3 } as never);
+    expect(nodes.get('resource-regime')?.textContent).toBe('Low N');
+  });
+
   it('publishes authoritative active-growth and committed-carbon evidence', () => {
     const simulation = createOakSimulationV1({ paused: false });
     const nodes = metricNodes('growth-fronts', 'growth-carbon');

@@ -6,6 +6,36 @@ Unlike a lesson, an entry stays after it becomes a gate. This is the standing li
 
 Newest first.
 
+## 2026-09-05 — Brown falling leaves retained green strips
+
+**Symptom, as observed during the requested visual review.** Detached leaves and litter retained green strips after the surrounding tissue turned brown.
+
+**What the investigation found.** The colour path did not apply actual low chlorophyll consistently across anatomical roles. The first repair covered structural roles but left near-axis lamina green, which native frames exposed despite its narrower passing gate.
+
+**Outcome.** Every senescent role now quantizes actual chlorophyll in anatomical order. Living tissue, geometry, pools and identity retain their existing contracts. Final native frames show brown detached tissue and litter; this colour correction does not repair physical fall or attachment.
+
+**How it is checked from now on.** `oak-leaf-material-phenology.test.ts` covers all ten default seasonal fractures and all visible material roles, the preceding one-tick colour population, attachment-only RGBA identity and exact donor-to-day-249 litter RGBA transfer. The earlier role-limited branch failed the expanded check on lamina with red 63 and green 141. Living and maturing controls check retained green and monotone pigment loss. The final focused run passed 12 tests in three files, and the final integrated local verification passed. The byte-bound visual review and counter-runs are recorded in the [devlog](../devlog/detailed/2026-09-05_2026-09-05.md#senescence-colour-follows-the-existing-tissue-state).
+
+## 2026-09-05 — Space did not pause the oak simulation
+
+**Symptom, as reported.** “Space should pause / unpause the simulation.”
+
+**What the investigation found.** The browser had a working pause command and shared Studio keyboard router, but the oak adapter reported `sceneOpen` and `sceneHasMotion` as false and supplied an inert playback callback. The keyboard route therefore could not reach the command.
+
+**Outcome.** The adapter now routes a permitted Space press through the same bounded host command path as the pause button. Automatic biology and weather stop while paused, camera navigation remains live, and resume excludes paused wall time. Editable and native controls, key repeat, modifiers and composition keep their shared-router guards. Explicit manual harness advancement remains supported.
+
+**How it is checked from now on.** `tests/browser/oak-ecosystem-keyboard.spec.ts` covers actual Space input, focus ownership, held-key repeat, native controls and disposal, plus rain and biological time across a twenty-second pause and resume with live camera movement. Reintroducing the disabled router made the first case fail with expected `Resume` and actual `Pause`; the working route was restored. The final test awaits its event observer before sending input, after a flaky observer wait prevented clean acceptance of the first full run. Both tests then passed three repetitions with retries disabled, and the repeated full local verification passed all 135 browser tests without retry. The [devlog](../devlog/detailed/2026-09-05_2026-09-05.md#space-reaches-the-existing-pause-command) retains the failed evidence and final bounds.
+
+## 2026-09-05 — Oak fall and attachment evidence did not establish physical motion
+
+**Symptom, as reported.** “The whole thing needs to make sense on a physics level.” Review also showed arranged litter and detached leaves moving outward and hovering before settling.
+
+**What the investigation found.** `oak-leaf-fall-path.ts` authors a 155 mm escape radius, 15 mm hover and ten landing radii between 120 and 169.5 mm. Mass and gravity do not determine this route. Separately, the retained hinge test measures a kinematic datum 0.223767138773 mm outside basal petiole material despite passing two support-plane checks. The public attachment sweep measures up to 4.791602945 mm separation. A connected source mask, conservative envelope and supported endpoint do not prove material attachment or physical flight.
+
+**Outcome.** Unresolved. Five ignored Rapier prototypes failed the required class of transient-contact checks; no production dynamics or attachment repair was accepted. In the fifth 240-step, 60 Hz experiment, the still-air drag arm stayed clear but removing drag, reversing wind and restoring the serialized world produced maximum penetrations of 349.490, 341.529 and 320.542 micrometres. The frozen source, earlier failures and method are retained in the [devlog](../devlog/detailed/2026-09-05_2026-09-05.md#five-falling-leaf-prototypes-did-not-establish-physical-contact).
+
+**How it is checked from now on.** The existing `oak-cellular-leaf-hinge.test.ts` retains the exact datum counterexample; fall-continuity, litter-support and resource tests retain their narrower choreography and bookkeeping claims. Physical acceptance still needs a production gate covering source-derived geometry, force-driven trajectories, all-step contact depth, supported rest, detachment continuity, boundary outflow, deterministic state and a reconciled energy measurement across still air, drag ablation and reversed wind. No passing physical-flight gate or lesson retirement is claimed.
+
 ## 2026-09-05 — Oak navigation rebuilt unchanged voxel geometry
 
 **Symptom and investigation.** Continuing the owner's responsive-control and honest-performance work, ordinary headless inspection still showed slow presentation. Independent source review found that every camera gesture rebuilt the exact subject from its unchanged accepted frame, including two temporary bound vectors per transformed vertex. The existing producer benchmark excluded this host work.

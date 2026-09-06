@@ -1,5 +1,7 @@
 # Devlog Summary
 
+- 2026-09-05: **Space now pauses and resumes oak inspection** — the shared keyboard router reaches the existing pause command, essential HUD readings stay pinned, and lighting, soil colour, leaf camber and senescence colour have a reviewed presentation checkpoint. Independent review covered 11 material frames, 29 decoded motion frames and 21 refreshed baselines. Final local verification passed 2,288 unit tests and all 135 browser tests after a flaky test observer was repaired. Five falling-leaf prototypes failed the contact requirement, so scripted fall, material attachment and broader visual acceptance remain unresolved. See [details](detailed/2026-09-05_2026-09-05.md#space-reaches-the-existing-pause-command).
+
 - 2026-09-05: Oak navigation reuses exact camera-fit geometry for the current immutable render frame; a day-100 fitting microbenchmark measured 1.7 ms median versus 7.2 ms uncached, with exact fit parity. This is not a sustained-FPS result. See [details](detailed/2026-09-05_2026-09-05.md#camera-navigation-reuses-the-current-subject).
 
 - 2026-09-05: Oak visual checks now distinguish subpixel petiole growth from visible lamina and measure enlarged roots against a soil-only frame; independent review removed a false physical-contact claim. See [details](detailed/2026-09-05_2026-09-05.md).

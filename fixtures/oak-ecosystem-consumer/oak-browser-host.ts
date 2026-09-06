@@ -373,6 +373,8 @@ function mountOakBrowserHost(): OakBrowserHarnessV1 {
       syncControls();
     },
     onRefit: (preset) => { chooseCamera(preset); },
+    canTogglePause: () => !disposed && hasPresented && pendingCommands.length === 0,
+    onTogglePause: () => { dispatchCommand('toggle-pause'); },
   });
 
   const resize = (): void => {

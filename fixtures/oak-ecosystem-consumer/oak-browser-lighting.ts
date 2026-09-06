@@ -1,5 +1,6 @@
 import {
   AmbientLight,
+  Color,
   DirectionalLight,
   HemisphereLight,
   Object3D,
@@ -12,9 +13,9 @@ import type { OakBrowserHostLightingV1 } from './oak-browser-contract.js';
 
 const SHADOW_CAMERA_HALF_WIDTH_M = 0.34;
 const SHADOW_MAP_SIZE = 1_024;
-export const OAK_BROWSER_SKY_FILL_INTENSITY_V1 = 0.9;
-export const OAK_BROWSER_AMBIENT_BOUNCE_INTENSITY_V1 = 0.22;
-export const OAK_BROWSER_SUN_INTENSITY_V1 = 2.9;
+export const OAK_BROWSER_SKY_FILL_INTENSITY_V1 = 1.2;
+export const OAK_BROWSER_AMBIENT_BOUNCE_INTENSITY_V1 = 0.18;
+export const OAK_BROWSER_SUN_INTENSITY_V1 = 2.3;
 
 export interface OakBrowserLightingHandleV1 {
   evidence(): OakBrowserHostLightingV1;
@@ -25,22 +26,25 @@ export function createOakBrowserLightingV1(
   scene: Scene,
   renderer: WebGLRenderer,
 ): OakBrowserLightingHandleV1 {
+  const previousBackground = scene.background;
+  const inspectionBackground = new Color(0xdde6e4);
+  scene.background = inspectionBackground;
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = PCFShadowMap;
   const skyFill = new HemisphereLight(
-    0xdcecf2,
-    0xb69a76,
+    0xe6eef1,
+    0xb8afa0,
     OAK_BROWSER_SKY_FILL_INTENSITY_V1,
   );
   skyFill.name = 'oak-fixture-sky-fill';
   const ambientBounce = new AmbientLight(
-    0xdfe8dc,
+    0xe5e9e3,
     OAK_BROWSER_AMBIENT_BOUNCE_INTENSITY_V1,
   );
   const sunTarget = new Object3D();
   sunTarget.name = 'oak-fixture-sun-target';
   sunTarget.position.set(0, -0.08, 0);
-  const sun = new DirectionalLight(0xffe2a3, OAK_BROWSER_SUN_INTENSITY_V1);
+  const sun = new DirectionalLight(0xfff3df, OAK_BROWSER_SUN_INTENSITY_V1);
   sun.name = 'oak-fixture-shadow-sun';
   sun.position.set(-0.75, 1.45, 0.62);
   sun.target = sunTarget;
@@ -69,6 +73,7 @@ export function createOakBrowserLightingV1(
     dispose() {
       if (disposed) return;
       disposed = true;
+      if (scene.background === inspectionBackground) scene.background = previousBackground;
       scene.remove(skyFill, ambientBounce, sun, sunTarget);
       sun.shadow.dispose();
     },
