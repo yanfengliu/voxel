@@ -11,7 +11,7 @@ import {
 } from './oak-tissue-lattice.js';
 import { OAK_TISSUE_VOXEL_PITCH_M_V1 } from './oak-tissue-voxel-projection.js';
 import type { OakSimulationSnapshotV1 } from './oak-types.js';
-import { oakVoxelAabbGridKeysV1, type OakVoxelAabbV1 } from './oak-voxel-aabb.js';
+import { oakVoxelAabbPresentationGridKeysV1, type OakVoxelAabbV1 } from './oak-voxel-aabb.js';
 
 export const OAK_WEATHER_VOXEL_MATERIAL_KEY_V1 = 'material:oak:weather-voxel';
 export const OAK_WEATHER_VOXEL_BATCH_KEY_V1 = 'batch:oak:weather-voxels';
@@ -164,7 +164,7 @@ function blockedCells(
   bounds: readonly OakVoxelAabbV1[] | undefined,
 ): ReadonlySet<string> {
   return new Set((bounds ?? []).flatMap((box) =>
-    oakVoxelAabbGridKeysV1(box, PITCH)));
+    oakVoxelAabbPresentationGridKeysV1(box, PITCH)));
 }
 
 function addCell(

@@ -14,10 +14,10 @@ import {
 import {
   oakVoxelAabbFingerprintV1,
   oakVoxelAabbGridKeysV1,
-  oakVoxelAabbsOverlapV1,
   oakVoxelRecordAabbV1,
   type OakVoxelAabbV1,
 } from './oak-voxel-aabb.js';
+import { oakVoxelRecordsOverlapV1 } from './oak-voxel-obb.js';
 import type {
   OakLeafOrganSnapshotV1,
   OakRenderProjectionStateV1,
@@ -69,13 +69,13 @@ export function createOakFallenLitterVoxelMaterialV1(): MaterialResourceV1 {
   };
 }
 
-/** Exact presented living-body bounds retained as the litter-cache dependency. */
+/** Matrix geometry and conservative bounds form the disposable collision-cache dependency. */
 export function oakLivingLitterCollisionFingerprintV1(
   livingRecords: ReadonlyMap<string, readonly OakRenderInstanceRecordV1[]>,
 ): Set<string> {
   const occupied = new Set<string>();
   for (const record of [...livingRecords.values()].flat()) {
-    occupied.add(`${record.key}|${oakVoxelAabbFingerprintV1(oakVoxelRecordAabbV1(record))}`);
+    occupied.add(`${record.key}|${Array.from(record.matrix).join(':')}|${oakVoxelAabbFingerprintV1(oakVoxelRecordAabbV1(record))}`);
   }
   return occupied;
 }
@@ -83,6 +83,7 @@ export function oakLivingLitterCollisionFingerprintV1(
 interface LivingCollisionRecordV1 {
   readonly key: string;
   readonly bounds: OakVoxelAabbV1;
+  readonly record: OakRenderInstanceRecordV1;
 }
 
 function livingCollisionBuckets(
@@ -90,7 +91,7 @@ function livingCollisionBuckets(
 ): ReadonlyMap<string, readonly LivingCollisionRecordV1[]> {
   const buckets = new Map<string, LivingCollisionRecordV1[]>();
   for (const record of [...livingRecords.values()].flat()) {
-    const candidate = { key: record.key, bounds: oakVoxelRecordAabbV1(record) };
+    const candidate = { key: record.key, bounds: oakVoxelRecordAabbV1(record), record };
     for (const key of oakVoxelAabbGridKeysV1(candidate.bounds, OAK_TISSUE_VOXEL_PITCH_M_V1)) {
       const values = buckets.get(key) ?? [];
       values.push(candidate);
@@ -123,7 +124,7 @@ export function buildOakFallenLitterVoxelProjectionV1(
       for (const candidate of livingBuckets.get(key) ?? []) candidates.set(candidate.key, candidate);
     }
     const overlap = [...candidates.values()].find((candidate) =>
-      oakVoxelAabbsOverlapV1(litterBounds, candidate.bounds));
+      oakVoxelRecordsOverlapV1(record, candidate.record));
     if (overlap !== undefined) {
       throw new Error(
         `Fallen oak litter '${record.key}' overlaps presented tissue '${overlap.key}'; `

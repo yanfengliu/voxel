@@ -1,219 +1,105 @@
-import {
-  oakVoxelAabbsOverlapV1,
-  oakVoxelRecordAabbV1,
-  type OakVoxelMatrixRecordV1,
-} from './oak-voxel-aabb.js';
+import { classifySolids, type Solid } from './oak-affine-sat.js';
+import { classifyExactSolids, type ExactShape } from './oak-affine-fallback.js';
+import { exact, dmul, dcompare, type Interval } from './oak-affine-arithmetic.js';
+import type { OakVoxelMatrixRecordV1 } from './oak-voxel-aabb.js';
 
 type Vec3 = readonly [x: number, y: number, z: number];
-
 export interface OakVoxelObbV1 {
   readonly center: Vec3;
   readonly axes: readonly [Vec3, Vec3, Vec3];
   readonly halfLengths: Vec3;
 }
-
-const CONTACT_TOLERANCE_M = Number.EPSILON * 8_192;
 const ORTHOGONAL_TOLERANCE = 1e-8;
-
-function dot(left: Vec3, right: Vec3): number {
-  return left[0] * right[0] + left[1] * right[1] + left[2] * right[2];
-}
-
-function length(vector: Vec3): number {
-  return Math.hypot(vector[0], vector[1], vector[2]);
-}
-
-function cross(left: Vec3, right: Vec3): Vec3 {
-  return [
-    left[1] * right[2] - left[2] * right[1],
-    left[2] * right[0] - left[0] * right[2],
-    left[0] * right[1] - left[1] * right[0],
-  ];
-}
-
-function normalized(vector: Vec3): Vec3 | null {
-  const magnitude = length(vector);
-  return magnitude > Number.EPSILON * 8_192
-    ? [vector[0] / magnitude, vector[1] / magnitude, vector[2] / magnitude]
-    : null;
-}
-
-/** Exact oriented box represented by the transformed unit-cube instance. */
-export function oakVoxelRecordObbV1(
-  record: OakVoxelMatrixRecordV1,
-): OakVoxelObbV1 {
-  const matrix = record.matrix;
-  if (matrix.length !== 16
-    || Array.from(matrix).some((value) => !Number.isFinite(value))) {
+const dot = (a: Vec3, b: Vec3): number => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+function recordShape(record: OakVoxelMatrixRecordV1): Solid {
+  const m = record.matrix;
+  if (m.length !== 16 || Array.from(m).some(value => !Number.isFinite(value))) {
     throw new RangeError('Oak voxel collision requires one finite 4x4 instance matrix.');
   }
-  const columns = [
-    [matrix[0]!, matrix[1]!, matrix[2]!],
-    [matrix[4]!, matrix[5]!, matrix[6]!],
-    [matrix[8]!, matrix[9]!, matrix[10]!],
-  ] as const;
-  const columnLengths = columns.map(length) as [number, number, number];
-  if (columnLengths.some((value) => !(value > 0))) {
-    throw new RangeError('Oak voxel collision requires three nonzero instance axes.');
+  if (m[3] !== 0 || m[7] !== 0 || m[11] !== 0 || m[15] !== 1) {
+    throw new RangeError('Oak voxel collision requires an affine matrix with bottom row [0, 0, 0, 1].');
   }
-  const axes = columns.map((column, index) => [
-    column[0] / columnLengths[index]!,
-    column[1] / columnLengths[index]!,
-    column[2] / columnLengths[index]!,
-  ] as Vec3) as [Vec3, Vec3, Vec3];
-  for (const [left, right] of [[0, 1], [0, 2], [1, 2]] as const) {
-    if (Math.abs(dot(axes[left], axes[right])) > ORTHOGONAL_TOLERANCE) {
-      throw new RangeError('Oak voxel collision requires orthogonal instance axes.');
-    }
+  return { center: [m[12]!, m[13]!, m[14]!],
+    edges: [[m[0]! / 2, m[1]! / 2, m[2]! / 2],
+      [m[4]! / 2, m[5]! / 2, m[6]! / 2],
+      [m[8]! / 2, m[9]! / 2, m[10]! / 2]] };
+}
+function exactRecordShape(record: OakVoxelMatrixRecordV1): ExactShape {
+  const m = record.matrix;
+  return { center: [m[12]!, m[13]!, m[14]!].map(exact),
+    edges: [0, 4, 8].map(offset => [0, 1, 2].map(axis => {
+      const value = exact(m[offset + axis]!);
+      return { n: value.n, e: value.e - 1 };
+    })) };
+}
+function classifyRecords(left: OakVoxelMatrixRecordV1, right: OakVoxelMatrixRecordV1, metric = false) {
+  const a = recordShape(left), b = recordShape(right);
+  // Doubling a rounded half recovers its operand exactly iff no underflow
+  // rounding changed it. Odd subnormal columns need their original dyadics.
+  const lossy = [left, right].some(record => [0, 4, 8].some(offset =>
+    [0, 1, 2].some(axis => record.matrix[offset + axis]! / 2 * 2 !== record.matrix[offset + axis])));
+  return lossy
+    ? classifyExactSolids(exactRecordShape(left), exactRecordShape(right), { metric })
+    : classifySolids(a, b, { metric });
+}
+/** Numeric OBB convenience view; record predicates preserve exact matrix geometry. */
+export function oakVoxelRecordObbV1(record: OakVoxelMatrixRecordV1): OakVoxelObbV1 {
+  const shape = recordShape(record);
+  const halfLengths = shape.edges.map(edge => Math.hypot(...edge)) as [number, number, number];
+  if (halfLengths.some(value => !Number.isFinite(value) || value <= 0)) {
+    throw new RangeError('Oak numeric OBB view requires finite representable positive half lengths; use record predicates for exact matrix geometry.');
   }
-  return {
-    center: [matrix[12]!, matrix[13]!, matrix[14]!],
-    axes,
-    halfLengths: [columnLengths[0] / 2, columnLengths[1] / 2, columnLengths[2] / 2],
-  };
+  const axes = shape.edges.map((edge, i) => edge.map(value => value / halfLengths[i]!) as unknown as Vec3) as [Vec3, Vec3, Vec3];
+  const result = { center: shape.center as Vec3, axes, halfLengths };
+  obbShape(result);
+  return result;
 }
-
-function separated(distance: number, radius: number): boolean {
-  return distance >= Math.max(0, radius - CONTACT_TOLERANCE_M);
+function obbShape(obb: OakVoxelObbV1): Solid {
+  if (obb.center.length !== 3 || obb.axes.length !== 3 || obb.halfLengths.length !== 3
+    || obb.axes.some(axis => axis.length !== 3)
+    || [...obb.center, ...obb.axes.flat(), ...obb.halfLengths].some(value => !Number.isFinite(value))
+    || obb.halfLengths.some(value => value <= 0)) {
+    throw new RangeError('Oak voxel OBB requires a finite center, three unit axes and three finite positive half lengths.');
+  }
+  if (obb.axes.some(axis => Math.abs(dot(axis, axis) - 1) > ORTHOGONAL_TOLERANCE)
+    || ([[0, 1], [0, 2], [1, 2]] as const).some(([a, b]) =>
+      Math.abs(dot(obb.axes[a], obb.axes[b])) > ORTHOGONAL_TOLERANCE)) {
+    throw new RangeError('Oak voxel OBB requires unit orthogonal axes within 1e-8; use the affine record predicate for shear.');
+  }
+  return { center: obb.center, edges: obb.axes.map((axis, i) =>
+    axis.map(value => value * obb.halfLengths[i]!)) };
 }
-
-/** Separating-axis test; exact face-only contact is legal. */
+/** Strict depth greater than 2^-39 m on every actual nonzero SAT axis. */
 export function oakVoxelObbsOverlapV1(left: OakVoxelObbV1, right: OakVoxelObbV1): boolean {
-  const rotation = left.axes.map((axis) => right.axes.map((other) => dot(axis, other)));
-  const absolute = rotation.map((row) => row.map(Math.abs));
-  const centerDelta: Vec3 = [
-    right.center[0] - left.center[0],
-    right.center[1] - left.center[1],
-    right.center[2] - left.center[2],
-  ];
-  const translated: Vec3 = [
-    dot(centerDelta, left.axes[0]),
-    dot(centerDelta, left.axes[1]),
-    dot(centerDelta, left.axes[2]),
-  ];
-
-  for (let axis = 0; axis < 3; axis += 1) {
-    const radius = left.halfLengths[axis]!
-      + right.halfLengths.reduce((sum, half, other) =>
-        sum + half * absolute[axis]![other]!, 0);
-    if (separated(Math.abs(translated[axis]!), radius)) return false;
-  }
-  for (let axis = 0; axis < 3; axis += 1) {
-    const radius = right.halfLengths[axis]!
-      + left.halfLengths.reduce((sum, half, other) =>
-        sum + half * absolute[other]![axis]!, 0);
-    const distance = Math.abs(translated.reduce((sum, value, other) =>
-      sum + value * rotation[other]![axis]!, 0));
-    if (separated(distance, radius)) return false;
-  }
-  for (let leftAxis = 0; leftAxis < 3; leftAxis += 1) {
-    for (let rightAxis = 0; rightAxis < 3; rightAxis += 1) {
-      const crossLengthSquared = Math.max(0,
-        1 - rotation[leftAxis]![rightAxis]! ** 2);
-      if (crossLengthSquared <= ORTHOGONAL_TOLERANCE ** 2) continue;
-      const leftNext = (leftAxis + 1) % 3;
-      const leftLast = (leftAxis + 2) % 3;
-      const rightNext = (rightAxis + 1) % 3;
-      const rightLast = (rightAxis + 2) % 3;
-      const radius = left.halfLengths[leftNext]! * absolute[leftLast]![rightAxis]!
-        + left.halfLengths[leftLast]! * absolute[leftNext]![rightAxis]!
-        + right.halfLengths[rightNext]! * absolute[leftAxis]![rightLast]!
-        + right.halfLengths[rightLast]! * absolute[leftAxis]![rightNext]!;
-      const distance = Math.abs(
-        translated[leftLast]! * rotation[leftNext]![rightAxis]!
-        - translated[leftNext]! * rotation[leftLast]![rightAxis]!,
-      );
-      if (separated(distance, radius)) return false;
-    }
-  }
-  return true;
+  const a = obbShape(left), b = obbShape(right);
+  const exactObb = (obb: OakVoxelObbV1): ExactShape => ({ center: obb.center.map(exact),
+    edges: obb.axes.map((axis, i) => axis.map(value => dmul(exact(value), exact(obb.halfLengths[i]!)))) });
+  const A = exactObb(left), B = exactObb(right);
+  const lossy = [a, b].some((shape, s) => shape.edges.some((edge, i) => edge.some((value, j) =>
+    !Number.isFinite(value) || dcompare(exact(value), [A, B][s]!.edges[i]![j]!) !== 0)));
+  return (lossy ? classifyExactSolids(A, B) : classifySolids(a, b)).overlap;
 }
-
-/** AABB broad phase followed by exact oriented-cube overlap. */
-export function oakVoxelRecordsOverlapV1(
-  left: OakVoxelMatrixRecordV1,
-  right: OakVoxelMatrixRecordV1,
-): boolean {
-  if (!oakVoxelAabbsOverlapV1(oakVoxelRecordAabbV1(left), oakVoxelRecordAabbV1(right))) {
-    return false;
-  }
+/** Includes certified coordinate rejection; no rounded endpoint rejection precedes it. */
+export function oakVoxelRecordsOverlapV1(left: OakVoxelMatrixRecordV1, right: OakVoxelMatrixRecordV1): boolean {
   return oakVoxelParallelepipedsOverlapV1(left, right);
 }
-
-/**
- * SAT for accepted Float32 affine cube matrices. Face normals plus every
- * cross-edge axis test the actual parallelepiped Voxel receives, including
- * serialization-scale shear, instead of pretending the public matrix is an
- * exact OBB.
- */
-export function oakVoxelParallelepipedsOverlapV1(
-  left: OakVoxelMatrixRecordV1,
-  right: OakVoxelMatrixRecordV1,
-): boolean {
-  return oakVoxelParallelepipedAxisSeparationsV1(left, right)
-    .every((overlapDepth) => overlapDepth > CONTACT_TOLERANCE_M);
+/** Actual stored affine columns, including shear; only exact zero axes are omitted. */
+export function oakVoxelParallelepipedsOverlapV1(left: OakVoxelMatrixRecordV1, right: OakVoxelMatrixRecordV1): boolean {
+  return classifyRecords(left, right).overlap;
 }
-
-function oakVoxelParallelepipedAxisSeparationsV1(
-  left: OakVoxelMatrixRecordV1,
-  right: OakVoxelMatrixRecordV1,
-): readonly number[] {
-  const shape = (record: OakVoxelMatrixRecordV1) => {
-    const matrix = record.matrix;
-    if (matrix.length !== 16
-      || Array.from(matrix).some((value) => !Number.isFinite(value))) {
-      throw new RangeError('Oak voxel collision requires one finite 4x4 instance matrix.');
-    }
-    const edges = [
-      [matrix[0]! / 2, matrix[1]! / 2, matrix[2]! / 2],
-      [matrix[4]! / 2, matrix[5]! / 2, matrix[6]! / 2],
-      [matrix[8]! / 2, matrix[9]! / 2, matrix[10]! / 2],
-    ] as const;
-    if (edges.some((edge) => !(length(edge) > 0))) {
-      throw new RangeError('Oak voxel collision requires three nonzero instance axes.');
-    }
-    const basis = edges.map((edge) => {
-      const edgeLength = length(edge);
-      return [edge[0] / edgeLength, edge[1] / edgeLength, edge[2] / edgeLength] as Vec3;
-    }) as [Vec3, Vec3, Vec3];
-    if (Math.abs(dot(basis[0], cross(basis[1], basis[2]))) <= ORTHOGONAL_TOLERANCE) {
-      throw new RangeError('Oak voxel collision requires a nondegenerate instance transform.');
-    }
-    return {
-      center: [matrix[12]!, matrix[13]!, matrix[14]!] as Vec3,
-      edges,
-    };
-  };
-  const leftShape = shape(left);
-  const rightShape = shape(right);
-  const axes = [
-    cross(leftShape.edges[1], leftShape.edges[2]),
-    cross(leftShape.edges[2], leftShape.edges[0]),
-    cross(leftShape.edges[0], leftShape.edges[1]),
-    cross(rightShape.edges[1], rightShape.edges[2]),
-    cross(rightShape.edges[2], rightShape.edges[0]),
-    cross(rightShape.edges[0], rightShape.edges[1]),
-    ...leftShape.edges.flatMap((leftEdge) =>
-      rightShape.edges.map((rightEdge) => cross(leftEdge, rightEdge))),
-  ].map(normalized).filter((axis): axis is Vec3 => axis !== null);
-  const delta: Vec3 = [
-    rightShape.center[0] - leftShape.center[0],
-    rightShape.center[1] - leftShape.center[1],
-    rightShape.center[2] - leftShape.center[2],
-  ];
-  return axes.map((axis) => {
-    const distance = Math.abs(dot(delta, axis));
-    const radius = leftShape.edges.reduce((sum, edge) => sum + Math.abs(dot(edge, axis)), 0)
-      + rightShape.edges.reduce((sum, edge) => sum + Math.abs(dot(edge, axis)), 0);
-    return radius - distance;
-  });
+/** Largest SAT-axis air gap, not Euclidean distance. The interval certifies comparisons. */
+export function oakVoxelParallelepipedsSeparationReceiptV1(left: OakVoxelMatrixRecordV1, right: OakVoxelMatrixRecordV1): Readonly<{
+  signedDepthIntervalM: Interval;
+  separationIntervalM: Interval;
+  separationApproxM: number;
+}> {
+  const result = classifyRecords(left, right, true);
+  const depth = result.depthIntervalM!;
+  const separation: Interval = [Math.max(0, -depth[1]), Math.max(0, -depth[0])];
+  return { signedDepthIntervalM: depth, separationIntervalM: separation,
+    separationApproxM: separation[0] / 2 + separation[1] / 2 };
 }
-
-/** Largest accepted-Float32 separating-axis air gap; zero means surface contact. */
-export function oakVoxelParallelepipedsSeparationV1(
-  left: OakVoxelMatrixRecordV1,
-  right: OakVoxelMatrixRecordV1,
-): number {
-  return Math.max(0, ...oakVoxelParallelepipedAxisSeparationsV1(left, right)
-    .map((overlapDepth) => -overlapDepth));
+/** Diagnostic midpoint; use the receipt's enclosure for contact/clearance decisions. */
+export function oakVoxelParallelepipedsSeparationV1(left: OakVoxelMatrixRecordV1, right: OakVoxelMatrixRecordV1): number {
+  return oakVoxelParallelepipedsSeparationReceiptV1(left, right).separationApproxM;
 }

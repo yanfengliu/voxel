@@ -3,12 +3,14 @@ import { describe, expect, it } from 'vitest';
 
 import {
   buildOakFallenLitterVoxelProjectionV1,
+  oakLivingLitterCollisionFingerprintV1,
   OAK_FALLEN_LITTER_VOXEL_BATCH_KEY_V1,
   OAK_FALLEN_LITTER_VOXEL_MATERIAL_KEY_V1,
 } from './oak-fallen-litter-voxel.js';
 import { buildOakContactLitterProjectionV1 } from './oak-litter-contact-projection.js';
 import { buildOakRenderDeltaV1, buildOakRenderFrameV1 } from './oak-render-adapter.js';
 import type { OakRenderInstanceRecordV1 } from './oak-render-projection.js';
+import { oakVoxelRecordsOverlapV1 } from './oak-voxel-obb.js';
 import {
   createOakSimulationV1,
   oakHostTicksForBiologicalDaysV1,
@@ -105,6 +107,20 @@ function rawFinalLeafRecords(leaf: OakLeafOrganSnapshotV1) {
 }
 
 describe('oak fallen-leaf voxel litter', () => {
+  // Bound: equal world bounds can hide a changed affine collision decision.
+  it('invalidates living collision dependencies when orientation changes within equal bounds', () => {
+    const positive: OakRenderInstanceRecordV1 = {
+      key: 'same-living-record', color: { r: 1, g: 2, b: 3, a: 255 },
+      matrix: [2, 1, 0, 0, -.1, .2, 0, 0, 0, 0, .2, 0, 0, 0, 0, 1],
+    };
+    const negative = { ...positive, matrix: [2, -1, 0, 0, .1, .2, 0, 0, 0, 0, .2, 0, 0, 0, 0, 1] };
+    const probe = { matrix: [.1, 0, 0, 0, 0, .1, 0, 0, 0, 0, .1, 0, .75, .4, 0, 1] };
+    expect(oakVoxelRecordAabbV1(positive)).toEqual(oakVoxelRecordAabbV1(negative));
+    expect(oakVoxelRecordsOverlapV1(positive, probe)).toBe(true);
+    expect(oakVoxelRecordsOverlapV1(negative, probe)).toBe(false);
+    expect(oakLivingLitterCollisionFingerprintV1(new Map([['wood', [positive]]])))
+      .not.toEqual(oakLivingLitterCollisionFingerprintV1(new Map([['wood', [negative]]])));
+  });
   it('preserves each final falling mask and gives every rigid leaf nonpenetrating support', () => {
     const simulation = createOakSimulationV1();
     simulation.advanceHostTicks(oakHostTicksForBiologicalDaysV1(249));

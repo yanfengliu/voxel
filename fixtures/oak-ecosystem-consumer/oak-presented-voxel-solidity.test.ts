@@ -23,6 +23,7 @@ import {
 } from './oak-voxel-aabb.js';
 import {
   oakVoxelParallelepipedsSeparationV1,
+  oakVoxelParallelepipedsSeparationReceiptV1,
   oakVoxelRecordsOverlapV1,
 } from './oak-voxel-obb.js';
 
@@ -152,7 +153,8 @@ function leafAttachmentWitnessIssues(
     const separationM = oakVoxelParallelepipedsSeparationV1(leafVoxel, parentVoxel);
     if (Math.abs(separationM - witness.separationM) > 1e-12) {
       issues.push(`${leaf.key} witness reports a stale separation`);
-    } else if (separationM > OAK_MAX_TOPOLOGICAL_LEAF_PORT_SEPARATION_M_V1) {
+    } else if (oakVoxelParallelepipedsSeparationReceiptV1(leafVoxel, parentVoxel)
+      .separationIntervalM[1] > OAK_MAX_TOPOLOGICAL_LEAF_PORT_SEPARATION_M_V1) {
       issues.push(`${leaf.key} witness has ${String(separationM)} m of air`);
     }
   }

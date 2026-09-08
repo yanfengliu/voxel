@@ -5,7 +5,7 @@ import {
 } from './oak-tissue-union-routing.js';
 import type { OakRenderProjectionStateV1 } from './oak-types.js';
 import {
-  oakVoxelParallelepipedsSeparationV1,
+  oakVoxelParallelepipedsSeparationReceiptV1,
   oakVoxelRecordsOverlapV1,
 } from './oak-voxel-obb.js';
 
@@ -17,6 +17,8 @@ export interface OakLeafPortWitnessV1 {
   readonly parentRecordKey: string;
   readonly parentCell: OakTissueLatticeCellV1;
   readonly separationM: number;
+  /** Fixture diagnostic enclosure; no durable or renderer state authority. */
+  readonly separationIntervalM: readonly [number, number];
 }
 
 /** Measured 4.791602945 mm fixed-milestone maximum plus a rounded 7.055 nm margin. */
@@ -41,6 +43,7 @@ export function oakSelectTopologicalParentMaterialV1(input: Readonly<{
   record: OakRenderInstanceRecordV1;
   material: OakTissueMaterialCellV1;
   separationM: number;
+  separationIntervalM: readonly [number, number];
 }> {
   const basalRecord = acceptedRecord(input.basalRecord);
   const recordsByKey = new Map([...input.records.values()].flat()
@@ -52,8 +55,9 @@ export function oakSelectTopologicalParentMaterialV1(input: Readonly<{
     if (record === undefined || input.excludedRecordKeys?.has(record.key) === true) return [];
     const acceptedParent = acceptedRecord(record);
     if (oakVoxelRecordsOverlapV1(basalRecord, acceptedParent)) return [];
-    return [{ material, record,
-      separationM: oakVoxelParallelepipedsSeparationV1(basalRecord, acceptedParent) }];
+    const receipt = oakVoxelParallelepipedsSeparationReceiptV1(basalRecord, acceptedParent);
+    return [{ material, record, separationM: receipt.separationApproxM,
+      separationIntervalM: receipt.separationIntervalM }];
   }).sort((left, right) => left.separationM - right.separationM
     || left.record.key.localeCompare(right.record.key));
   const selected = candidates[0];
@@ -108,6 +112,7 @@ export function buildOakTopologicalLeafPortsV1(
       parentRecordKey: selected.record.key,
       parentCell: selected.material.cell,
       separationM: selected.separationM,
+      separationIntervalM: selected.separationIntervalM,
     });
   }
   return result.sort((left, right) => left.leafOrganKey.localeCompare(right.leafOrganKey));

@@ -13,10 +13,10 @@ import { supportOakLeafRecordsOnTerrainV1 } from './oak-litter-support.js';
 import type { OakLeafOrganSnapshotV1 } from './oak-types.js';
 import {
   oakVoxelAabbGridKeysV1,
-  oakVoxelAabbsOverlapV1,
   oakVoxelRecordAabbV1,
   type OakVoxelAabbV1,
 } from './oak-voxel-aabb.js';
+import { oakVoxelRecordsOverlapV1 } from './oak-voxel-obb.js';
 
 export interface OakContactLeafMetricsV1 {
   readonly leafKey: string;
@@ -70,6 +70,7 @@ function wholeLeafRetainedByCutaway(
 interface PlacedLitterVoxelV1 {
   readonly leafKey: string;
   readonly bounds: OakVoxelAabbV1;
+  readonly record: OakRenderInstanceRecordV1;
 }
 
 function assertAndIndexPlacedLeaf(
@@ -86,13 +87,13 @@ function assertAndIndexPlacedLeaf(
       for (const candidate of buckets.get(key) ?? []) candidates.add(candidate);
     }
     const overlap = [...candidates].find((candidate) =>
-      oakVoxelAabbsOverlapV1(bounds, candidate.bounds));
+      oakVoxelRecordsOverlapV1(record, candidate.record));
     if (overlap !== undefined) {
       throw new Error(
         `Settled oak leaf '${leafKey}' overlaps '${overlap.leafKey}' in three dimensions.`,
       );
     }
-    additions.push({ keys: gridKeys, voxel: { leafKey, bounds } });
+    additions.push({ keys: gridKeys, voxel: { leafKey, bounds, record } });
   }
   for (const addition of additions) {
     for (const key of addition.keys) {
