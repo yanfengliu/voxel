@@ -54,7 +54,31 @@ jobs:
         run: npm run test:browser:install
 
       - name: Run complete verification gate
+        id: verify
         run: npm run verify
+
+      # A browser failure that only happens on one runner is only a pixel count
+      # in a log until someone can open the images. Playwright writes the
+      # `-actual`, `-expected` and `-diff` PNGs, the on-failure screenshots and
+      # the retained traces into `outputDir` (`playwright.config.ts`), and the
+      # runner then throws them away. This is the only Linux this fleet has.
+      #
+      # Conditioned on this step rather than on `failure()`, because `npm run
+      # verify` builds, unit-tests, typechecks and lints before it reaches
+      # Playwright: a failure earlier in the job leaves no output directory, and
+      # naming the step keeps the upload attached to the gate that produces it.
+      # `if-no-files-found` stays at its default `warn` for that same case.
+      #
+      # Seven days: this is diagnostic evidence for the run that produced it,
+      # read within a day or two of the failure and worthless once the failure
+      # is understood, so it does not want the 90-day default sitting in storage.
+      - name: Upload Playwright failure output
+        if: ${{ !cancelled() && steps.verify.outcome == 'failure' }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: playwright-failure-output-${{ matrix.os }}
+          path: output/playwright/
+          retention-days: 7
 
   node-22-portable:
     name: Node 22 portable (${{ matrix.os }})
