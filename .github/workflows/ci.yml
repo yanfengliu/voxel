@@ -69,11 +69,28 @@ jobs:
       # naming the step keeps the upload attached to the gate that produces it.
       # `if-no-files-found` stays at its default `warn` for that same case.
       #
+      # `always()` and not `!cancelled()`, because a job killed by its own
+      # `timeout-minutes` is reported as CANCELLED, and that is the case this
+      # repository most needs the pictures for: `timeout-minutes: 60` above is
+      # itself a budget sized from a measurement, and the browser lane has been
+      # sitting against it. Measured, not assumed — run 35178071008 killed both
+      # Windows legs at exactly their caps, and the API reports
+      # `steps.verify.outcome == 'cancelled'` with this step `skipped`, while
+      # the Ubuntu leg that failed normally reported `failure` and uploaded.
+      # `!cancelled()` is false during cancellation; `always()` is the one
+      # documented function that still evaluates there.
+      #
+      # It is deliberately not `always()` alone: `outcome` is `skipped` when an
+      # earlier step failed, and `success` needs no evidence. A user- or
+      # concurrency-initiated cancel is indistinguishable from a timeout kill at
+      # this level, so a superseded run will also upload its partial output;
+      # seven days of retention is what bounds that.
+      #
       # Seven days: this is diagnostic evidence for the run that produced it,
       # read within a day or two of the failure and worthless once the failure
       # is understood, so it does not want the 90-day default sitting in storage.
       - name: Upload Playwright failure output
-        if: ${{ !cancelled() && steps.verify.outcome == 'failure' }}
+        if: ${{ always() && (steps.verify.outcome == 'failure' || steps.verify.outcome == 'cancelled') }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: playwright-failure-output-${{ matrix.os }}
