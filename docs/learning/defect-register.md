@@ -6,6 +6,34 @@ Unlike a lesson, an entry stays after it becomes a gate. This is the standing li
 
 Newest first.
 
+## 2026-09-22 — Two oak HUD baselines failed on every Linux run because the platform supplied the HUD's font
+
+**Symptom.** The Ubuntu leg of `Node 24 complete` failed `oak-mature-hud-hero-page.png` by 16,105 pixels and `oak-weather-wind-start-hero.png` by 16,303 pixels, a ratio of 0.03 against `maxDiffPixelRatio: 0.002`. Local Windows runs passed, and so did the Windows leg whenever it reached them. The same counts were already failing at `2cf7e44` on 2026-09-06, among the timeout failures of the same runs.
+
+**What the investigation found.**
+
+- The CI artifacts of runs 35178071008 and 35187583238, read at native resolution, differ only inside the HUD panel. Right of x = 330 the Windows baseline and the Linux capture are byte-identical: maximum channel delta 0 over 453,600 pixels. Every differing pixel lies within x 13–322, y 33–706. SwiftShader's WebGL raster was never the problem.
+- The HUD named `"Segoe UI", system-ui, sans-serif`. Segoe UI is a Windows font, so ubuntu-latest fell through to DejaVu Sans: different letterforms, wider advances, and a reflowed panel in which "Reset experiment" wraps to two lines.
+- Three more baselines carry the same panel and had never been compared on Linux: `oak-weather-wind-crest-hero.png`, `oak-weather-wind-lull-hero.png` and `oak-weather-wind-lull-overhead.png`. The wind test never hides the HUD, and a canvas element screenshot is a clip of the composited page, so the HUD is in all four wind frames. `wind-start` failed first, and the test stopped there.
+- The typeface was not the whole difference. Both platforms drew this HUD with LCD subpixel antialiasing, through different filters: Windows ClearType edge pixels such as (193, 146, 94), Linux FreeType edge pixels such as (246, 246, 229). Pixelmatch's distance counts colour, so the same font file alone would still have differed at glyph edges.
+
+**Root cause.** A pixel baseline captured text whose typeface and rasterisation the operating system supplied, under a policy of one baseline set for every platform. `playwright.config.ts` already pinned the WebGL raster with SwiftShader for exactly this reason, and text had no equivalent. Nothing local could see it, because a pixel comparison can only see a platform's font on a platform the baseline was not recorded on.
+
+**Outcome.**
+
+- The oak HUD draws from a bundled Source Sans 3: variable, upright, version 3.052, © 2023 Adobe, SIL Open Font License 1.1. It lives in `fixtures/oak-ecosystem-consumer/fonts/` with its licence, copied unmodified from streamlit 1.57.0's installed copy. It is named first, with no platform family ahead of it and no `local()` source. It carries no hinting instructions, so DirectWrite and FreeType start from the same outlines.
+- `playwright.config.ts` adds `--disable-lcd-text` and `--font-render-hinting=none`. ⟨MEASURE: what each flag bought on Linux, from the diagnostic run, and the Windows byte-compare with and without the hinting flag.⟩
+- ⟨MEASURE: the full browser suite with the font and flags, before regenerating: which baselines failed.⟩ The five HUD baselines were then regenerated on Windows and inspected one at a time at native resolution. ⟨MEASURE: digests, and that each changed only inside the HUD panel.⟩
+- ⟨MEASURE: both CI legs' results.⟩
+
+**How it is checked from now on.**
+
+- `tests/browser/oak-ecosystem-font.spec.ts` asks Chromium, through DevTools' `CSS.getPlatformFontsForNode`, which font drew every text-bearing element of the oak page. It also measures a probe line holding every visible character in the HUD's authored sources. It fails on any glyph the bundled face did not draw, and it fails on Windows as well as Linux, which the baselines cannot. ⟨MEASURE: the red run with the `"Segoe UI"` stack restored.⟩ The [gate proof](gate-proofs.md#⟨anchor⟩) records it.
+- The Linux leg of CI still compares all five baselines against their Windows recording, and remains the only check of how each platform rasterises the same glyphs.
+- Bounds, stated rather than implied. The font gate covers the oak page only: no other page has text in a baseline today, since the studio shell baseline hides its text, so a new text-bearing baseline elsewhere is caught only by the Linux leg. It proves which face drew the text, not how it was rasterised. `scripts/verify-supply-chain.mjs` checks npm packages only, by walking `node_modules`, so a vendored non-npm asset such as this font is a bound on that gate, not something it covers. The font's licence is recorded in `oak-browser-host.css` and `fonts/OFL.txt` instead. ⟨MEASURE: `npm pack --dry-run --ignore-scripts` confirming the font is outside the published package, whose `files` field is `dist/**/*.js` and `dist/**/*.d.ts`.⟩
+
+**What this register should be read for.** A baseline that holds still on the machine that recorded it can still depend on that machine. The WebGL raster was pinned, but the text in front of it was not, and the text was what differed.
+
 ## 2026-09-08 — Oak collision checks discarded valid separating axes and candidate pairs
 
 **Symptom and investigation.** Continuing the owner's requirement that the oak make physical sense, independent numerical controls showed that the old voxel predicate could report overlap after discarding a small nonzero cross axis. Its direct OBB path also compared an unnormalized cross-axis quantity with a metre threshold. A separate finite-input counterexample used identical cubes at center 1e20: rounded AABB endpoints collapsed to the center and the wrapper rejected their real overlap. These are query defects; repairing them does not establish physical leaf flight or material attachment.

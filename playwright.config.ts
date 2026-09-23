@@ -121,7 +121,20 @@ export default defineConfig({
     trace: 'retain-on-failure',
     screenshot: 'only-on-failure',
     launchOptions: {
-      args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader'],
+      // SwiftShader makes the WebGL raster the same on every platform. The
+      // last two flags aim to do the same for text, which five oak baselines
+      // capture: the HUD is drawn over the canvas. The typeface is bundled in
+      // `oak-browser-host.css`. `--disable-lcd-text` asks for grayscale glyph
+      // edges, because Windows drew this HUD with ClearType colour fringes
+      // and Linux with a different subpixel filter. `--font-render-hinting=none`
+      // is the headless shell's switch for unhinted glyphs placed at
+      // fractional positions, which Chromium on Windows already does.
+      args: [
+        '--use-angle=swiftshader',
+        '--enable-unsafe-swiftshader',
+        '--disable-lcd-text',
+        '--font-render-hinting=none',
+      ],
     },
   },
 });

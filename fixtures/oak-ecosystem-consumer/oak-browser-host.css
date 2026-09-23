@@ -1,6 +1,32 @@
+/*
+ * The HUD's typeface ships with the fixture rather than coming from the
+ * operating system. Five pixel baselines capture this panel: the HUD page and
+ * the four wind frames, whose canvas captures include the HUD drawn over the
+ * canvas. `playwright.config.ts` keeps one baseline set for every platform.
+ * Until 2026-09-22 this stack named "Segoe UI", a Windows font, so ubuntu-latest
+ * fell through to DejaVu Sans. CI run 35187583238 then failed the HUD page by
+ * 16,105 pixels and the first wind frame by 16,303, all inside this panel.
+ *
+ * Source Sans 3, variable, upright, version 3.052. © 2023 Adobe, SIL Open Font
+ * License 1.1, in fonts/OFL.txt. Copied unmodified from streamlit 1.57.0's
+ * static/media/SourceSansVF-Upright.ttf.BsWL4Kly.woff2, sha256 5f16566f…acbd8.
+ * It carries no hinting instructions, so every rasteriser starts from the same
+ * outlines, and its weight axis draws the 550 and 650 weights below exactly.
+ * There is no local() source on purpose: a platform-installed copy is the
+ * defect this rule exists to remove. `tests/browser/oak-ecosystem-font.spec.ts`
+ * fails if any HUD glyph is drawn by another face.
+ */
+@font-face {
+  font-family: "Source Sans 3";
+  src: url("./fonts/SourceSans3VF-Upright.woff2") format("woff2");
+  font-weight: 200 900;
+  font-style: normal;
+  font-display: block;
+}
+
 :root {
   color-scheme: light;
-  font-family: "Segoe UI", system-ui, sans-serif;
+  font-family: "Source Sans 3", sans-serif;
   --ink: #243b35;
   --muted: #53665e;
   --panel: #f6f8f3f5;
@@ -63,7 +89,7 @@ button {
   border-radius: 0.4rem;
   color: var(--ink);
   background: #ffffffaa;
-  font: 550 0.77rem/1.2 "Segoe UI", system-ui, sans-serif;
+  font: 550 0.77rem/1.2 "Source Sans 3", sans-serif;
   cursor: pointer;
 }
 button:hover { border-color: #658a77; background: #e6ede5; }
