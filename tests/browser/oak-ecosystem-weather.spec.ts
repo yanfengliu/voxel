@@ -9,6 +9,7 @@ import {
   OAK_WEATHER_PRESENTATION_AUTHORITY_V1,
 } from '../../fixtures/oak-ecosystem-consumer/oak-weather-voxel-presentation.js';
 import { oakHostTicksForBiologicalDaysV1 } from '../../fixtures/oak-ecosystem-consumer/oak-simulation.js';
+import { timeoutForMeasuredWorkMs } from '../testing/test-timeout.js';
 import { guardPageErrors } from './page-errors.js';
 import {
   analyzeOakImageDifference,
@@ -73,7 +74,20 @@ async function setPlantVisible(page: Parameters<typeof oakEvidence>[0], visible:
 test('voxel rain visibly falls, rebounds from retained terrain, expires, and exposes infiltration', async ({
   page,
 }) => {
-  test.setTimeout(120_000);
+  // Grows to day 180, runs a rain pulse through fall, impact and expiry, then
+  // grows the same 180 days again for the dry control — two full maturity runs
+  // and six canvas captures.
+  //
+  // Measured on this workstation on 2026-09-22/23, one Playwright process per
+  // run, each probed before and after and sampled every 5 s throughout: clean
+  // runs 49.7 and 46.8 s; the budget takes the worse. A third run read 47.5 s
+  // while another repository's headless browser worked at about 2 cores for
+  // most of it, and is not used.
+  //
+  // It spent 116.4 s of the old unmeasured 120 s on ubuntu-latest in run
+  // 35164009617 — 97% — and was killed at 120 s on windows-latest in the same
+  // run.
+  test.setTimeout(timeoutForMeasuredWorkMs(49_700));
   await openOakCaseStudy(page, origin);
   await clickOakCommand(page, 'toggle-pause');
   await commandOakHarness(page, 'reset');
@@ -192,7 +206,15 @@ test('voxel rain visibly falls, rebounds from retained terrain, expires, and exp
 });
 
 test('three ordered gust frames move both airflow voxels and the actual oak pixels', async ({ page }) => {
-  test.setTimeout(120_000);
+  // Grows to day 180 once, then captures three gust frames twice each, with
+  // and without the weather layer.
+  //
+  // Measured on this workstation on 2026-09-22/23, one Playwright process per
+  // run, each probed before and after and sampled every 5 s throughout: clean
+  // runs 35.8, 32.9, 31.7 and 30.5 s; the budget takes the worst. It spent
+  // 88.4 s of the old unmeasured 120 s on windows-latest in run 35164009617 —
+  // 74%, one point under the headroom gate.
+  test.setTimeout(timeoutForMeasuredWorkMs(35_800));
   await openOakCaseStudy(page, origin);
   await clickOakCommand(page, 'toggle-pause');
   await commandOakHarness(page, 'reset');

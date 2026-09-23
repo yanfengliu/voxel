@@ -138,14 +138,24 @@ export function repositorySourceFilesV1(
 }
 
 /**
- * Strips comments before a scan reads a line.
+ * Strips comments before a scan reads a line, without moving any line.
  *
  * Prose about a historical value must not fail a scan, and a real literal must
  * not be able to hide behind one.
+ *
+ * A block comment's text goes and its line breaks stay, so line `n` of the
+ * result is line `n` of the file. Deleting the breaks along with the comment
+ * shifted every line after one, and both callers report a line in their failure
+ * message: this would have named `model-studio-machine-works.spec.ts:601` for a
+ * budget that sits at `:620`, `:424` for `:430`, and `:272`/`:465` for
+ * `:280`/`:473` — every frozen literal in `browser-test-budget.test.ts`, wrong
+ * only on the path where a reader needs the line, which is the failure. The
+ * rate scan in `tools/studio/solver-rate.test.ts` reports lines the same way.
+ * Measured and corrected 2026-09-16; an error message is a product surface.
  */
 export function repositoryCodeOnlyV1(source: string): string {
   return source
-    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .replace(/\/\*[\s\S]*?\*\//g, (block) => block.replace(/[^\n]/gu, ''))
     .split('\n')
     .map((line) => line.split('//')[0] ?? '')
     .join('\n');

@@ -107,11 +107,21 @@ describe('no test opts itself out of the contention allowance', () => {
       // This exemption used to say Playwright specs had "their own gate and
       // their own timeout config"; on 2026-08-28 they had neither, and that
       // sentence is what let the browser lane run for five weeks on a flat
-      // sixty seconds nothing had measured. The gate above now exists. What
-      // still has no gate is the *intra-test* literal — a `{ timeout: 30_000 }`
-      // on a single wait inside a browser spec is below this file's 45,000
-      // allowance and no scan reads it. Two of the 2026-08-28 defects were
-      // exactly that. See `docs/learning/defect-register.md`.
+      // sixty seconds nothing had measured. The gate above now exists.
+      //
+      // The exemption then survived one revision too long. Naming the margin
+      // reporter as the browser lane's gate left `test.setTimeout()` read by
+      // nothing at all, and a margin gate cannot see where a number came from:
+      // on 2026-09-16 four oak budgets were bare literals and all four failed,
+      // while the one oak test built by `timeoutForMeasuredWorkMs` spent 55% of
+      // what it was given in the same run. `browser-test-budget.test.ts` reads
+      // `test.setTimeout()` now, and is the reason this filter is still safe.
+      //
+      // What still has no gate is the *intra-test* literal — a
+      // `{ timeout: 30_000 }` on a single wait inside a browser spec is below
+      // this file's 45,000 allowance and no scan reads it. Two of the
+      // 2026-08-28 defects were exactly that. See
+      // `docs/learning/defect-register.md`.
       //
       // `tmp/**` and `.claude/**` are excluded from this suite entirely (see
       // vitest.config.ts), so they cannot arm anything.

@@ -74,7 +74,26 @@ test.beforeEach(async ({ page }) => {
 });
 
 test('grows a stable organ and its visible voxel front over consecutive default-speed frames', async ({ page }) => {
-  test.setTimeout(120_000);
+  // 180 single-tick browser round trips, each followed by a full tissue
+  // projection built here in Node, then a reset and a replay of the discovered
+  // witness steps with a canvas capture on each.
+  //
+  // Measured on this workstation on 2026-09-22/23, one Playwright process per
+  // run, each run probed before and after and sampled every 5 s throughout for
+  // foreign load: clean runs 42.2 and 42.3 s; the budget takes the worse. A
+  // third run read 47.3 s while another repository's headless browser climbed
+  // to 5.6 cores mid-run, and is not used. The 111.8 s this budget was first
+  // built from was taken under load nothing had checked for.
+  //
+  // A cold Vite module graph is the normal case on CI, not the odd one:
+  // `playwright.config.ts` records that 23 spec files each start their own
+  // Vite server and pull the graph through it. The allowance and the
+  // four-times multiple in `timeoutForMeasuredWorkMs` are what cover it.
+  //
+  // The 180 frames are not padding and must not be shortened to buy margin.
+  // They are what proves gradual growth rather than a teleported organ, which
+  // is the 2026-08-31 defect this test gates.
+  test.setTimeout(timeoutForMeasuredWorkMs(42_300));
   await openOakCaseStudy(page, origin);
   await clickOakCommand(page, 'toggle-pause');
   await commandOakHarness(page, 'reset');

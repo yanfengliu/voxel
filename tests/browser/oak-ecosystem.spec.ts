@@ -12,6 +12,7 @@ import {
   oakHostTicksForBiologicalDaysV1,
 } from '../../fixtures/oak-ecosystem-consumer/oak-simulation.js';
 import { OAK_RAIN_FALL_TICKS_V1 } from '../../fixtures/oak-ecosystem-consumer/oak-weather-voxel-presentation.js';
+import { timeoutForMeasuredWorkMs } from '../testing/test-timeout.js';
 import { guardPageErrors } from './page-errors.js';
 import {
   analyzeOakImageDifference,
@@ -162,6 +163,20 @@ test('initial readiness gates controls and pending commands cross exact revision
 });
 
 test('oak inspection uses the Studio pointer, wheel, and held-WASD camera contract', async ({ page }) => {
+  // Drives every mouse button, the wheel and each held WASD key through the
+  // real canvas, proves navigation does not mutate biology, survives a
+  // simulation step and a resize, refits an exact preset, then disposes.
+  //
+  // Measured on this workstation on 2026-09-22/23, one Playwright process per
+  // run, each probed before and after and sampled every 5 s throughout: clean
+  // runs 38.4, 29.5, 26.3 and 25.8 s; the budget takes the worst. It was on
+  // the suite default, and in run 35164009617 it spent 108.9 s of that 110.5 s
+  // on windows-latest — 99% — and was killed at 110.5 s on ubuntu-latest. That
+  // default is sized from a different test entirely
+  // (`model-studio-scene-annotations.spec.ts:639`, 65.5 s on windows-latest),
+  // so this one carries its own rather than riding a number chosen for
+  // something else.
+  test.setTimeout(timeoutForMeasuredWorkMs(38_400));
   await expectOakStudioNavigationContractV1(page, origin);
 });
 
@@ -292,10 +307,23 @@ test('the first flush adds biological topology and keeps GPU resources bounded',
 });
 
 test('fixed cameras, root cutaway, resize, capture, and teardown stay coherent', async ({ page }) => {
-  // Nine exact captures plus the cutaway pixel instrument measured beyond the
-  // 110.5 s suite default on Windows on 2026-08-31. Keep the same 180 s budget
-  // as the oak milestone sweep, which performs a comparable evidence capture.
-  test.setTimeout(180_000);
+  // Nine exact captures, the root-cutaway pixel instrument, a resize and a
+  // teardown.
+  //
+  // Measured on this workstation on 2026-09-22/23, one Playwright process per
+  // run, each probed before and after and sampled every 5 s throughout: clean
+  // runs 71.7 and 70.4 s; the budget takes the worse. A third run read 72.6 s
+  // while another repository's headless browser reached 2.3 cores mid-run, and
+  // is not used. It was killed at 180 s on windows-latest in run 35164009617.
+  //
+  // The 180 s it replaces was never this test's measurement. Its note recorded
+  // only that the test ran past the 110.5 s suite default — a lower bound, not
+  // a duration — and then took the oak milestone sweep's budget on the grounds
+  // that the two do comparable work. `playwright.config.ts` says why that does
+  // not follow: "a default sized for the heaviest member stops being a budget
+  // for anything else", and a budget borrowed from another test is the same
+  // mistake with one member instead of all of them.
+  test.setTimeout(timeoutForMeasuredWorkMs(71_700));
   await openOakCaseStudy(page, origin);
   await clickOakCommand(page, 'toggle-pause');
   await clickOakCommand(page, 'reset');
