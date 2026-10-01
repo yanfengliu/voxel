@@ -1,0 +1,678 @@
+{
+  "reviewer": "/root/occupation_source_acceptance",
+  "createdAt": "2026-10-01T08:56:42.146Z",
+  "workspace": "C:\\Users\\38909\\Documents\\github\\voxel-worktrees\\engine-feedback-voxel-1001",
+  "candidate": "8cadce5221e7797ac8571fc1be47f62571584dac",
+  "base": "1230be136af96b612b28cf0a13bf023f8d35deb0",
+  "tree": "6455ddd922f13f43c3a4d922f51af8fb66dcf72c",
+  "mainLocal": "1230be136af96b612b28cf0a13bf023f8d35deb0",
+  "readOnly": true,
+  "inputs": [
+    {
+      "path": "docs/devlog/summary.md",
+      "gitBlob": "810b3572b20710c337620bd6f382871ead8dc442",
+      "sha256": "389c0b3beb26ac6006543314c4b9c65bf43d32463995095e4f451546d1517a3f",
+      "bytes": 50920,
+      "expectedMatches": true,
+      "indexMatches": true,
+      "worktreeSHA256": "1a6b8fb79b2cc3210000dffb3ebb45ea50eee3cba1645bd729ce84328713ca01",
+      "worktreeBytes": 50959,
+      "worktreeExact": false,
+      "worktreeCRLFOnly": true
+    },
+    {
+      "path": "docs/learning/defect-register.md",
+      "gitBlob": "28994bf5d8ca125504b57bf9bfef6b5fafe327b4",
+      "sha256": "b494141452b8fb4d3b25028b81ea3ad5242c7230948c7b59ccd06bddc1750fa9",
+      "bytes": 106870,
+      "expectedMatches": true,
+      "indexMatches": true,
+      "worktreeSHA256": "b7e4c28989bcfead568cf5749efd81ecb1c796dc1d0263370d895dfa8ad969f8",
+      "worktreeBytes": 107231,
+      "worktreeExact": false,
+      "worktreeCRLFOnly": true
+    },
+    {
+      "path": "docs/work/0_engine-feedback-audit/plan.md",
+      "gitBlob": "138ccedef47640e586693654ad3383791c10055f",
+      "sha256": "4404db04a5943e1c8188088997b8ca39375da2f52f29a922acb6ea90ee798a77",
+      "bytes": 12805,
+      "expectedMatches": true,
+      "indexMatches": true,
+      "worktreeSHA256": "4404db04a5943e1c8188088997b8ca39375da2f52f29a922acb6ea90ee798a77",
+      "worktreeBytes": 12805,
+      "worktreeExact": true,
+      "worktreeCRLFOnly": true
+    },
+    {
+      "path": "docs/work/1_portable-ci-budget/design.md",
+      "gitBlob": "64b6417fcb578c59b27ba7e915ffe04b7092fa75",
+      "sha256": "f143e8df89d09768f6cd264cd4985b3defbbf43e3046770c307190fa2ed29765",
+      "bytes": 9901,
+      "expectedMatches": true,
+      "indexMatches": true,
+      "worktreeSHA256": "f143e8df89d09768f6cd264cd4985b3defbbf43e3046770c307190fa2ed29765",
+      "worktreeBytes": 9901,
+      "worktreeExact": true,
+      "worktreeCRLFOnly": true
+    },
+    {
+      "path": "docs/work/1_portable-ci-budget/plan.md",
+      "gitBlob": "eb65733c0e55b0c0271c263b107d5758c62fc9ee",
+      "sha256": "4c8ff9fca92f3a0499b066c5666984b3ae589a6679d9dce92b61f7c722fb4644",
+      "bytes": 14735,
+      "expectedMatches": true,
+      "indexMatches": true,
+      "worktreeSHA256": "4c8ff9fca92f3a0499b066c5666984b3ae589a6679d9dce92b61f7c722fb4644",
+      "worktreeBytes": 14735,
+      "worktreeExact": true,
+      "worktreeCRLFOnly": true
+    },
+    {
+      "path": "docs/work/1_portable-ci-budget/reviews/0_implementation.md",
+      "gitBlob": "ff7075fc38ab7d86efeab9c7a610bf80625d71a8",
+      "sha256": "86a2fb92e51f7410df617349c0a7a3d2da35330af46fd92e2dbab1fc3bb908e7",
+      "bytes": 7105,
+      "expectedMatches": true,
+      "indexMatches": true,
+      "worktreeSHA256": "86a2fb92e51f7410df617349c0a7a3d2da35330af46fd92e2dbab1fc3bb908e7",
+      "worktreeBytes": 7105,
+      "worktreeExact": true,
+      "worktreeCRLFOnly": true
+    },
+    {
+      "path": "docs/work/1_portable-ci-budget/snapshots/canonical-eol-binding.md",
+      "gitBlob": "897080deab268c389935f5225bba8a97ef346182",
+      "sha256": "b0e018a7d70ac5271c44627181a644e344457d380fd88685cb049b4fceffab28",
+      "bytes": 2863,
+      "expectedMatches": true,
+      "indexMatches": true,
+      "worktreeSHA256": "b0e018a7d70ac5271c44627181a644e344457d380fd88685cb049b4fceffab28",
+      "worktreeBytes": 2863,
+      "worktreeExact": true,
+      "worktreeCRLFOnly": true
+    },
+    {
+      "path": "docs/work/1_portable-ci-budget/snapshots/reviewed-design.md",
+      "gitBlob": "64b6417fcb578c59b27ba7e915ffe04b7092fa75",
+      "sha256": "f143e8df89d09768f6cd264cd4985b3defbbf43e3046770c307190fa2ed29765",
+      "bytes": 9901,
+      "expectedMatches": true,
+      "indexMatches": true,
+      "worktreeSHA256": "f143e8df89d09768f6cd264cd4985b3defbbf43e3046770c307190fa2ed29765",
+      "worktreeBytes": 9901,
+      "worktreeExact": true,
+      "worktreeCRLFOnly": true
+    },
+    {
+      "path": "docs/work/1_portable-ci-budget/snapshots/reviewed-plan.md",
+      "gitBlob": "941ca087c0e9e0cfce52b5b7cc7f0f72757e9f87",
+      "sha256": "f3f46077ba2087788c73767ee98b12b572f7dd2bb3009017a3727c4cd0052e58",
+      "bytes": 10736,
+      "expectedMatches": true,
+      "indexMatches": true,
+      "worktreeSHA256": "f3f46077ba2087788c73767ee98b12b572f7dd2bb3009017a3727c4cd0052e58",
+      "worktreeBytes": 10736,
+      "worktreeExact": true,
+      "worktreeCRLFOnly": true
+    },
+    {
+      "path": "docs/work/1_portable-ci-budget/snapshots/work0-reviewed-plan.md",
+      "gitBlob": "8976568e9dbe795b3cd2d00c26580d023d5e2a75",
+      "sha256": "00aa0d2f4029b607a9e7e13a2e9973342aec3d70b06469fb4abcdb69f10e08fe",
+      "bytes": 12518,
+      "expectedMatches": true,
+      "indexMatches": true,
+      "worktreeSHA256": "00aa0d2f4029b607a9e7e13a2e9973342aec3d70b06469fb4abcdb69f10e08fe",
+      "worktreeBytes": 12518,
+      "worktreeExact": true,
+      "worktreeCRLFOnly": true
+    },
+    {
+      "path": "docs/work/registry.json",
+      "gitBlob": "07ad29d4bf492a1a0008632860d756e80ea79fb1",
+      "sha256": "8b6ef7ffd8a5d24737ff4dd70b9a08c3702c40ed03c0055fc511817e4162024f",
+      "bytes": 173,
+      "expectedMatches": true,
+      "indexMatches": true,
+      "worktreeSHA256": "8b6ef7ffd8a5d24737ff4dd70b9a08c3702c40ed03c0055fc511817e4162024f",
+      "worktreeBytes": 173,
+      "worktreeExact": true,
+      "worktreeCRLFOnly": true
+    },
+    {
+      "path": "fixtures/oak-ecosystem-consumer/oak-leaf-fall-continuity.test.ts",
+      "gitBlob": "6b8cf8ac7cc1f6ca6b69ea1e7df0ead2872398dc",
+      "sha256": "fd56e61ea9f24b2c91c0f605284c5d8bc6d892b2a8bcd471f9b0d3681b218678",
+      "bytes": 23462,
+      "expectedMatches": true,
+      "indexMatches": true,
+      "worktreeSHA256": "504a9a9aeade1f27a3512bef06652aa49d68156aceb86db0c56e7d4d0e7274f2",
+      "worktreeBytes": 23968,
+      "worktreeExact": false,
+      "worktreeCRLFOnly": true
+    },
+    {
+      "path": "tests/testing/oak-leaf-oracle.test.ts",
+      "gitBlob": "a19e24925f80b53f736418cbc815215f6b895c20",
+      "sha256": "233963c869f4df20d3fd2155c49a035ed4295b25529b90609fb95d6970161b35",
+      "bytes": 7375,
+      "expectedMatches": true,
+      "indexMatches": true,
+      "worktreeSHA256": "233963c869f4df20d3fd2155c49a035ed4295b25529b90609fb95d6970161b35",
+      "worktreeBytes": 7375,
+      "worktreeExact": true,
+      "worktreeCRLFOnly": true
+    },
+    {
+      "path": "tests/testing/oak-leaf-oracle.ts",
+      "gitBlob": "af9fad24be2fae2bf70e36d3b940b0e5495de03b",
+      "sha256": "f116294fec406ffdca3dbcf8a40b8578faf4ed6da813307eaa5974c1c1b5fd12",
+      "bytes": 2313,
+      "expectedMatches": true,
+      "indexMatches": true,
+      "worktreeSHA256": "6f6e249a0e2a5d65ba4cdeecccbf41a5773c787a53657be979140f18aab044e0",
+      "worktreeBytes": 2314,
+      "worktreeExact": false,
+      "worktreeCRLFOnly": true
+    }
+  ],
+  "sourceCanonicalization": [
+    {
+      "path": "fixtures/oak-ecosystem-consumer/oak-leaf-fall-continuity.test.ts",
+      "reviewedRawBytes": 23968,
+      "reviewedRawSHA256": "504a9a9aeade1f27a3512bef06652aa49d68156aceb86db0c56e7d4d0e7274f2",
+      "indexBytes": 23462,
+      "indexSHA256": "fd56e61ea9f24b2c91c0f605284c5d8bc6d892b2a8bcd471f9b0d3681b218678",
+      "gitBlob": "6b8cf8ac7cc1f6ca6b69ea1e7df0ead2872398dc",
+      "normalization": "only CRLF-to-LF",
+      "crlfLines": {
+        "count": 506,
+        "first": 1,
+        "last": 506
+      },
+      "risk": {
+        "shebang": false,
+        "stringRawMentions": [],
+        "taggedTemplates": [],
+        "multilineLiterals": []
+      },
+      "syntaxErrors": 0,
+      "emittedRuntimeSHA256": "9ca86672f68942e2449cbb3ef35606702ae0c4f7d68a147ac3f1f463e254e760",
+      "emittedRuntimeBytes": 24186,
+      "identicalEmittedRuntime": true,
+      "reviewedRawReconstructs": true,
+      "actualCanonicalMatch": true,
+      "actualRawMatch": true,
+      "rawToCanonicalExact": true,
+      "reconstructedRawExact": true,
+      "currentRawExact": true
+    },
+    {
+      "path": "tests/testing/oak-leaf-oracle.ts",
+      "reviewedRawBytes": 2314,
+      "reviewedRawSHA256": "6f6e249a0e2a5d65ba4cdeecccbf41a5773c787a53657be979140f18aab044e0",
+      "indexBytes": 2313,
+      "indexSHA256": "f116294fec406ffdca3dbcf8a40b8578faf4ed6da813307eaa5974c1c1b5fd12",
+      "gitBlob": "af9fad24be2fae2bf70e36d3b940b0e5495de03b",
+      "normalization": "only CRLF-to-LF",
+      "crlfLines": {
+        "count": 1,
+        "first": 51,
+        "last": 51
+      },
+      "risk": {
+        "shebang": false,
+        "stringRawMentions": [],
+        "taggedTemplates": [],
+        "multilineLiterals": []
+      },
+      "syntaxErrors": 0,
+      "emittedRuntimeSHA256": "40567a5f00ece85baacd3b011e842f1cc871b737b8de4f9eb0a28dfd68a22491",
+      "emittedRuntimeBytes": 2223,
+      "identicalEmittedRuntime": true,
+      "reviewedRawReconstructs": true,
+      "actualCanonicalMatch": true,
+      "actualRawMatch": true,
+      "rawToCanonicalExact": true,
+      "reconstructedRawExact": true,
+      "currentRawExact": true
+    },
+    {
+      "path": "tests/testing/oak-leaf-oracle.test.ts",
+      "reviewedRawBytes": 7375,
+      "reviewedRawSHA256": "233963c869f4df20d3fd2155c49a035ed4295b25529b90609fb95d6970161b35",
+      "indexBytes": 7375,
+      "indexSHA256": "233963c869f4df20d3fd2155c49a035ed4295b25529b90609fb95d6970161b35",
+      "gitBlob": "a19e24925f80b53f736418cbc815215f6b895c20",
+      "normalization": "none",
+      "crlfLines": {
+        "count": 0
+      },
+      "risk": {
+        "shebang": false,
+        "stringRawMentions": [],
+        "taggedTemplates": [],
+        "multilineLiterals": []
+      },
+      "syntaxErrors": 0,
+      "emittedRuntimeSHA256": "4bd59e120202cd41a603a11674fb40384f54dcdfabd5aa63e4dcb651f88b8f48",
+      "emittedRuntimeBytes": 7503,
+      "identicalEmittedRuntime": true,
+      "reviewedRawReconstructs": true,
+      "actualCanonicalMatch": true,
+      "actualRawMatch": true,
+      "rawToCanonicalExact": true,
+      "reconstructedRawExact": true,
+      "currentRawExact": true
+    }
+  ],
+  "originalReview": {
+    "originalPath": "tmp/review-runs/voxel-oracle-1001/round-2/codex-review.md",
+    "sha256": "57af966e23538f9ea36d40a357c0593901789271f308438cdaba6e92515ace6e",
+    "bytes": 3812,
+    "exactlyOnce": true
+  },
+  "reviewedTargets": [
+    {
+      "path": "fixtures/oak-ecosystem-consumer/oak-leaf-fall-continuity.test.ts",
+      "sha256": "504a9a9aeade1f27a3512bef06652aa49d68156aceb86db0c56e7d4d0e7274f2",
+      "expectedMatches": true
+    },
+    {
+      "path": "tests/testing/oak-leaf-oracle.ts",
+      "sha256": "6f6e249a0e2a5d65ba4cdeecccbf41a5773c787a53657be979140f18aab044e0",
+      "expectedMatches": true
+    },
+    {
+      "path": "tests/testing/oak-leaf-oracle.test.ts",
+      "sha256": "233963c869f4df20d3fd2155c49a035ed4295b25529b90609fb95d6970161b35",
+      "expectedMatches": true
+    },
+    {
+      "path": "docs/work/1_portable-ci-budget/plan.md",
+      "sha256": "f3f46077ba2087788c73767ee98b12b572f7dd2bb3009017a3727c4cd0052e58",
+      "expectedMatches": true
+    },
+    {
+      "path": "docs/work/1_portable-ci-budget/design.md",
+      "sha256": "f143e8df89d09768f6cd264cd4985b3defbbf43e3046770c307190fa2ed29765",
+      "expectedMatches": true
+    },
+    {
+      "path": "docs/work/0_engine-feedback-audit/plan.md",
+      "sha256": "00aa0d2f4029b607a9e7e13a2e9973342aec3d70b06469fb4abcdb69f10e08fe",
+      "expectedMatches": true
+    },
+    {
+      "path": "docs/work/registry.json",
+      "sha256": "8b6ef7ffd8a5d24737ff4dd70b9a08c3702c40ed03c0055fc511817e4162024f",
+      "expectedMatches": true
+    },
+    {
+      "path": "docs/learning/defect-register.md",
+      "sha256": "b7e4c28989bcfead568cf5749efd81ecb1c796dc1d0263370d895dfa8ad969f8",
+      "expectedMatches": true
+    },
+    {
+      "path": "docs/devlog/summary.md",
+      "sha256": "8491491f0d2b31d133b069369e3b7e4fb34fc0ff8ceba379c6230be07293b02f",
+      "expectedMatches": true
+    }
+  ],
+  "snapshots": [
+    {
+      "original": "docs/work/0_engine-feedback-audit/plan.md",
+      "snapshot": "work0-reviewed-plan.md",
+      "sha256": "00aa0d2f4029b607a9e7e13a2e9973342aec3d70b06469fb4abcdb69f10e08fe",
+      "rawExact": true,
+      "crlfOnly": true
+    },
+    {
+      "original": "docs/work/1_portable-ci-budget/plan.md",
+      "snapshot": "reviewed-plan.md",
+      "sha256": "f3f46077ba2087788c73767ee98b12b572f7dd2bb3009017a3727c4cd0052e58",
+      "rawExact": true,
+      "crlfOnly": true
+    },
+    {
+      "original": "docs/work/1_portable-ci-budget/design.md",
+      "snapshot": "reviewed-design.md",
+      "sha256": "f143e8df89d09768f6cd264cd4985b3defbbf43e3046770c307190fa2ed29765",
+      "rawExact": true,
+      "crlfOnly": true
+    }
+  ],
+  "evidence": [
+    {
+      "path": "tmp/engine-feedback/ci-cost/full-gate-1/closing-witness.json",
+      "bytes": 5884,
+      "sha256": "5c33dfbd6a51816adf2bf982723ffe01ae1432c754ff64c91e4b57848087afe5"
+    },
+    {
+      "path": "tmp/engine-feedback/ci-cost/full-gate-1/job-gate-result.json",
+      "bytes": 1081,
+      "sha256": "eadfe96e1bdf8ea04fd526f7aec0632e2f24c2d133d846f9042ba6a164d3dfbb"
+    },
+    {
+      "path": "tmp/engine-feedback/ci-cost/full-gate-1/final-candidate.json",
+      "bytes": 100975,
+      "sha256": "e37badb42aee47d7f7dd97dc153bf43cf704243141b2bf6bcca370b98908fa99"
+    },
+    {
+      "path": "tmp/engine-feedback/ci-cost/full-gate-1/canonical-eol-proof.json",
+      "bytes": 10103,
+      "sha256": "809b2d3bb16d9d97210dbe09a9d0d36fa3ef44311e72bb0354e47934c240a49b"
+    },
+    {
+      "path": "tmp/engine-feedback/ci-cost/full-gate-1/canonical-eol-proof.cjs",
+      "bytes": 5981,
+      "sha256": "dfe0a95b872cac861f61871ebd44b8703aa87bfc661d1fc3860c756487f73946"
+    },
+    {
+      "path": "tmp/engine-feedback/ci-cost/full-gate-1/job.stdout.log",
+      "bytes": 29536,
+      "sha256": "a4428051d9710b2e327dd351653ef385c8f12c7ad844d501d2d0a20b6c0cf8ac"
+    },
+    {
+      "path": "tmp/engine-feedback/ci-cost/full-gate-1/job.stderr.log",
+      "bytes": 1833,
+      "sha256": "c0d46d34c96d7e07eec0230ec603b6aab91ee7c101c7070c26f9849133d1af9d"
+    },
+    {
+      "path": "tmp/engine-feedback/ci-cost/full-gate-1/job-process-trace.log",
+      "bytes": 492,
+      "sha256": "96f2a7f45a86c7551dd68f0d56580a025695cd35a9b6a0b7cfe62e50c91a0788"
+    },
+    {
+      "path": "tmp/engine-feedback/ci-cost/full-gate-1/inputs.json",
+      "bytes": 194885,
+      "sha256": "214cc7e4b727a35325e0db2e550906dbec773968b0668d0c18bc213aef6e314c"
+    },
+    {
+      "path": "tmp/engine-feedback/ci-cost/full-gate-1/run-owned-verify-job.ps1",
+      "bytes": 14232,
+      "sha256": "0c73acb682b5848bdbf6048582ef3b114de7a4d9cff387f90b2390693276335c"
+    },
+    {
+      "path": "tmp/engine-feedback/ci-cost/full-gate-1/helper-binding.json",
+      "bytes": 316,
+      "sha256": "c586bce864a9f1d009fe8cd06f2e860202cb8e9336522982d9e8c8521078a6d4"
+    },
+    {
+      "path": "tmp/engine-feedback/ci-cost/full-gate-1/verify-final.cjs",
+      "bytes": 2858,
+      "sha256": "d30b652494f46c5626caca5642774f0c1ae40b03cc0e052234fb412a3bc8bde0"
+    },
+    {
+      "path": "tmp/review-runs/voxel-oracle-1001/round-2/target-manifest.json",
+      "sha256": "eaf40551e5156c3a1ab9f7b71f47e6068c6dce62b3790099fc77a7a664deb711",
+      "bytes": 1623
+    },
+    {
+      "path": "tmp/engine-feedback/ci-cost/full-gate-1/pre-closure-docs_devlog_summary.md",
+      "sha256": "8491491f0d2b31d133b069369e3b7e4fb34fc0ff8ceba379c6230be07293b02f",
+      "bytes": 50797
+    },
+    {
+      "path": "tmp/engine-feedback/ci-cost/full-gate-1/pre-closure-docs_work_0_engine-feedback-audit_plan.md",
+      "sha256": "1f545fd81e9bcd86cd87091cc86b8a8d8e99ee0b45aafeca80f3bd4d4f5df6ff",
+      "bytes": 12649
+    },
+    {
+      "path": "tmp/engine-feedback/ci-cost/full-gate-1/pre-closure-docs_work_1_portable-ci-budget_plan.md",
+      "sha256": "4df31c410db171336c4a1d00ac9fd00281019a78216b81af3502aee18bf7256e",
+      "bytes": 11516
+    },
+    {
+      "path": "tmp/engine-feedback/ci-cost/full-gate-1/pre-closure-docs_work_1_portable-ci-budget_reviews_0_implementation.md",
+      "sha256": "269f4a77c527ab412ca1c66a944a7c97935e29f09b357d419580cdac25ec7eaf",
+      "bytes": 6775
+    },
+    {
+      "path": "tsconfig.json",
+      "sha256": "e89eae482ddbb12e3d3f755c72bfc54af023aa5983b05ecd7a4de6fb32a82add",
+      "bytes": 1099
+    },
+    {
+      "path": "node_modules/typescript/package.json",
+      "sha256": "822ef7ca6452205657b6288b066481ecf508bfbf43455d715cf7d3ec457561e6",
+      "bytes": 3620
+    },
+    {
+      "path": "fixtures/oak-ecosystem-consumer/oak-render-snapshot-operations.ts",
+      "sha256": "c52121c59dfa67e5076a58be13c0bbd877884cab01992dd2879a53bee15bc74b",
+      "bytes": 12523
+    },
+    {
+      "path": "tests/testing/browser-timeout-headroom.test.ts",
+      "sha256": "87697bc0bd4d4998d62586d45d822245bcacf76b63063ef5ec20755603dcc3f1",
+      "bytes": 8104
+    }
+  ],
+  "gateInputCount": 1089,
+  "postGateCurrentDrift": [
+    "docs/devlog/summary.md",
+    "docs/work/0_engine-feedback-audit/plan.md",
+    "docs/work/1_portable-ci-budget/plan.md",
+    "docs/work/1_portable-ci-budget/reviews/0_implementation.md"
+  ],
+  "compiler": {
+    "version": "5.9.3",
+    "configSHA256": "e89eae482ddbb12e3d3f755c72bfc54af023aa5983b05ecd7a4de6fb32a82add",
+    "evidenceMatches": true,
+    "transpileRerunByReviewer": false
+  },
+  "closingVerification": {
+    "checkedAt": "2026-10-01T09:00:42.620Z",
+    "candidate": "8cadce5221e7797ac8571fc1be47f62571584dac",
+    "trackedUnchanged": true,
+    "files": [
+      {
+        "path": "docs/devlog/summary.md",
+        "canonicalSHA256": "389c0b3beb26ac6006543314c4b9c65bf43d32463995095e4f451546d1517a3f",
+        "indexSHA256": "389c0b3beb26ac6006543314c4b9c65bf43d32463995095e4f451546d1517a3f",
+        "rawSHA256": "1a6b8fb79b2cc3210000dffb3ebb45ea50eee3cba1645bd729ce84328713ca01",
+        "matches": true
+      },
+      {
+        "path": "docs/learning/defect-register.md",
+        "canonicalSHA256": "b494141452b8fb4d3b25028b81ea3ad5242c7230948c7b59ccd06bddc1750fa9",
+        "indexSHA256": "b494141452b8fb4d3b25028b81ea3ad5242c7230948c7b59ccd06bddc1750fa9",
+        "rawSHA256": "b7e4c28989bcfead568cf5749efd81ecb1c796dc1d0263370d895dfa8ad969f8",
+        "matches": true
+      },
+      {
+        "path": "docs/work/0_engine-feedback-audit/plan.md",
+        "canonicalSHA256": "4404db04a5943e1c8188088997b8ca39375da2f52f29a922acb6ea90ee798a77",
+        "indexSHA256": "4404db04a5943e1c8188088997b8ca39375da2f52f29a922acb6ea90ee798a77",
+        "rawSHA256": "4404db04a5943e1c8188088997b8ca39375da2f52f29a922acb6ea90ee798a77",
+        "matches": true
+      },
+      {
+        "path": "docs/work/1_portable-ci-budget/design.md",
+        "canonicalSHA256": "f143e8df89d09768f6cd264cd4985b3defbbf43e3046770c307190fa2ed29765",
+        "indexSHA256": "f143e8df89d09768f6cd264cd4985b3defbbf43e3046770c307190fa2ed29765",
+        "rawSHA256": "f143e8df89d09768f6cd264cd4985b3defbbf43e3046770c307190fa2ed29765",
+        "matches": true
+      },
+      {
+        "path": "docs/work/1_portable-ci-budget/plan.md",
+        "canonicalSHA256": "4c8ff9fca92f3a0499b066c5666984b3ae589a6679d9dce92b61f7c722fb4644",
+        "indexSHA256": "4c8ff9fca92f3a0499b066c5666984b3ae589a6679d9dce92b61f7c722fb4644",
+        "rawSHA256": "4c8ff9fca92f3a0499b066c5666984b3ae589a6679d9dce92b61f7c722fb4644",
+        "matches": true
+      },
+      {
+        "path": "docs/work/1_portable-ci-budget/reviews/0_implementation.md",
+        "canonicalSHA256": "86a2fb92e51f7410df617349c0a7a3d2da35330af46fd92e2dbab1fc3bb908e7",
+        "indexSHA256": "86a2fb92e51f7410df617349c0a7a3d2da35330af46fd92e2dbab1fc3bb908e7",
+        "rawSHA256": "86a2fb92e51f7410df617349c0a7a3d2da35330af46fd92e2dbab1fc3bb908e7",
+        "matches": true
+      },
+      {
+        "path": "docs/work/1_portable-ci-budget/snapshots/canonical-eol-binding.md",
+        "canonicalSHA256": "b0e018a7d70ac5271c44627181a644e344457d380fd88685cb049b4fceffab28",
+        "indexSHA256": "b0e018a7d70ac5271c44627181a644e344457d380fd88685cb049b4fceffab28",
+        "rawSHA256": "b0e018a7d70ac5271c44627181a644e344457d380fd88685cb049b4fceffab28",
+        "matches": true
+      },
+      {
+        "path": "docs/work/1_portable-ci-budget/snapshots/reviewed-design.md",
+        "canonicalSHA256": "f143e8df89d09768f6cd264cd4985b3defbbf43e3046770c307190fa2ed29765",
+        "indexSHA256": "f143e8df89d09768f6cd264cd4985b3defbbf43e3046770c307190fa2ed29765",
+        "rawSHA256": "f143e8df89d09768f6cd264cd4985b3defbbf43e3046770c307190fa2ed29765",
+        "matches": true
+      },
+      {
+        "path": "docs/work/1_portable-ci-budget/snapshots/reviewed-plan.md",
+        "canonicalSHA256": "f3f46077ba2087788c73767ee98b12b572f7dd2bb3009017a3727c4cd0052e58",
+        "indexSHA256": "f3f46077ba2087788c73767ee98b12b572f7dd2bb3009017a3727c4cd0052e58",
+        "rawSHA256": "f3f46077ba2087788c73767ee98b12b572f7dd2bb3009017a3727c4cd0052e58",
+        "matches": true
+      },
+      {
+        "path": "docs/work/1_portable-ci-budget/snapshots/work0-reviewed-plan.md",
+        "canonicalSHA256": "00aa0d2f4029b607a9e7e13a2e9973342aec3d70b06469fb4abcdb69f10e08fe",
+        "indexSHA256": "00aa0d2f4029b607a9e7e13a2e9973342aec3d70b06469fb4abcdb69f10e08fe",
+        "rawSHA256": "00aa0d2f4029b607a9e7e13a2e9973342aec3d70b06469fb4abcdb69f10e08fe",
+        "matches": true
+      },
+      {
+        "path": "docs/work/registry.json",
+        "canonicalSHA256": "8b6ef7ffd8a5d24737ff4dd70b9a08c3702c40ed03c0055fc511817e4162024f",
+        "indexSHA256": "8b6ef7ffd8a5d24737ff4dd70b9a08c3702c40ed03c0055fc511817e4162024f",
+        "rawSHA256": "8b6ef7ffd8a5d24737ff4dd70b9a08c3702c40ed03c0055fc511817e4162024f",
+        "matches": true
+      },
+      {
+        "path": "fixtures/oak-ecosystem-consumer/oak-leaf-fall-continuity.test.ts",
+        "canonicalSHA256": "fd56e61ea9f24b2c91c0f605284c5d8bc6d892b2a8bcd471f9b0d3681b218678",
+        "indexSHA256": "fd56e61ea9f24b2c91c0f605284c5d8bc6d892b2a8bcd471f9b0d3681b218678",
+        "rawSHA256": "504a9a9aeade1f27a3512bef06652aa49d68156aceb86db0c56e7d4d0e7274f2",
+        "matches": true
+      },
+      {
+        "path": "tests/testing/oak-leaf-oracle.test.ts",
+        "canonicalSHA256": "233963c869f4df20d3fd2155c49a035ed4295b25529b90609fb95d6970161b35",
+        "indexSHA256": "233963c869f4df20d3fd2155c49a035ed4295b25529b90609fb95d6970161b35",
+        "rawSHA256": "233963c869f4df20d3fd2155c49a035ed4295b25529b90609fb95d6970161b35",
+        "matches": true
+      },
+      {
+        "path": "tests/testing/oak-leaf-oracle.ts",
+        "canonicalSHA256": "f116294fec406ffdca3dbcf8a40b8578faf4ed6da813307eaa5974c1c1b5fd12",
+        "indexSHA256": "f116294fec406ffdca3dbcf8a40b8578faf4ed6da813307eaa5974c1c1b5fd12",
+        "rawSHA256": "6f6e249a0e2a5d65ba4cdeecccbf41a5773c787a53657be979140f18aab044e0",
+        "matches": true
+      }
+    ],
+    "evidence": [
+      {
+        "path": "tmp/engine-feedback/ci-cost/full-gate-1/closing-witness.json",
+        "sha256": "5c33dfbd6a51816adf2bf982723ffe01ae1432c754ff64c91e4b57848087afe5",
+        "matches": true
+      },
+      {
+        "path": "tmp/engine-feedback/ci-cost/full-gate-1/job-gate-result.json",
+        "sha256": "eadfe96e1bdf8ea04fd526f7aec0632e2f24c2d133d846f9042ba6a164d3dfbb",
+        "matches": true
+      },
+      {
+        "path": "tmp/engine-feedback/ci-cost/full-gate-1/final-candidate.json",
+        "sha256": "e37badb42aee47d7f7dd97dc153bf43cf704243141b2bf6bcca370b98908fa99",
+        "matches": true
+      },
+      {
+        "path": "tmp/engine-feedback/ci-cost/full-gate-1/canonical-eol-proof.json",
+        "sha256": "809b2d3bb16d9d97210dbe09a9d0d36fa3ef44311e72bb0354e47934c240a49b",
+        "matches": true
+      },
+      {
+        "path": "tmp/engine-feedback/ci-cost/full-gate-1/canonical-eol-proof.cjs",
+        "sha256": "dfe0a95b872cac861f61871ebd44b8703aa87bfc661d1fc3860c756487f73946",
+        "matches": true
+      },
+      {
+        "path": "tmp/engine-feedback/ci-cost/full-gate-1/job.stdout.log",
+        "sha256": "a4428051d9710b2e327dd351653ef385c8f12c7ad844d501d2d0a20b6c0cf8ac",
+        "matches": true
+      },
+      {
+        "path": "tmp/engine-feedback/ci-cost/full-gate-1/job.stderr.log",
+        "sha256": "c0d46d34c96d7e07eec0230ec603b6aab91ee7c101c7070c26f9849133d1af9d",
+        "matches": true
+      },
+      {
+        "path": "tmp/engine-feedback/ci-cost/full-gate-1/job-process-trace.log",
+        "sha256": "96f2a7f45a86c7551dd68f0d56580a025695cd35a9b6a0b7cfe62e50c91a0788",
+        "matches": true
+      },
+      {
+        "path": "tmp/engine-feedback/ci-cost/full-gate-1/inputs.json",
+        "sha256": "214cc7e4b727a35325e0db2e550906dbec773968b0668d0c18bc213aef6e314c",
+        "matches": true
+      },
+      {
+        "path": "tmp/engine-feedback/ci-cost/full-gate-1/run-owned-verify-job.ps1",
+        "sha256": "0c73acb682b5848bdbf6048582ef3b114de7a4d9cff387f90b2390693276335c",
+        "matches": true
+      },
+      {
+        "path": "tmp/engine-feedback/ci-cost/full-gate-1/helper-binding.json",
+        "sha256": "c586bce864a9f1d009fe8cd06f2e860202cb8e9336522982d9e8c8521078a6d4",
+        "matches": true
+      },
+      {
+        "path": "tmp/engine-feedback/ci-cost/full-gate-1/verify-final.cjs",
+        "sha256": "d30b652494f46c5626caca5642774f0c1ae40b03cc0e052234fb412a3bc8bde0",
+        "matches": true
+      }
+    ],
+    "postGatePreimages": [
+      {
+        "path": "docs/devlog/summary.md",
+        "preimage": "tmp/engine-feedback/ci-cost/full-gate-1/pre-closure-docs_devlog_summary.md",
+        "sha256": "8491491f0d2b31d133b069369e3b7e4fb34fc0ff8ceba379c6230be07293b02f",
+        "matchesGateInput": true
+      },
+      {
+        "path": "docs/work/0_engine-feedback-audit/plan.md",
+        "preimage": "tmp/engine-feedback/ci-cost/full-gate-1/pre-closure-docs_work_0_engine-feedback-audit_plan.md",
+        "sha256": "1f545fd81e9bcd86cd87091cc86b8a8d8e99ee0b45aafeca80f3bd4d4f5df6ff",
+        "matchesGateInput": true
+      },
+      {
+        "path": "docs/work/1_portable-ci-budget/plan.md",
+        "preimage": "tmp/engine-feedback/ci-cost/full-gate-1/pre-closure-docs_work_1_portable-ci-budget_plan.md",
+        "sha256": "4df31c410db171336c4a1d00ac9fd00281019a78216b81af3502aee18bf7256e",
+        "matchesGateInput": true
+      },
+      {
+        "path": "docs/work/1_portable-ci-budget/reviews/0_implementation.md",
+        "preimage": "tmp/engine-feedback/ci-cost/full-gate-1/pre-closure-docs_work_1_portable-ci-budget_reviews_0_implementation.md",
+        "sha256": "269f4a77c527ab412ca1c66a944a7c97935e29f09b357d419580cdac25ec7eaf",
+        "matchesGateInput": true
+      }
+    ],
+    "allMatch": true
+  },
+  "report": {
+    "path": "C:/Users/38909/Documents/github/aoe2/tmp/review-runs/voxel-oracle-final-1001/report.md",
+    "sha256": "6f545766ca377fa2aaf214807e9000f9e42f56d0602ba416c6e024e24b6efe1a",
+    "bytes": 10395,
+    "lfOnly": true
+  },
+  "findings": [
+    {
+      "id": "VOXEL-FINAL-01",
+      "priority": "P3",
+      "status": "open",
+      "paths": [
+        "docs/learning/defect-register.md:15",
+        "docs/work/1_portable-ci-budget/plan.md:37"
+      ],
+      "summary": "Two stale current clauses deny completed source review/local full gate; main and hosted criteria remain pending."
+    }
+  ]
+}
