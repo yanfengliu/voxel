@@ -4,6 +4,10 @@
     {
       "id": 0,
       "theme": "engine-feedback-audit"
+    },
+    {
+      "id": 1,
+      "theme": "portable-ci-budget"
     }
   ]
 }

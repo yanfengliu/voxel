@@ -6,6 +6,15 @@ Unlike a lesson, an entry stays after it becomes a gate. This is the standing li
 
 Newest first.
 
+## 2026-10-01 — Portable CI deadline exposes repeated leaf-oracle work
+
+**Symptom.** Main1230be1 hosted36818318417 cancelled WindowsNode22 packed-consumer at its15-minute job cap after2311 unit tests, typecheck, lint, build and API passed. Prior9cc3f5d run35959811936 already hit the same cap during units. This is inherited cost, not a new assertion failure from the one-record dev dependency patch.
+
+**Investigation.** Current Windows units730.30s left25.29s for packed-consumer. The leaf continuity file consumed541.84s, including412.26s in complete-fall cold-cache handoff. One isolated matched Node24 pair preserved all530 warm/cold samples and128,493,232 array elements, but built7,051,904 matcher chains in the original fixture. Candidate plain numerical predicates retain every original comparison and delegate failures to the original matcher. The instrumented selected case decreased162.873s to126.815s; no hosted or uninstrumented result is inferred.
+
+**Check and remaining bound.** tests/testing/oak-leaf-oracle.test.ts pins58 literal original-verdict/diagnostic cases, with eight actual RED helper mutations and restored green. Real matrix/color/contact/handoff corruptions at visited ticks1/265/529/530 made the unchanged full-case assertions fail. Work1 retains source/runtime/population binding and exact commands. Full verify/review/main/hosted acceptance are pending. Linux HUD font differences and Windows browser timeouts are separate open classes; no budget or screenshot threshold changed.
+
+
 ## 2026-09-16 — The oak browser budgets were numbers nobody had measured, and the gate that watches them cannot fire while the lane is red
 
 **Symptom, as reported.** CI run 35164009617 on `ada60e9` failed. Both `Node 24 complete` jobs were red; `Node 22 portable` on both operating systems and `Audit and package` were green. windows-latest: 132 passed, 3 failed, 39.1 minutes. ubuntu-latest: 131 passed, 4 failed, 40.5 minutes. Every failure was an oak browser test, and each failed on its retry as well.

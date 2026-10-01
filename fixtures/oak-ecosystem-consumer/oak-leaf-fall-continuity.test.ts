@@ -3,6 +3,9 @@ import { describe, expect, it } from 'vitest';
 
 import { timeoutForMeasuredWorkMs } from '../../tests/testing/test-timeout.js';
 import {
+  expectAtLeast, expectCloseTo12, numericArraysEqual as arraysEqual,
+} from '../../tests/testing/oak-leaf-oracle.js';
+import {
   buildOakRenderFrameV1,
   type OakRenderFrameV1,
 } from './oak-render-adapter.js';
@@ -58,11 +61,6 @@ function terrainFootprintClearancesM(
     }
   }
   return clearances;
-}
-
-function arraysEqual(left: ArrayLike<number>, right: ArrayLike<number>): boolean {
-  return left.length === right.length
-    && Array.from(left).every((value, index) => Object.is(value, right[index]));
 }
 
 function frameContentEqual(left: OakRenderFrameV1, right: OakRenderFrameV1): boolean {
@@ -156,8 +154,8 @@ function expectSameRigidBody(
       previous.matrix[14]! - beforeOrigin[14]!,
     ]);
     for (const [axis, expected] of relative.entries()) {
-      expect(record.matrix[12 + axis], `${label} ${record.key} rigid translation`)
-        .toBeCloseTo(afterOrigin[12 + axis]! + expected, 12);
+      expectCloseTo12(record.matrix[12 + axis], afterOrigin[12 + axis]! + expected,
+        `${label} ${record.key} rigid translation`);
     }
     for (const column of [0, 4, 8] as const) {
       const expected = rotateDelta([
@@ -166,8 +164,8 @@ function expectSameRigidBody(
         previous.matrix[column + 2]!,
       ]);
       for (const [axis, value] of expected.entries()) {
-        expect(record.matrix[column + axis], `${label} ${record.key} rigid orientation`)
-          .toBeCloseTo(value, 12);
+        expectCloseTo12(record.matrix[column + axis], value,
+          `${label} ${record.key} rigid orientation`);
       }
     }
   }
@@ -266,8 +264,8 @@ describe('oak leaf fall continuity', () => {
           const clearances = terrainFootprintClearancesM(record);
           expect(clearances.length, `${record.key} retained terrain footprint`).toBeGreaterThan(0);
           for (const clearance of clearances) {
-            expect(clearance, `fall tick ${String(tick)} ${record.key}`)
-              .toBeGreaterThanOrEqual(-CONTACT_TOLERANCE_M);
+            expectAtLeast(clearance, -CONTACT_TOLERANCE_M,
+              `fall tick ${String(tick)} ${record.key}`);
             contacts += Number(Math.abs(clearance) <= CONTACT_TOLERANCE_M);
           }
         }
@@ -445,7 +443,7 @@ describe('oak leaf fall continuity', () => {
           const clearances = terrainFootprintClearancesM(record);
           expect(clearances.length, `${record.key} retained terrain footprint`).toBeGreaterThan(0);
           for (const clearance of clearances) {
-            expect(clearance, record.key).toBeGreaterThanOrEqual(-CONTACT_TOLERANCE_M);
+            expectAtLeast(clearance, -CONTACT_TOLERANCE_M, record.key);
             contacts += Number(Math.abs(clearance) <= CONTACT_TOLERANCE_M);
           }
         }
