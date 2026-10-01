@@ -6,13 +6,21 @@ Unlike a lesson, an entry stays after it becomes a gate. This is the standing li
 
 Newest first.
 
+## 2026-10-01 — Successful diagnostic fixtures must pin their supported runtime identity
+
+**Symptom.** Independent font-diagnostic review found that two mocked successful reports inherited process.version while the real checker requires Node24. The original fixture failed the checker-CLI case on official isolated Node22, although Node24 local tests passed.
+
+**Cause.** A fixture for a supported report accidentally described the unit runner rather than the report contract. Portable Node22 tests can inspect a Node24 diagnostic without pretending its own process is Node24.
+
+**Class check.** Both successful reports now carry literal v24.0.0, and an explicit v22.0.0 report is rejected. Actual original Node22 RED (one failed,42 passed), repaired Node22 and Node24 each43/43 GREEN, strict type/lint and focused internal independent SOURCE PASS bind the three added fixture lines. The unchanged full local13-stage gate also passed before private source commit6fa33f4. Work2 retains original reports/preimages and canonical EOL equivalence. Final integration and hosted fonts/outcomes remain open; no checker runtime requirement or pixel/budget assertion is relaxed.
+
 ## 2026-10-01 — Portable CI deadline exposes repeated leaf-oracle work
 
 **Symptom.** Main1230be1 hosted36818318417 cancelled WindowsNode22 packed-consumer at its15-minute job cap after2311 unit tests, typecheck, lint, build and API passed. Prior9cc3f5d run35959811936 already hit the same cap during units. This is inherited cost, not a new assertion failure from the one-record dev dependency patch.
 
 **Investigation.** Current Windows units730.30s left25.29s for packed-consumer. The leaf continuity file consumed541.84s, including412.26s in complete-fall cold-cache handoff. One isolated matched Node24 pair preserved all530 warm/cold samples and128,493,232 array elements, but built7,051,904 matcher chains in the original fixture. Candidate plain numerical predicates retain every original comparison and delegate failures to the original matcher. The instrumented selected case decreased162.873s to126.815s; no hosted or uninstrumented result is inferred.
 
-**Check and remaining bound.** tests/testing/oak-leaf-oracle.test.ts pins58 literal original-verdict/diagnostic cases, with eight actual RED helper mutations and restored green. Real matrix/color/contact/handoff corruptions at visited ticks1/265/529/530 made the unchanged full-case assertions fail. Work1 retains source/runtime/population binding and exact commands. Exact source review and full local13-stage verify passed; main/hosted acceptance remains pending. Linux HUD font differences and Windows browser timeouts are separate open classes; no budget or screenshot threshold changed.
+**Check and remaining bound.** tests/testing/oak-leaf-oracle.test.ts pins58 literal original-verdict/diagnostic cases, with eight actual RED helper mutations and restored green. Real matrix/color/contact/handoff corruptions at visited ticks1/265/529/530 made the unchanged full-case assertions fail. Work1 retains source/runtime/population binding and exact commands. Exact source review and full local13-stage verify passed; root accepted/pushed oracle6e28629 and both fresh Node22 portable jobs passed. Complete Node24 hosted acceptance remains open. Linux HUD font differences/headroom and Windows browser timeouts are separate open classes; no budget or screenshot threshold changed.
 
 
 ## 2026-09-16 — The oak browser budgets were numbers nobody had measured, and the gate that watches them cannot fire while the lane is red

@@ -1,0 +1,665 @@
+{
+  "reviewer": "/root/occupation_source_acceptance",
+  "startedAt": "2026-10-01T10:35:51.076Z",
+  "workspace": "C:\\Users\\38909\\Documents\\github\\voxel-worktrees\\engine-feedback-voxel-1001",
+  "base": "6e28629fe8dff1fef638b434d3a5381792f4b133",
+  "head": "6e28629fe8dff1fef638b434d3a5381792f4b133",
+  "frozenManifest": {
+    "path": "tmp/review-runs/voxel-font-diagnostic-1001/round-1/target-manifest.json",
+    "bytes": 3745,
+    "sha256": "9d3d6cb4255672052039e5113df750d66fb52a82f9690a1cf1b8224026295258"
+  },
+  "inputs": [
+    {
+      "path": ".github/workflows/oak-font-diagnostic.yml",
+      "bytes": 2682,
+      "sha256": "f581a34842d6a74149b5027988c783e06c6298f2e1909db3b59e95e541954284",
+      "kind": "source",
+      "actualSHA256": "f581a34842d6a74149b5027988c783e06c6298f2e1909db3b59e95e541954284",
+      "actualBytes": 2682,
+      "matches": true,
+      "targetCopyMatches": true
+    },
+    {
+      "path": "scripts/verify-oak-font-diagnostic.mjs",
+      "bytes": 7082,
+      "sha256": "a2d998ee3e0e156bf53ad7c18b1bf902400039495d16c7c8c1c684c58939f058",
+      "kind": "source",
+      "actualSHA256": "a2d998ee3e0e156bf53ad7c18b1bf902400039495d16c7c8c1c684c58939f058",
+      "actualBytes": 7082,
+      "matches": true,
+      "targetCopyMatches": true
+    },
+    {
+      "path": "tests/browser/oak-ecosystem-weather.spec.ts",
+      "bytes": 15704,
+      "sha256": "68685807f3c1ea4f141ad5b7fcf26a67614c269132efd8f3c5536497ebef32b5",
+      "kind": "source",
+      "actualSHA256": "68685807f3c1ea4f141ad5b7fcf26a67614c269132efd8f3c5536497ebef32b5",
+      "actualBytes": 15704,
+      "matches": true,
+      "targetCopyMatches": true
+    },
+    {
+      "path": "tests/browser/oak-ecosystem.spec.ts",
+      "bytes": 23903,
+      "sha256": "629bd93bc466890c4819be6ef030ac12fae2197ea02ff63b87c75a85e0f5b23f",
+      "kind": "source",
+      "actualSHA256": "629bd93bc466890c4819be6ef030ac12fae2197ea02ff63b87c75a85e0f5b23f",
+      "actualBytes": 23903,
+      "matches": true,
+      "targetCopyMatches": true
+    },
+    {
+      "path": "tests/browser/oak-font-diagnostics.ts",
+      "bytes": 10014,
+      "sha256": "4ea78d38159103dd53b0a3aeb50291995dbaca16aeedbad2f035c7c36429e895",
+      "kind": "source",
+      "actualSHA256": "4ea78d38159103dd53b0a3aeb50291995dbaca16aeedbad2f035c7c36429e895",
+      "actualBytes": 10014,
+      "matches": true,
+      "targetCopyMatches": true
+    },
+    {
+      "path": "tests/testing/oak-font-diagnostics.test.ts",
+      "bytes": 19152,
+      "sha256": "fba3c74ae4aed172404d276131f19d06f083a9d697ef55f8a68d33ef2b2912b4",
+      "kind": "source",
+      "actualSHA256": "fba3c74ae4aed172404d276131f19d06f083a9d697ef55f8a68d33ef2b2912b4",
+      "actualBytes": 19152,
+      "matches": true,
+      "targetCopyMatches": true
+    },
+    {
+      "path": "docs/work/2_oak-font-diagnostic/plan.md",
+      "bytes": 8628,
+      "sha256": "3333ed4f034853286f8c1c8bb64d2891ac0ae7ad9cc99a8b782d10a2f1dff4da",
+      "kind": "authored/proof",
+      "actualSHA256": "3333ed4f034853286f8c1c8bb64d2891ac0ae7ad9cc99a8b782d10a2f1dff4da",
+      "actualBytes": 8628,
+      "matches": true,
+      "targetCopyMatches": true
+    },
+    {
+      "path": "docs/work/2_oak-font-diagnostic/design.md",
+      "bytes": 7184,
+      "sha256": "c52f74cde0a7afd87742497c4f71302dd2eba05fd1dfa4baca549217b8908a50",
+      "kind": "authored/proof",
+      "actualSHA256": "c52f74cde0a7afd87742497c4f71302dd2eba05fd1dfa4baca549217b8908a50",
+      "actualBytes": 7184,
+      "matches": true,
+      "targetCopyMatches": true
+    },
+    {
+      "path": "docs/work/2_oak-font-diagnostic/reviews/0_implementation.md",
+      "bytes": 4582,
+      "sha256": "5de02fc0d5248f9f88fb521a2a272713296774a641f75a95182d835fad58c40e",
+      "kind": "authored/proof",
+      "actualSHA256": "5de02fc0d5248f9f88fb521a2a272713296774a641f75a95182d835fad58c40e",
+      "actualBytes": 4582,
+      "matches": true,
+      "targetCopyMatches": true
+    },
+    {
+      "path": "docs/work/2_oak-font-diagnostic/snapshots/round0-original-report.md",
+      "bytes": 2800,
+      "sha256": "85ca5ab5993433006bdc9ac403ac19740ae1e9081f285fdeccf7622b96c25606",
+      "kind": "authored/proof",
+      "actualSHA256": "85ca5ab5993433006bdc9ac403ac19740ae1e9081f285fdeccf7622b96c25606",
+      "actualBytes": 2800,
+      "matches": true,
+      "targetCopyMatches": true
+    },
+    {
+      "path": "tmp/engine-feedback/font-diagnostic-tests/fixture-repair-1/receipt.json",
+      "bytes": 2268,
+      "sha256": "f6e3a5e4b94c0dd5bcff8b4104a4e1fe901ded90fbd8147b4d580f4b42e5750a",
+      "kind": "authored/proof",
+      "actualSHA256": "f6e3a5e4b94c0dd5bcff8b4104a4e1fe901ded90fbd8147b4d580f4b42e5750a",
+      "actualBytes": 2268,
+      "matches": true,
+      "targetCopyMatches": true
+    },
+    {
+      "path": "tmp/engine-feedback/font-diagnostic-tests/fixture-repair-1/job-gate-result.json",
+      "bytes": 1136,
+      "sha256": "a11d469c6dc7f0d5b8c04b1cbb08ce83efb9a631dc3ac7a88acd7762965053da",
+      "kind": "authored/proof",
+      "actualSHA256": "a11d469c6dc7f0d5b8c04b1cbb08ce83efb9a631dc3ac7a88acd7762965053da",
+      "actualBytes": 1136,
+      "matches": true,
+      "targetCopyMatches": true
+    },
+    {
+      "path": "tmp/engine-feedback/font-diagnostic-tests/fixture-repair-1/original-node22-red.log",
+      "bytes": 1307,
+      "sha256": "2366f36d6915e8e6c615aa036694b7a28961743998f5dc4b0ceec9e03e924a67",
+      "kind": "authored/proof",
+      "actualSHA256": "2366f36d6915e8e6c615aa036694b7a28961743998f5dc4b0ceec9e03e924a67",
+      "actualBytes": 1307,
+      "matches": true,
+      "targetCopyMatches": true
+    },
+    {
+      "path": "tmp/engine-feedback/font-diagnostic-tests/fixture-repair-1/fixed-node22-green.log",
+      "bytes": 259,
+      "sha256": "da73dbbcd390efcf9d7d9d2c91c6c57963a3ba37f467a1547c89414b7c8f49e2",
+      "kind": "authored/proof",
+      "actualSHA256": "da73dbbcd390efcf9d7d9d2c91c6c57963a3ba37f467a1547c89414b7c8f49e2",
+      "actualBytes": 259,
+      "matches": true,
+      "targetCopyMatches": true
+    },
+    {
+      "path": "tmp/engine-feedback/font-diagnostic-tests/fixture-repair-1/fixed-node24-green.log",
+      "bytes": 259,
+      "sha256": "6b8d848013d510eea6f3611f8d6b8c4b5ae7d9261b0e1d242c009d782e47a7ee",
+      "kind": "authored/proof",
+      "actualSHA256": "6b8d848013d510eea6f3611f8d6b8c4b5ae7d9261b0e1d242c009d782e47a7ee",
+      "actualBytes": 259,
+      "matches": true,
+      "targetCopyMatches": true
+    },
+    {
+      "path": "tmp/engine-feedback/node22-tool/v22.23.3/verified.json",
+      "bytes": 326,
+      "sha256": "4f1309d9fa6d304080a6968ad623dc04acdeea7c82c239ac5d32b853b4807b28",
+      "kind": "authored/proof",
+      "actualSHA256": "4f1309d9fa6d304080a6968ad623dc04acdeea7c82c239ac5d32b853b4807b28",
+      "actualBytes": 326,
+      "matches": true,
+      "targetCopyMatches": true
+    }
+  ],
+  "round0Manifest": {
+    "path": "tmp/review-runs/voxel-font-diagnostic-1001/round-0/target-manifest.json",
+    "bytes": 4621,
+    "sha256": "b3d711994861561e15c0e732f225895d81ae9fe25204eda1d490beef9e8e1460"
+  },
+  "fiveUnchangedSources": [
+    {
+      "path": ".github/workflows/oak-font-diagnostic.yml",
+      "bytes": 2682,
+      "sha256": "f581a34842d6a74149b5027988c783e06c6298f2e1909db3b59e95e541954284",
+      "kind": "source",
+      "actualSHA256": "f581a34842d6a74149b5027988c783e06c6298f2e1909db3b59e95e541954284",
+      "matches": true
+    },
+    {
+      "path": "scripts/verify-oak-font-diagnostic.mjs",
+      "bytes": 7082,
+      "sha256": "a2d998ee3e0e156bf53ad7c18b1bf902400039495d16c7c8c1c684c58939f058",
+      "kind": "source",
+      "actualSHA256": "a2d998ee3e0e156bf53ad7c18b1bf902400039495d16c7c8c1c684c58939f058",
+      "matches": true
+    },
+    {
+      "path": "tests/browser/oak-ecosystem-weather.spec.ts",
+      "bytes": 15704,
+      "sha256": "68685807f3c1ea4f141ad5b7fcf26a67614c269132efd8f3c5536497ebef32b5",
+      "kind": "source",
+      "actualSHA256": "68685807f3c1ea4f141ad5b7fcf26a67614c269132efd8f3c5536497ebef32b5",
+      "matches": true
+    },
+    {
+      "path": "tests/browser/oak-ecosystem.spec.ts",
+      "bytes": 23903,
+      "sha256": "629bd93bc466890c4819be6ef030ac12fae2197ea02ff63b87c75a85e0f5b23f",
+      "kind": "source",
+      "actualSHA256": "629bd93bc466890c4819be6ef030ac12fae2197ea02ff63b87c75a85e0f5b23f",
+      "matches": true
+    },
+    {
+      "path": "tests/browser/oak-font-diagnostics.ts",
+      "bytes": 10014,
+      "sha256": "4ea78d38159103dd53b0a3aeb50291995dbaca16aeedbad2f035c7c36429e895",
+      "kind": "source",
+      "actualSHA256": "4ea78d38159103dd53b0a3aeb50291995dbaca16aeedbad2f035c7c36429e895",
+      "matches": true
+    }
+  ],
+  "oldObserverReports": [
+    {
+      "path": "output/oak-font-diagnostic/mature-hud-hero.json",
+      "bytes": 13752,
+      "sha256": "697a754465191b30c02ff9b2cd3ee0b7c1628149ad8d0821ef25a6437c3fc934",
+      "kind": "ignored-observed-evidence",
+      "actualSHA256": "697a754465191b30c02ff9b2cd3ee0b7c1628149ad8d0821ef25a6437c3fc934",
+      "matches": true
+    },
+    {
+      "path": "output/oak-font-diagnostic/wind-start-hero.json",
+      "bytes": 13772,
+      "sha256": "9333398dc013546cdee1bfdce609f06a4a5008b1e9ed94070dc47e8294b6b965",
+      "kind": "ignored-observed-evidence",
+      "actualSHA256": "9333398dc013546cdee1bfdce609f06a4a5008b1e9ed94070dc47e8294b6b965",
+      "matches": true
+    }
+  ],
+  "extraInputs": [
+    {
+      "path": "tmp/review-runs/voxel-font-diagnostic-1001/round-1/prompt-codex.md",
+      "bytes": 2943,
+      "sha256": "7c0c6a0fc26a44c4989b7dba6a2d1adc2468687b633ec85db656488aa6a693c6"
+    },
+    {
+      "path": "tmp/review-runs/voxel-font-diagnostic-1001/round-1/original-fixture.ts.txt",
+      "bytes": 18968,
+      "sha256": "d56e2ec6415eb082356f823b0ba1f9505448ddbf8b6a934976524522dacefe7c"
+    },
+    {
+      "path": "tmp/review-runs/voxel-font-diagnostic-1001/round-0/codex-review.md",
+      "bytes": 2800,
+      "sha256": "85ca5ab5993433006bdc9ac403ac19740ae1e9081f285fdeccf7622b96c25606"
+    },
+    {
+      "path": "tmp/engine-feedback/font-diagnostic-tests/fixture-repair-1/run-focused.cjs",
+      "bytes": 3374,
+      "sha256": "bccb6668aa7f39ab5da82530407b3d398609c15c33fc755cde4c58983465e7c3"
+    },
+    {
+      "path": "tmp/engine-feedback/font-diagnostic-tests/fixture-repair-1/scoped-lint.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "tmp/engine-feedback/font-diagnostic-tests/fixture-repair-1/scoped-typecheck.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "tmp/engine-feedback/font-diagnostic-tests/fixture-repair-1/launch-0-did-not-run.json",
+      "bytes": 1184,
+      "sha256": "d05d5ec67454bce1e52a8e0076289e0a52c151032135bd5aa4029b6c6e8349a2"
+    },
+    {
+      "path": "tmp/engine-feedback/node22-tool/v22.23.3/node.exe",
+      "bytes": 86973768,
+      "sha256": "9c9245166b4a8e182e0b797da9c20136117ff24368eaff1fec8343a123c8db0e"
+    },
+    {
+      "path": "tmp/engine-feedback/node22-tool/v22.23.3/SHASUMS256.txt",
+      "bytes": 3981,
+      "sha256": "4fe99a2ba9d552a6f51c13ed68fb11104cfa5df601aec616be689253a8139e7a"
+    },
+    {
+      "path": "tmp/engine-feedback/font-diagnostic-tests/fixture-repair-1/job.stdout.log",
+      "bytes": 1669,
+      "sha256": "5ecb41f10336caac6698f6bdf62fef71578e88ab98fb5988ac2c07e793c7e342"
+    },
+    {
+      "path": "tmp/engine-feedback/font-diagnostic-tests/fixture-repair-1/job.stderr.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "tmp/engine-feedback/font-diagnostic-tests/fixture-repair-1/job-process-trace.log",
+      "bytes": 701,
+      "sha256": "56bcb1582cc7692da009fe9c126fd4af50d97682fdf271ca5ddf0f1e433bb5be"
+    }
+  ],
+  "outsideDiff": [
+    {
+      "path": ".github/workflows/ci.yml",
+      "bytes": 6166,
+      "sha256": "eafd7ba93bed74d3ce801d1cfa5c51c2becfff7cc63b6948c1e954260f3f5574"
+    }
+  ],
+  "closingVerification": {
+    "time": "2026-10-01T10:40:09.910Z",
+    "inputs": [
+      {
+        "path": ".github/workflows/oak-font-diagnostic.yml",
+        "bytes": 2682,
+        "sha256": "f581a34842d6a74149b5027988c783e06c6298f2e1909db3b59e95e541954284",
+        "matches": true
+      },
+      {
+        "path": "scripts/verify-oak-font-diagnostic.mjs",
+        "bytes": 7082,
+        "sha256": "a2d998ee3e0e156bf53ad7c18b1bf902400039495d16c7c8c1c684c58939f058",
+        "matches": true
+      },
+      {
+        "path": "tests/browser/oak-ecosystem-weather.spec.ts",
+        "bytes": 15704,
+        "sha256": "68685807f3c1ea4f141ad5b7fcf26a67614c269132efd8f3c5536497ebef32b5",
+        "matches": true
+      },
+      {
+        "path": "tests/browser/oak-ecosystem.spec.ts",
+        "bytes": 23903,
+        "sha256": "629bd93bc466890c4819be6ef030ac12fae2197ea02ff63b87c75a85e0f5b23f",
+        "matches": true
+      },
+      {
+        "path": "tests/browser/oak-font-diagnostics.ts",
+        "bytes": 10014,
+        "sha256": "4ea78d38159103dd53b0a3aeb50291995dbaca16aeedbad2f035c7c36429e895",
+        "matches": true
+      },
+      {
+        "path": "tests/testing/oak-font-diagnostics.test.ts",
+        "bytes": 19152,
+        "sha256": "fba3c74ae4aed172404d276131f19d06f083a9d697ef55f8a68d33ef2b2912b4",
+        "matches": true
+      },
+      {
+        "path": "docs/work/2_oak-font-diagnostic/plan.md",
+        "bytes": 8628,
+        "sha256": "3333ed4f034853286f8c1c8bb64d2891ac0ae7ad9cc99a8b782d10a2f1dff4da",
+        "matches": true
+      },
+      {
+        "path": "docs/work/2_oak-font-diagnostic/design.md",
+        "bytes": 7184,
+        "sha256": "c52f74cde0a7afd87742497c4f71302dd2eba05fd1dfa4baca549217b8908a50",
+        "matches": true
+      },
+      {
+        "path": "docs/work/2_oak-font-diagnostic/reviews/0_implementation.md",
+        "bytes": 4582,
+        "sha256": "5de02fc0d5248f9f88fb521a2a272713296774a641f75a95182d835fad58c40e",
+        "matches": true
+      },
+      {
+        "path": "docs/work/2_oak-font-diagnostic/snapshots/round0-original-report.md",
+        "bytes": 2800,
+        "sha256": "85ca5ab5993433006bdc9ac403ac19740ae1e9081f285fdeccf7622b96c25606",
+        "matches": true
+      },
+      {
+        "path": "tmp/engine-feedback/font-diagnostic-tests/fixture-repair-1/receipt.json",
+        "bytes": 2268,
+        "sha256": "f6e3a5e4b94c0dd5bcff8b4104a4e1fe901ded90fbd8147b4d580f4b42e5750a",
+        "matches": true
+      },
+      {
+        "path": "tmp/engine-feedback/font-diagnostic-tests/fixture-repair-1/job-gate-result.json",
+        "bytes": 1136,
+        "sha256": "a11d469c6dc7f0d5b8c04b1cbb08ce83efb9a631dc3ac7a88acd7762965053da",
+        "matches": true
+      },
+      {
+        "path": "tmp/engine-feedback/font-diagnostic-tests/fixture-repair-1/original-node22-red.log",
+        "bytes": 1307,
+        "sha256": "2366f36d6915e8e6c615aa036694b7a28961743998f5dc4b0ceec9e03e924a67",
+        "matches": true
+      },
+      {
+        "path": "tmp/engine-feedback/font-diagnostic-tests/fixture-repair-1/fixed-node22-green.log",
+        "bytes": 259,
+        "sha256": "da73dbbcd390efcf9d7d9d2c91c6c57963a3ba37f467a1547c89414b7c8f49e2",
+        "matches": true
+      },
+      {
+        "path": "tmp/engine-feedback/font-diagnostic-tests/fixture-repair-1/fixed-node24-green.log",
+        "bytes": 259,
+        "sha256": "6b8d848013d510eea6f3611f8d6b8c4b5ae7d9261b0e1d242c009d782e47a7ee",
+        "matches": true
+      },
+      {
+        "path": "tmp/engine-feedback/node22-tool/v22.23.3/verified.json",
+        "bytes": 326,
+        "sha256": "4f1309d9fa6d304080a6968ad623dc04acdeea7c82c239ac5d32b853b4807b28",
+        "matches": true
+      }
+    ],
+    "targetCopies": [
+      {
+        "path": "tmp/review-runs/voxel-font-diagnostic-1001/round-1/target/.github/workflows/oak-font-diagnostic.yml",
+        "bytes": 2682,
+        "sha256": "f581a34842d6a74149b5027988c783e06c6298f2e1909db3b59e95e541954284",
+        "matches": true
+      },
+      {
+        "path": "tmp/review-runs/voxel-font-diagnostic-1001/round-1/target/scripts/verify-oak-font-diagnostic.mjs",
+        "bytes": 7082,
+        "sha256": "a2d998ee3e0e156bf53ad7c18b1bf902400039495d16c7c8c1c684c58939f058",
+        "matches": true
+      },
+      {
+        "path": "tmp/review-runs/voxel-font-diagnostic-1001/round-1/target/tests/browser/oak-ecosystem-weather.spec.ts",
+        "bytes": 15704,
+        "sha256": "68685807f3c1ea4f141ad5b7fcf26a67614c269132efd8f3c5536497ebef32b5",
+        "matches": true
+      },
+      {
+        "path": "tmp/review-runs/voxel-font-diagnostic-1001/round-1/target/tests/browser/oak-ecosystem.spec.ts",
+        "bytes": 23903,
+        "sha256": "629bd93bc466890c4819be6ef030ac12fae2197ea02ff63b87c75a85e0f5b23f",
+        "matches": true
+      },
+      {
+        "path": "tmp/review-runs/voxel-font-diagnostic-1001/round-1/target/tests/browser/oak-font-diagnostics.ts",
+        "bytes": 10014,
+        "sha256": "4ea78d38159103dd53b0a3aeb50291995dbaca16aeedbad2f035c7c36429e895",
+        "matches": true
+      },
+      {
+        "path": "tmp/review-runs/voxel-font-diagnostic-1001/round-1/target/tests/testing/oak-font-diagnostics.test.ts",
+        "bytes": 19152,
+        "sha256": "fba3c74ae4aed172404d276131f19d06f083a9d697ef55f8a68d33ef2b2912b4",
+        "matches": true
+      },
+      {
+        "path": "tmp/review-runs/voxel-font-diagnostic-1001/round-1/target/docs/work/2_oak-font-diagnostic/plan.md",
+        "bytes": 8628,
+        "sha256": "3333ed4f034853286f8c1c8bb64d2891ac0ae7ad9cc99a8b782d10a2f1dff4da",
+        "matches": true
+      },
+      {
+        "path": "tmp/review-runs/voxel-font-diagnostic-1001/round-1/target/docs/work/2_oak-font-diagnostic/design.md",
+        "bytes": 7184,
+        "sha256": "c52f74cde0a7afd87742497c4f71302dd2eba05fd1dfa4baca549217b8908a50",
+        "matches": true
+      },
+      {
+        "path": "tmp/review-runs/voxel-font-diagnostic-1001/round-1/target/docs/work/2_oak-font-diagnostic/reviews/0_implementation.md",
+        "bytes": 4582,
+        "sha256": "5de02fc0d5248f9f88fb521a2a272713296774a641f75a95182d835fad58c40e",
+        "matches": true
+      },
+      {
+        "path": "tmp/review-runs/voxel-font-diagnostic-1001/round-1/target/docs/work/2_oak-font-diagnostic/snapshots/round0-original-report.md",
+        "bytes": 2800,
+        "sha256": "85ca5ab5993433006bdc9ac403ac19740ae1e9081f285fdeccf7622b96c25606",
+        "matches": true
+      },
+      {
+        "path": "tmp/review-runs/voxel-font-diagnostic-1001/round-1/target/tmp/engine-feedback/font-diagnostic-tests/fixture-repair-1/receipt.json",
+        "bytes": 2268,
+        "sha256": "f6e3a5e4b94c0dd5bcff8b4104a4e1fe901ded90fbd8147b4d580f4b42e5750a",
+        "matches": true
+      },
+      {
+        "path": "tmp/review-runs/voxel-font-diagnostic-1001/round-1/target/tmp/engine-feedback/font-diagnostic-tests/fixture-repair-1/job-gate-result.json",
+        "bytes": 1136,
+        "sha256": "a11d469c6dc7f0d5b8c04b1cbb08ce83efb9a631dc3ac7a88acd7762965053da",
+        "matches": true
+      },
+      {
+        "path": "tmp/review-runs/voxel-font-diagnostic-1001/round-1/target/tmp/engine-feedback/font-diagnostic-tests/fixture-repair-1/original-node22-red.log",
+        "bytes": 1307,
+        "sha256": "2366f36d6915e8e6c615aa036694b7a28961743998f5dc4b0ceec9e03e924a67",
+        "matches": true
+      },
+      {
+        "path": "tmp/review-runs/voxel-font-diagnostic-1001/round-1/target/tmp/engine-feedback/font-diagnostic-tests/fixture-repair-1/fixed-node22-green.log",
+        "bytes": 259,
+        "sha256": "da73dbbcd390efcf9d7d9d2c91c6c57963a3ba37f467a1547c89414b7c8f49e2",
+        "matches": true
+      },
+      {
+        "path": "tmp/review-runs/voxel-font-diagnostic-1001/round-1/target/tmp/engine-feedback/font-diagnostic-tests/fixture-repair-1/fixed-node24-green.log",
+        "bytes": 259,
+        "sha256": "6b8d848013d510eea6f3611f8d6b8c4b5ae7d9261b0e1d242c009d782e47a7ee",
+        "matches": true
+      },
+      {
+        "path": "tmp/review-runs/voxel-font-diagnostic-1001/round-1/target/tmp/engine-feedback/node22-tool/v22.23.3/verified.json",
+        "bytes": 326,
+        "sha256": "4f1309d9fa6d304080a6968ad623dc04acdeea7c82c239ac5d32b853b4807b28",
+        "matches": true
+      }
+    ],
+    "extraInputs": [
+      {
+        "path": "tmp/review-runs/voxel-font-diagnostic-1001/round-1/prompt-codex.md",
+        "bytes": 2943,
+        "sha256": "7c0c6a0fc26a44c4989b7dba6a2d1adc2468687b633ec85db656488aa6a693c6",
+        "matches": true
+      },
+      {
+        "path": "tmp/review-runs/voxel-font-diagnostic-1001/round-1/original-fixture.ts.txt",
+        "bytes": 18968,
+        "sha256": "d56e2ec6415eb082356f823b0ba1f9505448ddbf8b6a934976524522dacefe7c",
+        "matches": true
+      },
+      {
+        "path": "tmp/review-runs/voxel-font-diagnostic-1001/round-0/codex-review.md",
+        "bytes": 2800,
+        "sha256": "85ca5ab5993433006bdc9ac403ac19740ae1e9081f285fdeccf7622b96c25606",
+        "matches": true
+      },
+      {
+        "path": "tmp/engine-feedback/font-diagnostic-tests/fixture-repair-1/run-focused.cjs",
+        "bytes": 3374,
+        "sha256": "bccb6668aa7f39ab5da82530407b3d398609c15c33fc755cde4c58983465e7c3",
+        "matches": true
+      },
+      {
+        "path": "tmp/engine-feedback/font-diagnostic-tests/fixture-repair-1/scoped-lint.log",
+        "bytes": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "matches": true
+      },
+      {
+        "path": "tmp/engine-feedback/font-diagnostic-tests/fixture-repair-1/scoped-typecheck.log",
+        "bytes": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "matches": true
+      },
+      {
+        "path": "tmp/engine-feedback/font-diagnostic-tests/fixture-repair-1/launch-0-did-not-run.json",
+        "bytes": 1184,
+        "sha256": "d05d5ec67454bce1e52a8e0076289e0a52c151032135bd5aa4029b6c6e8349a2",
+        "matches": true
+      },
+      {
+        "path": "tmp/engine-feedback/node22-tool/v22.23.3/node.exe",
+        "bytes": 86973768,
+        "sha256": "9c9245166b4a8e182e0b797da9c20136117ff24368eaff1fec8343a123c8db0e",
+        "matches": true
+      },
+      {
+        "path": "tmp/engine-feedback/node22-tool/v22.23.3/SHASUMS256.txt",
+        "bytes": 3981,
+        "sha256": "4fe99a2ba9d552a6f51c13ed68fb11104cfa5df601aec616be689253a8139e7a",
+        "matches": true
+      },
+      {
+        "path": "tmp/engine-feedback/font-diagnostic-tests/fixture-repair-1/job.stdout.log",
+        "bytes": 1669,
+        "sha256": "5ecb41f10336caac6698f6bdf62fef71578e88ab98fb5988ac2c07e793c7e342",
+        "matches": true
+      },
+      {
+        "path": "tmp/engine-feedback/font-diagnostic-tests/fixture-repair-1/job.stderr.log",
+        "bytes": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "matches": true
+      },
+      {
+        "path": "tmp/engine-feedback/font-diagnostic-tests/fixture-repair-1/job-process-trace.log",
+        "bytes": 701,
+        "sha256": "56bcb1582cc7692da009fe9c126fd4af50d97682fdf271ca5ddf0f1e433bb5be",
+        "matches": true
+      }
+    ],
+    "outsideDiff": [
+      {
+        "path": ".github/workflows/ci.yml",
+        "bytes": 6166,
+        "sha256": "eafd7ba93bed74d3ce801d1cfa5c51c2becfff7cc63b6948c1e954260f3f5574",
+        "matches": true
+      }
+    ],
+    "fiveUnchangedSources": [
+      {
+        "path": ".github/workflows/oak-font-diagnostic.yml",
+        "bytes": 2682,
+        "sha256": "f581a34842d6a74149b5027988c783e06c6298f2e1909db3b59e95e541954284",
+        "matches": true
+      },
+      {
+        "path": "scripts/verify-oak-font-diagnostic.mjs",
+        "bytes": 7082,
+        "sha256": "a2d998ee3e0e156bf53ad7c18b1bf902400039495d16c7c8c1c684c58939f058",
+        "matches": true
+      },
+      {
+        "path": "tests/browser/oak-ecosystem-weather.spec.ts",
+        "bytes": 15704,
+        "sha256": "68685807f3c1ea4f141ad5b7fcf26a67614c269132efd8f3c5536497ebef32b5",
+        "matches": true
+      },
+      {
+        "path": "tests/browser/oak-ecosystem.spec.ts",
+        "bytes": 23903,
+        "sha256": "629bd93bc466890c4819be6ef030ac12fae2197ea02ff63b87c75a85e0f5b23f",
+        "matches": true
+      },
+      {
+        "path": "tests/browser/oak-font-diagnostics.ts",
+        "bytes": 10014,
+        "sha256": "4ea78d38159103dd53b0a3aeb50291995dbaca16aeedbad2f035c7c36429e895",
+        "matches": true
+      }
+    ],
+    "oldObserverReports": [
+      {
+        "path": "output/oak-font-diagnostic/mature-hud-hero.json",
+        "bytes": 13752,
+        "sha256": "697a754465191b30c02ff9b2cd3ee0b7c1628149ad8d0821ef25a6437c3fc934",
+        "matches": true
+      },
+      {
+        "path": "output/oak-font-diagnostic/wind-start-hero.json",
+        "bytes": 13772,
+        "sha256": "9333398dc013546cdee1bfdce609f06a4a5008b1e9ed94070dc47e8294b6b965",
+        "matches": true
+      }
+    ],
+    "manifests": [
+      {
+        "path": "tmp/review-runs/voxel-font-diagnostic-1001/round-1/target-manifest.json",
+        "bytes": 3745,
+        "sha256": "9d3d6cb4255672052039e5113df750d66fb52a82f9690a1cf1b8224026295258",
+        "matches": true
+      },
+      {
+        "path": "tmp/review-runs/voxel-font-diagnostic-1001/round-0/target-manifest.json",
+        "bytes": 4621,
+        "sha256": "b3d711994861561e15c0e732f225895d81ae9fe25204eda1d490beef9e8e1460",
+        "matches": true
+      }
+    ],
+    "allMatches": true,
+    "head": "6e28629fe8dff1fef638b434d3a5381792f4b133"
+  },
+  "repairReconstruction": {
+    "kind": "static in-memory three-line reversal; no executable target run or source write",
+    "fixedSHA256": "fba3c74ae4aed172404d276131f19d06f083a9d697ef55f8a68d33ef2b2912b4",
+    "originalSHA256": "d56e2ec6415eb082356f823b0ba1f9505448ddbf8b6a934976524522dacefe7c",
+    "matchesOriginal": true,
+    "deltaBytes": 184
+  },
+  "node22ChecksumLine": "9c9245166b4a8e182e0b797da9c20136117ff24368eaff1fec8343a123c8db0e  win-x64/node.exe",
+  "authoredReport": {
+    "path": "C:/Users/38909/Documents/github/aoe2/tmp/review-runs/voxel-font-internal-f0-1001/report.md",
+    "bytes": 11580,
+    "sha256": "ad9a3bbdea9455b6e7af20ed3a28cda9224fbada7866820ddf34e374bab575d5",
+    "lfOnly": true
+  }
+}

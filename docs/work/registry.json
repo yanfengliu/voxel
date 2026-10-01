@@ -8,6 +8,10 @@
     {
       "id": 1,
       "theme": "portable-ci-budget"
+    },
+    {
+      "id": 2,
+      "theme": "oak-font-diagnostic"
     }
   ]
 }
