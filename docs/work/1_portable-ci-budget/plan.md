@@ -71,3 +71,5 @@ The six-path read-only font diagnostic contract is separately approved after thi
 ## Git source-byte integration bound
 
 Normal Git clean-filter staging changes fixture/helper CRLF to LF; literal tests retain their exact bytes. Raw reviewed/gated hashes and actual indexed hashes are distinct and preserved in snapshots/canonical-eol-binding.md. TypeScript5.9.3 with the actual config emitted byte-identical JavaScript for all three pairs with maps disabled and0 syntax errors; shebang, String.raw, tagged-template and multiline-literal risk scans found none. Exact raw reconstruction hashes match. The full suite ran reviewed raw bytes; no separate canonical-checkout full gate is claimed. Root must inspect and accept this narrow normalization and final authored records before primary/main integration.
+
+Private implementation commitd842483297c2e7024f99f1521c6b1b7553b82c80 contains the exact reviewed semantic source, explicit canonical line-ending proof and authored closure records. Main merge/push is held pending root final acceptance. This supplement only clarifies pending acceptance; source blobs remain unchanged.

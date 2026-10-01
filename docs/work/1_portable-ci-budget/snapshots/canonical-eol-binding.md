@@ -1,6 +1,6 @@
 # Reviewed source and Git line-ending binding
 
-The final local13-stage gate ran the raw reviewed source bytes. Normal Git staging with core.autocrlf=true changed only CRLF line endings for the fixture and helper. These are distinct bytes; no canonical-checkout full suite is claimed. Root independently accepts this narrow normalization boundary before main integration.
+The final local13-stage gate ran the raw reviewed source bytes. Normal Git staging with core.autocrlf=true changed only CRLF line endings for the fixture and helper. These are distinct bytes; no canonical-checkout full suite is claimed. Root independent acceptance of this narrow normalization boundary is required before main integration.
 
 TypeScript5.9.3 transpileModule used the actual tsconfig compiler options, with noEmit/source-map/declaration flags disabled for comparison. Every raw/indexed pair had0 syntax errors and byte-identical emitted JavaScript. The AST risk scan inspected shebangs, String.raw references, tagged templates and actual multiline literal tokens. Results and exact hashes below bind the claim. Raw logs/config/options are retained in ignored full-gate-1/canonical-eol-proof.json while integration needs them.
 
