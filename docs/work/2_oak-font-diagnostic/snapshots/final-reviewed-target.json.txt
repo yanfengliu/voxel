@@ -1,0 +1,170 @@
+{
+  "kind": "historical-reviewed-target",
+  "source": "Internal authored final review and immutable Git target; not runtime output",
+  "reviewedCommit": "7d5ffd773139028f3903eabfca9f9dd42d344c31",
+  "reviewedTree": "85b6f24a9d4b732cfd26465bce0310bb604dda18",
+  "sourceCommit": "6fa33f4a61f6555aeb32ec687dc82d0224cda188",
+  "targetCount": 25,
+  "originalReport": {
+    "bytes": 11765,
+    "sha256": "ecdfe2f09c92a25b28cdacfe78637d6659e253f3689c563a1aaa2cff21511bb3"
+  },
+  "completeIgnoredManifest": {
+    "path": "aoe2/tmp/review-runs/font-final-integration-1001/inspected-inputs.json",
+    "bytes": 1050783,
+    "sha256": "6516504b58c6d0f90010c6a33f7d05a7756db7a669f2006c28fa22f5f063d760",
+    "promoted": false
+  },
+  "targets": [
+    {
+      "path": ".github/workflows/oak-font-diagnostic.yml",
+      "gitBlob": "b38ca097edaa49bae8e91187297a4d07b1ded9c4",
+      "bytes": 2682,
+      "sha256": "f581a34842d6a74149b5027988c783e06c6298f2e1909db3b59e95e541954284"
+    },
+    {
+      "path": "scripts/verify-oak-font-diagnostic.mjs",
+      "gitBlob": "9ae8143aae6d3735d8f4d5f2011a226979b88ce2",
+      "bytes": 7082,
+      "sha256": "a2d998ee3e0e156bf53ad7c18b1bf902400039495d16c7c8c1c684c58939f058"
+    },
+    {
+      "path": "tests/browser/oak-ecosystem-weather.spec.ts",
+      "gitBlob": "acb8392b6c2235dd03e00319e3ff95caa38f3285",
+      "bytes": 15358,
+      "sha256": "dd68eebeb1b5e4f33423f1e978047e3e753fcb8ee7b7b4908e6fb8cc9f7f9940"
+    },
+    {
+      "path": "tests/browser/oak-ecosystem.spec.ts",
+      "gitBlob": "5f7a8331129d72d85cb04306e7894958a0fda6c1",
+      "bytes": 23391,
+      "sha256": "fb79eaa74068d0a583d056a466d56c9039f08743f2801419e283b37dcb3a643f"
+    },
+    {
+      "path": "tests/browser/oak-font-diagnostics.ts",
+      "gitBlob": "b283f45ea17a54ed06f216ee4485f92a37f121a6",
+      "bytes": 10014,
+      "sha256": "4ea78d38159103dd53b0a3aeb50291995dbaca16aeedbad2f035c7c36429e895"
+    },
+    {
+      "path": "tests/testing/oak-font-diagnostics.test.ts",
+      "gitBlob": "dea516942365e2cb1522e00efd005b251778d5ba",
+      "bytes": 19152,
+      "sha256": "fba3c74ae4aed172404d276131f19d06f083a9d697ef55f8a68d33ef2b2912b4"
+    },
+    {
+      "path": "docs/devlog/detailed/2026-10-01_2026-10-01.md",
+      "gitBlob": "49ada3518305c58c2a79c7d07f31da20e67cb64e",
+      "bytes": 5525,
+      "sha256": "1ea7122216b6d8a947e6011fe6e474e3c506101f5502646ead0da0b26936a175"
+    },
+    {
+      "path": "docs/devlog/summary.md",
+      "gitBlob": "fe0d575f8fa84640ad5a37e9716481c51875e3b8",
+      "bytes": 51628,
+      "sha256": "58b8b1c52c01fab0bd462af6a5098031df740f09e33bb3a7c1e023160d0cd89c"
+    },
+    {
+      "path": "docs/learning/defect-register.md",
+      "gitBlob": "ed6d5275e064b8ab84964e5b91b198864a46da3e",
+      "bytes": 108179,
+      "sha256": "fd2b2340b1c0ef96544142553a41788d778053a68de14dee4fae2b7cbe5b4e60"
+    },
+    {
+      "path": "docs/work/0_engine-feedback-audit/plan.md",
+      "gitBlob": "8f783efd5d49f8ef9c23529f99fa15417e59e898",
+      "bytes": 14858,
+      "sha256": "e3a2d892d86d870bf502f967fa41020754602b15e5d2733b6e2b934bd04fd122"
+    },
+    {
+      "path": "docs/work/1_portable-ci-budget/design.md",
+      "gitBlob": "7bb455f8b3645e832f084fbe131938d9815912e7",
+      "bytes": 14771,
+      "sha256": "aa53f5e95df53b97a337f3bbbba88964e5af76ba5dc1729082a6caa7a53eb988"
+    },
+    {
+      "path": "docs/work/1_portable-ci-budget/plan.md",
+      "gitBlob": "4a4690ed40a9e1c2714ee3a49de76a073e187343",
+      "bytes": 18041,
+      "sha256": "448f90ff8462d214566e58cd1c371fa4e345fec21d519dac98fa547fe079ae4b"
+    },
+    {
+      "path": "docs/work/2_oak-font-diagnostic/design.md",
+      "gitBlob": "500e86f3e608824638b7e642a57f005839e90f8c",
+      "bytes": 7421,
+      "sha256": "2c91f2f1627f07866daf2c9a9f33f06194ce4db013282d3d86ffccaccb039587"
+    },
+    {
+      "path": "docs/work/2_oak-font-diagnostic/plan.md",
+      "gitBlob": "0e46d6361a0012b96fbc33b949c5325a273f90ed",
+      "bytes": 11558,
+      "sha256": "107cf50a6138dc1f17a2e0f052fc1c0c095825be26737b36a2ba1d1c8b643cf5"
+    },
+    {
+      "path": "docs/work/2_oak-font-diagnostic/reviews/0_implementation.md",
+      "gitBlob": "9fc922daf0e0209cb745c098937b4ca0aa768a44",
+      "bytes": 4582,
+      "sha256": "5de02fc0d5248f9f88fb521a2a272713296774a641f75a95182d835fad58c40e"
+    },
+    {
+      "path": "docs/work/2_oak-font-diagnostic/reviews/1_implementation.md",
+      "gitBlob": "23ad269da7f92cde5d5ef6af38d63c6cbc446141",
+      "bytes": 5994,
+      "sha256": "68ca3341843c708d79fc55d8526480ee97d9b89d8974924997903286d8a60ba2"
+    },
+    {
+      "path": "docs/work/2_oak-font-diagnostic/snapshots/canonical-eol-binding.md",
+      "gitBlob": "c7de66cccd026cb2261d77606a4ebbab3d056070",
+      "bytes": 3155,
+      "sha256": "9aaa549647fbe46cf3fc9391b82ccd1da4fc130b25ac580644f150189676ae57"
+    },
+    {
+      "path": "docs/work/2_oak-font-diagnostic/snapshots/round0-design.md",
+      "gitBlob": "d3ec1052383b8db192c4500b6a020bec56a0826a",
+      "bytes": 6964,
+      "sha256": "aa5175b9ca975992b78c0f122aa1e13526f541e60dc7e30ae8ebfd9dba2f038e"
+    },
+    {
+      "path": "docs/work/2_oak-font-diagnostic/snapshots/round0-original-report.md",
+      "gitBlob": "cd8c132780971e30d27fd1d84119c469868846d1",
+      "bytes": 2800,
+      "sha256": "85ca5ab5993433006bdc9ac403ac19740ae1e9081f285fdeccf7622b96c25606"
+    },
+    {
+      "path": "docs/work/2_oak-font-diagnostic/snapshots/round0-plan.md",
+      "gitBlob": "422805cb86cc1bbb9d3f14488f62d662e4eba392",
+      "bytes": 6231,
+      "sha256": "9ecb67e431e7414996e8d857b4df9faabbabe40917a2643a7f5798a132bece82"
+    },
+    {
+      "path": "docs/work/2_oak-font-diagnostic/snapshots/round1-design.md",
+      "gitBlob": "0128836ef33bd322f9e1d835689e1bd014f7034a",
+      "bytes": 7184,
+      "sha256": "c52f74cde0a7afd87742497c4f71302dd2eba05fd1dfa4baca549217b8908a50"
+    },
+    {
+      "path": "docs/work/2_oak-font-diagnostic/snapshots/round1-internal-inspected-inputs.json.txt",
+      "gitBlob": "1242a93ccb11640834eb5b504241ed2b92fd755a",
+      "bytes": 26259,
+      "sha256": "122da8d7ca61e807883be21c8ba090b872bcbaa2a7dbb7ad36a0184b267963dd"
+    },
+    {
+      "path": "docs/work/2_oak-font-diagnostic/snapshots/round1-internal-original-report.md",
+      "gitBlob": "e1a2207171ef38520693fb2aaa2d05e61f0ca2e2",
+      "bytes": 11580,
+      "sha256": "ad9a3bbdea9455b6e7af20ed3a28cda9224fbada7866820ddf34e374bab575d5"
+    },
+    {
+      "path": "docs/work/2_oak-font-diagnostic/snapshots/round1-plan.md",
+      "gitBlob": "7888eb5ed94fc6c7bf1af15143fe6e9a4340b279",
+      "bytes": 8628,
+      "sha256": "3333ed4f034853286f8c1c8bb64d2891ac0ae7ad9cc99a8b782d10a2f1dff4da"
+    },
+    {
+      "path": "docs/work/registry.json",
+      "gitBlob": "196bd127cd3faf51a7c1c326ae5e73eb83c3bf72",
+      "bytes": 238,
+      "sha256": "ab423652e3995228fb2cbbe9bb2326486004abd8ce2923710a2f1e0ca7e444d8"
+    }
+  ]
+}

@@ -1,6 +1,6 @@
 # Read-only oak rendered-font diagnosis contract
 
-Status: root-approved bounded contract; private six-path implementation and one Windows observer are complete. Independent round0 found a Node22 success-report fixture regression; its literal Node24 repair is applied, with actual original-fixture Node22 RED, repaired43/43 Node22/24 GREEN and scoped types/lint complete; focused internal re-review is SOURCEPASS, and root independently accepted the P3 status supplement. The unchanged full local gate passed all thirteen stages, and private six-source commit6fa33f4 is complete with root-accepted canonical EOL equivalence. Final integrated review/main/manual dispatch remain pending. No adopted font.
+Status: root-approved bounded contract; private six-path implementation and one Windows observer are complete. Independent round0 found a Node22 success-report fixture regression; its literal Node24 repair is applied, with actual original-fixture Node22 RED, repaired43/43 Node22/24 GREEN and scoped types/lint complete; focused internal re-review is SOURCEPASS, and root independently accepted the P3 status supplement. The unchanged full local gate passed all thirteen stages, and private six-source commit6fa33f4 is complete with root-accepted canonical EOL equivalence. Final integrated review PASS is accepted by root at exact7d5ffd7; guarded main/push and reviewed-SHA manual dispatch remain the shipping steps. No adopted font.
 
 ## Evidence and route
 
