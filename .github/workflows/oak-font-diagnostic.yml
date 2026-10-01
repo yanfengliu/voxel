@@ -1,0 +1,61 @@
+name: Oak font identity diagnostic
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_sha:
+        description: Reviewed40hex SHA; only asserts actual event-selected default-branch HEAD
+        required: true
+        type: string
+permissions:
+  contents: read
+jobs:
+  identity:
+    if: ${{ github.ref == format('refs/heads/{0}', github.event.repository.default_branch) }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    env:
+      CI: true
+      OAK_FONT_DIAGNOSTIC: '1'
+      OAK_FONT_EXPECTED_SHA: ${{ inputs.source_sha }}
+    steps:
+      - name: Checkout event-selected default-branch source
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Setup Node24
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
+        with:
+          node-version: '24'
+          cache: npm
+      - name: Assert exact reviewed HEAD before dependency install or browser
+        run: node scripts/verify-oak-font-diagnostic.mjs --preflight
+      - name: Install existing dependencies
+        run: npm ci
+      - name: Install maintained Linux Chromium lane
+        run: npm run test:browser:install -- --with-deps
+        if: runner.os == 'Linux'
+      - name: Install maintained Windows Chromium lane
+        run: npm run test:browser:install
+        if: runner.os == 'Windows'
+      - name: Run original two failed-frame cases with identity observation
+        id: original_tests
+        run: npm run test:browser -- tests/browser/oak-ecosystem.spec.ts tests/browser/oak-ecosystem-weather.spec.ts --grep "fixed cameras, root cutaway, resize, capture, and teardown stay coherent|three ordered gust frames move both airflow voxels and the actual oak pixels" --retries=0 --workers=1
+      - name: Independently require both actual identity populations
+        if: ${{ always() && (steps.original_tests.outcome == 'success' || steps.original_tests.outcome == 'failure') }}
+        run: node scripts/verify-oak-font-diagnostic.mjs
+      - name: Retain actual diagnostic and original failed assertion output
+        if: ${{ always() && (steps.original_tests.outcome == 'success' || steps.original_tests.outcome == 'failure') }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: oak-font-identity-${{ matrix.os }}-${{ github.run_id }}
+          path: |
+            output/oak-font-diagnostic/
+            output/playwright/test-results/
+          retention-days: 7
+          if-no-files-found: error

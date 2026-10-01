@@ -23,6 +23,8 @@ import {
   totalSoilWaterLiters,
 } from './oak-ecosystem-browser-support.js';
 
+import { recordOakFontIdentity } from './oak-font-diagnostics.js';
+
 guardPageErrors();
 const REPOSITORY_ROOT = resolve('.');
 const VIEWPORT = { width: 960, height: 720 };
@@ -205,7 +207,7 @@ test('voxel rain visibly falls, rebounds from retained terrain, expires, and exp
   await disposeOakCaseStudy(page);
 });
 
-test('three ordered gust frames move both airflow voxels and the actual oak pixels', async ({ page }) => {
+test('three ordered gust frames move both airflow voxels and the actual oak pixels', async ({ page }, testInfo) => {
   // Grows to day 180 once, then captures three gust frames twice each, with
   // and without the weather layer.
   //
@@ -231,6 +233,9 @@ test('three ordered gust frames move both airflow voxels and the actual oak pixe
   const first = await commandOakHarness(page, 'wind-mode');
   expect(first.weather.windVoxelCount).toBeGreaterThan(50);
   expect(first.weather.windSpeedMPerS).toBeGreaterThanOrEqual(3);
+  if (process.env.OAK_FONT_DIAGNOSTIC === '1') {
+    await recordOakFontIdentity(page, testInfo, 'wind-start-hero');
+  }
   const fullFrames = [await captureWindFrame()];
   await setWeatherVisible(page, false);
   const plantFrames = [await captureWindFrame()];

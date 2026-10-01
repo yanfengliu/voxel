@@ -38,6 +38,8 @@ import {
   expectOakAtomicResourceTeardownV1,
 } from './oak-ecosystem-resource-support.js';
 
+import { recordOakFontIdentity } from './oak-font-diagnostics.js';
+
 guardPageErrors();
 const REPOSITORY_ROOT = resolve('.');
 const VIEWPORT = { width: 960, height: 720 };
@@ -306,7 +308,7 @@ test('the first flush adds biological topology and keeps GPU resources bounded',
   await expectOakAtomicResourceChurnV1(page, grown);
 });
 
-test('fixed cameras, root cutaway, resize, capture, and teardown stay coherent', async ({ page }) => {
+test('fixed cameras, root cutaway, resize, capture, and teardown stay coherent', async ({ page }, testInfo) => {
   // Nine exact captures, the root-cutaway pixel instrument, a resize and a
   // teardown.
   //
@@ -432,6 +434,9 @@ test('fixed cameras, root cutaway, resize, capture, and teardown stay coherent',
   }
   await expect(hud.locator('[data-command]')).toHaveCount(9);
   await expect(hud.locator('[data-diagnostic="age"]')).not.toHaveText('—');
+  if (process.env.OAK_FONT_DIAGNOSTIC === '1') {
+    await recordOakFontIdentity(page, testInfo, 'mature-hud-hero');
+  }
   await expect(page).toHaveScreenshot('oak-mature-hud-hero-page.png', {
     animations: 'disabled',
     fullPage: true,
