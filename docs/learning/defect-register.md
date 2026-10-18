@@ -6,6 +6,14 @@ Unlike a lesson, an entry stays after it becomes a gate. This is the standing li
 
 Newest first.
 
+## 2026-10-18 — Source component labels did not survive the rendered union
+
+**Symptom.** The owner identified four visible neck components and separate head masses in the reference, while M17/M18 rendered a continuous roof or stem despite source/control-ring labels and passing connectivity checks.
+
+**Investigation and cause bounds.** A global envelope and final union absorbed the intended bodies and joints. Named stations and parts did not create separate occupied bodies or preserve exposed joints. This is an asset-construction and review defect; no renderer defect is established.
+
+**Checks and remaining bound.** The [authoring guide](../guides/voxel-palette-style.md) now requires a visible-body/joint/surface inventory with occlusion uncertainty, actual occupied volume and protected air, then native diagnostic-angle inspection of the final union. Four neck sections are specific to this subject. This manual check is not an automated semantic gate or a passed replacement recipe. Several reference families were inspected, but only one subject has an authored proof and broader transfer remains unproved. [Work 4](../work/4_palette-ci-followup/plan.md) retains the reconciled evidence identity and historical rejection bounds.
+
 ## 2026-10-18 — Multi-angle depth review accepted the wrong subject interpretation
 
 **Symptom.** The owner corrected the reference subject to a dragon head emerging continuously from the ground, with no humanoid limbs. The M12/M13 study had authored a humanoid pelvis, paired legs, arm and gauntlet despite repeated multi-angle review.
