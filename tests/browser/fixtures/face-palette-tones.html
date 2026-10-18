@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="UTF-8"><link rel="icon" href="data:,"><title>Palette face tone proof</title></head>
+<body style="margin:0;background:#202830">
+<canvas width="640" height="480"></canvas>
+<script type="module">
+import { OrthographicCamera, Vector3 } from 'three';
+import { DensePaletteChunk, meshVisibleFaces, shadeVisibleFacePaletteV1 } from '/dist/meshing/index.js';
+import { ThreeRenderRuntime } from '/dist/three/index.js';
+
+// Original unit occupancy. Deliberately distinct test colours expose a swapped
+// normal or a double colour conversion; these are not a recommended art palette.
+const palette = [[0,0,0], [180,80,60], [205,110,80], [145,70,55], [225,140,100], [155,90,70], [190,100,75]];
+const mesh = meshVisibleFaces(new DensePaletteChunk({
+  origin: {x:0,y:0,z:0}, size: {x:1,y:1,z:1}, voxels: new Uint16Array([1]),
+}));
+const slots = shadeVisibleFacePaletteV1(mesh, [{paletteIndex:1,facePaletteIndices:[1,2,3,4,5,6]}]);
+const colors = new Uint8Array(slots.length * 3);
+for (let vertex = 0; vertex < slots.length; vertex++) colors.set(palette[slots[vertex]], vertex * 3);
+const snapshot = {
+  schemaVersion:'voxel.render-snapshot/1', revision:1,
+  descriptor: {
+    schemaVersion:'voxel.world/1', worldId:'world:face-tones', epoch:'epoch:original-cube',
+    coordinates:{handedness:'right',upAxis:'+y',forwardAxis:'-z',chunkRounding:'floor',metersPerWorldUnit:1,worldUnitsPerVoxel:{x:1,y:1,z:1}},
+    colorEncoding:'srgb8-straight-alpha', capabilities:['geometry-resources','instance-batches'],
+    limits:{maxResources:4,maxPaletteEntries:8,maxChunks:1,maxVoxelsPerChunk:1,maxBatches:1,maxGeometryVertices:24,maxGeometryIndices:36,maxInstancesPerBatch:1,maxTotalBytes:10000},
+  },
+  resources: [
+    {kind:'geometry',key:'geometry:cube',incarnation:1,revision:1,topology:'triangles',positions:mesh.positions,normals:mesh.normals,colors,indices:mesh.indices,groups:[],bounds:{min:{x:0,y:0,z:0},max:{x:1,y:1,z:1}},pivot:{x:0,y:0,z:0}},
+    {kind:'material',key:'material:unlit',incarnation:1,revision:1,shading:'unlit',color:{r:255,g:255,b:255,a:255},vertexColors:true,transparent:false,opacity:1,doubleSided:false,roughness:1,metalness:0},
+  ], chunks:[],
+  batches:[{key:'batch:cube',incarnation:1,revision:1,geometryKey:'geometry:cube',materialKey:'material:unlit',instanceKeys:['cube:g1'],matrices:new Float32Array([1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1])}],
+};
+const centers = [[0,.5,.5],[1,.5,.5],[.5,0,.5],[.5,1,.5],[.5,.5,0],[.5,.5,1]];
+window.faceToneProof = async (reverse = false) => {
+  const camera = new OrthographicCamera(-2,2,1.5,-1.5,.1,100);
+  camera.position.set(...(reverse ? [-3,-3,-3] : [3,3,3]));
+  camera.lookAt(.5,.5,.5);
+  camera.updateMatrixWorld(true);
+  const runtime = new ThreeRenderRuntime({canvas:document.querySelector('canvas'),width:640,height:480,pixelRatio:1,view:{kind:'borrowed-camera',camera,projectionOwnership:'host'}});
+  try {
+    const accepted = runtime.acceptSnapshot(snapshot);
+    if (accepted.status !== 'accepted') throw new Error(JSON.stringify(accepted));
+    runtime.frame({nowMs:0,deltaMs:0,frameIndex:0});
+    const capture = runtime.capture();
+    const image = new Image(); image.src = capture.dataUrl; await image.decode();
+    const readback = document.createElement('canvas'); readback.width=640; readback.height=480;
+    const context = readback.getContext('2d'); context.drawImage(image,0,0);
+    const directions = reverse ? [0,2,4] : [1,3,5];
+    return {
+      dataUrl:capture.dataUrl,
+      samples:directions.map(face => {
+        const p = new Vector3(...centers[face]).project(camera);
+        const rgba = context.getImageData(Math.floor((p.x+1)*320),Math.floor((1-p.y)*240),1,1).data;
+        return {face,actual:Array.from(rgba.slice(0,3)),expected:palette[face+1]};
+      }),
+      triangles:runtime.metrics().triangles,
+    };
+  } finally { runtime.dispose(); }
+};
+</script></body></html>

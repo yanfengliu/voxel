@@ -172,6 +172,13 @@
         "./three"
       ]
     },
+    "dist/meshing/face-palette-tones.d.ts": {
+      "sha256": "b9582088527ad38a8fc6b60e2463520af910121043de14e2de1198de437a2481",
+      "reachableFrom": [
+        "./meshing",
+        "./three"
+      ]
+    },
     "dist/meshing/greedy-opaque-mesher.d.ts": {
       "sha256": "20befe2561495c4f9d80f1996d6872808fa7023afc516b4e70eca387a0143d2b",
       "reachableFrom": [
@@ -180,7 +187,7 @@
       ]
     },
     "dist/meshing/index.d.ts": {
-      "sha256": "6abcc7e4be0825f887e94d0d4f7e1d6164b1ff90625dcdac809118e814bf1341",
+      "sha256": "f7a45d9d0deb66f6efcd8bdfa28d6009d36e351e4c615830e508db401b2e70e0",
       "reachableFrom": [
         "./meshing",
         "./three"

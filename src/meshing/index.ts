@@ -31,6 +31,7 @@ export {
   type FaceOutlineOptionsV1,
   type OutlinedMeshV1,
 } from './face-outlines.js';
+export { shadeVisibleFacePaletteV1, type FacePaletteTonesV1 } from './face-palette-tones.js';
 export {
   ChunkIndexV1,
   FACE_NEIGHBOR_OFFSETS_V1,

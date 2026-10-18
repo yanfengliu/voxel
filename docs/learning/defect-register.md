@@ -6,6 +6,14 @@ Unlike a lesson, an entry stays after it becomes a gate. This is the standing li
 
 Newest first.
 
+## 2026-10-18 — One matched view did not establish volumetric art quality
+
+**Symptom.** The owner rejected the independent reference-study output and requested engine learnings that survive the session and can serve later games.
+
+**Investigation and cause bounds.** The study's M01–M06 broad extrusions could overlap 2D landmarks without satisfying the reviewer as a 3D asset. M07's anatomical volumes improved depth but half-unit pitch and stronger face tones were judged as dense contour hatching. M08/M09 remained unapproved. This is bounded content/sampling evidence, not an established generic renderer defect. Palette remapping cannot repair anatomy or articulation.
+
+**Checks and remaining bound.** `src/meshing/face-palette-tones.test.ts` pins original one/two-cell palette-direction, ownership, unmapped-slot and neighbor-face cases. `tests/browser/face-palette-tones.spec.ts` checks the opt-in public helper through unlit public-runtime captures on six faces; it does not judge art. The [authoring guide](../guides/voxel-palette-style.md) requires matched plus native-scale supplementary views and records projected-pitch/tone observations. Final reference likeness stays with asset review, outside this helper's gate. Work3 records provenance and rejected approaches.
+
 ## 2026-10-01 — Successful diagnostic fixtures must pin their supported runtime identity
 
 **Symptom.** Independent font-diagnostic review found that two mocked successful reports inherited process.version while the real checker requires Node24. The original fixture failed the checker-CLI case on official isolated Node22, although Node24 local tests passed.

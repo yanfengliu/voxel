@@ -249,6 +249,8 @@ Use fixed-size chunks with configurable dimensions chosen per world profile. A s
 
 The first meshing path is deliberately narrow: opaque voxels, palette or vertex color, and no light propagation, ambient occlusion, or transparent-face merging. Add those only after the opaque contract is correct and measured.
 
+The optional portable `shadeVisibleFacePaletteV1` post-pass maps each original visible face's source palette slot and local axis normal to a caller-owned palette slot. It returns a copied index lane without modifying occupancy, geometry, bounds, or mesher dependencies. The consumer resolves those slots to geometry-resource vertex colors; an unlit material preserves the authored tones. This helper does not run implicitly in the runtime or worker pipeline. It provides no palette, occlusion, world-space light, or voxel-pitch policy; see [the palette authoring guide](../guides/voxel-palette-style.md).
+
 The first path should be:
 
 1. hide faces adjacent to opaque voxels, including across chunk boundaries;

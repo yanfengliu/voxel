@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.3.0 — 2026-10-18
+
+Additive: `shadeVisibleFacePaletteV1` and `FacePaletteTonesV1` in `voxel/meshing` select caller-owned palette slots by each voxel face's local axis normal. The helper returns independent palette indices, preserves unmapped slots, and leaves geometry and runtime defaults unchanged. It accepts the original four-vertices-per-face visible-face layout, before outlines or topology changes; it does not add occlusion or change worker meshing. See [the authoring guide](docs/guides/voxel-palette-style.md) for unlit vertex-color usage and visual review limits. Package and lockfile root versions now agree.
+
+The inherited development-only `source-map-js` lock advances from 1.2.1 to 1.2.2 within PostCSS's existing range to clear [GHSA-68fv-2mgg-jv7q](https://github.com/advisories/GHSA-68fv-2mgg-jv7q). No runtime dependency is introduced; the existing two moderate Vitest audit findings remain.
+
 ## 1.2.0 — 2026-08-17
 
 Additive: an opt-in ink-and-flat-colour resolve pass, so a game built on `voxel/three` can offer a drawn look as a setting rather than reimplementing one. No consumer source change is required, and a runtime that does not ask for it renders exactly as before — one `renderer.render` call, no offscreen targets.

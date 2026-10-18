@@ -19,6 +19,8 @@ Run `npm install` in `voxel` first. Its `prepare` script builds `dist`; a Vite c
 
 Import only the lane the consumer uses. `voxel/core` and `voxel/meshing` do not expose Three types. Importing `voxel/three` requires the tested Three peer.
 
+For opt-in discrete face tones on caller-authored voxel geometry, use `shadeVisibleFacePaletteV1` from `voxel/meshing`; [the palette authoring guide](voxel-palette-style.md) covers palette ownership, unlit vertex colors, projected pitch, and multi-angle review.
+
 `voxel/physics` needs no peer at all — not Three, not a solver — so a portable simulation module, a worker, or a server can import it.
 
 ## Lifecycle
