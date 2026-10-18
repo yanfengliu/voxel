@@ -27,3 +27,34 @@ The coordinating agent independently inspected Linux job 117758800610 on source/
 I independently read actual Linux log failure lines1216..1413 and inspected native mature HUD actual/expected/diff from your retained selection. HUD text weight/wrapping/button layout differs; 3D tree/terrain pixels appear stable in diff. This supports observed HUD mismatch only, not a font identity/root cause. 134pass/2fail and185.5/214s87% headroom match raw log. Good retention of old exact hash pairs/new palette CI pixels. No scope expansion or assertion/budget relaxation.
 
 Accepted within the reported bounds. Neither this inspection nor matching prior PNG hashes establishes the host's actual font identity. The hosted job remains failed; no baseline, assertion or budget was changed.
+
+## Format correction — 2026-10-18
+
+The original record is recoverable at d05c06a5a2f9843f9c1d54096e2ae253f34067b8:docs/work/3_palette-face-tones/reviews/2_delivery-docs.md, SHA-256 f0bf9e632f434040b68c313bfe675057e1b89111c62c0843391d09fb6b128239. That exact original report remains the byte-for-byte prefix above. The old filename used an unsupported review stage and omitted required owner sections; this correction uses integration and adds those sections without creating a review round or changing an authored report.
+
+The initial uncommitted document-only review target preimages were not preserved; their recorded hashes alone cannot recover them. This is a provenance gap, not repaired by the later final d05c06a documents. No source-review credit was claimed for this round. The source review target in review 0 remains separately recoverable.
+
+## Reviewers and coverage
+
+The coordinating art agent supplied the attributed document, numeric and hosted-evidence observations above. Its model identity was not recorded. This supplements the pinned source review and makes no new source-review claim.
+
+## Reports
+
+The substantive authored reports remain unchanged above under Authored report, Supplemental numeric review and Supplemental hosted-evidence inspection. The format correction creates no report or approval.
+
+## Findings and disposition
+
+| ID | Finding | Disposition and reason | Repair or follow-up |
+|---|---|---|---|
+| F1 | Pass/skip wording could imply one fewer passing test. | Accepted as numeric precision. | Plan distinguishes unit passes from the existing skip. |
+| F2 | The projected pitch needed its world-Y and camera bound. | Accepted as numeric precision. | Guide and plan name world-Y edges, height 419 and span 165. |
+
+F0 belongs to review 1. F1/F2 are assigned during this explicit format correction to the already reported findings; their reports and dispositions are unchanged.
+
+## Verification
+
+The original d05c06a three-document checks and hosted evidence are recorded above and in the plan. The renewed CI follow-up first reproduced the structural checker refusal and is checking this metadata correction with the existing work-docs checker. No runtime, artifact, baseline, assertion or budget change follows from this correction.
+
+## Round outcome
+
+The original supplemental reports found no material code issue and accepted the stated factual wording corrections within their bounds. Hosted failures remain failures. This explicit metadata correction retains the original record and notes its document-target provenance gap; it provides no retroactive code-review coverage.

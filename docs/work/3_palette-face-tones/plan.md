@@ -1,6 +1,6 @@
 # Caller-owned palette face tones
 
-Status: delivered with hosted verification gaps
+Status: active
 Owner: engine_palette_style
 Created: 2026-10-18
 Updated: 2026-10-18
@@ -87,4 +87,4 @@ The final correction changes only the guide, this plan and review 2. Required do
 
 [Review 1](reviews/1_integration.md) retains supplemental coordinating-agent inspection of the committed source and doc-only integration candidate. No material issue was found; its one capture-count wording nit was accepted. This supplements, rather than replaces, the pinned source review.
 
-[Review 2](reviews/2_delivery-docs.md) retains supplemental delivery-doc inspection. No material issue was found; its unit-pass/skip count and projected-world-Y-edge precision were accepted. Final observed CI outcomes and physical cleanup are bound in the delivery record after this review, without claiming new source-review coverage.
+[Review 2](reviews/2_integration.md) retains supplemental delivery-doc inspection. No material issue was found; its unit-pass/skip count and projected-world-Y-edge precision were accepted. Final observed CI outcomes and physical cleanup are bound in the delivery record after this review, without claiming new source-review coverage.

@@ -6,6 +6,14 @@ Unlike a lesson, an entry stays after it becomes a gate. This is the standing li
 
 Newest first.
 
+## 2026-10-18 — Multi-angle depth review accepted the wrong subject interpretation
+
+**Symptom.** The owner corrected the reference subject to a dragon head emerging continuously from the ground, with no humanoid limbs. The M12/M13 study had authored a humanoid pelvis, paired legs, arm and gauntlet despite repeated multi-angle review.
+
+**Investigation and cause bounds.** Review examined volume, articulation, material cleanup and framing without first requiring the depicted subject or rejecting incompatible structures. Earlier anatomy-improvement claims describe that mistaken interpretation; they are superseded rather than evidence of accepted anatomy. Geometry connectivity and hashed views did not answer the semantic question. This is a content-interpretation and review failure, not an established engine defect.
+
+**Checks and remaining bound.** The [authoring guide](../guides/voxel-palette-style.md) now requires a frozen one-sentence subject, disqualifying structures, and a fresh native multi-angle subject judgment before detail work. M14's separate rough packet passed independent subject review only and failed final fidelity; it proves no animation or physical emergence. This manual procedure is not an automated retiring gate. Several reference families were inspected, but only one subject has an authored 3D proof; no universal style or cross-family transfer is established. [Work 4](../work/4_palette-ci-followup/plan.md) retains the exact packet identity and acceptance bounds.
+
 ## 2026-10-18 — One matched view did not establish volumetric art quality
 
 **Symptom.** The owner rejected the independent reference-study output and requested engine learnings that survive the session and can serve later games.

@@ -16,6 +16,10 @@
     {
       "id": 3,
       "theme": "palette-face-tones"
+    },
+    {
+      "id": 4,
+      "theme": "palette-ci-followup"
     }
   ]
 }
