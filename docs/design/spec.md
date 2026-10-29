@@ -2,6 +2,19 @@
 
 Status: the V1 vertical slice was implemented on 2026-07-11 and the stable 1.0.0 release followed on 2026-07-18. This document records the original architecture and option analysis; it is not a claim that every proposed section exists. The README and [the completed implementation ledger](../plans/v1-implementation.md) describe what ships today (deltas, the production greedy worker pipeline, committed voxel/instance picking for profiled worker worlds, revision-aware capture, embedded hosts, and both consumer proofs). Facilities proposed here but absent from that shipped surface — including GLTF asset loading, public extension and pick-proxy APIs, and generic render passes — remain future design rather than current public API. The [1.0 roadmap](../plans/v1-roadmap.md), [target architecture](v1-architecture.md), and implementation ledger record the released scope, architecture, and evidence.
 
+## Section map
+
+Read this map first, then only the sections the work needs.
+
+- [Decision summary](#decision-summary): the chosen design in brief, and the dependency and ownership strategy.
+- [Goals](#goals) and [Non-goals](#non-goals).
+- [Evidence from current consumers](#evidence-from-current-consumers): what City, Townscaper, AoE2 and the adjacent repositories need, and the Studio-only proofs: contrast curation (the largest subsection), the scene catalog boundary, scene review artifacts and clustered light.
+- [Architecture](#architecture): the nine parts, from the portable core, world snapshots and deltas, and voxel storage and meshing, through geometry resources, the Three.js runtime, instance batches, and assets and materials, to picking and lifecycle and observability.
+- [Backend options](#backend-options): Three.js `WebGLRenderer` first (recommended), `WebGPURenderer` and TSL, Babylon.js, and raw WebGPU.
+- [Migration and delivery plan](#migration-and-delivery-plan): the AoE2 proving slice and phases 0 to 6, with what is completed.
+- [Main difficulties](#main-difficulties): abstraction, chunk correctness and latency, resource lifetime, transparency and overlays, picking parity, visual regression, consumer drift, and art direction.
+- [Achievability](#achievability), [Current recommendation](#current-recommendation) and [Non-normative references](#non-normative-references).
+
 ## Decision summary
 
 Build a browser-first, voxel-first rendering toolkit in strict TypeScript, using Three.js `WebGLRenderer` for the first production backend.

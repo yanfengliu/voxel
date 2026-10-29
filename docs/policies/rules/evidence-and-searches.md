@@ -1,0 +1,9 @@
+# Evidence and searches
+
+One of [voxel's local rules](../local-rules.md).
+
+Voxel-only. No canon equivalent. Moved here from `docs/learning/lessons.md` on 2026-09-02 because it is a contract of this repository's evidence chain rather than a rule a machine can check: the freeze is a fact about when a search was started, and nothing in the tree records that.
+
+- Anything a search's evidence hashes is frozen from the moment the search starts, prose fields inside declaration objects included. For the windmill fixture that is the evaluator declaration, the numerical profile, and the geometry generator; comments and docstrings are safe, and every declared value is not. Evidence: the 144-candidate search was run three times at 60 Hz — nine minutes each — for one result, because one string in `ablationExpectations` was reworded after the second run. That string is inside `WINDMILL_COMPACT_EVALUATOR_DECLARATION_V1`, which is hashed into `evaluatorDeclarationSha256`, which is hashed into every candidate's `combinedEvaluationSha256`. The physics was identical and every measured number matched to the last decimal; only the hashes moved, and the whole chain had to be regenerated anyway. (2026-08-01.)
+
+- Before trusting a threshold, ask how many populations reach it: a floor shared by two is calibrated for the tighter one and is near-noise for the other, so measure each separately. Evidence: 2026-08-13. `minimumChangedPixelFraction` at 0.0001 served both exact-box removals (98 variants, smallest real detection 0.000359) and whole-placement relocations (8 cases, tightest 0.024441) — a third of the smallest removal, and 244x below the tightest relocation. Raising it broke four removal proofs, and that breakage was the diagnosis rather than a setback. How many populations a constant serves is a fact about the world rather than about the constant, so nothing can assert it. (Moved here from `docs/learning/canon-candidates.md` on 2026-09-02.)
