@@ -2,7 +2,7 @@
 
 A queue, not a destination.
 
-A lesson lands here the session it is learned, anchored in [lessons-evidence.md](lessons-evidence.md) to a measurement, a commit or a test id, and **naming the gate it is waiting for**. It is deleted in the commit that lands that gate, because from then on a machine reads every line and nobody has to. An entry that can name no gate is not a lesson: fleet-wide knowledge is staged in [canon-candidates.md](canon-candidates.md), repo-only knowledge goes to [../policies/local-rules.md](../policies/local-rules.md), and the rest is folklore and is dropped.
+A lesson lands here the session it is learned, anchored in [lessons-evidence.md](lessons-evidence.md) to a measurement, a commit or a test id, and **naming the gate it is waiting for**. It is deleted in the commit that lands that gate, because from then on a machine reads every line and nobody has to. An entry that can name no gate is not a lesson: fleet-wide knowledge is staged in [canon-candidates.md](../../../fleet/canon-candidates.md), repo-only knowledge goes to [../policies/local-rules.md](../policies/local-rules.md), and the rest is folklore and is dropped.
 
 Every entry costs every session in this repository the time to read it, so the gate comes as early as it can be written, and an entry that has been sitting here is a thing that failed to graduate rather than a thing worth keeping.
 
