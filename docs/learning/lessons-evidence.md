@@ -4,7 +4,7 @@ The war story and the anchor behind each queued line in [lessons.md](lessons.md)
 
 Every entry carries an anchor — a measurement, a commit, a test id, or a behavior delta — per the fleet constitution; an entry without one is folklore and does not belong here. An entry leaves this file in the commit that lands its rule's gate, and a superseded entry is corrected in place with its correction dated rather than silently deleted.
 
-On 2026-09-02 this file held 36 entries for 42 rules. The entries whose rules became gates left with them; what the gates now enforce, and the mutation each was proved against, is in [gate-proofs.md](gate-proofs.md), and the knowledge that had no mechanical trigger is in [canon-candidates.md](canon-candidates.md) and [../policies/local-rules.md](../policies/local-rules.md).
+On 2026-09-02 this file held 36 entries for 42 rules. The entries whose rules became gates left with them; what the gates now enforce, and the mutation each was proved against, is in [gate-proofs.md](gate-proofs.md), and the knowledge that had no mechanical trigger is in the fleet constitution or [../policies/local-rules.md](../policies/local-rules.md), and one entry was dropped, as `5d1d058`, which closed this repo's staging file, records.
 
 ## A sampler denominated in ticks is a second variable
 
