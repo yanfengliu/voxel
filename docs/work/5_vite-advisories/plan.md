@@ -1,0 +1,57 @@
+# Clear the five vite advisories that block verify
+
+Status: active
+Owner: vitebump (worker of the met coordinator)
+Created: 2026-10-31
+Updated: 2026-10-31
+
+## Problem and outcome
+
+`npm run verify` fails on origin/main 7a93bae at `test:supply-chain` with "full audit reports blocking findings: vite (high)". The tree did not change: five advisories published on 2026-10-20 and 2026-10-21 cover `vite` 8.0.0 to 8.1.5, and voxel pins `vite` exactly at 8.1.4. They are GHSA-698v-4r3x-3vcv, GHSA-r825-w8mm-5pxw, GHSA-587h-7wmj-h5pm (high), GHSA-9jrq-w75r-8gcw and GHSA-rq7h-c2jc-7f22. Every voxel commit's gate is blocked until this is fixed.
+
+The outcome: `vite` pinned exactly at the lowest release above 8.1.4 that clears all five, both audits free of high and critical findings, and `npm run verify` green.
+
+## Scope
+
+In scope: the `vite` pin in `package.json`, its `package-lock.json` entry, the `vite` row and an audit note in [the supply-chain record](../../architecture/supply-chain.md), this work unit and a devlog line. The two consumers that link voxel by `file:../voxel`, aoe2 and city, are checked read-only: a detached worktree of each from origin/main, linked to this voxel, runs its build and unit tests, and nothing is committed there.
+
+Out of scope: the 13 moderate full-audit findings, which do not block (GHSA-82fw-gwwq-j7x9 and GHSA-qxg6-89mg-rqv8 against `@vitest/mocker`, GHSA-g3hv-75wg-m249 against `minimatch`); the consumers' own `vite` pins (aoe2 `^6.4.3`, city `^8.1.2`), which are named in the outcome and not changed; `vite` 8.2 and 8.3.
+
+## Approach
+
+Each advisory's GitHub record lists 8.1.6 as the first patched release for the range `>= 8.0.0, <= 8.1.5`. The later lines are patched in 8.2.4 and 8.3.3. So 8.1.6 is the lowest release above 8.1.4 that clears all five, and it is a patch release on the line voxel already uses. The older lines' fixes, 6.4.4 and 7.3.7, would be downgrades. `npm audit fix --force` would install 8.3.5, the newest release, which is two minor versions past what the fix needs. Staying on 8.1 has a cost: if Vite stops patching 8.1, a later advisory will need a minor-version jump. This change does not check Vite's support window.
+
+`vite` 8.1.6 was published on 2026-10-06. `npm audit signatures` verifies its registry signature and its provenance attestation, which names the `vitejs/vite` tag `v8.1.6` (commit `dade886f0cc17fedf777eff804593d2af182abd4`) and the workflow `.github/workflows/publish.yml`. The attestation's digest equals the lockfile's integrity. 8.1.6 asks for `postcss` `^8.5.17` and `rolldown` `~1.1.5` instead of `^8.5.16` and `~1.1.4`. The lockfile already holds `postcss` 8.5.23 and `rolldown` 1.1.5, so only the `vite` entry changes. Its Node range, `^20.19.0 || >=22.12.0`, is the same as 8.1.4's.
+
+voxel's `build` script is `tsc -p tsconfig.build.json`, and voxel has no runtime dependencies. `vite` runs as voxel's development server (Studio, the oak fixture, the servers the browser specs start), inside `vitest`, and as the bundler that `scripts/verify-mesh-worker-package.mjs` runs during `verify` to build a browser consumer of the packed worker. The consumers bundle voxel's `dist` with their own `vite`.
+
+## Acceptance criteria
+
+- `package.json` pins `vite` exactly at 8.1.6. The lockfile diff changes only the `vite` entry and the root's `vite` line (git diff).
+- `npm ci` from the new lockfile installs `vite` 8.1.6, deduped under `vitest` (`npm ls vite`).
+- `npm audit --omit=dev --audit-level=high` and `npm audit --audit-level=high` both exit 0, with no high or critical finding, and `npm run test:supply-chain` passes.
+- `npm run verify` passes in this worktree.
+- aoe2 and city, each from origin/main and linked to this voxel, pass their build and unit tests, and commit nothing.
+- One review round with both lanes of the fleet runbook, its blocking and should-fix findings resolved.
+- The change lands on main as its own commit, a fast-forward push, and remote CI is followed to completion.
+
+## Implementation steps
+
+- Reproduce the failing gate and record both audits before the bump.
+- Read each advisory's patched range and pick the lowest release that clears all five.
+- Bump with `npm install --save-exact vite@8.1.6`, reinstall with `npm ci`, rerun both audits and `npm run verify`.
+- Check aoe2 and city from origin/main, linked to this voxel, read-only.
+- Run one review round with both lanes and resolve its findings.
+- Merge origin/main, rerun `npm run verify`, push as a fast-forward, follow CI, fast-forward the primary checkout only if it is clean on main, and remove the worktrees and the branch.
+
+## Outcome
+
+Implemented and verified locally. The push and remote CI are recorded here when they finish.
+
+- `vite` is pinned at 8.1.6 in `package.json`. The lockfile changed only the `vite` entry and the root pin.
+- Audits on 2026-10-31: the runtime audit had 0 findings before and after. The full audit had 14 findings before (13 moderate, 1 high) and 13 moderate after, exiting 0 at `--audit-level=high`. `npm audit signatures` verified 145 registry signatures and 49 attestations, and vite 8.1.6's provenance digest equals the lockfile's integrity.
+- `npm run verify` passed on the reviewed package bytes in 23 min 13 s: every stage, 2,434 unit tests (1 skipped) and 136 of 136 browser tests.
+- Consumers, read-only: a detached worktree of each from origin/main, with `node_modules/voxel` linked to this worktree. aoe2 at 87623a72 (`vite` 6.4.3, `vitest` 3.2.6): `npm run build` passed (voxel's `dist` up to date, 896 modules bundled), and `npm test` passed 649 files and 5,010 tests (3 skipped). city at 6805c1e (`vite` 8.1.2, `vitest` 4.1.9): `npm run build` passed (317 modules, worker budget 162,626 of 166,000 bytes), and `npm test` passed 132 files and 881 tests. Neither tree changed. `npm ci` in each consumer ran voxel's `prepare`, which rebuilt this worktree's `dist`.
+- The consumers' own exposure is left to them: aoe2's locked `vite` 6.4.3 (patched in 6.4.4) and city's 8.1.2 (patched in 8.1.6) are in the same five advisories' ranges.
+- Review: [round 0](reviews/0_implementation.md). Both lanes kept: Codex answered SHIP and Claude FIX-THEN-SHIP, and every finding has a disposition there. F9, a pre-existing sentence about Rapier in the supply-chain record, is left open.
+- The next release entry in `CHANGELOG.md` should record this bump, as the 1.1.0 and 1.3.0 entries recorded earlier dev-only advisory fixes.

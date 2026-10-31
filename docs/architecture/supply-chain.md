@@ -1,6 +1,6 @@
 # Supply chain and artifact record
 
-Status: updated 2026-08-04 against `voxel@1.0.0`.
+Status: updated 2026-08-04 against `voxel@1.0.0`. The `vite` row and the audit note on the `vite` advisories date from 2026-10-31, against `voxel@1.3.0`.
 
 This is the E-05 record: what this package redistributes, under what terms, and
 which checks hold each claim. Every figure here is produced by
@@ -52,7 +52,7 @@ The 14 direct development dependencies tabulated below are MIT or Apache-2.0, an
 | `typescript-5-7` (`typescript@5.7.3`) | 5.7.3 | Apache-2.0 |
 | `typescript-6-0` (`typescript@6.0.3`) | 6.0.3 | Apache-2.0 |
 | `typescript-eslint` | 8.63.0 | MIT |
-| `vite` | 8.1.4 | MIT |
+| `vite` | 8.1.6 | MIT |
 | `vitest` | 4.1.10 | MIT |
 
 ## Audits
@@ -66,6 +66,8 @@ Both audits npm supports run on every `verify`, and both reported zero findings 
   release through the toolchain that builds it.
 
 That run followed one that did not. Earlier the same day the full audit blocked on GHSA-rgw5-rvv9-x895 against a `brace-expansion` the tree had carried unchanged since 2026-07-31: a newly published advisory, not a dependency change. This is the closing note below happening rather than an exception to it, and it is why the date above is a fact about one run and not a property of the tree.
+
+It happened again at `voxel@1.3.0`. Five advisories published on 2026-10-20 and 2026-10-21 cover `vite` 8.0.0 to 8.1.5: GHSA-698v-4r3x-3vcv, GHSA-r825-w8mm-5pxw, GHSA-587h-7wmj-h5pm (high), GHSA-9jrq-w75r-8gcw and GHSA-rq7h-c2jc-7f22. Each names 8.1.6 as the first patched release on that line, so 8.1.6 is the lowest release above 8.1.4 that clears all five. On 2026-10-31 `vite` moved from 8.1.4 to 8.1.6. In the lockfile only the `vite` entry and the root's `vite` pin changed. That day the full audit reported 13 moderate findings and no high or critical one: two advisories against `@vitest/mocker` under `vitest`, and one against `minimatch` under `eslint` and `typescript-eslint`.
 
 High and critical findings block. `npm audit` exits non-zero whenever it finds anything at all, so its exit code cannot distinguish "vulnerable" from "failed to run"; the gate parses the JSON report and treats a missing report as the real failure. [The support policy](../policies/support.md) permits a documented exception for a blocking finding, carrying owner, rationale, mitigation, and expiration; that is deliberately not a command-line flag, so granting one means editing the severity list in a reviewed commit.
 
