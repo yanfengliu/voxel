@@ -4,7 +4,7 @@ Voxel's own additions to, and strengthenings of, the fleet constitution in [AGEN
 
 They live here because the constitution section of AGENTS.md is a verbatim copy of `fleet/FLEET.md` that `/sync-instructions` rewrites wholesale. A local rule written into that section is deleted the next time anyone syncs the fleet — which is exactly what happened on 2026-08-01, when a routine canon propagation silently dropped every rule on this page. A repo-tracked file cannot be clobbered by a fleet sync, so this is where they belong.
 
-These rules add concrete repository constraints consistent with the Fleet Orchestration Policy in [AGENTS.md](../../AGENTS.md).
+These rules add concrete repository constraints consistent with the fleet constitution in [AGENTS.md](../../AGENTS.md).
 
 Each line below is one rule, its section linked to the file that holds the rule in full, why it exists and its evidence; open that file when the work reaches the rule.
 
@@ -18,7 +18,6 @@ Each line below is one rule, its section linked to the file that holds the rule 
 - [Docs](rules/docs.md):
   - Docs are part of the change: update every affected surface in the same commit; affected surfaces do not automatically include `README.md`; never reference or mandate files that don't exist.
   - Quantified, exhaustive, and causal claims require durable executable proof at the same scope as the prose (owner rule, 2026-08-02).
-- [Steering](rules/steering.md): Steering compounds: when the user accepts or repeats a direction that generalizes past the immediate task, land it in the canon in that same session — here if it is fleet-wide, else the repo's AGENTS.md or lessons file — so the next run inherits it instead of relearning it, and say what was captured and where. Do not canonize exploratory questions as accepted decisions.
 - [Physics and fluid simulation](rules/physics-and-fluids.md):
   - Read the readily available resources before building or explaining simulation behaviour yourself (owner rule, 2026-08-01).
   - Check which motion a solver mechanism reads before reaching for it.
