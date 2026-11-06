@@ -101,7 +101,7 @@ describe('lessons index and evidence stay in step', () => {
 
   it('makes every queued rule name the gate it is waiting for', () => {
     // The constitution's own test. A queued entry that names no gate is not a
-    // lesson: promote it to the fleet canon, localise it to
+    // lesson: promote it to the fleet canon, ask the owner to localise it to
     // docs/policies/local-rules.md, or drop it.
     const unnamed = ruleLinesIn(INDEX())
       .filter((line) => !/\*\*waiting on:\*\*/i.test(line))
@@ -109,7 +109,7 @@ describe('lessons index and evidence stay in step', () => {
     expect(
       unnamed,
       'these queued rules name no gate, so by the constitution they are not '
-      + 'lessons — stage them in canon-candidates.md, move them to '
+      + 'lessons — stage them in canon-candidates.md, ask the owner about '
       + 'docs/policies/local-rules.md, or drop them',
     ).toEqual([]);
   });
