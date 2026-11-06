@@ -1,9 +1,9 @@
 # Clear the five vite advisories that block verify
 
 Status: active
-Owner: vitebump (worker of the met coordinator)
+Owner: a Claude Code session that the fleet's slim-core coordinator started on 2026-11-06 and that took the branch over; before that vitebump (worker of the met coordinator)
 Created: 2026-10-31
-Updated: 2026-10-31
+Updated: 2026-11-06
 
 ## Problem and outcome
 
@@ -11,11 +11,15 @@ Updated: 2026-10-31
 
 The outcome: `vite` pinned exactly at the lowest release above 8.1.4 that clears all five, both audits free of high and critical findings, and `npm run verify` green.
 
+On 2026-11-06 the branch was still unmerged, and the task grew to CI. CI on main had failed on every push since at least 2026-10-29, for four separate reasons in run 41963047196 (2026-11-05). The vite audit failed `Audit and package` and stopped the Windows `Node 24 complete` leg inside `npm run verify`. GitHub moved `ubuntu-latest` to Ubuntu 26.04, where Playwright 1.59.1 refuses to install Chromium's system libraries, so the Linux `Node 24 complete` leg failed before running anything. The Windows `Node 22 portable` job was cancelled at its 15-minute cap during unit tests. Behind those, the browser suite has its own CI failures, recorded in `docs/learning/defect-register.md`: two Linux HUD pixel baselines, three Windows per-test timeouts, a Linux budget-headroom report, and a Windows leg that does not fit its one-hour cap. The outcome now also includes CI on main green on every job.
+
 ## Scope
 
 In scope: the `vite` pin in `package.json`, its `package-lock.json` entry, the `vite` row and an audit note in [the supply-chain record](../../architecture/supply-chain.md), this work unit and a devlog line. The two consumers that link voxel by `file:../voxel`, aoe2 and city, are checked read-only: a detached worktree of each from origin/main, linked to this voxel, runs its build and unit tests, and nothing is committed there.
 
 Out of scope: the 13 moderate full-audit findings, which do not block (GHSA-82fw-gwwq-j7x9 and GHSA-qxg6-89mg-rqv8 against `@vitest/mocker`, GHSA-g3hv-75wg-m249 against `minimatch`); the consumers' own `vite` pins (aoe2 `^6.4.3`, city `^8.1.2`), which are named in the outcome and not changed; `vite` 8.2 and 8.3.
+
+Added on 2026-11-06: `.github/workflows/ci.yml` (the Ubuntu runner of `Node 24 complete`, the time caps of `Node 24 complete` and `Node 22 portable`, and a `workflow_dispatch` trigger), the browser suite's CI failures, and one wording change in `tests/testing/lessons-pairing.test.ts`, landed in its own commit: the fleet canon's R8 now adds a rule to `docs/policies/local-rules.md` only when the owner asks, and civ-engine, lego and investing made the same edit that day. Not changed: `.github/workflows/oak-font-diagnostic.yml`, which runs the same Linux install on `ubuntu-latest` and whose runner list `tests/testing/oak-font-diagnostics.test.ts` pins. The primary checkout's uncommitted allocations (this unit's template plan and unit 6, `fleet-lessons-route`) belong to other participants and are left alone.
 
 ## Approach
 
@@ -24,6 +28,8 @@ Each advisory's GitHub record lists 8.1.6 as the first patched release for the r
 `vite` 8.1.6 was published on 2026-10-06. `npm audit signatures` verifies its registry signature and its provenance attestation, which names the `vitejs/vite` tag `v8.1.6` (commit `dade886f0cc17fedf777eff804593d2af182abd4`) and the workflow `.github/workflows/publish.yml`. The attestation's digest equals the lockfile's integrity. 8.1.6 asks for `postcss` `^8.5.17` and `rolldown` `~1.1.5` instead of `^8.5.16` and `~1.1.4`. The lockfile already holds `postcss` 8.5.23 and `rolldown` 1.1.5, so only the `vite` entry changes. Its Node range, `^20.19.0 || >=22.12.0`, is the same as 8.1.4's.
 
 voxel's `build` script is `tsc -p tsconfig.build.json`, and voxel has no runtime dependencies. `vite` runs as voxel's development server (Studio, the oak fixture, the servers the browser specs start), inside `vitest`, and as the bundler that `scripts/verify-mesh-worker-package.mjs` runs during `verify` to build a browser consumer of the packed worker. The consumers bundle voxel's `dist` with their own `vite`.
+
+CI, 2026-11-06. `Node 24 complete` is pinned to `ubuntu-24.04`, the OS its Linux leg last ran the browser suite on, rather than moving Playwright: a new Playwright brings a new Chromium, which can move every pixel baseline at once. The two caps are raised to measured bounds, with the measurements beside them in the workflow: the Windows unit tests took 531 to 729 s in passing runs and had not finished after 825 s when the 15-minute cap cancelled them, and the Windows browser leg has been cancelled at the one-hour cap with tests not yet run. A cap is not a test, and no test budget or assertion changes. `workflow_dispatch` lets a branch run CI, because this machine has no Linux and the next repairs are judged on Linux.
 
 ## Acceptance criteria
 
@@ -34,6 +40,7 @@ voxel's `build` script is `tsc -p tsconfig.build.json`, and voxel has no runtime
 - aoe2 and city, each from origin/main and linked to this voxel, pass their build and unit tests, and commit nothing.
 - One review round with both lanes of the fleet runbook, its blocking and should-fix findings resolved.
 - The change lands on main as its own commit, a fast-forward push, and remote CI is followed to completion.
+- Added 2026-11-06: `npm run verify` passes in full on the merged tree; a second review round covers the integration and the CI changes; the lessons wording lands in its own commit; and every job of CI on main passes.
 
 ## Implementation steps
 
@@ -43,6 +50,8 @@ voxel's `build` script is `tsc -p tsconfig.build.json`, and voxel has no runtime
 - Check aoe2 and city from origin/main, linked to this voxel, read-only.
 - Run one review round with both lanes and resolve its findings.
 - Merge origin/main, rerun `npm run verify`, push as a fast-forward, follow CI, fast-forward the primary checkout only if it is clean on main, and remove the worktrees and the branch.
+- 2026-11-06: fix the runner and the caps in `ci.yml`, add `workflow_dispatch`, rerun `npm run verify`, run review round 1, land the lessons wording, push to main and read every job of the run.
+- Then repair what that run shows of the browser suite's own failures, trying Linux-only changes on a branch first, within the canon's five-attempt limit.
 
 ## Outcome
 
@@ -55,3 +64,9 @@ Implemented and verified locally. The push and remote CI are recorded here when 
 - The consumers' own exposure is left to them: aoe2's locked `vite` 6.4.3 (patched in 6.4.4) and city's 8.1.2 (patched in 8.1.6) are in the same five advisories' ranges.
 - Review: [round 0](reviews/0_implementation.md). Both lanes kept: Codex answered SHIP and Claude FIX-THEN-SHIP, and every finding has a disposition there. F9, a pre-existing sentence about Rapier in the supply-chain record, is left open.
 - The next release entry in `CHANGELOG.md` should record this bump, as the 1.1.0 and 1.3.0 entries recorded earlier dev-only advisory fixes.
+
+2026-11-06, after taking the branch over:
+
+- The worktree was clean and nothing in it had changed since 2026-10-31 00:06, so the branch was carried forward rather than redone. origin/main (`0263e10`) merged without conflict; main had changed only docs.
+- `3c30315` as committed fails `npm test`: `tests/testing/repo-wide-gate-coverage.test.ts` rejected line 63 of round 0's record, which cited a line of AGENTS.md by number. That record was written after the verify above ran. Round 0's record now quotes the rule instead and says so.
+- Audits on 2026-11-06 after `npm ci`: runtime 0 findings; full audit 12 moderate, no high or critical, exit 0 at `--audit-level=high`. `npm run test:supply-chain:self` and `npm run test:supply-chain` passed.
