@@ -24,7 +24,7 @@ Newest first.
 - The HUD draws from a bundled Source Sans 3: variable, upright, Version 3.052, © 2023 Adobe, SIL Open Font License 1.1, recorded in [the supply-chain record](../architecture/supply-chain.md). It is named first, with no platform family ahead of it and no `local()` source, and it carries no hinting tables (`fpgm`, `prep`, `cvt `), so every rasteriser starts from the same outlines.
 - `playwright.config.ts` adds `--disable-lcd-text` and `--font-render-hinting=none`, for grayscale edges and unhinted glyph placement on both platforms.
 - With the font and both flags, the full Windows browser suite failed exactly the two HUD tests, by 12,191 and 12,353 pixels, and every changed pixel lay inside the panel (x 13–323, y 32–707; none at x ≥ 330). The five HUD baselines were then regenerated on Windows and inspected at native resolution.
-- Linux had not yet run it when this landed on the branch; its verdict comes from a CI run of branch `hud-font`.
+- On Linux, CI run 42300848349 of branch `hud-font` (image ubuntu-24.04 20261101.360.1) passed all 137 browser tests, the font gate and all five HUD baselines among them. Main's run 42296582066 of the same day, without the font, had failed the two HUD tests by the same 16,303 and 16,105 pixels as every earlier Linux run.
 
 **How it is checked from now on.**
 
