@@ -201,7 +201,7 @@ it('manual workflow never selects an input ref or interpolates reviewed input in
   expect(source).toContain('OAK_FONT_EXPECTED_SHA: ${{ inputs.source_sha }}');
   expect(source).not.toMatch(/continue-on-error|contents: write|pull_request_target|--update-snapshots/);
   expect(source.indexOf('node scripts/verify-oak-font-diagnostic.mjs --preflight')).toBeLessThan(source.indexOf('run: npm ci'));
-  expect(source).toContain('timeout-minutes: 15'); expect(source).toContain('os: [ubuntu-latest, windows-latest]');
+  expect(source).toContain('timeout-minutes: 15'); expect(source).toContain('os: [ubuntu-24.04, windows-latest]');
 });
 it('checker CLI requires exact source, both fixed populations and input hashes', async () => {
   const fs = await vi.importActual<typeof FileSystem>('node:fs');

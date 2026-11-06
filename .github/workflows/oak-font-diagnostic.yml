@@ -17,7 +17,10 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest]
+        # The same Ubuntu as ci.yml's Node 24 complete leg: Playwright 1.59.1
+        # cannot install Chromium's libraries on ubuntu-latest (26.04), and the
+        # fonts come with the image, so only that leg's image explains its pixels.
+        os: [ubuntu-24.04, windows-latest]
     env:
       CI: true
       OAK_FONT_DIAGNOSTIC: '1'

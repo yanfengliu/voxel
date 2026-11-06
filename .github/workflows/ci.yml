@@ -7,7 +7,8 @@ on:
   # Runs this workflow on any branch by hand (`gh workflow run CI --ref
   # <branch>`). This machine has no Linux, so a change that only Linux can
   # judge, such as how the browser suite draws text there, is tried on a
-  # branch before it reaches main.
+  # branch before it reaches main. A run by hand on main joins the push runs'
+  # concurrency group below, so it cancels a main run in progress.
   workflow_dispatch:
 
 permissions:
@@ -33,8 +34,12 @@ jobs:
     # The same happened at 60 minutes. In run 39155851899 (2026-10-18), the
     # last run whose browser suite started on both legs, Linux took 53 minutes
     # and Windows was cancelled at 60 with 18 of its 136 browser tests not yet
-    # run. So no complete Windows run has been measured yet. 90 minutes is a
-    # bound to measure one in; set it from that measurement once it exists.
+    # run. Had those 18 cost what the 118 before them did, the job needed about
+    # 66 minutes. No Windows leg has finished the suite since run 35164009617
+    # (2026-09-16), so 90 minutes is not a measurement: it is room to measure
+    # a complete Windows run in, and the cap should then be set from that run.
+    # A higher cap also notices a slower suite later; the Windows leg's
+    # slowness stays open as a defect in docs/work/5_vite-advisories/plan.md.
     timeout-minutes: 90
     strategy:
       fail-fast: false
@@ -89,9 +94,9 @@ jobs:
       #
       # `always()` and not `!cancelled()`, because a job killed by its own
       # `timeout-minutes` is reported as CANCELLED, and that is the case this
-      # repository most needs the pictures for: `timeout-minutes: 60` above is
-      # itself a budget sized from a measurement, and the browser lane has been
-      # sitting against it. Measured, not assumed — run 35178071008 killed both
+      # repository most needs the pictures for: `timeout-minutes` above is
+      # itself a budget, and the browser lane has been sitting against it.
+      # Measured, not assumed — run 35178071008 killed both
       # Windows legs at exactly their caps, and the API reports
       # `steps.verify.outcome == 'cancelled'` with this step `skipped`, while
       # the Ubuntu leg that failed normally reported `failure` and uploaded.
@@ -121,10 +126,12 @@ jobs:
     # The Windows leg's unit tests took 531 s and 729 s for 2,412 tests (runs
     # 39065033501 and 39152993370) and 692 s for 2,434 (run 39155851899), and
     # had not finished the 2,434 after 825 s when the old 15-minute cap
-    # cancelled it (run 41963047196, 2026-11-05). The rest of the job takes
-    # about three minutes, so the slowest complete job seen took 14m50s of the
-    # 15, and a host taking over 1.5 times the fastest unit run was enough to
-    # cancel it. 30 minutes is twice that slowest complete job.
+    # cancelled it (run 41963047196, 2026-11-05). The rest of each job took
+    # 114 to 161 s, so the slowest complete job took 14m50s of the 15, and a
+    # host taking over 1.5 times the fastest unit run was enough to cancel it.
+    # 30 minutes is twice that slowest complete job. The 15-minute cap is what
+    # first showed the unit tests' cost (docs/work/1_portable-ci-budget), which
+    # was cut rather than given more time; a higher cap shows such cost later.
     timeout-minutes: 30
     strategy:
       fail-fast: false

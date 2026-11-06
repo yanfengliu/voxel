@@ -50,7 +50,7 @@ This is a review approval with one documentation nit. It does not certify the pe
 
 FIX-THEN-SHIP
 
-One edit to this report, made on 2026-11-06: F4 cited a line of AGENTS.md by number, which `tests/testing/repo-wide-gate-coverage.test.ts` forbids because such lines move. The number is replaced, in square brackets, by the rule that line held at the base 7a93bae. Nothing else in the report changed.
+[Edit note, added on 2026-11-06, not the reviewer's words: F4 cited a line of AGENTS.md by number, which `tests/testing/repo-wide-gate-coverage.test.ts` forbids because such lines move. The number is replaced, in square brackets, by the rule that line held at the base 7a93bae. Nothing else in the report changed. Commit `3c30315` holds the original text.]
 
 The pin and the lockfile are correct, and I found nothing in them to block on. 8.1.6 is the smallest move that clears all five advisories. It keeps the same Node range, its new dependency ranges are already met by the lockfile, and `rolldown` stays at 1.1.5, so the bundler underneath does not change. It is also 24 days old, against 9 for 8.3.5, which I'd prefer for a fix like this. The fixes needed are in the docs. I did not see the result of the `npm run verify` that is running, and it is still an acceptance criterion.
 
