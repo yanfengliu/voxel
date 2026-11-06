@@ -9,13 +9,15 @@
  * panel, and every Linux run that reached them failed by the same counts.
  *
  * Source Sans 3, variable, upright, version 3.052. © 2023 Adobe, SIL Open Font
- * License 1.1, in fonts/OFL.txt. Copied unmodified from streamlit 1.57.0's
- * static/media/SourceSansVF-Upright.ttf.BsWL4Kly.woff2, sha256 5f16566f…acbd8.
+ * License 1.1, in fonts/OFL.txt. Adobe's release 3.052R file
+ * WOFF2/VF/SourceSans3VF-Upright.ttf.woff2, unmodified, sha256 5f16566f…acbd8;
+ * docs/architecture/supply-chain.md records where it came from, and
+ * oak-browser-font.test.ts holds its bytes.
  * It carries no hinting instructions, so every rasteriser starts from the same
  * outlines, and its weight axis draws the 550 and 650 weights below exactly.
  * There is no local() source on purpose: a platform-installed copy is the
  * defect this rule exists to remove. `tests/browser/oak-ecosystem-font.spec.ts`
- * fails if any HUD glyph is drawn by another face.
+ * fails if DevTools reports another face for the HUD text it measures.
  */
 @font-face {
   font-family: "Source Sans 3";

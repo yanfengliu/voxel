@@ -18,10 +18,10 @@ import { guardPageErrors } from './page-errors.js';
  * Five pixel baselines capture the HUD: `oak-mature-hud-hero-page.png` and the
  * four `oak-weather-wind-*` frames, whose canvas captures include the panel
  * drawn over the canvas. `playwright.config.ts` keeps one baseline set for
- * every platform. Until 2026-09-22 the HUD named "Segoe UI", which only
+ * every platform. Until 2026-11-06 the HUD named "Segoe UI", which only
  * Windows has. The baselines were recorded on Windows, so every local run
- * passed, while ubuntu-latest drew DejaVu Sans and failed both assertions it
- * reached by about 16,000 pixels. A pixel comparison sees a platform's font
+ * passed, while the Linux CI leg drew DejaVu Sans and failed both assertions it
+ * reached by about 16,000 pixels, in every run from 2026-09-06 on. A pixel comparison sees a platform's font
  * only on a platform it was not recorded on. This test asks Chromium which
  * font drew each piece of text, so it fails on every platform, the recording
  * one included.
@@ -39,8 +39,10 @@ import { guardPageErrors } from './page-errors.js';
  *   every non-test `oak-browser-*.ts` module. The probe is written straight
  *   into the status line. A string built elsewhere from characters that none
  *   of those files contains would not be probed.
+ * - A character that no installed font has would most likely be drawn as the
+ *   bundled face's missing-glyph box, reported as that face, and pass.
  * - It proves which face drew the text, not how the platform rasterised it.
- *   The text flags in `playwright.config.ts` pin rasterisation, and the
+ *   The text flags in `playwright.config.ts` aim to pin rasterisation, and the
  *   baselines judge it on each CI leg.
  */
 

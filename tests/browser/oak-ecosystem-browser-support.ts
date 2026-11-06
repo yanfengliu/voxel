@@ -360,12 +360,11 @@ export async function refitOakCamera(
  * at a time, until that step's render revision is presented, and returns that
  * frame's evidence. The predicate is the one `waitForOakPresentation` polls.
  *
- * One round trip instead of three. Waiting through `waitForFunction` meant
- * asking for the step, polling, then fetching the matching evidence again, and
- * each round trip queues behind a frame on the page's main thread, which is
- * slow on a host that draws this scene slowly. Measured on this workstation on
- * 2026-11-06 over 80 interleaved one-tick advances each: median 126 ms that
- * way, 73 ms this way.
+ * One round trip instead of three: waiting through `waitForFunction` meant
+ * asking for the step, polling, then fetching the matching evidence again.
+ * Measured on this workstation on 2026-11-06 over 80 interleaved one-tick
+ * advances each: median 126 ms that way, 73 ms this way. What a round trip
+ * costs on a CI host has not been measured.
  */
 async function stepOakToPresentation(
   page: Page,

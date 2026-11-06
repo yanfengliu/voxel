@@ -85,6 +85,11 @@ test('grows a stable organ and its visible voxel front over consecutive default-
   // to 5.6 cores mid-run, and is not used. The 111.8 s this budget was first
   // built from was taken under load nothing had checked for.
   //
+  // On 2026-11-06 it took 49.5 to 51.7 s here with the oak helpers' old three
+  // round trips per advance, over the 42.3 s this budget is built on, and 40.7
+  // to 40.8 s once `advanceOakBiologicalTicks` became one round trip (three
+  // interleaved runs each, same host).
+  //
   // A cold Vite module graph is the normal case on CI, not the odd one:
   // `playwright.config.ts` records that 23 spec files each start their own
   // Vite server and pull the graph through it. The allowance and the

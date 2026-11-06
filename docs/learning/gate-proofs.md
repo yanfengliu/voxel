@@ -29,9 +29,11 @@ Proofs run 2026-09-02 unless dated otherwise.
 
 Mutation: in `fixtures/oak-ecosystem-consumer/oak-browser-host.css`, both font stacks were changed to put `"Segoe UI"` ahead of `"Source Sans 3"`, which is what the stack held before the font was bundled. The gate failed on Windows, the platform the baselines are recorded on, and listed the HUD's elements with `familyName: "Segoe UI"`. With the stylesheet restored byte for byte it passed. The baselines alone could not have caught this on Windows, because there they were recorded with the platform font.
 
+Second mutation, for the probe line: `<!-- 樫 -->` appended to `oak-browser-host.html`, so the probe holds a character Source Sans 3 lacks. The gate failed on Windows with "A character the HUD's sources contain is drawn by another font", the probe drawn partly in `Noto Sans SC` (`isCustomFont: false`). With the file restored byte for byte it passed.
+
 A first run of the probe half failed for a reason in the gate rather than the font: it set the probe text and asked DevTools at once, before layout, and got no fonts at all. The gate now forces a layout before measuring, and "an element listed with no fonts drew nothing" stays a failure rather than a pass.
 
-Bound: the oak page in the state the test drives, plus the probe's characters. It proves which face drew the text, not how a platform rasterised it; the Linux CI leg's pixel baselines judge that.
+Bound: the oak page in the state the test drives, plus the probe's characters. A character no installed font has would most likely be drawn as the bundled face's missing-glyph box, reported as that face, and pass. It proves which face drew the text, not how a platform rasterised it; the Linux CI leg's pixel baselines judge that. The font file's own bytes and licence are held by `fixtures/oak-ecosystem-consumer/oak-browser-font.test.ts`, which failed with one byte appended to the font and passed with it restored.
 
 ## Oak affine collision preserves raw axes, candidates and metric enclosures
 
