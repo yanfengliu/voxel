@@ -50,6 +50,8 @@ This is a review approval with one documentation nit. It does not certify the pe
 
 FIX-THEN-SHIP
 
+One edit to this report, made on 2026-11-06: F4 cited a line of AGENTS.md by number, which `tests/testing/repo-wide-gate-coverage.test.ts` forbids because such lines move. The number is replaced, in square brackets, by the rule that line held at the base 7a93bae. Nothing else in the report changed.
+
 The pin and the lockfile are correct, and I found nothing in them to block on. 8.1.6 is the smallest move that clears all five advisories. It keeps the same Node range, its new dependency ranges are already met by the lockfile, and `rolldown` stays at 1.1.5, so the bundler underneath does not change. It is also 24 days old, against 9 for 8.3.5, which I'd prefer for a fix like this. The fixes needed are in the docs. I did not see the result of the `npm run verify` that is running, and it is still an acceptance criterion.
 
 **Findings**
@@ -60,7 +62,7 @@ F2 [should-fix] `supply-chain.md:70`, `plan.md:10` - "published on 2026-10-20 an
 
 F3 [should-fix] `docs/work/5_vite-advisories/plan.md:26` - "`vite` runs only as voxel's development server … and inside `vitest`" is false. `scripts/verify-mesh-worker-package.mjs:10,216` runs vite's production `build()` inside `verify`. That is the one place where vite bundles voxel's own code, so the plan should name it. `docs/policies/rules/docs.md:9` asks for proof of "only" claims.
 
-F4 [should-fix] `plan.md:16` - A devlog line is in scope, `AGENTS.md:53` requires one, and the 2026-10-01 audit fix got one (`docs/devlog/summary.md:10`). It is not in the reviewed target. Add it before the commit, and say that it has not been reviewed.
+F4 [should-fix] `plan.md:16` - A devlog line is in scope, AGENTS.md [its R24 at 7a93bae: "a dated devlog line per behaviour-changing session in `docs/devlog/summary.md`"] requires one, and the 2026-10-01 audit fix got one (`docs/devlog/summary.md:10`). It is not in the reviewed target. Add it before the commit, and say that it has not been reviewed.
 
 F5 [nit] `supply-chain.md:70` - "The full audit still reports 13 moderate findings" is in the present tense. Lines 68 and 107 of the same file say an audit result describes one run, not the tree. Say what it reported, and on which date. Also, "the lockfile changed only the `vite` entry" leaves out the root pin at `package-lock.json:24`.
 
