@@ -10,7 +10,7 @@ These non-goals describe the public renderer/runtime boundary. Private Studio au
 
 Voxel's own rules — its strengthenings of the fleet constitution and the rules it adds — live in [docs/policies/local-rules.md](docs/policies/local-rules.md). They add repository constraints consistent with the fleet constitution below. That file holds one line per rule, each linked to the file that holds the rule in full with its reasons and evidence. Do not write them into that section: it is a generated copy of `../fleet/FLEET.md` between `FLEET-CANON` markers. The fleet sync writes only inside those markers and refuses a block it did not write; the 2026-08-01 incident was caused by the retired heading-delimited sync.
 
-<!-- FLEET-CANON:BEGIN sha=b0a069afa8a5 generated from ../fleet/FLEET.md by `npm run sync-canon` — do not edit inside this block; this repo's own rules go in docs/policies/local-rules.md -->
+<!-- FLEET-CANON:BEGIN sha=926530db9933 generated from ../fleet/FLEET.md by `npm run sync-canon` — do not edit inside this block; this repo's own rules go in docs/policies/local-rules.md -->
 ## Fleet constitution
 
 Shared rules for every repo under `github/`, kept in `../fleet/FLEET.md`; `../fleet/` is fleet's checkout beside this repo's primary checkout. Where a rule gives its reason, use the reason to judge cases the rule does not name; each `[Rn]`'s history is in `../fleet/docs/canon-rationale.md`. This repo's `docs/policies/local-rules.md` may add rules but cannot change these permissions or limits. [R13]
@@ -43,7 +43,7 @@ The designated coordinator reads `../fleet/docs/skills/coordinator.md` before pl
 ### Records, sized to the work
 
 - Read `docs/learning/lessons.md` at session start; it lists this repo's known traps, and its header says how to add one. [R18]
-- Work that spans sessions, has several agents writing, or gets an independent review keeps its plan and review records in `docs/work/` (`../fleet/docs/work-docs.md`) and adds a dated line to `docs/devlog/summary.md` (`../fleet/docs/devlog-template.md`) when it lands. Other work needs neither. [R24]
+- Every change that alters behaviour adds a dated line to `docs/devlog/summary.md` (`../fleet/docs/devlog-template.md`) when it lands, because later sessions orient from its newest entries. Work that spans sessions, has several agents writing, or gets an independent review also keeps its plan and review records in `docs/work/` (`../fleet/docs/work-docs.md`); other work needs none. [R24]
 - Raw output (logs, captures, screenshots) stays in ignored folders. Never commit a binary over 512 KiB or any file over 1 MiB; LFS needs the owner's OK. [R23]
 
 ### Style and environment
