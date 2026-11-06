@@ -23,6 +23,16 @@ Two shapes of false green are checked for deliberately, because this repository 
 
 Proofs run 2026-09-02 unless dated otherwise.
 
+## A pixel baseline of text depends on the machine that drew it
+
+2026-11-06. Gate: `tests/browser/oak-ecosystem-font.spec.ts`, "every glyph the oak HUD draws comes from its bundled face". Claim: every text-bearing element of the oak page, and a probe line holding every visible character in the HUD's authored sources, is drawn by the bundled `SourceSans3VF` and by no platform font.
+
+Mutation: in `fixtures/oak-ecosystem-consumer/oak-browser-host.css`, both font stacks were changed to put `"Segoe UI"` ahead of `"Source Sans 3"`, which is what the stack held before the font was bundled. The gate failed on Windows, the platform the baselines are recorded on, and listed the HUD's elements with `familyName: "Segoe UI"`. With the stylesheet restored byte for byte it passed. The baselines alone could not have caught this on Windows, because there they were recorded with the platform font.
+
+A first run of the probe half failed for a reason in the gate rather than the font: it set the probe text and asked DevTools at once, before layout, and got no fonts at all. The gate now forces a layout before measuring, and "an element listed with no fonts drew nothing" stays a failure rather than a pass.
+
+Bound: the oak page in the state the test drives, plus the probe's characters. It proves which face drew the text, not how a platform rasterised it; the Linux CI leg's pixel baselines judge that.
+
 ## Oak affine collision preserves raw axes, candidates and metric enclosures
 
 2026-09-08. Gates: `fixtures/oak-ecosystem-consumer/oak-voxel-obb.test.ts`, `oak-voxel-aabb.test.ts` and the equal-bounds collision-dependency case in `oak-fallen-litter-voxel.test.ts`. The promoted 18 binary64 pairs came from an independent exact-oracle review before production implementation. Their expected results are fixed data, independent of implementation constants. The permanent controls also cover the strict literal 1.8189894035458565e-12 threshold, direct OBBs, thin shear, exact singularity, projective input rejection, metric precision, large offsets, extreme/subnormal conversion and bounded candidate enumeration.

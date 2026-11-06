@@ -6,6 +6,34 @@ Unlike a lesson, an entry stays after it becomes a gate. This is the standing li
 
 Newest first.
 
+## 2026-11-06 — Two oak HUD baselines failed on every Linux run because the operating system supplied the HUD's font
+
+**Symptom.** The Linux leg of `Node 24 complete` failed `oak-mature-hud-hero-page.png` by 16,105 pixels and `oak-weather-wind-start-hero.png` by 16,303, a 0.02 ratio against `maxDiffPixelRatio: 0.002`, in every run that reached them, from run 34011874728 (2026-09-06) to run 39155851899 (2026-10-18), at the same counts each time. Local Windows runs passed, and so did the Windows leg whenever it reached them.
+
+**What the investigation found.**
+
+- The CI images of runs 35178071008 and 35187583238 differ only inside the HUD panel: right of x = 330 the Windows baseline and the Linux capture are byte-identical, and every differing pixel lies within x 13–322, y 33–706 (2026-09-22, branch `font/bundled-hud-font`). The WebGL raster, which SwiftShader pins, was never the problem.
+- The HUD asked for `"Segoe UI", system-ui, sans-serif`. Segoe UI is a Windows font, so Linux fell through to DejaVu Sans, which work unit 2's DevTools font readout confirmed (`DejaVuSans`, `DejaVuSans-Bold`): different letterforms, wider advances, and a panel that wraps differently.
+- The typeface was not the whole difference. Both platforms drew this text with LCD subpixel antialiasing through different filters (Windows ClearType edge pixels such as (193, 146, 94), Linux FreeType ones such as (246, 246, 229)), so the same font file alone would still differ at glyph edges.
+- Three more baselines carry the panel and had never been compared on Linux: `oak-weather-wind-crest-hero.png`, `oak-weather-wind-lull-hero.png` and `oak-weather-wind-lull-overhead.png`. Each test stops at its first failed snapshot, and `wind-start` came first.
+
+**Root cause.** A pixel baseline captured text whose typeface and rasterisation the operating system supplied, under a policy of one baseline set for every platform. SwiftShader pinned the WebGL raster for exactly that reason, and text had nothing equivalent. Nothing local could see it, because a pixel comparison only sees a platform's font on a platform the baseline was not recorded on.
+
+**Outcome.**
+
+- The HUD draws from a bundled Source Sans 3: variable, upright, Version 3.052, © 2023 Adobe, SIL Open Font License 1.1, recorded in [the supply-chain record](../architecture/supply-chain.md). It is named first, with no platform family ahead of it and no `local()` source, and it carries no hinting tables (`fpgm`, `prep`, `cvt `), so every rasteriser starts from the same outlines.
+- `playwright.config.ts` adds `--disable-lcd-text` and `--font-render-hinting=none`, for grayscale edges and unhinted glyph placement on both platforms.
+- With the font and both flags, the full Windows browser suite failed exactly the two HUD tests, by 12,191 and 12,353 pixels, and every changed pixel lay inside the panel (x 13–323, y 32–707; none at x ≥ 330). The five HUD baselines were then regenerated on Windows and inspected at native resolution.
+- Linux had not yet run it when this landed on the branch; its verdict comes from a CI run of branch `hud-font`.
+
+**How it is checked from now on.**
+
+- `tests/browser/oak-ecosystem-font.spec.ts` asks Chromium, through DevTools' `CSS.getPlatformFontsForNode`, which font drew every text-bearing element of the oak page, and also a probe line holding every visible character in the HUD's authored sources. It fails on any glyph the bundled face did not draw, on Windows as well as Linux, which the baselines cannot. With "Segoe UI" put back ahead of the bundled face, it failed and reported `familyName: "Segoe UI"` ([gate proof](gate-proofs.md#a-pixel-baseline-of-text-depends-on-the-machine-that-drew-it)).
+- The Linux leg of CI still compares all five baselines against their Windows recording, and it remains the only check of how each platform rasterises the same glyphs.
+- Bounds: the font gate covers the oak page only; no other page has text in a baseline today, since the studio shell baseline hides its text. It proves which face drew the text, not how it was rasterised. `scripts/verify-supply-chain.mjs` walks npm packages only, so the font's record is the supply-chain paragraph and `fonts/OFL.txt`, not a gate.
+
+**What this register should be read for.** A baseline that holds still on the machine that recorded it can still depend on that machine. The WebGL raster was pinned, but the text in front of it was not, and the text was what differed.
+
 ## 2026-10-18 — Source component labels did not survive the rendered union
 
 **Symptom.** The owner identified four visible neck components and separate head masses in the reference, while M17/M18 rendered a continuous roof or stem despite source/control-ring labels and passing connectivity checks.

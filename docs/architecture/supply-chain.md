@@ -1,6 +1,6 @@
 # Supply chain and artifact record
 
-Status: updated 2026-08-04 against `voxel@1.0.0`. The `vite` row and the audit note on the `vite` advisories date from 2026-10-31, against `voxel@1.3.0`.
+Status: updated 2026-08-04 against `voxel@1.0.0`. The `vite` row and the audit note on the `vite` advisories date from 2026-10-31, against `voxel@1.3.0`, and the paragraph on the fixture's font from 2026-11-06.
 
 This is the E-05 record: what this package redistributes, under what terms, and
 which checks hold each claim. Every figure here is produced by
@@ -31,10 +31,23 @@ external source was vendored.
 The mesher is original work. The selection ADR records that no external candidate
 reached benchmarking, so `voxel.greedy-opaque` carries no upstream provenance or
 redistribution obligation. There are no imported shaders, textures, models, or
-sample assets, and therefore no asset licenses to track. A sibling repository's
+sample assets in the package. A sibling repository's
 asset is not automatically appropriate for a reusable engine package; if one is
 ever imported, its source, version, license, and redistribution terms belong in
 this document before it ships.
+
+One imported asset lives outside the package, in a test fixture: the oak case
+study's HUD typeface, `fixtures/oak-ecosystem-consumer/fonts/SourceSans3VF-Upright.woff2`
+(added 2026-11-06). It is Source Sans 3, variable, upright, Version 3.052, © 2023
+Adobe, with Reserved Font Name 'Source', under the SIL Open Font License 1.1,
+whose text is beside it in `fonts/OFL.txt`; the font's own name table says all
+of that. Source: copied unmodified from streamlit 1.57.0's installed package
+(`streamlit/static/static/media/SourceSansVF-Upright.ttf.BsWL4Kly.woff2`), SHA-256
+`5f16566f7a40d39b339ad26be151fa5a1ab1f0c2574c7a2e619765584a1acbd8`, 170,188
+bytes. The tarball carries only `dist`, so npm never ships it. The repository
+does, which OFL 1.1 allows for an unmodified copy with its copyright notice and
+licence and not sold on its own. `test:supply-chain` walks npm packages only, so
+this paragraph, not the gate, is what records it.
 
 The 14 direct development dependencies tabulated below are MIT or Apache-2.0, and none of them is redistributed. The gate sweeps wider than that table: it checks every installed package — 145 of them on the machine this was last run against — and fails on an unknown or non-permissive license. Three build-time-only packages sit outside the permissive set and carry recorded exceptions naming their exact declared license, so a version that relicenses fails the gate rather than inheriting an old exception: `lightningcss` and whichever one of its eleven platform binaries the machine installed, both MPL-2.0, and `minimatch`, BlueOak-1.0.0. None of the three is redistributed either, because the packed tarball carries only `dist`. `@dimforge/rapier3d-compat` is used only by the headless Machine Works and Windmill consumer fixtures to generate committed numeric pose replays through their shared fixture-private exact-sidecar adapter; `src/`, `dist`, and the package tarball do not import or include its JS/WASM implementation. Its source is the npm registry package locked at `0.19.3`, its declared license is Apache-2.0, the lockfile records registry integrity, and generation tests bind each trace to SHA-256 input and final hashes.
 
