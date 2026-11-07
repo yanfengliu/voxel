@@ -5,9 +5,14 @@ import {
   GRADIENT_TONE_SOFTNESS,
   TONE_BAND_GLSL,
   TONE_BAND_UNIFORM_NAMES,
+  gamutSafeToneScale as runtimeGamutSafeToneScale,
+  steppedLuminance as runtimeSteppedLuminance,
+} from '../../src/three/stylizedToneBands.js';
+import {
   gamutSafeToneScale,
   steppedLuminance,
-} from '../../src/three/stylizedToneBands.js';
+  TONE_BAND_FUNCTIONS_GLSL,
+} from '../../src/rendering/tone-bands/index.js';
 import { StylizedResolvePass } from '../../src/three/stylizedResolvePass.js';
 
 const HARD = 0;
@@ -135,6 +140,13 @@ describe('gamutSafeToneScale', () => {
 });
 
 describe('tone band shader interface', () => {
+  it('uses the portable operators through the existing runtime surface', () => {
+    expect(runtimeGamutSafeToneScale).toBe(gamutSafeToneScale);
+    expect(runtimeSteppedLuminance).toBe(steppedLuminance);
+    expect(TONE_BAND_GLSL.split(TONE_BAND_FUNCTIONS_GLSL)).toHaveLength(2);
+    expect(TONE_BAND_FUNCTIONS_GLSL).not.toMatch(/\buniform\b/u);
+  });
+
   it('declares every shared uniform in the GLSL', () => {
     for (const name of TONE_BAND_UNIFORM_NAMES) {
       expect(TONE_BAND_GLSL).toContain(name);

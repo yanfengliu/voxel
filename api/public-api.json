@@ -297,6 +297,12 @@
         "./physics"
       ]
     },
+    "dist/rendering/tone-bands/index.d.ts": {
+      "sha256": "1db74da5ba4401bcaee63d04f643e24c3a93d2ae8014bede8fb8669179b2b178",
+      "reachableFrom": [
+        "./three"
+      ]
+    },
     "dist/testing/frame-budget.d.ts": {
       "sha256": "9fedda1796af43d9497c210005b1651fa2971dbad3638dd2a609aac1a1c49d3c",
       "reachableFrom": [
@@ -412,7 +418,7 @@
       ]
     },
     "dist/three/stylizedToneBands.d.ts": {
-      "sha256": "3e86059444d1e5c6a93ab708da532bcf282ee09c599745f6d0db30ef3f8764eb",
+      "sha256": "b9e64f02470ee8164852402ac82582fbc2961e71d492a4554bd0e5cba3f4063a",
       "reachableFrom": [
         "./three"
       ]

@@ -24,6 +24,14 @@
     {
       "id": 5,
       "theme": "vite-advisories"
+    },
+    {
+      "id": 6,
+      "theme": "fleet-lessons-route"
+    },
+    {
+      "id": 7,
+      "theme": "townscaper-renderer-sharing"
     }
   ]
 }

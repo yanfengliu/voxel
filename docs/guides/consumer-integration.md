@@ -23,6 +23,10 @@ For opt-in discrete face tones on caller-authored voxel geometry, use `shadeVisi
 
 `voxel/physics` needs no peer at all — not Three, not a solver — so a portable simulation module, a worker, or a server can import it.
 
+### Sharing tone banding with another renderer
+
+The private source package [`@voxel/tone-bands`](../../src/rendering/tone-bands/package.json) shares `ToneRange`, `steppedLuminance`, `gamutSafeToneScale`, and `TONE_BAND_FUNCTIONS_GLSL` without importing Three.js or the Voxel runtime. A TypeScript bundler consumer can link `"@voxel/tone-bands": "file:../voxel/src/rendering/tone-bands"`; pin and verify that source subtree in the sibling checkout, as with the shared Studio UI. The package exports TypeScript source, not a standalone Node distribution. Callers supply their own uniform declarations, tone ranges, softness and presets. Voxel's existing `voxel/three` exports remain available, and its built package includes the same operators inside `dist`.
+
 ## Lifecycle
 
 The game owns an adapter from authoritative or projected game state to a complete `RenderSnapshotV1`. The reusable runtime never reads a simulation, ECS, save, UI, or game command directly.
