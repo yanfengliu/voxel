@@ -1,11 +1,13 @@
 # Clear the audit prerequisite for renderer feedback
 
-Status: active
+Status: cancelled
 Owner: Codex engine-feedback worker
 Created: 2026-10-01
-Updated: 2026-10-01
+Updated: 2026-11-11
 
 ## Problem and outcome
+
+The November11 cancellation and verified-retention disposition in Outcome supersedes the dated execution checkpoints below. Shipped code milestones remain delivered; unmet original hosted criteria are not passed. Canonical-record publication and old-worker removal remain pending; no new rendering or hosted success is claimed.
 
 Voxel remote CI36666621008 fails the high-severity audit and supply-chain gate on brace-expansion 5.0.9. Clear that inherited release prerequisite before proving or repairing the three renderer comments owned by civ-engine work 71 (E05 curved surfaces, E07 quarter-height dense voxels and E08 single-layer transparency). This work unit ships only the bounded development lock repair, not those renderer capabilities.
 
@@ -41,9 +43,19 @@ The owner graph is eslint 10.7.0 through minimatch 10.2.5. GitHub advisories ide
 
 ## Outcome
 
+Current disposition,2026-11-11: Cancelled. The unfinished old prerequisite lane is discontinued and superseded; its bounded brace-expansion milestone remains shipped in1230be1. The original source review, private installation/audits,13-stage local verification and inherited hosted failures remain below. The subsequent shipped oracle and font-observer milestones are accounted for in [work1](../1_portable-ci-budget/plan.md) and [work2](../2_oak-font-diagnostic/plan.md). Cancellation does not reverse those deliveries or mark the unmet all-platform hosted criteria complete. This audit prerequisite added no renderer capability or game adoption.
+
+Verified retention,2026-11-11: root accepted the second fixed-root copy at actual native exit0. The archive `civ-engine/tmp/voxel-worker-retained-1111/copy-2` preserves3,175 working files/424,222,063 bytes plus38 metadata files. Its `retention-receipt.json` SHA256 is921f7664cb4b4de5e0384879a75b7017f539327855a24bbbb1c24665d8855bdc. The completed result matches that receipt; no failure marker exists, and the recorded root wrapper reports no leftovers and the shared lane released. The executor performed repeated source/archive hashes and pre/post source/Git/admin checks; these are quiescent-copy evidence, not an atomic snapshot or proof against open handles/change-and-restore races.
+
+The first invocation refused an origin-ref mismatch before creating a destination; it was not a failed payload copy, and later guards are not counted as passed. The separately reviewed second packet retained the original binding/failure and explicitly allowed only the docs-only origin revision020c8b1 while primary HEAD/main remained8db1c16. The exact authored source review and amendment are retained in [review8](../2_oak-font-diagnostic/reviews/8_implementation.md). Source-review acceptance is distinct from the later root-observed archive result; no independent final-result review is claimed.
+
+Canonical-record publication and unchanged-controller removal of the old engine-feedback-voxel-1001 worker remain pending. Work5 is blocked; its record and the existing work7 record retain the unresolved hosted timing limits; this cancellation assigns no new work and claims no green all-platform CI. The foreign primary work5 edit and unrelated worktrees remain outside this task.
+
+### Historical execution record
+
 Oracle main integration is accepted and pushed; hosted Node24 font, headroom and Windows-cost prerequisites remain open as recorded below.
 
-## Current shipping checkpoint
+## Historical shipping checkpoint
 
 2026-10-01 10:15 UTC: root accepted final oracle6e28629, and the guarded preserve-all primary integration is merged to main and pushed. Both Node22 portable jobs and audit/package in fresh CI36841363533 passed. Windows portable total895s leaves about5s under its unchanged900s job limit; this is one hosted result, not attribution or stable headroom. Linux Node24 exited1 with133/135 browser passes, the same wind16303/mature16105 screenshot differences, and a distinct stages:76 headroom finding184.1/214s (86%). Windows Node24 cancelled at the unchanged sixty-minute complete-gate deadline: HUD:45, keyboard:60 and stages:76 failed both attempts, then stages:289 was interrupted. No terminal browser summary exists; final pass/did-not-run counts are unavailable. Actual Windows log167034B/SHA1dd4eee6b715f6d0e9ed80a917de732d1f779bfc0fc622914527dc151a52f7ce is retained. Raw completed Linux log188423B/SHA36776abb013bd41695708c857843586f58b2b3d1cc5117a267e0dc857a703bde stays ignored under tmp/engine-feedback/ci-cost/hosted-6e28629. No screenshot/budget change is selected. Actual Linux font identity and browser-cost diagnosis remain open.
 

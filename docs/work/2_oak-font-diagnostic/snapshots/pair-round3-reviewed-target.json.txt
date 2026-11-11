@@ -1,0 +1,341 @@
+{
+  "kind": "historical-reviewed-target",
+  "source": "Independent internal authored paired-font source review; not a runtime verdict",
+  "baseSHA": "5d6d4c911c6d05b62a5a81ad62f05993cf44e9de",
+  "decision": "SOURCE PASS only",
+  "sourceManifestSHA256": "7c3b77936224c4459f7b174ccdd81896037ab7d21be60e0e191be5df45ed91cd",
+  "originalReport": {
+    "bytes": 14276,
+    "sha256": "9bc81286d9c8651c089a210240f0fa9e3e9ae73c0d2790a2c00f168c24adaccd"
+  },
+  "originalClosing": {
+    "path": "C:/Users/38909/Documents/github/aoe2/tmp/engine-feedback-font-pair-review-0/closing-manifest.json",
+    "bytes": 19526,
+    "sha256": "0fc05a9b3589d3f73f5f66353348e564cda9676d751afe964b5528119998fea7"
+  },
+  "spawn": {
+    "task": "/root/engine_feedback/font_pair_source_review",
+    "model": "gpt-6-astra",
+    "reasoning_effort": "xhigh",
+    "fork_turns": "none",
+    "bound": "Accepted configuration; provider telemetry not introspectable"
+  },
+  "targetCount": 39,
+  "entries": [
+    {
+      "root": "C:/Users/38909/Documents/github/voxel-worktrees/engine-feedback-voxel-1001",
+      "path": "package.json",
+      "kind": "pair-input",
+      "bytes": 4708,
+      "sha256": "c3b111a0fe00318855e6602027065ef85c34fdadcbe9aaf0716c8a68132ad0ae"
+    },
+    {
+      "root": "C:/Users/38909/Documents/github/voxel-worktrees/engine-feedback-voxel-1001",
+      "path": "package-lock.json",
+      "kind": "pair-input",
+      "bytes": 94176,
+      "sha256": "828dbdb026b65938be0913932d67a18c987440780b7ee4102631e3978c3281e3"
+    },
+    {
+      "root": "C:/Users/38909/Documents/github/voxel-worktrees/engine-feedback-voxel-1001",
+      "path": "playwright.config.ts",
+      "kind": "pair-input",
+      "bytes": 6357,
+      "sha256": "72b1925d41dc3ba41d393317593b81faee16cc658b240cb0e2e60a162819f5ad"
+    },
+    {
+      "root": "C:/Users/38909/Documents/github/voxel-worktrees/engine-feedback-voxel-1001",
+      "path": "tests/browser/oak-font-diagnostics.ts",
+      "kind": "pair-input",
+      "bytes": 10014,
+      "sha256": "4ea78d38159103dd53b0a3aeb50291995dbaca16aeedbad2f035c7c36429e895"
+    },
+    {
+      "root": "C:/Users/38909/Documents/github/voxel-worktrees/engine-feedback-voxel-1001",
+      "path": "scripts/verify-oak-font-diagnostic.mjs",
+      "kind": "pair-input",
+      "bytes": 7082,
+      "sha256": "a2d998ee3e0e156bf53ad7c18b1bf902400039495d16c7c8c1c684c58939f058"
+    },
+    {
+      "root": "C:/Users/38909/Documents/github/voxel-worktrees/engine-feedback-voxel-1001",
+      "path": ".github/workflows/oak-font-diagnostic.yml",
+      "kind": "pair-input",
+      "bytes": 2682,
+      "sha256": "f581a34842d6a74149b5027988c783e06c6298f2e1909db3b59e95e541954284"
+    },
+    {
+      "root": "C:/Users/38909/Documents/github/voxel-worktrees/engine-feedback-voxel-1001",
+      "path": "tests/testing/oak-font-diagnostics.test.ts",
+      "kind": "pair-input",
+      "bytes": 19152,
+      "sha256": "fba3c74ae4aed172404d276131f19d06f083a9d697ef55f8a68d33ef2b2912b4"
+    },
+    {
+      "root": "C:/Users/38909/Documents/github/voxel-worktrees/engine-feedback-voxel-1001",
+      "path": "tests/browser/oak-ecosystem.spec.ts",
+      "kind": "pair-input",
+      "bytes": 24072,
+      "sha256": "d9c15e361d3d140555e2add1fa84879e0bb13a677523c8b75ad5c2cba7d4572e"
+    },
+    {
+      "root": "C:/Users/38909/Documents/github/voxel-worktrees/engine-feedback-voxel-1001",
+      "path": "tests/browser/oak-ecosystem-weather.spec.ts",
+      "kind": "pair-input",
+      "bytes": 15873,
+      "sha256": "560e4aae630f054645966d69596c1d8fa7a3076a354754648483b1cfaeb33c55"
+    },
+    {
+      "root": "C:/Users/38909/Documents/github/voxel-worktrees/engine-feedback-voxel-1001",
+      "path": "tests/browser/oak-ecosystem-browser-support.ts",
+      "kind": "pair-input",
+      "bytes": 15197,
+      "sha256": "4d84ea89bc341bd3e7e7bc241459b52d50b1a5340c430d95e47a8b929cb24cda"
+    },
+    {
+      "root": "C:/Users/38909/Documents/github/voxel-worktrees/engine-feedback-voxel-1001",
+      "path": "fixtures/oak-ecosystem-consumer/oak-browser-host.html",
+      "kind": "pair-input",
+      "bytes": 5701,
+      "sha256": "ac098fc040437df64e37197e5ba6ec09f0af4a0f5af3424f45afba1484fa0bf0"
+    },
+    {
+      "root": "C:/Users/38909/Documents/github/voxel-worktrees/engine-feedback-voxel-1001",
+      "path": "fixtures/oak-ecosystem-consumer/oak-browser-host.css",
+      "kind": "pair-input",
+      "bytes": 4156,
+      "sha256": "9868286be66f4075a9e7f75af03e85fd65aa77c2dfe837cc136f59fdb469f038"
+    },
+    {
+      "root": "C:/Users/38909/Documents/github/voxel-worktrees/engine-feedback-voxel-1001",
+      "path": "fixtures/oak-ecosystem-consumer/oak-browser-contract.ts",
+      "kind": "pair-input",
+      "bytes": 5775,
+      "sha256": "6063a87595e1aaa403e8112bcff67d67f2dfd5fbb900e722866d82475d342044"
+    },
+    {
+      "root": "C:/Users/38909/Documents/github/voxel-worktrees/engine-feedback-voxel-1001",
+      "path": "fixtures/oak-ecosystem-consumer/oak-browser-host.ts",
+      "kind": "pair-input",
+      "bytes": 19600,
+      "sha256": "3202aec04d021eee0ba6eaa82bfff15036a3922edc64ee2efc6f00239edd4c69"
+    },
+    {
+      "root": "C:/Users/38909/Documents/github/voxel-worktrees/engine-feedback-voxel-1001",
+      "path": "tests/browser/oak-font-pair.ts",
+      "kind": "pair-input",
+      "bytes": 20288,
+      "sha256": "42c20b86df7ccf9bedb35a7a516e069b8623abd969314826be86c4bf89fc955c"
+    },
+    {
+      "root": "C:/Users/38909/Documents/github/voxel-worktrees/engine-feedback-voxel-1001",
+      "path": "tests/testing/oak-font-pair.test.ts",
+      "kind": "pair-input",
+      "bytes": 17859,
+      "sha256": "ccbcd03711e219cc6e2474a23da31bf85e992fbf1cc5db9adf2804279899d842"
+    },
+    {
+      "root": "C:/Users/38909/Documents/github/voxel-worktrees/engine-feedback-voxel-1001",
+      "path": "fixtures/oak-ecosystem-consumer/fonts/SourceSans3VF-Upright.woff2",
+      "kind": "pair-input",
+      "bytes": 170188,
+      "sha256": "5f16566f7a40d39b339ad26be151fa5a1ab1f0c2574c7a2e619765584a1acbd8"
+    },
+    {
+      "root": "C:/Users/38909/Documents/github/voxel-worktrees/engine-feedback-voxel-1001",
+      "path": "fixtures/oak-ecosystem-consumer/fonts/LICENSE.md",
+      "kind": "pair-input",
+      "bytes": 4579,
+      "sha256": "89ad2c4f66dd29127527493e729c31e731f111cf10faf5774c3db9275ed0c22c"
+    },
+    {
+      "root": "C:/Users/38909/Documents/github/voxel-worktrees/engine-feedback-voxel-1001",
+      "path": "vitest.config.ts",
+      "kind": "config-instrument",
+      "bytes": 2511,
+      "sha256": "f71afae9369a20e92ab51ad0e622ebb5ab3f711820ad10b1cf98c5e87295e504"
+    },
+    {
+      "root": "C:/Users/38909/Documents/github/voxel-worktrees/engine-feedback-voxel-1001",
+      "path": "eslint.config.js",
+      "kind": "config-instrument",
+      "bytes": 1213,
+      "sha256": "6668fd653f6382e698ecda63570c4d57a60e281f85bcef3bbd793b58d7152cb4"
+    },
+    {
+      "root": "C:/Users/38909/Documents/github/voxel-worktrees/engine-feedback-voxel-1001",
+      "path": "tsconfig.json",
+      "kind": "config-instrument",
+      "bytes": 1099,
+      "sha256": "e89eae482ddbb12e3d3f755c72bfc54af023aa5983b05ecd7a4de6fb32a82add"
+    },
+    {
+      "root": "C:/Users/38909/Documents/github/voxel-worktrees/engine-feedback-voxel-1001",
+      "path": "node_modules/eslint/lib/linter/timing.js",
+      "kind": "config-instrument",
+      "bytes": 4723,
+      "sha256": "c7f8c95f29043a6dd2555c819206b6be4a070759188ff7a67ab063a63614d813"
+    },
+    {
+      "root": "C:/Users/38909/Documents/github/voxel-worktrees/engine-feedback-voxel-1001",
+      "path": "docs/work/2_oak-font-diagnostic/plan.md",
+      "kind": "owned-plan",
+      "bytes": 23668,
+      "sha256": "d2f0ad8f8b408f44a879598521c380d26e2ea84cfaa896bab5cc818361163396"
+    },
+    {
+      "root": "C:/Users/38909/Documents/github/voxel-worktrees/engine-feedback-voxel-1001",
+      "path": "docs/work/2_oak-font-diagnostic/design.md",
+      "kind": "owned-plan",
+      "bytes": 15545,
+      "sha256": "d2d07c94856669ec45723d4f64db09b43771c6655e9680533af28082fc9c5a08"
+    },
+    {
+      "root": "C:/Users/38909/Documents/github/voxel-worktrees/engine-feedback-voxel-1001",
+      "path": "docs/work/0_engine-feedback-audit/plan.md",
+      "kind": "owned-plan",
+      "bytes": 17378,
+      "sha256": "d4a7fa941414bfbbce0cf436b8d87aa82f27bbb82a02b20b034d4b8f4ac3fc12"
+    },
+    {
+      "root": "C:/Users/38909/Documents/github/voxel-worktrees/engine-feedback-voxel-1001",
+      "path": "docs/work/1_portable-ci-budget/plan.md",
+      "kind": "owned-plan",
+      "bytes": 22276,
+      "sha256": "5700fbc764125910046563cf23f69d45e54a8280e66980202fd2ed77a250de26"
+    },
+    {
+      "root": "C:/Users/38909/Documents/github/civ-engine-worktrees/engine-feedback-1001",
+      "path": "docs/work/71_engine-feedback/plan.md",
+      "kind": "owned-plan",
+      "bytes": 28141,
+      "sha256": "8044bf26c74ef58ea98a6f03ac151e87bd35a2b8ff28afd5742ba3b99095d499"
+    },
+    {
+      "root": "C:/Users/38909/Documents/github/voxel-worktrees/engine-feedback-voxel-1001",
+      "path": "tmp/engine-feedback/font-pair/baseline-1/receipt.json",
+      "kind": "authored-bound-or-executed-evidence",
+      "bytes": 9826,
+      "sha256": "7f57a4ba0f5b4e8b86cb8d0f1517d0cf3333c7694ea3fd79bcb9b5ca88510e0f"
+    },
+    {
+      "root": "C:/Users/38909/Documents/github/voxel-worktrees/engine-feedback-voxel-1001",
+      "path": "tmp/engine-feedback/font-pair/candidate-1/receipt.json",
+      "kind": "authored-bound-or-executed-evidence",
+      "bytes": 11150,
+      "sha256": "e215b4eee04be81bda00661efa5517aa3c89d5b2370f0588c4b37315ea1fa088"
+    },
+    {
+      "root": "C:/Users/38909/Documents/github/voxel-worktrees/engine-feedback-voxel-1001",
+      "path": "tmp/engine-feedback/font-pair/type-repair-1/receipt.json",
+      "kind": "authored-bound-or-executed-evidence",
+      "bytes": 1120,
+      "sha256": "79931550f510df4fc46d5bd72cae2183c7660e07708e28a39df13dfad6a9f5b1"
+    },
+    {
+      "root": "C:/Users/38909/Documents/github/voxel-worktrees/engine-feedback-voxel-1001",
+      "path": "tmp/engine-feedback/font-pair/type-lint-1/receipt.json",
+      "kind": "authored-bound-or-executed-evidence",
+      "bytes": 5231,
+      "sha256": "1c359c6cd66f1d8dd8f11953ab87097e7a4ad82a057ad5c37d06409c17507f98"
+    },
+    {
+      "root": "C:/Users/38909/Documents/github/voxel-worktrees/engine-feedback-voxel-1001",
+      "path": "tmp/engine-feedback/font-pair/lint-repair-proposal-1/applied.json",
+      "kind": "authored-bound-or-executed-evidence",
+      "bytes": 4415,
+      "sha256": "b7785b29d78edcfa3f12f5396a80b9a454b3e4074f7ded0300a4861afdf9231f"
+    },
+    {
+      "root": "C:/Users/38909/Documents/github/voxel-worktrees/engine-feedback-voxel-1001",
+      "path": "tmp/engine-feedback/font-pair/lint-repaired-1/receipt.json",
+      "kind": "authored-bound-or-executed-evidence",
+      "bytes": 11740,
+      "sha256": "982de72b9d4c7cfd4e458267d96c7426def24a4959df371f6c63352a89f35372"
+    },
+    {
+      "root": "C:/Users/38909/Documents/github/voxel-worktrees/engine-feedback-voxel-1001",
+      "path": "tmp/engine-feedback/font-pair/cleanup-lint-proposal-1/receipt.json",
+      "kind": "authored-bound-or-executed-evidence",
+      "bytes": 1421,
+      "sha256": "be313949015730f5395ad8e830f0be73bd5f6674ac03e25c8d4fb76476b1a93d"
+    },
+    {
+      "root": "C:/Users/38909/Documents/github/voxel-worktrees/engine-feedback-voxel-1001",
+      "path": "tmp/engine-feedback/font-pair/cleanup-repaired-1/receipt.json",
+      "kind": "authored-bound-or-executed-evidence",
+      "bytes": 13116,
+      "sha256": "33f35909afb5751f85a715cfd6ad0ca2bef981a72e12e1b93a2e11273f75e2bc"
+    },
+    {
+      "root": "C:/Users/38909/Documents/github/voxel-worktrees/engine-feedback-voxel-1001",
+      "path": "tmp/engine-feedback/font-pair/cleanup-repaired-1/job-gate-result.json",
+      "kind": "authored-bound-or-executed-evidence",
+      "bytes": 1105,
+      "sha256": "4e2f781903025cb8581d3567b55e441b95e9103084adb992bc8f8296d042c90b"
+    },
+    {
+      "root": "C:/Users/38909/Documents/github/voxel-worktrees/engine-feedback-voxel-1001",
+      "path": "tmp/engine-feedback/font-pair/cleanup-repaired-1/run-candidate.cjs",
+      "kind": "authored-bound-or-executed-evidence",
+      "bytes": 7134,
+      "sha256": "e6ee024d1d697e878b1f0bc73f4db4a699773c00323bfc5f148f0b2bac8cb320"
+    },
+    {
+      "root": "C:/Users/38909/Documents/github/voxel-worktrees/engine-feedback-voxel-1001",
+      "path": "tmp/engine-feedback/font-pair/cleanup-repaired-1/run-owned-focused-job.ps1",
+      "kind": "authored-bound-or-executed-evidence",
+      "bytes": 14349,
+      "sha256": "2b74c34db6179752b68fed3d38ceb121e3e358e95b78e6ba7cc967c1d09e77f1"
+    },
+    {
+      "root": "C:/Users/38909/Documents/github/voxel-worktrees/engine-feedback-voxel-1001",
+      "path": "tmp/engine-feedback/audit/font-provenance/verified.json",
+      "kind": "authored-bound-or-executed-evidence",
+      "bytes": 3649,
+      "sha256": "a87cc9e39d16f14c8ba184f3229247eb5156621c2efbe85b4471cce672254168"
+    }
+  ],
+  "reviewedPlans": [
+    {
+      "root": "C:/Users/38909/Documents/github/voxel-worktrees/engine-feedback-voxel-1001",
+      "path": "docs/work/2_oak-font-diagnostic/plan.md",
+      "snapshot": "snapshots/pair-round3-work2-plan.md",
+      "bytes": 23668,
+      "sha256": "d2f0ad8f8b408f44a879598521c380d26e2ea84cfaa896bab5cc818361163396"
+    },
+    {
+      "root": "C:/Users/38909/Documents/github/voxel-worktrees/engine-feedback-voxel-1001",
+      "path": "docs/work/2_oak-font-diagnostic/design.md",
+      "snapshot": "snapshots/pair-round3-work2-design.md",
+      "bytes": 15545,
+      "sha256": "d2d07c94856669ec45723d4f64db09b43771c6655e9680533af28082fc9c5a08"
+    },
+    {
+      "root": "C:/Users/38909/Documents/github/voxel-worktrees/engine-feedback-voxel-1001",
+      "path": "docs/work/0_engine-feedback-audit/plan.md",
+      "snapshot": "snapshots/pair-round3-work0-plan.md",
+      "bytes": 17378,
+      "sha256": "d4a7fa941414bfbbce0cf436b8d87aa82f27bbb82a02b20b034d4b8f4ac3fc12"
+    },
+    {
+      "root": "C:/Users/38909/Documents/github/voxel-worktrees/engine-feedback-voxel-1001",
+      "path": "docs/work/1_portable-ci-budget/plan.md",
+      "snapshot": "snapshots/pair-round3-work1-plan.md",
+      "bytes": 22276,
+      "sha256": "5700fbc764125910046563cf23f69d45e54a8280e66980202fd2ed77a250de26"
+    },
+    {
+      "root": "C:/Users/38909/Documents/github/civ-engine-worktrees/engine-feedback-1001",
+      "path": "docs/work/71_engine-feedback/plan.md",
+      "snapshot": "snapshots/pair-round3-core-work71-plan.md",
+      "bytes": 28141,
+      "sha256": "8044bf26c74ef58ea98a6f03ac151e87bd35a2b8ff28afd5742ba3b99095d499"
+    }
+  ],
+  "ignoredSourceRecovery": {
+    "directory": "C:\\Users\\38909\\Documents\\github\\voxel-worktrees\\engine-feedback-voxel-1001\\tmp\\engine-feedback\\font-pair\\review-0\\retained",
+    "copies": 18,
+    "twoCallerPatchSHA256": "c30e3eb6f9bab54abb3927373e2c39fe846985d2b69d7457c7e4896592c49534"
+  }
+}
